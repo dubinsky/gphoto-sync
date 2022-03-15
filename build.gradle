@@ -1,0 +1,55 @@
+plugins {
+  id 'com.github.ben-manes.versions' version '0.42.0'
+  id 'scala'
+  id 'java-library'
+}
+
+description = 'Process Photographs'
+group = 'org.podval.tools'
+version = '0.0.1'
+
+dependencies {
+  implementation 'org.scala-lang:scala3-library_3:3.1.2-RC1'
+  implementation 'org.slf4j:slf4j-api:1.7.36'
+  implementation 'com.drewnoakes:metadata-extractor:2.16.0'
+}
+
+tasks.withType(ScalaCompile) {
+  scalaCompileOptions.with {
+    targetCompatibility = '' // TODO remove when https://youtrack.jetbrains.com/issue/SCL-18813 is fixed
+    additionalParameters = [
+      '-new-syntax',
+      '-feature',
+      '-language:strictEquality',
+      '-source:future',
+      //'-deprecation',
+      //'-unchecked',
+      //'-Xsemanticdb',
+      //'-Ysafe-init',
+      //'-explain',
+    ]
+  }
+}
+
+jar {
+  manifest {
+    attributes(
+      'Implementation-Title'  : project.description,
+      'Implementation-Version': project.version
+    )
+  }
+}
+
+task sourcesJar(type: Jar) {
+  from sourceSets.main.allSource
+  archiveClassifier.set('sources')
+}
+
+task scaladocJar(type: Jar) {
+  from scaladoc.destinationDir
+  archiveClassifier.set('scaladoc')
+}
+scaladocJar.dependsOn scaladoc
+
+// There is no Java in the project :)
+project.gradle.startParameter.excludedTaskNames.add('compileJava')

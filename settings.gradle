@@ -1,0 +1,8 @@
+rootProject.name = 'org.podval.tools.photo'
+
+dependencyResolutionManagement {
+  repositories {
+    mavenCentral()
+    gradlePluginPortal() // for JIB
+  }
+}
