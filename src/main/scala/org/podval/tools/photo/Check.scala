@@ -8,7 +8,6 @@ import java.io.File
 import java.time.{Instant, LocalDate, LocalDateTime, LocalTime, ZonedDateTime, ZoneId}
 import java.time.format.{DateTimeFormatter, DateTimeParseException}
 import scala.sys.process.Process
-import scala.jdk.CollectionConverters.*
 
 object Check:
   private val raw: Set[String] = Set("crw", "cr2", "cr3")

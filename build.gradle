@@ -1,5 +1,5 @@
 plugins {
-  id 'com.github.ben-manes.versions' version '0.42.0'
+  id 'com.github.ben-manes.versions' version '0.53.0'
   id 'scala'
   id 'java-library'
 }
@@ -8,25 +8,34 @@ description = 'Process Photographs'
 group = 'org.podval.tools'
 version = '0.0.1'
 
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+scala.scalaVersion = '3.7.4'
+project.gradle.startParameter.excludedTaskNames.add('compileJava')
+
 dependencies {
-  implementation 'org.scala-lang:scala3-library_3:3.1.2-RC1'
-  implementation 'org.slf4j:slf4j-api:1.7.36'
-  implementation 'com.drewnoakes:metadata-extractor:2.16.0'
+  implementation 'org.slf4j:slf4j-api:2.0.17'
+  implementation 'com.drewnoakes:metadata-extractor:2.19.0'
 }
 
-tasks.withType(ScalaCompile) {
+def isNonStable = { String version ->
+  boolean stableKeyword = ['RELEASE', 'FINAL', 'GA'].any { it -> version.toUpperCase().contains(it) }
+  String regex = /^[0-9,.v-]+(-r)?$/
+  return !stableKeyword && !(version ==~ regex)
+}
+
+tasks.named("dependencyUpdates").configure {
+  rejectVersionIf {
+    isNonStable(it.candidate.version)
+  }
+}
+
+tasks.withType(ScalaCompile).configureEach {
   scalaCompileOptions.with {
-    targetCompatibility = '' // TODO remove when https://youtrack.jetbrains.com/issue/SCL-18813 is fixed
     additionalParameters = [
       '-new-syntax',
       '-feature',
       '-language:strictEquality',
-      '-source:future',
-      //'-deprecation',
-      //'-unchecked',
-      //'-Xsemanticdb',
-      //'-Ysafe-init',
-      //'-explain',
+      '-source:future'
     ]
   }
 }
@@ -40,16 +49,13 @@ jar {
   }
 }
 
-task sourcesJar(type: Jar) {
+tasks.register('sourcesJar', Jar) {
   from sourceSets.main.allSource
   archiveClassifier.set('sources')
 }
 
-task scaladocJar(type: Jar) {
+tasks.register('scaladocJar', Jar) {
   from scaladoc.destinationDir
   archiveClassifier.set('scaladoc')
 }
 scaladocJar.dependsOn scaladoc
-
-// There is no Java in the project :)
-project.gradle.startParameter.excludedTaskNames.add('compileJava')
