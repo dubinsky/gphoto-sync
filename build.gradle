@@ -1,7 +1,8 @@
 plugins {
   id 'com.github.ben-manes.versions' version '0.53.0'
   id 'scala'
-  id 'java-library'
+  id 'application'
+  id 'org.podval.tools.scalajs' version '0.9.14'
 }
 
 description = 'Process Photographs'
@@ -13,8 +14,19 @@ scala.scalaVersion = '3.7.4'
 project.gradle.startParameter.excludedTaskNames.add('compileJava')
 
 dependencies {
-  implementation 'org.slf4j:slf4j-api:2.0.17'
+//  implementation 'org.slf4j:slf4j-api:2.0.17'
   implementation 'com.drewnoakes:metadata-extractor:2.19.0'
+  implementation 'dev.zio:zio-cli_3:0.7.4'
+  implementation 'dev.zio:zio-schema_3:1.7.5'
+  implementation 'dev.zio:zio-schema-derivation_3:1.7.5'
+  //libraryDependencies += "org.scala-lang" % "scala-reflect"  % scalaVersion.value % "provided"
+  implementation 'io.github.wasabithumb:jtoml:1.3.0'
+  implementation 'com.google.photos.library:google-photos-library-client:1.7.3'
+  testImplementation 'org.scalatest:scalatest_3:3.2.19'
+}
+
+application {
+  mainClass = 'org.podval.tools.photo.Cli'
 }
 
 def isNonStable = { String version ->

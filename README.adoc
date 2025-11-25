@@ -1,0 +1,39 @@
+= gphoto-sync
+
+Synchronize local photo collection with Google Photos.
+
+== Metadata Extraction Tools
+
+- https://github.com/drewnoakes/metadata-extractor[metadata-extractor]
+by https://github.com/drewnoakes[drewnoakes]
+- dcraw by Dave Coffin
+- libraw
+- exiftool
+- ffprobe
+
+
+== TODO
+
+- filter pictures with timestamp from file name and get rid of the short ones
+- clean up CLI; set/get picture property
+- timestamp: detect big differences between metadata timestamps on different extensions
+- event management
+
+
+== Google Photos API
+
+Too late!
+- https://issuetracker.google.com/issues/368779600?pli=1
+
+
+- https://rclone.org/googlephotos/[RClone Google Photo documentation]
+- https://rclone.org/drive/#making-your-own-client-id[RClone Google Photo OAuth documentation]
+- https://github.com/rclone/gphotosdl[RClone Download Proxy]
+- https://developers.google.com/photos/library/guides/get-started-library[Google Photos API]
+- https://developers.google.com/photos/overview/get-started-java[Google Photo Client Library]
+- https://developers.google.com/photos/picker/guides/get-started-picker[NEW Picker API]
+
+- list GPhotos pictures and albums
+- record skipped pictures in the local metadata
+- upload pictures
+- create event albums and add pictures to them
