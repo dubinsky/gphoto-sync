@@ -2,72 +2,61 @@ package org.podval.tools.toml
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import zio.prelude.NonEmptyMap
 import zio.schema.Schema
 
 class TomlCodecTest extends AnyFlatSpec, Matchers:
-  "TestCodec" should "handle basic structure" in:
+  // TODO add tests for enums
+  "TestCodec" should "work" in :
     final case class Test(
-      a: Option[String],
-      b: Option[Boolean],
-      c: String,
-      d: Boolean
-    )
-
-    val test: Test = Test(
-      a = None,
-      b = Some(true),
-      c = "str",
-      d = false
-    )
-
-    given Schema[Test] = zio.schema.DeriveSchema.gen
-    val encoded: String = TomlCodec.encode(test)
-    val decodeResult = TomlCodec.decode(encoded)
-    decodeResult.isRight shouldBe true
-    val decoded: Test = decodeResult.getOrElse(throw IllegalStateException("can not happen"))
-    decoded shouldEqual test
-
-  it should "handle nested tables" in :
-    final case class Nested(
-      a: Boolean
-    )
-    final case class Test(
-      a: String,
-      b: Nested
-    )
-
-    val test: Test = Test(
-      a = "str",
-      b = Nested(a = true)
-    )
-
-    given Schema[Test] = zio.schema.DeriveSchema.gen
-    val encoded: String = TomlCodec.encode(test)
-    val decodeResult = TomlCodec.decode(encoded)
-    decodeResult.isRight shouldBe true
-    val decoded: Test = decodeResult.getOrElse(throw IllegalStateException("can not happen"))
-    decoded shouldEqual test
-
-  it should "handle arrays" in :
-    final case class Nested(
-      a: Boolean,
-      i: Int
-    )
-    final case class Test(
+      stringOption: Option[String],
+      booleanOption: Option[Boolean],
+      string: String,
+      boolean: Boolean,
+      nested: Nested,
       map: Map[String, Boolean],
-      a: Set[String],
-      b: List[Nested]
+      nonEmptyMap: NonEmptyMap[String, Int],
+      set: Set[String],
+      list: List[Nested],
+//      e: E
     )
+    final case class Nested(
+      boolean: Boolean,
+      int: Int
+    )
+    sealed trait E
+    object E:
+      final case class C1(s: String) extends E
+      case object C2 extends E
 
     val test: Test = Test(
-      map = Map("3" -> true, "4" -> false),
-      a = Set("str"),
-      b = List(Nested(a = true, i = 1), Nested(a = false, i = 2))
+      stringOption = None,
+      booleanOption = Some(true),
+      string = "str",
+      boolean = false,
+      nested = Nested(boolean = true, int = 0),
+      map = Map(
+        "3" -> true,
+        "4" -> false
+      ),
+      nonEmptyMap = NonEmptyMap(
+        "key" -> 42
+      ),
+      set = Set(
+        "str"
+      ),
+      list = List(
+        Nested(boolean = true, int = 1),
+        Nested(boolean = false, int = 2)
+      ),
+//      e = E.C2
     )
 
     given Schema[Test] = zio.schema.DeriveSchema.gen
     val encoded: String = TomlCodec.encode(test)
+    println(encoded)
     val decodeResult = TomlCodec.decode(encoded)
+    if decodeResult.isLeft then println(decodeResult)
     decodeResult.isRight shouldBe true
     val decoded: Test = decodeResult.getOrElse(throw IllegalStateException("can not happen"))
     decoded shouldEqual test
