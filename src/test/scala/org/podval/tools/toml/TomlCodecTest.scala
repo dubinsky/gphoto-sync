@@ -48,6 +48,7 @@ class TomlCodecTest extends AnyFlatSpec, Matchers:
     val decoded: Test = decodeResult.getOrElse(throw IllegalStateException("can not happen"))
     decoded shouldEqual test
 
+  // TODO test some Enums
   it should "handle arrays" in :
     final case class Nested(
       a: Boolean,
