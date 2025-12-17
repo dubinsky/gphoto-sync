@@ -1,15 +1,17 @@
 package org.podval.tools.photo
 
-final class Month private(year: Year, number: Int) extends
-  Numbered[Year, Month, Int, Day](year, number) with DirectoryOfNumbered[Month, Day, String, Picture[Day]]:
-  
+final class Month private(override val parent: Year, val number: Int) extends ItemDirectory:
   require(number >= 1 && number <= 12)
 
-  override def numberedCompanion: NumberedCompanion[Year, Month, Int, Day] = Month
+  override def name: String = Month.toString(number)
 
-  override def numberedItemCompanion: NumberedCompanion[Month, Day, String, Picture[Day]] = Day
+  override def lsd: Seq[Directory] = Day.lsd(this)
 
-object Month extends NumberedCompanion[Year, Month, Int, Day]:
+  override def item(name: String): Day = Day(this, name)
+
+  def day(num: Int): Day = Day(this, num)
+
+object Month extends NumberedMaker[Year, Month]:
   override def apply(year: Year, number: Int): Month = new Month(year, number)
   
   override def toString(number: Int) = f"$number%02d"

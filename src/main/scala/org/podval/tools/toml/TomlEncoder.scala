@@ -61,13 +61,7 @@ object TomlEncoder:
     )
 
     result
-
-  private def encodeEnum[Z](value: Z, cases: Chunk[Schema.Case[Z, ?]]): TomlValue = run {
-    val enumCase: Schema.Case[Z, ?] = cases.find(_.isCase(value)).get
-    // TODO encode the value using enumCase.schema
-    TomlPrimitive.of(enumCase.caseName)
-  }
-
+  
   private def encodeMap[Col, K, V](
     value: Col,
     keySchema: Schema[K],
@@ -86,6 +80,21 @@ object TomlEncoder:
     val result: TomlArray = TomlArray.create
     run(value.asInstanceOf[IterableOnce[E]].iterator.foreach((element: E) => result.add(encodeValue(element, schema))))
     result
+
+  private def encodeEnum[Z](value: Z, cases: Chunk[Schema.Case[Z, ?]]): TomlValue = run {
+    val enumCase: Schema.Case[Z, ?] = cases.find(_.isCase(value)).get
+    val caseName: String = enumCase.caseName
+    enumCase.schema match
+      case record: Schema.Record[?] =>
+        if record.fields.isEmpty
+        then TomlPrimitive.of(caseName)
+        else
+          val result: TomlTable = encodeRecord(enumCase.deconstruct(value), record)
+          result.put(TomlCodec.caseNameKey, caseName)
+          result
+      case schema =>
+        fail(s"Enumeration case $caseName be a record, not $schema")
+  }
 
   private given CanEqual[StandardType[?], StandardType[?]] = CanEqual.derived
 

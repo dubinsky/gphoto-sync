@@ -2,7 +2,7 @@ package org.podval.tools.photo
 
 import java.time.Instant
 
-final class Extension(val picture: Picture[?], val descriptor: Extension.Descriptor):
+final class Extension(val picture: Picture, val descriptor: Extension.Descriptor):
   def name: String = descriptor.name
   
   override def toString: String = s"$picture.$name"
@@ -31,3 +31,33 @@ object Extension:
   object MP4 extends Descriptor("mp4", Dates.FFProbeZoned)
   object AVI extends Descriptor("avi", Dates.FFProbeAVI)
   object TGP extends Descriptor("3gp", Dates.FFProbeZoned)
+
+  val normal: Set[Descriptor] = Set(
+    Extension.JPG,
+    Extension.GIF,
+    Extension.AVI,
+    Extension.MOV,
+    Extension.MP4,
+    Extension.TGP
+  )
+
+  val raw: Set[Descriptor] = Set(
+    Extension.CRW,
+    Extension.CR2,
+    Extension.CR3
+  )
+
+  val thumbnail: Set[Descriptor] = Set(
+    Extension.THM
+  )
+
+  val aux: Set[Descriptor] = Set(
+    Extension.TIF
+  )
+
+  val all: Set[Descriptor] = (
+    normal ++
+    raw ++
+    thumbnail ++
+    aux
+  )

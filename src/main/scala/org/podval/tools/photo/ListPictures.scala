@@ -1,7 +1,7 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.time.{Instant, ZonedDateTime}
+import java.time.{Instant, LocalDate}
 
 final case class ListPictures(
   path: Path,
@@ -9,7 +9,7 @@ final case class ListPictures(
   fix: Boolean,
   nameContains: Option[String],
   hasExtension: Option[String],
-  property: Option[Metadata.Property],
+  propertyAndValue: Option[Property.AndValue[?]],
   timestampFromNameFormat: Option[String],
   timestampFromName: Boolean,
   timestampFromNameOnly: Boolean,
@@ -25,10 +25,10 @@ final case class ListPictures(
   override def execute(): Unit = forEachPicture(path)
 
   private def forEachPicture(path: Path): Unit = path match
-    case directoryOfNumbered: DirectoryOfNumbered[?, ?, ?, ?] => directoryOfNumbered.lsd.foreach(forEachPicture)
-    case pictures: Pictures[?] => pictures.lsd(fix).foreach(ls)
+    case pictures: Pictures => pictures.lsd(fix).foreach(ls)
+    case directory: Directory => directory.lsd.foreach(forEachPicture)
 
-  private def ls(picture: Picture[?]): Unit =
+  private def ls(picture: Picture): Unit =
     var timestampCalculated: Boolean = false
 
     lazy val (
@@ -57,17 +57,15 @@ final case class ListPictures(
       )
 
       val dayShouldBe: Option[Day] = timestamp.flatMap: timestamp =>
-        val timestampZoned: ZonedDateTime = Dates.toZonedDateTime(timestamp)
-        val year: Int = timestampZoned.getYear
-        val month: Int = timestampZoned.getMonthValue
-        val day: Int = timestampZoned.getDayOfMonth
+        val date: LocalDate = Dates.toZonedDateTime(timestamp).toLocalDate
+        val year: Int = date.getYear
+        val month: Int = date.getMonthValue
+        val day: Int = date.getDayOfMonth
 
         // some photos were taken with no time set on the camera...
         val isDefaultDate: Boolean = month == 1 && day == 1 && (year == 1980 || year == 2000)
-        val result: Day = picture.parent.root.item(year).item(month).item(day)
-        val isCorrectDay: Boolean = picture.parent.day.map(day => day.toString == result.toString).getOrElse(false)
-        
-        Option.when(!isDefaultDate && !isCorrectDay)(result)
+        val isCorrectDay: Boolean = picture.parent.day.exists(_.date.isEqual(date))
+        Option.when(!isDefaultDate && !isCorrectDay)(picture.root.year(year).month(month).day(day))
 
       (
         isTimestampsVary,
@@ -79,7 +77,7 @@ final case class ListPictures(
     val included: Boolean =
       (nameContains.isEmpty || picture.name.contains(nameContains.get)) &&
       (hasExtension.isEmpty || picture.extensions.map(_.name).contains(hasExtension.get)) &&
-      (property.isEmpty || picture.metadata.is(property.get)) &&
+      (propertyAndValue.isEmpty || propertyAndValue.get.is(picture.metadata)) &&
       (timestampFromNameFormat.isEmpty || picture.timestampFromName.map(_._2).contains(timestampFromNameFormat.get)) &&
       (!timestampFromName || picture.timestampFromName.isDefined) &&
       (!timestampFromNameOnly || picture.timestampFromName.isDefined && picture.extensions.forall(_.fromMetadata.isEmpty)) &&

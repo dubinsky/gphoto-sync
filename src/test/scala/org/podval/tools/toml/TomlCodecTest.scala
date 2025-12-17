@@ -6,7 +6,6 @@ import zio.prelude.NonEmptyMap
 import zio.schema.Schema
 
 class TomlCodecTest extends AnyFlatSpec, Matchers:
-  // TODO add tests for enums
   "TestCodec" should "work" in :
     final case class Test(
       stringOption: Option[String],
@@ -18,7 +17,8 @@ class TomlCodecTest extends AnyFlatSpec, Matchers:
       nonEmptyMap: NonEmptyMap[String, Int],
       set: Set[String],
       list: List[Nested],
-//      e: E
+      e1: E,
+      e2: E
     )
     final case class Nested(
       boolean: Boolean,
@@ -49,7 +49,8 @@ class TomlCodecTest extends AnyFlatSpec, Matchers:
         Nested(boolean = true, int = 1),
         Nested(boolean = false, int = 2)
       ),
-//      e = E.C2
+      e1 = E.C1("blah"),
+      e2 = E.C2
     )
 
     given Schema[Test] = zio.schema.DeriveSchema.gen

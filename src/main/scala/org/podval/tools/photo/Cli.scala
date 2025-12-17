@@ -20,7 +20,7 @@ object Cli extends ZIOCliDefault:
     args = Args.text("property") ++ Args.text("picture").map(Root.get.parsePicture)
   )
     .withHelp(HelpDoc.p("set metadata property"))
-    .map((property, picture) => SetMetadata(picture, Metadata.Property(property)))
+    .map((property, picture) => SetMetadata(picture, parsePropertyAndValue(property)))
 
   private val ls: Command[ListPictures] = Command(
     name = "ls",
@@ -69,7 +69,7 @@ object Cli extends ZIOCliDefault:
         fix,
         nameContains,
         hasExtension,
-        property.map(Metadata.Property.apply),
+        property.map(parsePropertyAndValue),
         timestampFromNameFormat,
         timestampFromName,
         timestampFromNameOnly,
@@ -95,3 +95,8 @@ object Cli extends ZIOCliDefault:
   )(
     (operation: Operation) => ZIO.succeed(operation.execute())
   )
+  
+  private def parsePropertyAndValue(string: String): Property.AndValue[?] =
+    val (name: String, value: Option[String]) = Files.splitOnLast(string, '=')
+    Property.AndValue(Property.forName(name), value)
+

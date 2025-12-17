@@ -70,7 +70,7 @@ object Dates:
   //    localDateTime.toInstant(zoneOffset)
 
   sealed abstract class FromFileMetadata(isZoned: Boolean) extends Dater(isZoned):
-    final def get(picture: Picture[?], extension: String): Option[Instant] =
+    final def get(picture: Picture, extension: String): Option[Instant] =
       get(picture.file(extension), picture.zone)
       
     def get(file: File, zone: ZoneId): Option[Instant]
@@ -161,22 +161,20 @@ object Dates:
   object NameShort extends Dater(isZoned = false):
     private val format: DateTimeFormatter = DateTimeFormatter.ofPattern("HHmmss") // 013216
 
-    def get(name: String, zone: ZoneId, day: Day): Option[Instant] =
+    def get(name: String, zone: ZoneId, date: LocalDate): Option[Instant] =
       try
-        val localTime: LocalTime = LocalTime.parse(name, format)
-        val localDateTime: LocalDateTime = LocalDate.of(day.parent.parent.number, day.parent.number, day.number).atTime(localTime)
-        Some(toInstant(zone)(localDateTime))
+        Some(toInstant(zone)(date.atTime(LocalTime.parse(name, format))))
       catch
         case _: DateTimeParseException => None
 
   object FromMetadata extends Dater(isZoned = false):
-    def get(picture: Picture[?]): Option[Instant] = Option.when(picture.hasMetadata)(picture.metadata)
+    def get(picture: Picture): Option[Instant] = Option.when(picture.hasMetadata)(picture.metadata)
       .flatMap(_.timestamp)
       .map(LocalDateTime.parse)
       .map(toInstant(picture.zone))
 
   object FromFile extends Dater(isZoned = true):
-    def get(picture: Picture[?], extension: String): Instant =
+    def get(picture: Picture, extension: String): Instant =
       val file: File = picture.file(extension)
       val instant: Instant =
         //Instant.ofEpochMilli(file.lastModified)
@@ -185,7 +183,7 @@ object Dates:
       // TODO isZoned
       fromZone(instant, picture.zone)
 
-    def set(picture: Picture[?], extension: String, instant: Instant): Unit =
+    def set(picture: Picture, extension: String, instant: Instant): Unit =
       val file: File = picture.file(extension)
       // TODO isZoned
       val toSet: Instant = toZone(instant, picture.zone)
