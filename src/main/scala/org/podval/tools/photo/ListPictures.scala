@@ -25,10 +25,10 @@ final case class ListPictures(
   override def execute(): Unit = forEachPicture(path)
 
   private def forEachPicture(path: Path): Unit = path match
-    case directory: DirectoryOfNumbered[?, ?, ?, ?] => directory.lsd.foreach(forEachPicture)
-    case day: Day => day.lsd(fix).foreach(ls)
+    case directoryOfNumbered: DirectoryOfNumbered[?, ?, ?, ?] => directoryOfNumbered.lsd.foreach(forEachPicture)
+    case pictures: Pictures[?] => pictures.lsd(fix).foreach(ls)
 
-  private def ls(picture: Picture): Unit =
+  private def ls(picture: Picture[?]): Unit =
     var timestampCalculated: Boolean = false
 
     lazy val (
@@ -64,9 +64,10 @@ final case class ListPictures(
 
         // some photos were taken with no time set on the camera...
         val isDefaultDate: Boolean = month == 1 && day == 1 && (year == 1980 || year == 2000)
-
-        val result: Day = picture.root.item(year).item(month).item(day)
-        Option.when(!isDefaultDate && picture.parent.toString != result.toString)(result)
+        val result: Day = picture.parent.root.item(year).item(month).item(day)
+        val isCorrectDay: Boolean = picture.parent.day.map(day => day.toString == result.toString).getOrElse(false)
+        
+        Option.when(!isDefaultDate && !isCorrectDay)(result)
 
       (
         isTimestampsVary,

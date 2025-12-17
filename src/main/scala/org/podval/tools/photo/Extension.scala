@@ -2,7 +2,7 @@ package org.podval.tools.photo
 
 import java.time.Instant
 
-final class Extension(val picture: Picture, val descriptor: Extension.Descriptor):
+final class Extension(val picture: Picture[?], val descriptor: Extension.Descriptor):
   def name: String = descriptor.name
   
   override def toString: String = s"$picture.$name"

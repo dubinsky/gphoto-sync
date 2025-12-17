@@ -3,22 +3,18 @@ package org.podval.tools.photo
 import java.io.File
 import java.time.{Instant, ZoneId}
 
-final class Picture private(
-  day: Day,
+final class Picture[Parent <: Pictures[Parent]] private(
+  override val parent: Parent,
   override val name: String,
   val hasMetadata: Boolean,
   val normal: Option[Extension.Descriptor],
   val raw: Option[Extension.Descriptor],
   thumbnail: Option[Extension.Descriptor],
   aux: Option[Extension.Descriptor]
-) extends Sub[Day, String, Picture]:
+) extends Sub[Parent, String, Picture[Parent]]:
   require(normal.isDefined || raw.isDefined, s"no images for $this")
 
-  override def parent: Day = day
-
-  def root: Root = parent.parent.parent.parent
-
-  def zone: ZoneId = root.zone
+  def zone: ZoneId = parent.root.configuration.zoneId
 
   // Note: image files only, not the metadata
   val extensions: Set[Extension] = Set(normal, raw, thumbnail, aux).flatten.map(Extension(this, _))
@@ -33,16 +29,17 @@ final class Picture private(
     val name: String = if !this.name.endsWith("_1") then this.name else this.name.substring(0, this.name.length - "_1".length)
               Dates.NameFull   .get(name, zone     ).map(_ -> "full"   )
       .orElse(Dates.NameCompact.get(name, zone     ).map(_ -> "compact"))
-      .orElse(Dates.NameShort  .get(name, zone, day).map(_ -> "short"  ))
       .orElse(Dates.NameMillis .get(name, zone     ).map(_ -> "millis" ))
+      .orElse(parent.day.flatMap(day => Dates.NameShort.get(name, zone, day)).map(_ -> "short"))
 
+// TODO move into Pictures
 object Picture:
-  def apply(
-    day: Day,
+  def apply[Parent <: Pictures[Parent]](
+    parent: Parent,
     name: String,
     extensions: Set[String]
-  ): Picture =
-    val nameFull: String = s"$day/$name"
+  ): Picture[Parent] =
+    val nameFull: String = s"$parent/$name"
 
     require(name.head.isDigit, s"Non-digit name start: $nameFull")
     require(extensions.nonEmpty, s"No files for $nameFull")
@@ -55,7 +52,7 @@ object Picture:
       all.headOption
 
     new Picture(
-      day,
+      parent,
       name,
       hasMetadata = extensions.contains(Metadata.extension),
       normal    = noMoreThanOne(extensionsNormal   , "normal"   ),

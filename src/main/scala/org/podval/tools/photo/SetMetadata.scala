@@ -1,6 +1,6 @@
 package org.podval.tools.photo
 
-final case class SetMetadata(picture: Picture, property: Metadata.Property) extends Operation:
+final case class SetMetadata(picture: Picture[?], property: Metadata.Property) extends Operation:
   override def execute(): Unit =
     val metadataUpdated: Metadata = picture.metadata.set(property)
 

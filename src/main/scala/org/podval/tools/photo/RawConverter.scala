@@ -6,7 +6,7 @@ import java.io.File
 sealed trait RawConverter:
   protected def process(rawFile: File, file: File): ProcessBuilder
   
-  final def generate(picture: Picture): Unit =
+  final def generate(picture: Picture[?]): Unit =
     val rawFile: File = picture.file(picture.raw.get.name)
     val file: File = picture.file(Extension.JPG.name)
     process(rawFile, file).!
