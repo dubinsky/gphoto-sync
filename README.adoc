@@ -1,24 +1,74 @@
-= gphoto-sync
+= Google Photo Synchronization
 
-Synchronize local photo collection with Google Photos.
+Manage local photo collection and synchronize it with Google Photos.
+
+I started dabbling in this area around year 2000,
+when our daughter was born and I got my first digital camera :)
+
+== TODO
+
+- event management
+
+== Metadata Extraction
+
+My take on extracting metadata from image files is in the (now archived)
+https://github.com/dubinsky/podval-imageio[podval-imageio] repository.
+
+There, between 2003 and 2009, I worked on:
+
+- extracting image metadata from the image file
+- extracting thumbnails from the raw image file
+- demosaicing raw images
+
+There were some good ideas there:
+
+- describing metadata structure in XML
+- push and pull parsing of the metadata
+
+I contributed small discoveries I made in 2002 about Canon RAW format (crw)
+to David Burren.
+
+In the end I realized: it does not make sense to do this myself
+when there are groups of people who dedicate significant time
+to developing and maintaining dedicated tools like
+`dcraw`, `metadata-extractor` and `ffmpeg` :)
 
 == Metadata Extraction Tools
 
 - https://github.com/drewnoakes/metadata-extractor[metadata-extractor]
-by https://github.com/drewnoakes[drewnoakes]
-- dcraw by Dave Coffin
+(originally, https://drewnoakes.com/code/exif/) by https://github.com/drewnoakes[Drew Noakes]
+- http://www.burren.cx/david/canon.html[Canon EXIF Maker Note] by David Burren
+- http://www.cybercom.net/~dcoffin/dcraw/[dcraw] by Dave Coffin
 - libraw
-- exiftool
+- http://www.sno.phy.queensu.ca/~phil/exiftool/exiftool[ExifTool]
 - ffprobe
+- http://www.sentex.net/~mwandel/jhead/[jhead]
+- http://jphoto.sourceforge.net/[Java USB Camera Tools]
 
+== Synchronization with the Cloud
 
-== TODO
+My previous attempt at code
+to synchronize local photo archive with the cloud photo services
+is in the (now archived)
+https://github.com/dubinsky/podval-photo-sync[podval-photo-sync] repository.
 
-- filter pictures with timestamp from file name and get rid of the short ones
-- clean up CLI; set/get picture property
-- timestamp: detect big differences between metadata timestamps on different extensions
-- event management
+There, between 2009 and 2011, I worked on:
 
+- synchronizing with Zenfolio (which I no longer use)
+- synchronizing with Picasa and Google+ (which no longer exist)
+- expose locally recorded timestamp and image orientation to the cloud service
+
+There were some good ideas there:
+
+- group files belonging to the same picture (raw, jpg, metadata)
+- use family polymorphism to abstract over cloud photo services
+
+In the end, while chasing ever-changing cloud,
+I neglected the management of the local photo archive -
+something that this repository finally delivers.
+
+Unfortunately, by now it is impossible to synchronize the local archive
+with Google photos: in 2024, Google removed the necessary APIs :(
 
 == Google Photos API
 

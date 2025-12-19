@@ -55,7 +55,7 @@ class TomlCodecTest extends AnyFlatSpec, Matchers:
 
     given Schema[Test] = zio.schema.DeriveSchema.gen
     val encoded: String = TomlCodec.encode(test)
-    println(encoded)
+//    println(encoded)
     val decodeResult = TomlCodec.decode(encoded)
     if decodeResult.isLeft then println(decodeResult)
     decodeResult.isRight shouldBe true

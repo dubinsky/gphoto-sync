@@ -109,7 +109,7 @@ final case class ListPictures(
       )
 
       if picture.normal.isEmpty && !normalGenerationSuppressed then
-        execute(s"$picture: generating 'jpg' from raw file")(
+        execute(s"$picture: generating '${RawConverter.extension}' from raw file")(
           RawConverter.DCRaw.generate(picture)
         )
 
@@ -128,7 +128,7 @@ final case class ListPictures(
             val extensionNamesAll: Set[String] = picture.extensions.map(_.name) ++ Option.when(picture.hasMetadata)(Metadata.extension).toSet
             extensionNamesAll.foreach(extension => Files.move(
               File(picture.parent.directory, s"${picture.name}.$extension"),
-              File(dayShouldBe.directory, s"${picture.name}.$extension")
+              File(dayShouldBe   .directory, s"${picture.name}.$extension")
             ))
             Files.deleteEmptyDirectories(picture.parent.directory)
           }

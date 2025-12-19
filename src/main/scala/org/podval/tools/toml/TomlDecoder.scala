@@ -24,19 +24,23 @@ object TomlDecoder:
 
   private def run[A](path: Path, a: => A): Result[A] =
     try Right(a) catch
-      case NonFatal(e) => Left(DecodeError.MalformedFieldWithPath(path, e.getMessage)) // TODO Cause
+      case NonFatal(e) =>
+        Left(DecodeError.MalformedFieldWithPath(path, e.getMessage)) // TODO Cause
 
   private def fail(path: Path, failure: String): Result[Nothing] =
     Left(DecodeError.MalformedFieldWithPath(path, failure))
 
   def decode[A](bytes: Chunk[Byte], schema: Schema[A]): Result[A] =
-    run(Chunk.empty, JToml.jToml().readFromString(bytes.asString)) match
-      case Left(error) => Left(error)
-      case Right(document) => decodeRecord(
-        path = Chunk.empty,
-        table = document,
-        record = schema.asInstanceOf[Schema.Record[A]]
-      )
+   run(Chunk.empty, JToml.jToml.readFromString(bytes.asString))
+     .flatMap(asRecord(Chunk.empty :+ "topLevelRecord", schema, _))
+
+  private def asRecord[A](
+    path: Path,
+    schema: Schema[A],
+    table: TomlTable
+  ): Result[A] = schema match
+    case record: Schema.Record[A] => decodeRecord(path, table, record)
+    case schema => fail(path, s"Must be a record, not $schema")
 
   private def decodeValue[A](path: Path, value: TomlValue, schema: Schema[A]): Result[A] = schema match
     case enumeration: Schema.Enum[?] =>
@@ -55,39 +59,24 @@ object TomlDecoder:
       decodeArray(path :+ "sequence", value.asArray, sequence.elementSchema, sequence)
     case sequence: Schema.NonEmptySequence[?, ?, ?] =>
       decodeArray(path :+ "nonEmptySequence", value.asArray, sequence.elementSchema, sequence)
-    case schema => fail(path, s"Unsupported: $schema")
+    case schema =>
+      fail(path, s"Unsupported schema $schema")
 
-  private def decodeRecord[R](path: Path, table: TomlTable, record: Schema.Record[R]): Result[R] =
-    @tailrec
-    def decodeValues(
-      fields: Chunk[Schema.Field[R, ?]],
-      result: ChunkBuilder[Any]
-    ): Result[Chunk[Any]] =
-      if fields.isEmpty then Right(result.result) else
-        val field: Schema.Field[R, ?] = fields.head
-        val fieldName: String = field.name
-        val fieldPath: Path = path :+ s"field:$fieldName"
-        val value: Option[TomlValue] = Option(table.get(fieldName))
-        inline def decodeTail(value: Any): Result[Chunk[Any]] = decodeValues(fields.tail, result += value)
-        TomlCodec.eager(field.schema) match
-          case optional: Schema.Optional[?] => value match
-            case None => decodeTail(None)
-            case Some(value) => decodeValue(fieldPath :+ "Some", value, optional.schema) match
-              case Left(error) => Left(error)
-              case Right(value) => decodeTail(Some(value))
-          case schema: Schema[?] => decodeValue(fieldPath, value.get, schema) match
-            case Left(error) => Left(error)
-            case Right(value) => decodeTail(value)
-
-    decodeValues(
-      record.fields,
-      ChunkBuilder.make[Any]()
-    ).flatMap(
-      chunk => Unsafe.unsafe: _ ?=>
-        record.construct(chunk) match
-          case Left(error) => fail(path, error)
-          case Right(result) => Right(result)
-    )
+  private def decodeRecord[R](path: Path, table: TomlTable, record: Schema.Record[R]): Result[R] = build(
+    record.fields,
+    (field: Schema.Field[R, ?]) =>
+      val fieldName: String = field.name
+      val fieldPath: Path = path :+ s"field:$fieldName"
+      (Option(table.get(fieldName)), TomlCodec.eager(field.schema)) match
+        case (None       , optional: Schema.Optional[?]) => Right(None)
+        case (None       , schema  : Schema         [?]) => fail(fieldPath, "Missing non-optional value")
+        case (Some(value), optional: Schema.Optional[?]) => decodeValue(fieldPath :+ "Some", value, optional.schema).map(Some(_))
+        case (Some(value), schema  : Schema         [?]) => decodeValue(fieldPath          , value,          schema),
+    (chunk: Chunk[Any]) => Unsafe.unsafe: _ ?=>
+      record.construct(chunk) match
+        case Left(error: String) => fail(path, error)
+        case Right(result) => Right(result)
+  )
 
   private def decodeMap[Col, K, V](
     path: Path,
@@ -96,25 +85,12 @@ object TomlDecoder:
     valueSchema: Schema[V],
     collection: Schema.Collection[Col, (K, V)]
   ): Result[Col] =
-    @tailrec
-    def decodePairs(
-      pairs: List[(TomlKey, TomlValue)],
-      result: ChunkBuilder[(String, V)]
-    ): Result[Chunk[(String, V)]] =
-      if pairs.isEmpty then Right(result.result) else
-        val (key, value) = pairs.head
-        decodeValue(path :+ s"key:$key", value, valueSchema) match
-          case Left(error) => Left(error)
-          case Right(value) => decodePairs(pairs.tail, result += (key.toString -> value))
-
     if !TomlCodec.isString(keySchema)
-    then fail(path, s"Map key must be a String, not a $keySchema") else
-      decodePairs(
-        map.toMap.asScala.toList,
-        ChunkBuilder.make[(String, V)]()
-      ).flatMap(
-        chunk => run(path, collection.asInstanceOf[Schema.Collection[Col, (String, V)]].fromChunk(chunk))
-      )
+    then fail(path, s"Map key must be a String, not a $keySchema") else build(
+      map.toMap.asScala.toList,
+      (key: TomlKey, value: TomlValue) => decodeValue(path :+ s"key:$key", value, valueSchema).map(key.toString -> _),
+      (chunk: Chunk[(String, V)]) => run(path, collection.asInstanceOf[Schema.Collection[Col, (String, V)]].fromChunk(chunk))
+    )
 
   private def decodeArray[Col, E](
     path: Path,
@@ -123,47 +99,45 @@ object TomlDecoder:
     collection: Schema.Collection[Col, E]
   ): Result[Col] =
     val elementSchema: Schema[E] = TomlCodec.eager(elementSchemaRaw)
-    @tailrec
-    def decodeElements(elements: List[(Int, TomlValue)], result: ChunkBuilder[E]): Result[Chunk[E]] =
-      if elements.isEmpty then Right(result.result) else
-        val (index, element) = elements.head
-        decodeValue(path :+ s"index:$index", element, elementSchema) match
-          case Left(error) => Left(error)
-          case Right(value) => decodeElements(elements.tail, result += value)
 
-    decodeElements(
+    build(
       array.toArray.toList.zipWithIndex.map((value, index) => (index, value)),
-      ChunkBuilder.make[E]()
-    ).flatMap(
-      chunk => run(path, collection.fromChunk(chunk))
+      (index: Int, element: TomlValue) => decodeValue(path :+ s"index:$index", element, elementSchema),
+      (chunk: Chunk[E]) => run(path, collection.fromChunk(chunk))
     )
 
+  private def build[E, V, R](
+    elements: Seq[E],
+    decode: E => Result[V],
+    construct: Chunk[V] => Result[R]
+  ): Result[R] =
+    @tailrec
+    def build(elements: Seq[E], result: ChunkBuilder[V]): Result[R] =
+      if elements.isEmpty
+      then construct(result.result)
+      else decode(elements.head) match
+        case Left(error) => Left(error)
+        case Right(value) => build(elements.tail, result += value)
+
+    build(elements, ChunkBuilder.make[V]())
+
   private def decodeEnum[Z](path: Path, value: TomlValue, schema: Schema.Enum[Z]): Result[Z] =
-    if value.isPrimitive then
-      val caseName: String = value.asPrimitive.asString
-      val enumCase: Schema.Case[Z, ?] = schema.caseOf(caseName).get
-      val pathNew: Path = path :+ s"enumCase:$caseName"
-      enumCase.schema match
-        case record: Schema.Record[?] =>
-          if record.fields.nonEmpty
-          then fail(pathNew, s"Must not have fields")
-          else Unsafe.unsafe: _ ?=>
-            record.construct(Chunk.empty).fold(
-              error => fail(pathNew, error),
-              caseValue => Right(enumCase.construct(caseValue))
-            )
-        case schema => fail(pathNew, s"Must be a record, not $schema")
-    else
+    val (caseNameValue: TomlValue, table: TomlTable) = if value.isPrimitive then (value, emptyTable) else
       val table: TomlTable = value.asTable
-      val caseName: String = table.get(TomlCodec.caseNameKey).asPrimitive.asString
+      val caseNameValue: TomlValue = Option(table.get(TomlCodec.caseNameKey)).get
       table.remove(TomlCodec.caseNameKey)
-      val enumCase: Schema.Case[Z, ?] = schema.caseOf(caseName).get
-      val pathNew: Path = path :+ s"enumCase:$caseName"
-      enumCase.schema match
-        case record: Schema.Record[?] =>
-          decodeRecord(pathNew :+ "record", table, record).map(enumCase.construct)
-        case schema =>
-          fail(pathNew, s"Must be a record, not $schema")
+      (caseNameValue, table)
+
+    val caseName: String = caseNameValue.asPrimitive.asString
+    val enumCase: Schema.Case[Z, ?] = schema.caseOf(caseName).get
+    asRecord(
+      path :+ s"enumCaseRecord:$caseName",
+      enumCase.schema,
+      table
+    )
+      .map(enumCase.construct)
+
+  private val emptyTable: TomlTable = TomlTable.create
 
   private given CanEqual[StandardType[?], StandardType[?]] = CanEqual.derived
 
