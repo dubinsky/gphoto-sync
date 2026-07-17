@@ -1,8 +1,8 @@
 plugins {
-  id 'com.github.ben-manes.versions' version '0.53.0'
+  id 'com.github.ben-manes.versions' version '0.54.0'
   id 'scala'
   id 'application'
-  id 'org.podval.tools.scalajs' version '1.0.0'
+  id 'org.podval.tools.scalajs' version '1.0.3'
 }
 
 description = 'Process Photographs'
@@ -10,19 +10,19 @@ group = 'org.podval.tools'
 version = '0.0.1'
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
-scala.scalaVersion = '3.8.2'
+scala.scalaVersion = '3.8.4'
 project.gradle.startParameter.excludedTaskNames.add('compileJava')
 
 dependencies {
 //  implementation 'org.slf4j:slf4j-api:2.0.17'
-  implementation 'com.drewnoakes:metadata-extractor:2.19.0'
-  implementation 'dev.zio:zio-cli_3:0.8.0'
-  implementation 'dev.zio:zio-schema_3:1.8.3'
-  implementation 'dev.zio:zio-schema-derivation_3:1.8.3'
+  implementation 'com.drewnoakes:metadata-extractor:2.20.0'
+  implementation 'dev.zio:zio-cli_3:0.8.1'
+  implementation 'dev.zio:zio-schema_3:1.8.5'
+  implementation 'dev.zio:zio-schema-derivation_3:1.8.5'
   //libraryDependencies += "org.scala-lang" % "scala-reflect"  % scalaVersion.value % "provided"
   implementation 'io.github.wasabithumb:jtoml:1.5.2'
   implementation 'com.google.photos.library:google-photos-library-client:1.7.3'
-  testImplementation 'org.scalatest:scalatest_3:3.2.19'
+  testImplementation 'org.scalatest:scalatest_3:3.2.20'
 }
 
 application {
