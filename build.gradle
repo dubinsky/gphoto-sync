@@ -1,55 +1,31 @@
 plugins {
-  id 'com.github.ben-manes.versions' version '0.54.0'
   id 'scala'
   id 'application'
-  id 'org.podval.tools.scalajs' version '1.0.3'
+  id 'org.podval.conventions'
+  id 'org.podval.tools.scalajs' version '1.0.4'
 }
 
 description = 'Process Photographs'
 group = 'org.podval.tools'
 version = '0.0.1'
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
-scala.scalaVersion = '3.8.4'
+scala.scalaVersion = '3.9.0'
 project.gradle.startParameter.excludedTaskNames.add('compileJava')
 
 dependencies {
 //  implementation 'org.slf4j:slf4j-api:2.0.17'
-  implementation 'com.drewnoakes:metadata-extractor:2.20.0'
-  implementation 'dev.zio:zio-cli_3:0.8.1'
-  implementation 'dev.zio:zio-schema_3:1.8.5'
-  implementation 'dev.zio:zio-schema-derivation_3:1.8.5'
+  implementation 'com.drewnoakes:metadata-extractor:2.21.0'
+  implementation 'dev.zio:zio-cli_3:0.8.2'
+  implementation 'dev.zio:zio-schema_3:1.9.0'
+  implementation 'dev.zio:zio-schema-derivation_3:1.9.0'
   //libraryDependencies += "org.scala-lang" % "scala-reflect"  % scalaVersion.value % "provided"
-  implementation 'io.github.wasabithumb:jtoml:1.5.2'
+  implementation 'io.github.wasabithumb:jtoml:1.6.0'
   implementation 'com.google.photos.library:google-photos-library-client:1.7.3'
   testImplementation 'org.scalatest:scalatest_3:3.2.20'
 }
 
 application {
   mainClass = 'org.podval.tools.photo.Cli'
-}
-
-def isNonStable = { String version ->
-  boolean stableKeyword = ['RELEASE', 'FINAL', 'GA'].any { it -> version.toUpperCase().contains(it) }
-  String regex = /^[0-9,.v-]+(-r)?$/
-  return !stableKeyword && !(version ==~ regex)
-}
-
-tasks.named("dependencyUpdates").configure {
-  rejectVersionIf {
-    isNonStable(it.candidate.version)
-  }
-}
-
-tasks.withType(ScalaCompile).configureEach {
-  scalaCompileOptions.with {
-    additionalParameters = [
-      '-new-syntax',
-      '-feature',
-      '-language:strictEquality',
-      '-source:future'
-    ]
-  }
 }
 
 jar {
