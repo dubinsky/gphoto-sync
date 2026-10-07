@@ -2,7 +2,7 @@ plugins {
   id 'scala'
   id 'application'
   id 'org.podval.conventions'
-  id 'org.podval.tools.scalajs' version '1.0.4'
+  id 'org.podval.tools.scalajs' version '2.2.0'
 }
 
 description = 'Process Photographs'
