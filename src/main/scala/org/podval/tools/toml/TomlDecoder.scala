@@ -101,7 +101,8 @@ object TomlDecoder:
     val elementSchema: Schema[E] = TomlCodec.eager(elementSchemaRaw)
 
     build(
-      array.toArray.toList.zipWithIndex.map((value, index) => (index, value)),
+      // jtoml 1.8 TomlArray extends List, so the no-arg toArray is Object[].
+      (0 until array.size).toList.map(index => (index, array.get(index))),
       (index: Int, element: TomlValue) => decodeValue(path :+ s"index:$index", element, elementSchema),
       (chunk: Chunk[E]) => run(path, collection.fromChunk(chunk))
     )
@@ -114,7 +115,7 @@ object TomlDecoder:
     @tailrec
     def build(elements: Seq[E], result: ChunkBuilder[V]): Result[R] =
       if elements.isEmpty
-      then construct(result.result)
+      then construct(result.result())
       else decode(elements.head) match
         case Left(error) => Left(error)
         case Right(value) => build(elements.tail, result += value)

@@ -8,6 +8,8 @@ when our daughter was born and I got my first digital camera :)
 == TODO
 
 - event management
+- look at https://github.com/savethepolarbears/google-photos-mcp
+- look at immich?
 
 == Metadata Extraction
 
