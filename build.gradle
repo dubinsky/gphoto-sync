@@ -2,7 +2,7 @@ plugins {
   id 'scala'
   id 'application'
   id 'org.podval.conventions'
-  id 'org.podval.tools.scalajs' version '2.2.0'
+  id 'org.podval.tools.scalajs' version '2.3.0'
 }
 
 // Gradle 9.8.1 still defaults Zinc to 1.12.0.
