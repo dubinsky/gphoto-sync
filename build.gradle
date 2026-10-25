@@ -13,7 +13,7 @@ project.gradle.startParameter.excludedTaskNames.add('compileJava')
 
 dependencies {
 //  implementation 'org.slf4j:slf4j-api:2.0.17'
-  implementation 'com.drewnoakes:metadata-extractor:2.21.0'
+  implementation 'com.drewnoakes:metadata-extractor:2.22.0'
   implementation 'dev.zio:zio-cli_3:0.8.2'
   implementation 'dev.zio:zio-schema_3:1.9.0'
   implementation 'dev.zio:zio-schema-derivation_3:1.9.0'
