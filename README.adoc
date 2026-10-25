@@ -5,12 +5,6 @@ Manage local photo collection and synchronize it with Google Photos.
 I started dabbling in this area around year 2000,
 when our daughter was born and I got my first digital camera :)
 
-== TODO
-
-- event management
-- look at https://github.com/savethepolarbears/google-photos-mcp
-- look at immich?
-
 == Metadata Extraction
 
 My take on extracting metadata from image files is in the (now archived)
