@@ -124,6 +124,9 @@ final case class ListPictures(
 
         dayShouldBe.foreach: dayShouldBe =>
           execute(s"moving $picture to $dayShouldBe") {
+            val originals: File = picture.root.configuration.byYearDirectory
+            val from: String = s"${Album.relative(originals, picture.parent.directory)}/${picture.name}"
+            val to: String = s"${Album.relative(originals, dayShouldBe.directory)}/${picture.name}"
             Files.mkDirs(dayShouldBe.directory)
             val extensionNamesAll: Set[String] = picture.extensions.map(_.name) ++ Option.when(picture.hasMetadata)(Metadata.extension).toSet
             extensionNamesAll.foreach(extension => Files.move(
@@ -131,6 +134,8 @@ final case class ListPictures(
               File(dayShouldBe   .directory, s"${picture.name}.$extension")
             ))
             Files.deleteEmptyDirectories(picture.parent.directory)
+            // Event claims follow the folder day. Curated members store the path, so only they are rewritten.
+            Album.rewriteMember(originals, from, to)
           }
 
   private def execute(message: String)(action: => Unit): Unit =

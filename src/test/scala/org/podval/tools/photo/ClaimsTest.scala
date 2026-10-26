@@ -73,6 +73,49 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy Claims(originals, zone)
       caught.getMessage should include ("nope")
 
+  it should "rewrite a curated member when a picture moves" in :
+    withOriginals: originals =>
+      val best: String =
+        "# keep\n" +
+        "google-album-id = \"abc\"\n" +
+        "members = [\"2009/03/10/2412\", \"2009/01/01/0000\"]\n" +
+        "exclude = [\"2412\"]\n" +
+        "external = true\n" +
+        "published-title = \"The Best\"\n"
+      val other: String = "members = [\"1999/01/01/0001\"]\nexternal = false\n"
+      val event: String = "from = 2009-03-10\nexclude = [\"2412\"]\n"
+      write(originals, "Best.toml", best)
+      write(originals, "Other.toml", other)
+      write(originals, "2009/03/10/Purim Seuda.toml", event)
+      Album.rewriteMember(originals, "2009/03/10/2412", "2009/03/11/2412")
+      val rewritten: String = Files.read(File(originals, "Best.toml"))
+      rewritten should include ("2009/03/11/2412")
+      rewritten should not include ("2009/03/10/2412")
+      rewritten shouldBe
+        "# keep\n" +
+        "google-album-id = \"abc\"\n" +
+        "members = [\"2009/03/11/2412\", \"2009/01/01/0000\"]\n" +
+        "exclude = [\"2412\"]\n" +
+        "external = true\n" +
+        "published-title = \"The Best\"\n"
+      Files.read(File(originals, "Other.toml")) shouldBe other
+      Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
+
+  it should "not duplicate a curated member that already lists the new path" in :
+    withOriginals: originals =>
+      write(originals, "Best.toml", "members = [\"2009/03/11/2412\", \"2009/03/10/2412\"]\n")
+      Album.rewriteMember(originals, "2009/03/10/2412", "2009/03/11/2412")
+      Files.read(File(originals, "Best.toml")) shouldBe "members = [\"2009/03/11/2412\"]\n"
+
+  it should "reject an unknown key instead of rewriting members" in :
+    withOriginals: originals =>
+      val text: String = "nope = true\nmembers = [\"2009/03/10/2412\"]\n"
+      write(originals, "Best.toml", text)
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Album.rewriteMember(originals, "2009/03/10/2412", "2009/03/11/2412")
+      caught.getMessage should include ("nope")
+      Files.read(File(originals, "Best.toml")) shouldBe text
+
   private def one(originals: File, path: String): Claims.Resolved = Claims(originals, zone) match
     case Left(error) => fail(error)
     case Right(pictures) => pictures.find(_.path == path).getOrElse(fail(s"missing $path"))
