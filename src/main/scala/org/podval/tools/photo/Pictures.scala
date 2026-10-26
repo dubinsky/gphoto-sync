@@ -11,37 +11,8 @@ trait Pictures extends Directory:
 
   final def lsd(fix: Boolean): Seq[Picture] = for (name, extensions) <- group(fix) yield mkPicture(name, extensions)
 
-  private def group(fix: Boolean): Seq[(String, Set[String])] = Files
-    .listFiles(directory)
-    .map(nameAndExtension(_, fix))
-    .groupBy(_._1)
-    .view
-    .mapValues(_.map(_._2).toSet)
-    .toSeq
-    .sortBy(_._1)
-
-  private def nameAndExtension(file: File, fix: Boolean): (String, String) =
-    val (name, extensionOpt) = Files.nameAndExtension(file)
-    val extension: String = extensionOpt.getOrElse(throw IllegalArgumentException(s"$file: no extension"))
-    Pictures.verifyExtension(file.toString, extension)
-
-    val nameShouldBe: Option[String] =
-      if name.startsWith("IMG_") then Some(name.drop("IMG_".length)) else None
-
-    val extensionShouldBe: Option[String] =
-      if extension == "JPG" then Some("jpg") else None
-
-    if nameShouldBe.isEmpty && extensionShouldBe.isEmpty
-    then
-      (name, extension)
-    else
-      val nameCorrect: String = nameShouldBe.getOrElse(name)
-      val extensionCorrect: String = extensionShouldBe.getOrElse(extension)
-      val shouldBe: String = s"$nameCorrect.$extensionCorrect"
-      if fix
-      then Files.move(file, File(file.getParentFile, shouldBe))
-      else println(s"$file: WRONG NAME; SHOULD BE $shouldBe; no '--fix'")
-      (nameCorrect, extensionCorrect)
+  private def group(fix: Boolean): Seq[(String, Set[String])] =
+    Pictures.group(Files.listFiles(directory), fix)
 
   private def mkPicture(
     name: String,
@@ -70,6 +41,44 @@ trait Pictures extends Directory:
     )
 
 object Pictures:
+  // Package-visible so tests can group a temp day folder without Root.
+  private[photo] def group(files: Seq[File], fix: Boolean): Seq[(String, Set[String])] = files
+    .filterNot: file =>
+      val (name, extension) = Files.nameAndExtension(file)
+      // Event files are non-digit .toml; a digit name is a picture sidecar.
+      extension.contains(Metadata.extension) && !name.headOption.exists(_.isDigit)
+    .map(nameAndExtension(_, fix))
+    .groupBy(_._1)
+    .view
+    .mapValues(_.map(_._2).toSet)
+    .toSeq
+    .sortBy(_._1)
+
+  private def nameAndExtension(file: File, fix: Boolean): (String, String) =
+    val (name, extensionOpt) = Files.nameAndExtension(file)
+    val extension: String = extensionOpt.getOrElse(throw IllegalArgumentException(s"$file: no extension"))
+
+    val nameShouldBe: Option[String] =
+      if name.startsWith("IMG_") then Some(name.drop("IMG_".length)) else None
+
+    val extensionShouldBe: Option[String] =
+      if extension == "JPG" then Some("jpg") else None
+
+    // Check the corrected extension so a ".JPG" rename is not rejected first.
+    verifyExtension(file.toString, extensionShouldBe.getOrElse(extension))
+
+    if nameShouldBe.isEmpty && extensionShouldBe.isEmpty
+    then
+      (name, extension)
+    else
+      val nameCorrect: String = nameShouldBe.getOrElse(name)
+      val extensionCorrect: String = extensionShouldBe.getOrElse(extension)
+      val shouldBe: String = s"$nameCorrect.$extensionCorrect"
+      if fix
+      then Files.move(file, File(file.getParentFile, shouldBe))
+      else println(s"$file: WRONG NAME; SHOULD BE $shouldBe; no '--fix'")
+      (nameCorrect, extensionCorrect)
+
   private val extensions: Set[String] = Extension.all.map(_.name) ++ Set(
     Metadata.extension
   )
