@@ -10,7 +10,10 @@ final case class Metadata(
   source: Option[String] = None,
   timestamp: Option[String] = None, // TODO turn into LocalDateTime - a coercion seems to be missing though?
   date: Option[LocalDate] = None,
-  `bad-raw`: Option[Boolean] = None
+  `bad-raw`: Option[Boolean] = None,
+  orientation: Option[String] = None,
+  `google-media-item-id`: Option[String] = None,
+  `already-in-google`: Option[Boolean] = None
 ) derives CanEqual:
   override def toString: String = Property.all
     .flatMap(property => property.get(this).map(value => s"${property.name}=$value"))

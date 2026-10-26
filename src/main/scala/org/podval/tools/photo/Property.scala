@@ -20,7 +20,15 @@ object Property:
         case Some("*")   => m.isDefined
         case Some(value) => m.contains(property.parser(value))
 
-  val all: Seq[Property[?]] = Seq(Source, Timestamp, Date, BadRaw)
+  val all: Seq[Property[?]] = Seq(
+    Source,
+    Timestamp,
+    Date,
+    BadRaw,
+    Orientation,
+    GoogleMediaItemId,
+    AlreadyInGoogle
+  )
 
   def forName(name: String): Property[?] = all.find(_.name == name).get
 
@@ -54,3 +62,12 @@ object Property:
 
   private case object BadRaw extends BooleanProperty("bad-raw", _.`bad-raw`):
     def set(metadata: Metadata, value: Option[Boolean]): Metadata = metadata.copy(`bad-raw` = value)
+
+  private case object Orientation extends StringProperty("orientation", _.orientation):
+    def set(metadata: Metadata, value: Option[String]): Metadata = metadata.copy(orientation = value)
+
+  private case object GoogleMediaItemId extends StringProperty("google-media-item-id", _.`google-media-item-id`):
+    def set(metadata: Metadata, value: Option[String]): Metadata = metadata.copy(`google-media-item-id` = value)
+
+  private case object AlreadyInGoogle extends BooleanProperty("already-in-google", _.`already-in-google`):
+    def set(metadata: Metadata, value: Option[Boolean]): Metadata = metadata.copy(`already-in-google` = value)
