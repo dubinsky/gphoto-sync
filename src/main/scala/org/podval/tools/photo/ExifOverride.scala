@@ -27,12 +27,34 @@ object ExifOverride:
         val copy: File = tempJpeg(tempDirectory)
         Right((copy, Some(argv(source, copy, metadata))))
       case name if videos.contains(name) =>
-        Left(s"metadata override is not supported for video $name")
+        video(source, name, metadata, tempDirectory)
       case name =>
         Left(s"metadata override is not supported for $name")
 
   private def tempJpeg(directory: File): File =
     File(directory, s"${UUID.randomUUID}.jpg")
+
+  // 2026-10-26 spike on this account. QuickTime CreateDate written from the sidecar string
+  // 2001-02-03T04:05:06 came back as creationTime 2001-02-03 04:05:06 UTC, the same instant as a
+  // JPEG DateTimeOriginal of that string. Keys:CreationDate with a UTC offset came back five hours
+  // later and did not finish processing. Rotation=90 never produced width or height, and the API
+  // returns no orientation. A video orientation override stays a failure.
+  private def video(
+    source: File,
+    extension: String,
+    metadata: Metadata,
+    tempDirectory: File
+  ): Either[String, (File, Option[Seq[String]])] =
+    if metadata.orientation.isDefined then
+      Left(s"orientation override is not supported for video $extension")
+    else
+      val copy: File = File(tempDirectory, s"${UUID.randomUUID}.$extension")
+      Right((copy, Some(videoArgv(source, copy, metadata))))
+
+  private def videoArgv(source: File, copy: File, metadata: Metadata): Seq[String] =
+    Seq(exiftool, "-o", copy.getPath) ++
+      metadata.timestamp.toSeq.map(timestamp => s"-CreateDate=$timestamp") ++
+      Seq(source.getPath)
 
   private def argv(source: File, copy: File, metadata: Metadata): Seq[String] =
     Seq(exiftool, "-o", copy.getPath) ++

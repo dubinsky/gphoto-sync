@@ -39,12 +39,28 @@ class ExifOverrideTest extends AnyFlatSpec, Matchers:
     val video: File = File("/tmp/gphoto-sync-exif-override/clip.mov")
     assertUnchanged(video, "mov", Metadata())
 
-  it should "reject a video override" in :
-    assertRejected("mov")
-    assertRejected("mp4")
+  it should "build a video argv for a timestamp only" in :
+    val video: File = File("/tmp/gphoto-sync-exif-override/clip.mp4")
+    ExifOverride(video, "mp4", Metadata(timestamp = Some(stamp))) match
+      case Right((copy, Some(argv))) =>
+        argv.head shouldBe exiftool
+        has(argv, "-o")
+        has(argv, copy.getPath)
+        has(argv, s"-CreateDate=$stamp")
+        has(argv, video.getPath)
+        argv.exists(_.startsWith("-DateTimeOriginal")) shouldBe false
+        argv.exists(_.startsWith("-Orientation")) shouldBe false
+        argv.exists(_.startsWith("-Rotation")) shouldBe false
+        copy.getName.endsWith(".mp4") shouldBe true
+        copy.getPath should not be video.getPath
+      case other => fail(s"expected a video temp copy, got $other")
+
+  it should "reject a video orientation override" in :
+    assertRejected("mov", Metadata(orientation = Some(orientation)))
+    assertRejected("mp4", Metadata(timestamp = Some(stamp), orientation = Some(orientation)))
 
   it should "reject a non-jpeg override" in :
-    Seq("gif", "tif", "thm", "cr2").foreach(assertRejected)
+    Seq("gif", "tif", "thm", "cr2").foreach(extension => assertRejected(extension, Metadata(timestamp = Some(stamp))))
 
   private def has(argv: Seq[String], argument: String): Unit =
     argv.exists(_ == argument) shouldBe true
@@ -65,9 +81,9 @@ class ExifOverrideTest extends AnyFlatSpec, Matchers:
         argv.isDefined shouldBe false
       case Left(message) => fail(message)
 
-  private def assertRejected(extension: String): Unit =
+  private def assertRejected(extension: String, metadata: Metadata): Unit =
     val file: File = File(s"/tmp/gphoto-sync-exif-override/clip.$extension")
-    ExifOverride(file, extension, Metadata(timestamp = Some(stamp))) match
+    ExifOverride(file, extension, metadata) match
       case Left(message) =>
         message.contains(extension) shouldBe true
         message.contains(exiftool) shouldBe false

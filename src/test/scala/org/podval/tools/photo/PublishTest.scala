@@ -120,6 +120,32 @@ class PublishTest extends AnyFlatSpec, Matchers:
       JFiles.readAllBytes(source.toPath).toSeq shouldBe payload.toSeq
       metadata(originals, "2009/03/10/2412").timestamp shouldBe Some("2009-03-10T19:00")
 
+  it should "upload a timestamped video from the exiftool temp copy" in :
+    withOriginals: originals =>
+      val payload: Array[Byte] = Array[Byte](5, 4, 3)
+      val source: File = writeBytes(originals, "2009/03/10/1000.mov", payload)
+      write(originals, "2009/03/10/1000.toml", "timestamp = \"2009-03-10T19:00\"\n")
+      write(originals, "2009/03/10/Party.toml", "")
+      val fake: Fake = Fake()
+      var argv: Seq[String] = Seq.empty
+      val (out, thrown) = capture:
+        run(
+          originals,
+          fake,
+          Some("2009/03/10/1000"),
+          exiftool = args =>
+            argv = args
+            Right(())
+        )
+      expectOk(thrown, out)
+      argv should contain (s"-CreateDate=2009-03-10T19:00")
+      fake.uploads should have size 1
+      val uploaded: File = fake.uploads.head
+      uploaded.getPath should not be source.getPath
+      uploaded.getName.endsWith(".mov") shouldBe true
+      argv should contain (uploaded.getPath)
+      JFiles.readAllBytes(source.toPath).toSeq shouldBe payload.toSeq
+
   it should "fail a video that has an orientation override and not upload it" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/1000.mov", Array[Byte](1, 2))

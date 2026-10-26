@@ -8,5 +8,8 @@ object Google:
   // A byte-identical JPEG already in the library: status OK and an id. batchGet of that id returns
   // INVALID_ARGUMENT, "The provided ID does not match any media items." batchAdd rejects the same id.
   // Publish does not store that id. It marks the picture already-in-google.
+  // The same day, a video CreateDate taken from the sidecar string came back as that clock in UTC,
+  // matching JPEG DateTimeOriginal. A Keys:CreationDate offset did not, and Rotation=90 produced
+  // no width or height. A video timestamp is CreateDate. A video orientation override stays a failure.
 
   def main(args: Array[String]): Unit = println("use photo login")
