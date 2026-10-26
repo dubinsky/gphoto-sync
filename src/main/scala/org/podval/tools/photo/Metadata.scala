@@ -28,9 +28,8 @@ object Metadata:
 
   def read(file: File): Metadata =
     try decode(Files.read(file))
-    catch
-      case error: IllegalArgumentException => fail(file, error)
-      case error: TomlException => fail(file, error)
+    catch case error: (IllegalArgumentException | TomlException) =>
+      throw IllegalArgumentException(s"Error parsing TOML file '$file': ${error.getMessage}", error)
 
   private[photo] def decode(text: String): Metadata =
     val table: TomlTable =
@@ -82,6 +81,3 @@ object Metadata:
 
   private def reject(key: String, message: String): Nothing =
     throw IllegalArgumentException(s"key '$key' $message")
-
-  private def fail(file: File, error: Throwable): Nothing =
-    throw IllegalArgumentException(s"Error parsing TOML file '$file': ${error.getMessage}", error)
