@@ -2,8 +2,7 @@
 
 Manage local photo collection and synchronize it with Google Photos.
 
-I started dabbling in this area around year 2000,
-when our daughter was born and I got my first digital camera :)
+I started dabbling in this area around year 2000, when our daughter was born and I got my first digital camera :)
 
 == Metadata Extraction
 
@@ -21,18 +20,15 @@ There were some good ideas there:
 - describing metadata structure in XML
 - push and pull parsing of the metadata
 
-I contributed small discoveries I made in 2002 about Canon RAW format (crw)
-to David Burren.
+I contributed small discoveries I made in 2002 about Canon RAW format (crw) to David Burren.
 
-In the end I realized: it does not make sense to do this myself
-when there are groups of people who dedicate significant time
-to developing and maintaining dedicated tools like
-`dcraw`, `metadata-extractor` and `ffmpeg` :)
+In the end I realized: it does not make sense to do this myself when there are groups of people who dedicate significant
+time to developing and maintaining dedicated tools like `dcraw`, `metadata-extractor` and `ffmpeg` :)
 
 == Metadata Extraction Tools
 
-- https://github.com/drewnoakes/metadata-extractor[metadata-extractor]
-(originally, https://drewnoakes.com/code/exif/) by https://github.com/drewnoakes[Drew Noakes]
+- https://github.com/drewnoakes/metadata-extractor[metadata-extractor] (originally, https://drewnoakes.com/code/exif/)
+  by https://github.com/drewnoakes[Drew Noakes]
 - http://www.burren.cx/david/canon.html[Canon EXIF Maker Note] by David Burren
 - http://www.cybercom.net/~dcoffin/dcraw/[dcraw] by Dave Coffin
 - libraw
@@ -43,9 +39,7 @@ to developing and maintaining dedicated tools like
 
 == Synchronization with the Cloud
 
-My previous attempt at code
-to synchronize local photo archive with the cloud photo services
-is in the (now archived)
+My previous attempt at code to synchronize local photo archive with the cloud photo services is in the (now archived)
 https://github.com/dubinsky/podval-photo-sync[podval-photo-sync] repository.
 
 There, between 2009 and 2011, I worked on:
@@ -59,16 +53,19 @@ There were some good ideas there:
 - group files belonging to the same picture (raw, jpg, metadata)
 - use family polymorphism to abstract over cloud photo services
 
-In the end, while chasing ever-changing cloud,
-I neglected the management of the local photo archive -
-something that this repository finally delivers.
+In the end, while chasing ever-changing cloud, I neglected the management of the local photo archive - something that
+this repository finally delivers.
 
-Unfortunately, by now it is impossible to synchronize the local archive
-with Google photos: in 2024, Google removed the necessary APIs :(
+This client publishes albums whose files I have written.
+Historical albums are renamed by hand and marked `external`.
+Cron is out of scope.
 
 == Google Photos API
 
-Too late!
+The Library API, since 31 March 2025, can create albums and upload, and can list or edit only content this OAuth client
+created.
+It cannot list or rename albums I made by hand, and it cannot delete media.
+
 - https://issuetracker.google.com/issues/368779600?pli=1
 
 
