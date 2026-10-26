@@ -35,9 +35,11 @@ object Configuration:
   def read: Configuration =
     if !configurationFile.exists() then write(default)
     try decode(Files.read(configurationFile))
-    catch
-      case exception: IllegalArgumentException => parsingFailure(exception)
-      case exception: TomlException => parsingFailure(exception)
+    catch case exception: (IllegalArgumentException | TomlException) =>
+      throw IllegalArgumentException(
+        s"Error parsing configuration file '$configurationFile': ${exception.getMessage}",
+        exception
+      )
 
   def write(configuration: Configuration): Unit =
     Files.write(encode(configuration), configurationFile)
@@ -77,9 +79,3 @@ object Configuration:
         value.asPrimitive.asString
       case _ =>
         throw IllegalArgumentException(s"$key must be a string")
-
-  private def parsingFailure(exception: Exception): Nothing =
-    throw IllegalArgumentException(
-      s"Error parsing configuration file '$configurationFile': ${exception.getMessage}",
-      exception
-    )
