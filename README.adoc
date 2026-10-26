@@ -78,8 +78,3 @@ Too late!
 - https://developers.google.com/photos/library/guides/get-started-library[Google Photos API]
 - https://developers.google.com/photos/overview/get-started-java[Google Photo Client Library]
 - https://developers.google.com/photos/picker/guides/get-started-picker[NEW Picker API]
-
-- list GPhotos pictures and albums
-- record skipped pictures in the local metadata
-- upload pictures
-- create event albums and add pictures to them
