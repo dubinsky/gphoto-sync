@@ -6,7 +6,7 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.auth.oauth2.{ClientId, DefaultPKCEProvider, TokenStore, UserAuthorizer}
 import java.awt.Desktop
 import java.io.{BufferedReader, File, FileInputStream, IOException, InputStreamReader}
-import java.net.{InetSocketAddress, ServerSocket, Socket, SocketTimeoutException, URI, URLDecoder}
+import java.net.{Inet6Address, InetAddress, InetSocketAddress, ServerSocket, Socket, SocketTimeoutException, URI, URLDecoder}
 import java.nio.charset.StandardCharsets
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.SecureRandom
@@ -141,44 +141,19 @@ object GoogleAuth:
     (clientId, redirect)
 
   private[photo] def loopbackBindHosts(host: String): Seq[String] =
-    // This JDK's URI.getHost keeps one pair of brackets on an IPv6 literal.
-    val normalized = stripOneBracketPair(host)
-    if normalized.equalsIgnoreCase("localhost") then Seq("127.0.0.1", "::1")
-    else if normalized == "127.0.0.1" then Seq("127.0.0.1")
-    else if isIpv6Loopback(normalized) then Seq("::1")
+    if host.equalsIgnoreCase("localhost") then Seq("127.0.0.1", "::1")
+    else if host == "127.0.0.1" then Seq("127.0.0.1")
+    else if isIpv6Loopback(host) then Seq("::1")
     else throw IllegalArgumentException(s"redirect host is not loopback: $host")
 
-  private def stripOneBracketPair(host: String): String =
-    if host.startsWith("[") && host.endsWith("]") && host.length >= 2 then host.substring(1, host.length - 1)
-    else host
-
   private def isIpv6Loopback(host: String): Boolean =
-    expandIpv6(host.toLowerCase).exists: groups =>
-      groups.length == 8 && groups.dropRight(1).forall(_ == 0) && groups.last == 1
-
-  private def expandIpv6(host: String): Option[Seq[Int]] =
-    if host.isEmpty || host.contains('%') then None
-    else
-      def hextets(side: String): Option[Seq[Int]] =
-        if side.isEmpty then Some(Seq.empty)
-        else side.split(':').toList.foldLeft(Option(Seq.empty[Int])): (acc, part) =>
-          acc.flatMap(groups => parseHextet(part).map(groups :+ _))
-      host.split("::", -1).toList match
-        case List(only) => hextets(only).filter(_.length == 8)
-        case List(left, right) =>
-          for
-            parsedLeft <- hextets(left)
-            parsedRight <- hextets(right)
-            if parsedLeft.length + parsedRight.length < 8
-          yield parsedLeft ++ Seq.fill(8 - parsedLeft.length - parsedRight.length)(0) ++ parsedRight
-        case _ => None
-
-  private def parseHextet(part: String): Option[Int] =
-    if part.isEmpty || part.length > 4 || !part.forall(isHex) then None
-    else Some(Integer.parseInt(part, 16))
-
-  private def isHex(c: Char): Boolean =
-    (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+    // IPv4 isLoopbackAddress is the whole 127/8. ofLiteral throws for a name; that rejects, with no lookup.
+    try
+      InetAddress.ofLiteral(host) match
+        case address: Inet6Address => address.isLoopbackAddress
+        case _ => false
+    catch
+      case _: IllegalArgumentException => false
 
   private def openLoopback(host: String): Seq[ServerSocket] =
     val (sockets, _) = loopbackBindHosts(host).foldLeft((Seq.empty[ServerSocket], 0)): (state, bindHost) =>
