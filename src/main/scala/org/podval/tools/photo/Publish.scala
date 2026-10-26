@@ -50,6 +50,9 @@ object Publish:
     def updateAlbumTitle(albumId: String, title: String): Unit
     def upload(file: File, mimeType: String): String
     def batchCreate(items: Seq[CreateItem]): Seq[Created]
+    // Ids from batchCreate that batchGet actually returns. A duplicate of a library item this
+    // client did not create comes back with an id batchGet cannot see.
+    def owns(ids: Seq[String]): Set[String]
     def batchAdd(albumId: String, mediaItemIds: Seq[String]): Unit
     override def close(): Unit = ()
 
@@ -153,8 +156,9 @@ object Publish:
       if ensuredTitles.nonEmpty then
         val _: GoogleTransport = transport
       val ensured: Map[String, String] = ensure(originals, ensuredTitles, albums, selected, transport, fail)
-      val uploadedItems: Seq[(UploadNew, String)] = uploadNew(work, ensured, exiftool, transport, fail)
+      val (uploadedItems, alreadyInGoogle) = uploadNew(work, ensured, exiftool, transport, fail)
       uploaded = uploadedItems.length
+      skippedExists += alreadyInGoogle
       filed = fileIntoAlbums(work, uploadedItems, ensured, transport, fail)
     finally
       opened.foreach(_.close())
@@ -182,12 +186,12 @@ object Publish:
     exiftool: Seq[String] => Either[String, Unit],
     transport: GoogleTransport,
     fail: (String, String, String) => Unit
-  ): Seq[(UploadNew, String)] =
+  ): (Seq[(UploadNew, String)], Int) =
     val ready: Seq[UploadNew] = work.collect { case item: UploadNew => item }.flatMap: item =>
       val live: Seq[String] = item.targets.filter(ensured.contains)
       if live.isEmpty then None else Some(item.copy(targets = live))
 
-    ready.grouped(batchSize).foldLeft(Vector.empty[(UploadNew, String)]): (acc, batch) =>
+    ready.grouped(batchSize).foldLeft((Vector.empty[(UploadNew, String)], 0)): (acc, batch) =>
       val prepared: Seq[(UploadNew, String)] = batch.flatMap: picture =>
         val preparedFile: Either[String, File] = picture.argv match
           case None => Right(picture.bytes)
@@ -205,14 +209,15 @@ object Publish:
                 None
             cleanup(picture)
             uploaded
-      acc ++ createBatch(prepared, transport, fail)
+      val (created, already) = createBatch(prepared, transport, fail)
+      (acc._1 ++ created, acc._2 + already)
 
   private def createBatch(
     batch: Seq[(UploadNew, String)],
     transport: GoogleTransport,
     fail: (String, String, String) => Unit
-  ): Seq[(UploadNew, String)] =
-    if batch.isEmpty then Seq.empty
+  ): (Seq[(UploadNew, String)], Int) =
+    if batch.isEmpty then (Seq.empty, 0)
     else
       val items: Seq[CreateItem] = batch.map: (picture, token) =>
         val name: String = Files.splitOnLast(picture.path, '/')._2.getOrElse(picture.path)
@@ -223,23 +228,40 @@ object Publish:
       results match
         case Left(message) =>
           batch.foreach((picture, _) => fail(picture.path, picture.targets.mkString(","), message))
-          Seq.empty
+          (Seq.empty, 0)
         case Right(created) =>
-          val paired: Seq[(UploadNew, String)] = batch.zip(created).flatMap: (pictureToken, result) =>
-            val (picture, _) = pictureToken
-            acceptMediaId(picture, result, fail)
-          batch.drop(created.length).foreach((picture, _) => rejectMissingId(picture, None, fail))
-          paired
+          val returned: Seq[String] = created.flatMap(_.mediaItemId.filter(_.nonEmpty))
+          val owned: Either[String, Set[String]] =
+            if returned.isEmpty then Right(Set.empty)
+            else
+              try Right(transport.owns(returned))
+              catch case error: Exception => Left(Album.messageOf(error))
+          owned match
+            case Left(message) =>
+              batch.foreach((picture, _) => fail(picture.path, picture.targets.mkString(","), message))
+              (Seq.empty, 0)
+            case Right(visible) =>
+              val stored: Seq[(UploadNew, String)] = batch.zip(created).flatMap:
+                case ((picture, _), result) => acceptMediaId(picture, result, visible, fail)
+              batch.drop(created.length).foreach((picture, _) => rejectMissingId(picture, None, fail))
+              val already: Int = batch.zip(created).count:
+                case (_, result) => result.mediaItemId.exists(id => id.nonEmpty && !visible.contains(id))
+              (stored, already)
 
   private def acceptMediaId(
     picture: UploadNew,
     result: Created,
+    owned: Set[String],
     fail: (String, String, String) => Unit
   ): Option[(UploadNew, String)] =
     result.mediaItemId.filter(_.nonEmpty) match
-      case Some(id) =>
+      case Some(id) if owned.contains(id) =>
         Files.write(Metadata.encode(picture.metadata.copy(`google-media-item-id` = Some(id))), picture.metadataFile)
         Some(picture -> id)
+      case Some(_) =>
+        // 2026-10-26: a byte-identical library JPEG returns an id batchGet cannot see.
+        Files.write(Metadata.encode(picture.metadata.copy(`already-in-google` = Some(true))), picture.metadataFile)
+        None
       case None =>
         rejectMissingId(picture, result.status, fail)
         None
@@ -249,7 +271,6 @@ object Publish:
     status: Option[String],
     fail: (String, String, String) => Unit
   ): Unit =
-    // The duplicate result is unrecorded, so this is a failure.
     val message: String = status.filter(_.nonEmpty).fold("batchCreate returned no media item id"): text =>
       s"batchCreate returned no media item id: $text"
     fail(picture.path, picture.targets.mkString(","), message)
@@ -495,6 +516,14 @@ object Publish:
           if id.isDefined then None
           else Option(result.getStatus).map(_.getMessage).filter(text => text != null && text.nonEmpty)
         Created(Option(result.getUploadToken).getOrElse(""), id, status)
+
+    override def owns(ids: Seq[String]): Set[String] =
+      if ids.isEmpty then Set.empty
+      else
+        client.batchGetMediaItems(ids.asJava).getMediaItemResultsList.asScala.flatMap: result =>
+          if result.hasMediaItem && result.getMediaItem.getId.nonEmpty then Some(result.getMediaItem.getId)
+          else None
+        .toSet
 
     override def batchAdd(albumId: String, mediaItemIds: Seq[String]): Unit =
       client.batchAddMediaItemsToAlbum(albumId, mediaItemIds.asJava)

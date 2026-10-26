@@ -319,7 +319,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val fake: Fake = Fake(failCreateAfter = Some(1))
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]
-      val first: Seq[String] = Seq.fill(50)("upload") :+ "batchCreate"
+      val first: Seq[String] = Seq.fill(50)("upload") ++ Seq("batchCreate", "owns")
       fake.events.toSeq shouldBe first ++ Seq("upload", "batchCreate")
       fake.batchCreates.map(_.length).toSeq shouldBe Seq(50, 1)
       names.take(50).foreach: name =>
@@ -342,6 +342,24 @@ class PublishTest extends AnyFlatSpec, Matchers:
       text should not include ("already-in-google")
       out should include ("batchCreate returned no media item id: expired upload token")
       out should include ("failed=1")
+
+  it should "mark a batchCreate id this client cannot see as already in Google" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val sidecar: File = write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
+      write(originals, "2009/03/10/Party.toml", "")
+      val fake: Fake = Fake(unowned = true)
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      val metadata: Metadata = Metadata.read(sidecar)
+      metadata.`google-media-item-id` shouldBe None
+      metadata.`already-in-google` shouldBe Some(true)
+      metadata.timestamp.nonEmpty shouldBe true
+      fake.adds shouldBe empty
+      fake.events.toSeq should contain ("owns")
+      out should include ("uploaded=0")
+      out should include ("skipped-exists=1")
+      out should include ("failed=0")
 
   private def run(
     originals: File,
@@ -420,7 +438,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
   private final class Fake(
     missingId: Boolean = false,
     statusMessage: Option[String] = None,
-    failCreateAfter: Option[Int] = None
+    failCreateAfter: Option[Int] = None,
+    unowned: Boolean = false
   ) extends Publish.GoogleTransport:
     val uploads: scala.collection.mutable.ArrayBuffer[File] = scala.collection.mutable.ArrayBuffer.empty
     val events: scala.collection.mutable.ArrayBuffer[String] = scala.collection.mutable.ArrayBuffer.empty
@@ -461,6 +480,10 @@ class PublishTest extends AnyFlatSpec, Matchers:
         val id: Option[String] = if missingId then None else Some(s"media-${item.uploadToken}")
         val status: Option[String] = if id.isDefined then None else statusMessage
         Publish.Created(item.uploadToken, id, status)
+
+    override def owns(ids: Seq[String]): Set[String] =
+      events += "owns"
+      if unowned then Set.empty else ids.toSet
 
     override def batchAdd(albumId: String, mediaItemIds: Seq[String]): Unit =
       adds += ((albumId, mediaItemIds))
