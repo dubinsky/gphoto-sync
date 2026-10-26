@@ -371,6 +371,62 @@ class SyncTest extends AnyFlatSpec, Matchers:
       bytes(best) shouldBe before(best.getAbsolutePath)
       Metadata.read(sidecar).`google-media-item-id` shouldBe Some("media-1")
 
+  it should "remove an event exclude for every folder day inside from/to" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/09/2420.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2420.jpg", Array[Byte](2))
+      writeBytes(originals, "2009/03/13/2420.jpg", Array[Byte](3))
+      write(originals, "2009/03/09/2420.toml", "google-media-item-id = \"media-before\"\n")
+      write(originals, "2009/03/11/2420.toml", "google-media-item-id = \"media-span\"\n")
+      write(originals, "2009/03/13/2420.toml", "google-media-item-id = \"media-after\"\n")
+      val purim: File = write(
+        originals,
+        "2009/03/10/Purim Seuda.toml",
+        "to = 2009-03-12\nexclude = [\"2420\"]\ngoogle-album-id = \"album-purim\"\n"
+      )
+      val day: File = write(originals, "2009/03/11.toml", "google-album-id = \"album-day\"\n")
+      val before: Map[String, Seq[Byte]] = snapshot(originals)
+      val fake: Fake = Fake(
+        albums = Map(
+          "album-purim" -> Set("media-before", "media-span", "media-after"),
+          "album-day" -> Set("media-span")
+        ),
+        library = Set("media-before", "media-span", "media-after")
+      )
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      expectOk(thrown, out)
+      lines(out) shouldBe Seq("remove 2009/03/10/Purim Seuda 2420")
+      fake.removed.toList shouldBe List("album-purim" -> Seq("media-span"))
+      fake.listed.toList shouldBe List("album-purim", "album-day")
+      snapshot(originals) shouldBe before
+      bytes(purim) shouldBe before(purim.getAbsolutePath)
+      bytes(day) shouldBe before(day.getAbsolutePath)
+
+  it should "not remove a curated name that is still listed in members" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2011/06/29/2412.jpg", Array[Byte](2))
+      write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-2009\"\n")
+      write(originals, "2011/06/29/2412.toml", "google-media-item-id = \"media-2011\"\n")
+      val best: File = write(
+        originals,
+        "Best.toml",
+        "members = [\"2011/06/29/2412\"]\nexclude = [\"2412\"]\ngoogle-album-id = \"album-best\"\n"
+      )
+      val before: Map[String, Seq[Byte]] = snapshot(originals)
+      val fake: Fake = Fake(
+        albums = Map("album-best" -> Set("media-2009", "media-2011")),
+        library = Set("media-2009", "media-2011")
+      )
+      val (out, thrown) = capture(run(originals, fake, None, recursive = true))
+      expectOk(thrown, out)
+      lines(out) shouldBe Seq("remove Best 2412")
+      fake.removed.toList shouldBe List("album-best" -> Seq("media-2009"))
+      snapshot(originals) shouldBe before
+      bytes(best) shouldBe before(best.getAbsolutePath)
+      Album.readCurated(best, "Best").members shouldBe Seq("2011/06/29/2412")
+      Album.readCurated(best, "Best").exclude shouldBe Set("2412")
+
   private def run(
     originals: File,
     fake: Fake,

@@ -139,6 +139,11 @@ object Claims:
     val end: Album.When = event.to.getOrElse(Album.When.Date(dayOf(start)))
     (lower(start), upper(end))
 
+  // Exclude follow-up uses the claim interval, not only the event file's path day.
+  private[photo] def folderDayInInterval(event: Album.Event, day: LocalDate): Boolean =
+    val (start, end) = interval(event)
+    !day.isBefore(start.toLocalDate) && !day.isAfter(end.toLocalDate)
+
   private def dayOf(when: Album.When): LocalDate = when match
     case Album.When.Date(date) => date
     case Album.When.DateTime(dateTime) => dateTime.toLocalDate

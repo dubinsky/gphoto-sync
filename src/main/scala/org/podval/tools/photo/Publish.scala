@@ -6,7 +6,7 @@ import com.google.photos.library.v1.upload.UploadMediaItemRequest
 import com.google.photos.library.v1.util.NewMediaItemFactory
 import com.google.photos.types.proto.Album as GoogleAlbum
 import java.io.{File, RandomAccessFile}
-import java.time.{LocalDate, ZoneId}
+import java.time.ZoneId
 import scala.jdk.CollectionConverters.{IterableHasAsScala, ListHasAsScala, SeqHasAsJava}
 import scala.jdk.OptionConverters.*
 
@@ -82,7 +82,7 @@ object Publish:
     tempDirectory: File
   ): Unit =
     val selectedPrefix: Option[String] = prefix.map(_.stripPrefix("/")).filter(_.nonEmpty)
-    if needsRecursive(selectedPrefix) && !recursive then
+    if Album.needsRecursive(selectedPrefix) && !recursive then
       throw IllegalArgumentException("year or root requires --recursive")
 
     val pictures: Seq[Claims.Resolved] = Claims(originals, zone) match
@@ -96,7 +96,7 @@ object Publish:
       println("no albums")
     else
       val titles: Seq[String] = distinctTitles(selected)
-      val albums: Map[String, LoadedAlbum] = titles.map(title => title -> loadAlbum(originals, title)).toMap
+      val albums: Map[String, Album.Loaded] = titles.map(title => title -> Album.load(originals, title)).toMap
       val work: Seq[Work] = selected.map(picture => plan(originals, picture, albums, tempDirectory))
       // Only albums that will receive an upload or an existing media id.
       val ensuredTitles: Seq[String] = work.flatMap {
@@ -121,7 +121,7 @@ object Publish:
   private def publish(
     originals: File,
     selected: Seq[Claims.Resolved],
-    albums: Map[String, LoadedAlbum],
+    albums: Map[String, Album.Loaded],
     work: Seq[Work],
     ensuredTitles: Seq[String],
     google: () => GoogleTransport,
@@ -201,7 +201,7 @@ object Publish:
             val uploaded: Option[(UploadNew, String)] =
               try Some(picture -> transport.upload(file, mime(picture.extension)))
               catch case error: Exception =>
-                fail(picture.path, picture.targets.mkString(","), messageOf(error))
+                fail(picture.path, picture.targets.mkString(","), Album.messageOf(error))
                 None
             cleanup(picture)
             uploaded
@@ -219,7 +219,7 @@ object Publish:
         CreateItem(token, s"$name.${picture.extension}")
       val results: Either[String, Seq[Created]] =
         try Right(transport.batchCreate(items))
-        catch case error: Exception => Left(messageOf(error))
+        catch case error: Exception => Left(Album.messageOf(error))
       results match
         case Left(message) =>
           batch.foreach((picture, _) => fail(picture.path, picture.targets.mkString(","), message))
@@ -274,13 +274,13 @@ object Publish:
           transport.batchAdd(albumId, batch.map(_._1))
           acc + batch.length
         catch case error: Exception =>
-          batch.foreach((_, picture) => fail(picture, albumTitle, messageOf(error)))
+          batch.foreach((_, picture) => fail(picture, albumTitle, Album.messageOf(error)))
           acc
 
   private def ensure(
     originals: File,
     titles: Seq[String],
-    albums: Map[String, LoadedAlbum],
+    albums: Map[String, Album.Loaded],
     pictures: Seq[Claims.Resolved],
     transport: GoogleTransport,
     fail: (String, String, String) => Unit
@@ -293,7 +293,7 @@ object Publish:
         if !needRemote then Right(Seq.empty)
         else
           try Right(transport.listAppAlbums())
-          catch case error: Exception => Left(messageOf(error))
+          catch case error: Exception => Left(Album.messageOf(error))
       remoteResult match
         case Left(message) =>
           titles.foreach(title => failClaimers(title, message, pictures, fail))
@@ -324,7 +324,7 @@ object Publish:
   private final case class Ensured(id: String, remote: Seq[(String, String)], ids: Map[String, String])
 
   private def ensureOne(
-    loaded: LoadedAlbum,
+    loaded: Album.Loaded,
     remote: Seq[(String, String)],
     ids: Map[String, String],
     transport: GoogleTransport
@@ -339,7 +339,7 @@ object Publish:
               val id: String = transport.createAlbum(album.title)
               Album.storeGoogle(loaded.file, id, album.title)
               Right((id, remote :+ (id, album.title), ids.updated(id, album.title), true))
-            catch case error: Exception => Left(messageOf(error))
+            catch case error: Exception => Left(Album.messageOf(error))
           case Seq((id, _)) =>
             ids.get(id) match
               case Some(other) if other != album.title =>
@@ -348,7 +348,7 @@ object Publish:
                 try
                   Album.storeGoogle(loaded.file, id, album.title)
                   Right((id, remote, ids.updated(id, album.title), true))
-                catch case error: Exception => Left(messageOf(error))
+                catch case error: Exception => Left(Album.messageOf(error))
           case _ =>
             Left(s"more than one Google album titled ${album.title}")
 
@@ -360,12 +360,12 @@ object Publish:
           transport.updateAlbumTitle(id, album.title)
           Album.storeGoogle(loaded.file, id, album.title)
           Right(Ensured(id, remoteNow, idsNow))
-        catch case error: Exception => Left(messageOf(error))
+        catch case error: Exception => Left(Album.messageOf(error))
 
   private def plan(
     originals: File,
     picture: Claims.Resolved,
-    albums: Map[String, LoadedAlbum],
+    albums: Map[String, Album.Loaded],
     tempDirectory: File
   ): Work =
     val titles: Seq[String] = picture.dated.toSeq ++ picture.curated
@@ -401,20 +401,11 @@ object Publish:
     case Extension.TGP.name => "video/3gpp"
     case other => throw IllegalArgumentException(s"no mime type for $other")
 
-  private def needsRecursive(prefix: Option[String]): Boolean =
-    val segments: Seq[String] = prefix.filter(_.nonEmpty).toSeq.flatMap(_.split('/').filter(_.nonEmpty))
-    segments.isEmpty || (segments.sizeIs == 1 && isNumber(segments.head, 4))
-
   private def select(pictures: Seq[Claims.Resolved], prefix: Option[String]): Seq[Claims.Resolved] =
-    prefix.filter(_.nonEmpty) match
-      case None => pictures
-      case Some(path) =>
-        pictures.filter(picture => picture.path == path || picture.path.startsWith(s"$path/"))
+    pictures.filter(picture => Album.matchesPrefix(picture.path, prefix))
 
   private def distinctTitles(pictures: Seq[Claims.Resolved]): Seq[String] =
     pictures.flatMap(picture => picture.dated.toSeq ++ picture.curated).distinct
-
-  private final case class LoadedAlbum(file: File, album: Album)
 
   private sealed trait Work
   private final case class SkipExternal(path: String) extends Work
@@ -434,64 +425,10 @@ object Publish:
     argv: Option[Seq[String]]
   ) extends Work
 
-  private def loadAlbum(originals: File, title: String): LoadedAlbum =
-    val file: File = File(originals, s"$title.toml")
-    val segments: Seq[String] = title.split('/').toSeq.filter(_.nonEmpty)
-    val album: Album = segments match
-      case Seq(year, month, day, _) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
-        Album.readEvent(file, title, LocalDate.of(year.toInt, month.toInt, day.toInt))
-      case Seq(year, month, day) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
-        Album.readDay(file, title)
-      case Seq(year, month) if isNumber(year, 4) && isNumber(month, 2) =>
-        Album.readMonth(file, title)
-      case Seq(_) =>
-        Album.readCurated(file, title)
-      case _ =>
-        throw IllegalArgumentException(s"not an album title: $title")
-    LoadedAlbum(file, album)
-
   private def localAlbumIds(originals: File): Map[String, String] =
-    albumFiles(originals).foldLeft(Map.empty[String, String]): (ids, loaded) =>
+    Album.loadAll(originals).foldLeft(Map.empty[String, String]): (ids, loaded) =>
       val id: String = loaded.album.googleAlbumId
       if id.isEmpty then ids else ids.updated(id, loaded.album.title)
-
-  private def albumFiles(originals: File): Seq[LoadedAlbum] =
-    val curated: Seq[LoadedAlbum] = tomlFiles(originals).map: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      loadAlbum(originals, name)
-    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(curated): (loaded, yearDir) =>
-      loaded ++ yearAlbums(originals, yearDir)
-
-  private def yearAlbums(originals: File, yearDir: File): Seq[LoadedAlbum] =
-    val year: String = yearDir.getName
-    val months: Seq[LoadedAlbum] = tomlFiles(yearDir).flatMap: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      Option.when(isNumber(name, 2))(loadAlbum(originals, s"$year/$name"))
-    childDirectories(yearDir).filter(dir => isNumber(dir.getName, 2)).foldLeft(months): (loaded, monthDir) =>
-      loaded ++ monthAlbums(originals, year, monthDir)
-
-  private def monthAlbums(originals: File, year: String, monthDir: File): Seq[LoadedAlbum] =
-    val month: String = monthDir.getName
-    val days: Seq[LoadedAlbum] = tomlFiles(monthDir).flatMap: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      Option.when(isNumber(name, 2))(loadAlbum(originals, s"$year/$month/$name"))
-    childDirectories(monthDir).filter(dir => isNumber(dir.getName, 2)).foldLeft(days): (loaded, dayDir) =>
-      loaded ++ dayAlbums(originals, year, month, dayDir)
-
-  private def dayAlbums(originals: File, year: String, month: String, dayDir: File): Seq[LoadedAlbum] =
-    val day: String = dayDir.getName
-    tomlFiles(dayDir).flatMap: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      Option.when(!name.headOption.exists(_.isDigit))(loadAlbum(originals, s"$year/$month/$day/$name"))
-
-  private def childDirectories(directory: File): Seq[File] =
-    Files.list(directory)._1.sortBy(_.getName)
-
-  private def tomlFiles(directory: File): Seq[File] =
-    Files.list(directory)._2.filter(_.getName.endsWith(".toml")).sortBy(_.getName)
-
-  private def isNumber(name: String, length: Int): Boolean =
-    name.length == length && name.forall(_.isDigit)
 
   private def locate(originals: File, picturePath: String): (File, String) =
     val (parent, name) = Files.splitOnLast(picturePath, '/')
@@ -520,9 +457,6 @@ object Publish:
         val stemFixed: String = if stem.startsWith("IMG_") then stem.drop("IMG_".length) else stem
         val extFixed: String = if ext == "JPG" then Extension.JPG.name else ext
         stemFixed == pictureName && uploadable.contains(extFixed) && fileName != s"$pictureName.$extFixed"
-
-  private def messageOf(error: Exception): String =
-    Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
 
   private final class LibraryTransport(client: PhotosLibraryClient) extends GoogleTransport:
     override def close(): Unit = client.close()

@@ -83,6 +83,72 @@ object Album:
       changes.foreach: (file, text) =>
         Files.write(text, file)
 
+  private[photo] final case class Loaded(file: File, album: Album)
+
+  private[photo] def load(originals: File, title: String): Loaded =
+    val file: File = File(originals, s"$title.toml")
+    val segments: Seq[String] = title.split('/').toSeq.filter(_.nonEmpty)
+    val album: Album = segments match
+      case Seq(year, month, day, _) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
+        readEvent(file, title, LocalDate.of(year.toInt, month.toInt, day.toInt))
+      case Seq(year, month, day) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
+        readDay(file, title)
+      case Seq(year, month) if isNumber(year, 4) && isNumber(month, 2) =>
+        readMonth(file, title)
+      case Seq(_) =>
+        readCurated(file, title)
+      case _ =>
+        throw IllegalArgumentException(s"not an album title: $title")
+    Loaded(file, album)
+
+  private[photo] def loadAll(originals: File): Seq[Loaded] =
+    val curated: Seq[Loaded] = tomlFiles(originals).map: file =>
+      val (name, _) = Files.nameAndExtension(file)
+      load(originals, name)
+    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(curated): (loaded, yearDir) =>
+      loaded ++ yearAlbums(originals, yearDir)
+
+  private[photo] def needsRecursive(prefix: Option[String]): Boolean =
+    val segments: Seq[String] = prefix.filter(_.nonEmpty).toSeq.flatMap(_.split('/').filter(_.nonEmpty))
+    segments.isEmpty || (segments.sizeIs == 1 && isNumber(segments.head, 4))
+
+  private[photo] def matchesPrefix(path: String, prefix: Option[String]): Boolean =
+    prefix.filter(_.nonEmpty).forall(selected => path == selected || path.startsWith(s"$selected/"))
+
+  private[photo] def messageOf(error: Exception): String =
+    Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
+
+  private def yearAlbums(originals: File, yearDir: File): Seq[Loaded] =
+    val year: String = yearDir.getName
+    val months: Seq[Loaded] = tomlFiles(yearDir).flatMap: file =>
+      val (name, _) = Files.nameAndExtension(file)
+      Option.when(isNumber(name, 2))(load(originals, s"$year/$name"))
+    childDirectories(yearDir).filter(dir => isNumber(dir.getName, 2)).foldLeft(months): (loaded, monthDir) =>
+      loaded ++ monthAlbums(originals, year, monthDir)
+
+  private def monthAlbums(originals: File, year: String, monthDir: File): Seq[Loaded] =
+    val month: String = monthDir.getName
+    val days: Seq[Loaded] = tomlFiles(monthDir).flatMap: file =>
+      val (name, _) = Files.nameAndExtension(file)
+      Option.when(isNumber(name, 2))(load(originals, s"$year/$month/$name"))
+    childDirectories(monthDir).filter(dir => isNumber(dir.getName, 2)).foldLeft(days): (loaded, dayDir) =>
+      loaded ++ dayAlbums(originals, year, month, dayDir)
+
+  private def dayAlbums(originals: File, year: String, month: String, dayDir: File): Seq[Loaded] =
+    val day: String = dayDir.getName
+    tomlFiles(dayDir).flatMap: file =>
+      val (name, _) = Files.nameAndExtension(file)
+      Option.when(!name.headOption.exists(_.isDigit))(load(originals, s"$year/$month/$day/$name"))
+
+  private def childDirectories(directory: File): Seq[File] =
+    Files.list(directory)._1.sortBy(_.getName)
+
+  private def tomlFiles(directory: File): Seq[File] =
+    Files.list(directory)._2.filter(_.getName.endsWith(".toml")).sortBy(_.getName)
+
+  private def isNumber(name: String, length: Int): Boolean =
+    name.length == length && name.forall(_.isDigit)
+
   def readEvent(file: File, title: String, pathDay: LocalDate): Event =
     val values: Map[String, TomlValue] = checked(file, eventKeys)
     val common: Common = commonOf(file, values)

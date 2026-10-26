@@ -44,7 +44,7 @@ object Sync:
     google: () => Library
   ): Unit =
     val selectedPrefix: Option[String] = prefix.map(_.stripPrefix("/")).filter(_.nonEmpty)
-    if needsRecursive(selectedPrefix) && !recursive then
+    if Album.needsRecursive(selectedPrefix) && !recursive then
       throw IllegalArgumentException("year or root requires --recursive")
 
     val pictures: Seq[Claims.Resolved] = Claims(originals, zone) match
@@ -54,7 +54,7 @@ object Sync:
       case Right(value) => value
 
     val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix)
-    val albums: Seq[LoadedAlbum] = loadAlbums(originals)
+    val albums: Seq[LoadedAlbum] = Album.loadAll(originals)
     val byTitle: Map[String, LoadedAlbum] = albums.map(loaded => loaded.album.title -> loaded).toMap
     val inScope: Seq[LoadedAlbum] = scope(selected, byTitle, albums)
     if inScope.isEmpty then println("no albums")
@@ -95,7 +95,7 @@ object Sync:
       acc.updated(loaded.album.title, ids)
 
   private def albumFailure(loaded: LoadedAlbum, selected: Seq[Claims.Resolved], error: Exception): Seq[String] =
-    val message: String = messageOf(error)
+    val message: String = Album.messageOf(error)
     val lines: Seq[String] = picturesFor(loaded, selected).map: picture =>
       s"${picture.path} ${loaded.album.title}: $message"
     if lines.nonEmpty then lines else Seq(s"- ${loaded.album.title}: $message")
@@ -111,7 +111,7 @@ object Sync:
       val found: Set[String] =
         try library.libraryIds(batch)
         catch case error: Exception =>
-          val message: String = messageOf(error)
+          val message: String = Album.messageOf(error)
           val lines: Seq[String] = filed.filter(pair => batch.contains(pair._2)).flatMap: (picture, _) =>
             failureLines(picture, byTitle, albums, message)
           fail(if lines.nonEmpty then lines else Seq(s"- -: $message"))
@@ -173,7 +173,7 @@ object Sync:
       val drop: Option[String] = loaded.album match
         case curated: Album.Curated if curated.members.contains(picture.path) => Some(picture.path)
         case _ => None
-      ExcludeChange(loaded.file, loaded.album.title, name, picture.path, drop)
+      ExcludeChange(loaded.file, loaded.album.title, name, drop)
 
   private def removesFor(
     albums: Seq[LoadedAlbum],
@@ -195,7 +195,7 @@ object Sync:
       changes.map(_.mediaId).distinct.grouped(batchSize).foreach: batch =>
         try library.removeFromAlbum(albumId, batch)
         catch case error: Exception =>
-          val message: String = messageOf(error)
+          val message: String = Album.messageOf(error)
           val lines: Seq[String] = changes.filter(change => batch.contains(change.mediaId)).map: change =>
             s"${change.path} ${change.title}: $message"
           fail(if lines.nonEmpty then lines else Seq(s"- $albumId: $message"))
@@ -228,89 +228,33 @@ object Sync:
     album.exclude.contains(pictureName(picturePath)) && covers(album, picturePath)
 
   private def covers(album: Album, picturePath: String): Boolean = album match
-    case event: Album.Event => picturePath.startsWith(s"${dayOf(event)}/")
+    case event: Album.Event =>
+      folderDay(picturePath).exists(day => Claims.folderDayInInterval(event, day))
     case day: Album.Day => picturePath.startsWith(s"${day.title}/")
     case month: Album.Month => picturePath.startsWith(s"${month.title}/")
-    case _: Album.Curated => true
+    case curated: Album.Curated => !curated.members.contains(picturePath)
 
-  private def dayOf(event: Album.Event): String =
-    val date: LocalDate = event.pathDay
-    f"${date.getYear}%04d/${date.getMonthValue}%02d/${date.getDayOfMonth}%02d"
+  private def folderDay(picturePath: String): Option[LocalDate] =
+    picturePath.split('/').toSeq.filter(_.nonEmpty) match
+      case Seq(year, month, day, _*) if numbered(year, 4) && numbered(month, 2) && numbered(day, 2) =>
+        Some(LocalDate.of(year.toInt, month.toInt, day.toInt))
+      case _ => None
 
-  private def needsRecursive(prefix: Option[String]): Boolean =
-    val segments: Seq[String] = prefix.filter(_.nonEmpty).toSeq.flatMap(_.split('/').filter(_.nonEmpty))
-    segments.isEmpty || (segments.sizeIs == 1 && isNumber(segments.head, 4))
+  private def numbered(name: String, length: Int): Boolean =
+    name.length == length && name.forall(_.isDigit)
 
   private def select(pictures: Seq[Claims.Resolved], prefix: Option[String]): Seq[Claims.Resolved] =
-    prefix.filter(_.nonEmpty) match
-      case None => pictures
-      case Some(path) =>
-        pictures.filter(picture => picture.path == path || picture.path.startsWith(s"$path/"))
+    pictures.filter(picture => Album.matchesPrefix(picture.path, prefix))
 
-  private final case class LoadedAlbum(file: File, album: Album)
+  private type LoadedAlbum = Album.Loaded
   private final case class ExcludeChange(
     file: File,
     title: String,
     name: String,
-    path: String,
     dropMember: Option[String]
   )
   private final case class RemoveChange(albumId: String, title: String, name: String, path: String, mediaId: String)
   private final case class Plan(excludes: Seq[ExcludeChange], removes: Seq[RemoveChange])
-
-  private def loadAlbums(originals: File): Seq[LoadedAlbum] =
-    val curated: Seq[LoadedAlbum] = tomlFiles(originals).map: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      loadAlbum(originals, name)
-    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(curated): (loaded, yearDir) =>
-      loaded ++ yearAlbums(originals, yearDir)
-
-  private def yearAlbums(originals: File, yearDir: File): Seq[LoadedAlbum] =
-    val year: String = yearDir.getName
-    val months: Seq[LoadedAlbum] = tomlFiles(yearDir).flatMap: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      Option.when(isNumber(name, 2))(loadAlbum(originals, s"$year/$name"))
-    childDirectories(yearDir).filter(dir => isNumber(dir.getName, 2)).foldLeft(months): (loaded, monthDir) =>
-      loaded ++ monthAlbums(originals, year, monthDir)
-
-  private def monthAlbums(originals: File, year: String, monthDir: File): Seq[LoadedAlbum] =
-    val month: String = monthDir.getName
-    val days: Seq[LoadedAlbum] = tomlFiles(monthDir).flatMap: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      Option.when(isNumber(name, 2))(loadAlbum(originals, s"$year/$month/$name"))
-    childDirectories(monthDir).filter(dir => isNumber(dir.getName, 2)).foldLeft(days): (loaded, dayDir) =>
-      loaded ++ dayAlbums(originals, year, month, dayDir)
-
-  private def dayAlbums(originals: File, year: String, month: String, dayDir: File): Seq[LoadedAlbum] =
-    val day: String = dayDir.getName
-    tomlFiles(dayDir).flatMap: file =>
-      val (name, _) = Files.nameAndExtension(file)
-      Option.when(!name.headOption.exists(_.isDigit))(loadAlbum(originals, s"$year/$month/$day/$name"))
-
-  private def loadAlbum(originals: File, title: String): LoadedAlbum =
-    val file: File = File(originals, s"$title.toml")
-    val segments: Seq[String] = title.split('/').toSeq.filter(_.nonEmpty)
-    val album: Album = segments match
-      case Seq(year, month, day, _) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
-        Album.readEvent(file, title, LocalDate.of(year.toInt, month.toInt, day.toInt))
-      case Seq(year, month, day) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
-        Album.readDay(file, title)
-      case Seq(year, month) if isNumber(year, 4) && isNumber(month, 2) =>
-        Album.readMonth(file, title)
-      case Seq(_) =>
-        Album.readCurated(file, title)
-      case _ =>
-        throw IllegalArgumentException(s"not an album title: $title")
-    LoadedAlbum(file, album)
-
-  private def childDirectories(directory: File): Seq[File] =
-    Files.list(directory)._1.sortBy(_.getName)
-
-  private def tomlFiles(directory: File): Seq[File] =
-    Files.list(directory)._2.filter(_.getName.endsWith(".toml")).sortBy(_.getName)
-
-  private def isNumber(name: String, length: Int): Boolean =
-    name.length == length && name.forall(_.isDigit)
 
   private def mediaId(originals: File, picturePath: String): Option[String] =
     val (parent, name) = Files.splitOnLast(picturePath, '/')
@@ -320,9 +264,6 @@ object Sync:
     else Metadata.read(file).`google-media-item-id`.filter(_.nonEmpty)
 
   private def pictureName(path: String): String = Files.splitOnLast(path, '/')._2.getOrElse(path)
-
-  private def messageOf(error: Exception): String =
-    Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
 
   private final class ClientLibrary(client: PhotosLibraryClient) extends Library:
     override def close(): Unit = client.close()
