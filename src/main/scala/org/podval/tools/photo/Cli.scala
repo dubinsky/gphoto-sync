@@ -112,6 +112,16 @@ object Cli extends ZIOCliDefault:
       Publish(path, recursive = recursive, dryRun = dryRun)
     }
 
+  private val sync: Command[Sync] = Command(
+    name = "sync",
+    args = Args.text("path").atMost(1).map(_.headOption.map(Root.get.parse)),
+    options = Options.boolean("recursive") ++ Options.boolean("dry-run")
+  )
+    .withHelp(HelpDoc.p("sync album removals into local exclude lists"))
+    .map { case ((recursive, dryRun), path) =>
+      Sync(path, recursive = recursive, dryRun = dryRun)
+    }
+
   override val cliApp: CliApp[Any, Any, Unit] = CliApp.make[Any, Any, Operation, Unit](
     name = "Photo Archive Tool",
     version = "0.0.1",
@@ -122,6 +132,7 @@ object Cli extends ZIOCliDefault:
       setMetadata,
       albums,
       publish,
+      sync,
       login,
       status,
       logout

@@ -129,6 +129,24 @@ object Album:
     table.put("published-title", publishedTitle)
     Files.write(JToml.jToml.writeToString(table), file)
 
+  // Append exclude names and drop curated member paths on the table the reader accepted.
+  def storeRemovals(file: File, excludeNames: Seq[String], dropMembers: Seq[String]): Unit =
+    val text: String = Files.read(file)
+    val table: TomlTable =
+      if text.isBlank then TomlTable.create()
+      else JToml.jToml.readFromString(text)
+    val exclude: Seq[String] = tomlStrings(table, "exclude")
+    val withNames: Seq[String] = appendUnique(exclude, excludeNames)
+    val members: Seq[String] = tomlStrings(table, "members")
+    val dropping: Set[String] = dropMembers.toSet
+    val nextMembers: Seq[String] = if dropping.isEmpty then members else members.filterNot(dropping.contains)
+    val excludeChanged: Boolean = withNames != exclude
+    val membersChanged: Boolean = nextMembers != members
+    if excludeChanged || membersChanged then
+      if excludeChanged then table.put("exclude", tomlArray(withNames))
+      if membersChanged then table.put("members", tomlArray(nextMembers))
+      Files.write(JToml.jToml.writeToString(table), file)
+
   private final case class Common(
     exclude: Set[String],
     external: Boolean,
@@ -216,3 +234,21 @@ object Album:
     members.foldLeft(Seq.empty[String]): (acc, member) =>
       val path: String = if member == from then to else member
       if path == to && acc.contains(to) then acc else acc :+ path
+
+  private def appendUnique(existing: Seq[String], names: Seq[String]): Seq[String] =
+    names.foldLeft(existing): (acc, name) =>
+      if acc.contains(name) then acc else acc :+ name
+
+  private def tomlStrings(table: TomlTable, key: String): Seq[String] =
+    Option(table.get(key)).fold(Seq.empty): value =>
+      if !value.isArray then Seq.empty
+      else value.asArray.asScala.toSeq.flatMap(tomlText)
+
+  private def tomlText(value: TomlValue): Option[String] =
+    if value.isPrimitive && value.asPrimitive.isString then Some(value.asPrimitive.asString)
+    else None
+
+  private def tomlArray(values: Seq[String]): TomlArray =
+    val array: TomlArray = TomlArray.create()
+    values.foreach(value => array.add(TomlPrimitive.of(value)))
+    array
