@@ -15,6 +15,18 @@ object Cli extends ZIOCliDefault:
     .withHelp(HelpDoc.p("list directories"))
     .map((long, path) => ListDirectories(path, isLong = long))
 
+  private val login: Command[Login.type] = Command("login")
+    .withHelp(HelpDoc.p("log in to Google Photos"))
+    .as(Login)
+
+  private val status: Command[Status.type] = Command("status")
+    .withHelp(HelpDoc.p("show Google Photos login status"))
+    .as(Status)
+
+  private val logout: Command[Logout.type] = Command("logout")
+    .withHelp(HelpDoc.p("log out of Google Photos"))
+    .as(Logout)
+
   private val setMetadata: Command[SetMetadata] = Command(
     name = "set-metadata",
     args = Args.text("property") ++ Args.text("picture").map(Root.get.parsePicture)
@@ -90,7 +102,10 @@ object Cli extends ZIOCliDefault:
     command = Command("photo").subcommands(
       lsd,
       ls,
-      setMetadata
+      setMetadata,
+      login,
+      status,
+      logout
     )
   )(
     (operation: Operation) => ZIO.succeed(operation.execute())
