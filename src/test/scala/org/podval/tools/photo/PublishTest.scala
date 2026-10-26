@@ -79,7 +79,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val eventFile: File = write(originals, "2009/03/10/Party.toml", "external = true\n")
       val eventBytes: Seq[Byte] = bytes(eventFile)
-      write(originals, "Best.toml", "members = [\"2009/03/10/2412\"]\n")
+      val bestFile: File = write(originals, "Best.toml", "members = [\"2009/03/10/2412\"]\n")
+      val bestBytes: Seq[Byte] = bytes(bestFile)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -87,6 +88,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       fake.batchCreates shouldBe empty
       fake.adds shouldBe empty
       bytes(eventFile) shouldBe eventBytes
+      bytes(bestFile) shouldBe bestBytes
       File(originals, "2009/03/10/2412.toml").isFile shouldBe false
       out should include ("skipped-external=1")
       out should include ("uploaded=0")
@@ -167,7 +169,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "already-in-google = true\n")
       val sidecarBytes: Seq[Byte] = bytes(sidecar)
-      write(originals, "2009/03/10/Party.toml", "")
+      val album: File = write(originals, "2009/03/10/Party.toml", "")
+      val albumBytes: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -175,6 +178,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       fake.batchCreates shouldBe empty
       fake.adds shouldBe empty
       bytes(sidecar) shouldBe sidecarBytes
+      bytes(album) shouldBe albumBytes
       out should include ("skipped-exists=1")
       out should include ("filed=0")
 
@@ -226,7 +230,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val text: String = Files.read(sidecar)
       text should not include ("google-media-item-id")
       text should not include ("already-in-google")
-      out should include ("2009/03/10/2412")
+      out should include ("batchCreate returned no media item id")
+      out should not include ("batchCreate returned no media item id:")
       out should include ("failed=1")
       fake.uploads should have size 1
       fake.batchCreates should have size 1
@@ -255,6 +260,88 @@ class PublishTest extends AnyFlatSpec, Matchers:
       expectOk(thrown, out)
       fake.uploads.map(_.getName).toSeq shouldBe Seq("1000.jpg")
       out should include ("uploaded=1")
+
+  it should "select claim paths when the prefix has a leading slash" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "")
+      write(originals, "2009/03/11/Other.toml", "")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("/2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads.map(_.getName).toSeq shouldBe Seq("2412.jpg")
+      out should include ("uploaded=1")
+
+  it should "fail a misnamed upload file and not publish the album" in :
+    withOriginals: originals =>
+      val img: File = writeBytes(originals, "2009/03/10/IMG_2412.jpg", Array[Byte](1))
+      val upper: File = writeBytes(originals, "2009/03/10/2413.JPG", Array[Byte](2))
+      val album: File = write(originals, "2009/03/10/Party.toml", "")
+      val before: Seq[Byte] = bytes(album)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      img.getName shouldBe "IMG_2412.jpg"
+      upper.getName shouldBe "2413.JPG"
+      File(originals, "2009/03/10/2412.jpg").isFile shouldBe false
+      File(originals, "2009/03/10/2413.jpg").isFile shouldBe false
+      bytes(album) shouldBe before
+      fake.uploads shouldBe empty
+      fake.createdAlbums shouldBe empty
+      out should include ("2009/03/10/2412 2009/03/10/Party: IMG_2412.jpg is not the literal file")
+      out should include ("2009/03/10/2413 2009/03/10/Party: 2413.JPG is not the literal file")
+      out should include ("failed=2")
+
+  it should "leave a raw gif thm or tif picture unpublished" in :
+    withOriginals: originals =>
+      val gif: File = writeBytes(originals, "2009/03/10/IMG_1001.gif", Array[Byte](1))
+      writeBytes(originals, "2009/03/10/1002.cr2", Array[Byte](2))
+      writeBytes(originals, "2009/03/10/1003.thm", Array[Byte](3))
+      writeBytes(originals, "2009/03/10/1004.tif", Array[Byte](4))
+      val album: File = write(originals, "2009/03/10/Party.toml", "")
+      val before: Seq[Byte] = bytes(album)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      gif.getName shouldBe "IMG_1001.gif"
+      bytes(album) shouldBe before
+      fake.uploads shouldBe empty
+      fake.createdAlbums shouldBe empty
+      out should include ("uploaded=0 filed=0 skipped-excluded=0 skipped-external=0 skipped-exists=0 failed=0")
+
+  it should "write each batch of media ids before uploading the next files" in :
+    withOriginals: originals =>
+      val names: Seq[String] = (0 until 51).map(n => f"$n%04d")
+      names.foreach(name => writeBytes(originals, s"2009/03/10/$name.jpg", Array[Byte](1)))
+      write(originals, "2009/03/10/Party.toml", "")
+      val fake: Fake = Fake(failCreateAfter = Some(1))
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      val first: Seq[String] = Seq.fill(50)("upload") :+ "batchCreate"
+      fake.events.toSeq shouldBe first ++ Seq("upload", "batchCreate")
+      fake.batchCreates.map(_.length).toSeq shouldBe Seq(50, 1)
+      names.take(50).foreach: name =>
+        metadata(originals, s"2009/03/10/$name").`google-media-item-id`.nonEmpty shouldBe true
+      File(originals, "2009/03/10/0050.toml").isFile shouldBe false
+      out should include ("uploaded=50")
+      out should include ("failed=1")
+      out should include ("2009/03/10/0050")
+
+  it should "include the batchCreate status when no media item id is returned" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val sidecar: File = write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
+      write(originals, "2009/03/10/Party.toml", "")
+      val fake: Fake = Fake(missingId = true, statusMessage = Some("expired upload token"))
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      val text: String = Files.read(sidecar)
+      text should not include ("google-media-item-id")
+      text should not include ("already-in-google")
+      out should include ("batchCreate returned no media item id: expired upload token")
+      out should include ("failed=1")
 
   private def run(
     originals: File,
@@ -330,8 +417,13 @@ class PublishTest extends AnyFlatSpec, Matchers:
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))
     file.delete()
 
-  private final class Fake(missingId: Boolean = false) extends Publish.GoogleTransport:
+  private final class Fake(
+    missingId: Boolean = false,
+    statusMessage: Option[String] = None,
+    failCreateAfter: Option[Int] = None
+  ) extends Publish.GoogleTransport:
     val uploads: scala.collection.mutable.ArrayBuffer[File] = scala.collection.mutable.ArrayBuffer.empty
+    val events: scala.collection.mutable.ArrayBuffer[String] = scala.collection.mutable.ArrayBuffer.empty
     val batchCreates: scala.collection.mutable.ArrayBuffer[Seq[Publish.CreateItem]] =
       scala.collection.mutable.ArrayBuffer.empty
     val adds: scala.collection.mutable.ArrayBuffer[(String, Seq[String])] = scala.collection.mutable.ArrayBuffer.empty
@@ -354,18 +446,21 @@ class PublishTest extends AnyFlatSpec, Matchers:
         case (id, _) if id == albumId => (id, title)
         case pair => pair
 
-    override def mediaItemsCount(albumId: String): Long = 0L
-
     override def upload(file: File, mimeType: String): String =
       onUpload(file)
+      events += "upload"
       uploads += file
       s"token-${file.getName}"
 
     override def batchCreate(items: Seq[Publish.CreateItem]): Seq[Publish.Created] =
+      events += "batchCreate"
       batchCreates += items
+      if failCreateAfter.exists(limit => batchCreates.sizeIs > limit) then
+        throw IllegalStateException("later batch failed")
       items.map: item =>
         val id: Option[String] = if missingId then None else Some(s"media-${item.uploadToken}")
-        Publish.Created(item.uploadToken, id)
+        val status: Option[String] = if id.isDefined then None else statusMessage
+        Publish.Created(item.uploadToken, id, status)
 
     override def batchAdd(albumId: String, mediaItemIds: Seq[String]): Unit =
       adds += ((albumId, mediaItemIds))

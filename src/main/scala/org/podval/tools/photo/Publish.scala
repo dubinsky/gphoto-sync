@@ -13,7 +13,7 @@ import scala.jdk.OptionConverters.*
 final case class Publish(path: Option[Path], recursive: Boolean, dryRun: Boolean) extends Operation:
   override def execute(): Unit =
     val root: Root = path.fold(Root.get)(_.root)
-    val prefix: Option[String] = path.map(_.toString).filter(_.nonEmpty)
+    val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
     Publish.run(
       originals = root.configuration.byYearDirectory,
       zone = root.configuration.zoneId,
@@ -27,9 +27,9 @@ final case class Publish(path: Option[Path], recursive: Boolean, dryRun: Boolean
 
 object Publish:
   private val batchSize: Int = 50
-  private val albumCap: Long = 20000
 
-  private val uploadable: Set[String] = Set(
+  // jpg first so a still and a video with the same stem upload the still.
+  private val uploadable: Seq[String] = Seq(
     Extension.JPG.name,
     Extension.MOV.name,
     Extension.MP4.name,
@@ -38,13 +38,16 @@ object Publish:
   )
 
   private[photo] final case class CreateItem(uploadToken: String, fileName: String)
-  private[photo] final case class Created(uploadToken: String, mediaItemId: Option[String])
+  private[photo] final case class Created(
+    uploadToken: String,
+    mediaItemId: Option[String],
+    status: Option[String] = None
+  )
 
   private[photo] trait GoogleTransport extends AutoCloseable:
     def listAppAlbums(): Seq[(String, String)]
     def createAlbum(title: String): String
     def updateAlbumTitle(albumId: String, title: String): Unit
-    def mediaItemsCount(albumId: String): Long
     def upload(file: File, mimeType: String): String
     def batchCreate(items: Seq[CreateItem]): Seq[Created]
     def batchAdd(albumId: String, mediaItemIds: Seq[String]): Unit
@@ -78,7 +81,8 @@ object Publish:
     exiftool: Seq[String] => Either[String, Unit],
     tempDirectory: File
   ): Unit =
-    if needsRecursive(prefix) && !recursive then
+    val selectedPrefix: Option[String] = prefix.map(_.stripPrefix("/")).filter(_.nonEmpty)
+    if needsRecursive(selectedPrefix) && !recursive then
       throw IllegalArgumentException("year or root requires --recursive")
 
     val pictures: Seq[Claims.Resolved] = Claims(originals, zone) match
@@ -87,13 +91,19 @@ object Publish:
         throw IllegalArgumentException(error)
       case Right(value) => value
 
-    val selected: Seq[Claims.Resolved] = select(pictures, prefix)
+    val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix)
     if !selected.exists(picture => picture.dated.nonEmpty || picture.curated.nonEmpty) then
       println("no albums")
     else
       val titles: Seq[String] = distinctTitles(selected)
       val albums: Map[String, LoadedAlbum] = titles.map(title => title -> loadAlbum(originals, title)).toMap
-      val ensuredTitles: Seq[String] = titles.filterNot(title => albums(title).album.external)
+      val work: Seq[Work] = selected.map(picture => plan(originals, picture, albums, tempDirectory))
+      // Only albums that will receive an upload or an existing media id.
+      val ensuredTitles: Seq[String] = work.flatMap {
+        case item: UploadNew => item.targets
+        case item: FileExisting => item.targets
+        case _ => Seq.empty
+      }.distinct
       if dryRun then
         selected.foreach(picture => println(picture.line))
         ensuredTitles.foreach(println)
@@ -102,22 +112,21 @@ object Publish:
           originals,
           selected,
           albums,
+          work,
           ensuredTitles,
           google,
-          exiftool,
-          tempDirectory
+          exiftool
         )
 
   private def publish(
     originals: File,
     selected: Seq[Claims.Resolved],
     albums: Map[String, LoadedAlbum],
+    work: Seq[Work],
     ensuredTitles: Seq[String],
     google: () => GoogleTransport,
-    exiftool: Seq[String] => Either[String, Unit],
-    tempDirectory: File
+    exiftool: Seq[String] => Either[String, Unit]
   ): Unit =
-    val work: Seq[Work] = selected.map(picture => plan(originals, picture, albums, tempDirectory))
     var failureLines: List[String] = Nil
     def fail(picture: String, album: String, message: String): Unit =
       failureLines = s"$picture $album: $message" :: failureLines
@@ -127,10 +136,6 @@ object Publish:
     var skippedExists: Int = 0
     var uploaded: Int = 0
     var filed: Int = 0
-
-    val filings: Map[String, Int] = work.foldLeft(Map.empty[String, Int]): (counts, item) =>
-      filingTitles(item).foldLeft(counts): (acc, title) =>
-        acc.updated(title, acc.getOrElse(title, 0) + 1)
 
     var opened: Option[GoogleTransport] = None
     def transport: GoogleTransport = opened match
@@ -147,7 +152,7 @@ object Publish:
       // Open before album writes so a missing token fails with its path and does not look like an ensure error.
       if ensuredTitles.nonEmpty then
         val _: GoogleTransport = transport
-      val ensured: Map[String, String] = ensure(originals, ensuredTitles, albums, filings, selected, transport, fail)
+      val ensured: Map[String, String] = ensure(originals, ensuredTitles, albums, selected, transport, fail)
       val uploadedItems: Seq[(UploadNew, String)] = uploadNew(work, ensured, exiftool, transport, fail)
       uploaded = uploadedItems.length
       filed = fileIntoAlbums(work, uploadedItems, ensured, transport, fail)
@@ -178,11 +183,12 @@ object Publish:
     transport: GoogleTransport,
     fail: (String, String, String) => Unit
   ): Seq[(UploadNew, String)] =
-    val prepared: Seq[(UploadNew, String)] = work.collect { case item: UploadNew => item }.flatMap: item =>
+    val ready: Seq[UploadNew] = work.collect { case item: UploadNew => item }.flatMap: item =>
       val live: Seq[String] = item.targets.filter(ensured.contains)
-      if live.isEmpty then None
-      else
-        val picture: UploadNew = item.copy(targets = live)
+      if live.isEmpty then None else Some(item.copy(targets = live))
+
+    ready.grouped(batchSize).foldLeft(Vector.empty[(UploadNew, String)]): (acc, batch) =>
+      val prepared: Seq[(UploadNew, String)] = batch.flatMap: picture =>
         val preparedFile: Either[String, File] = picture.argv match
           case None => Right(picture.bytes)
           case Some(argv) => exiftool(argv).map(_ => picture.bytes)
@@ -199,47 +205,54 @@ object Publish:
                 None
             cleanup(picture)
             uploaded
-
-    prepared.grouped(batchSize).foldLeft(Vector.empty[(UploadNew, String)]): (acc, batch) =>
-      acc ++ createBatch(batch, transport, fail)
+      acc ++ createBatch(prepared, transport, fail)
 
   private def createBatch(
     batch: Seq[(UploadNew, String)],
     transport: GoogleTransport,
     fail: (String, String, String) => Unit
   ): Seq[(UploadNew, String)] =
-    val items: Seq[CreateItem] = batch.map: (picture, token) =>
-      CreateItem(token, fileName(picture.path, picture.extension))
-    val results: Either[String, Seq[Created]] =
-      try Right(transport.batchCreate(items))
-      catch case error: Exception => Left(messageOf(error))
-    results match
-      case Left(message) =>
-        batch.foreach((picture, _) => fail(picture.path, picture.targets.mkString(","), message))
-        Seq.empty
-      case Right(created) =>
-        val paired: Seq[(UploadNew, String)] = batch.zip(created).flatMap: (pictureToken, result) =>
-          val (picture, _) = pictureToken
-          acceptMediaId(picture, result.mediaItemId, fail)
-        batch.drop(created.length).foreach((picture, _) => rejectMissingId(picture, fail))
-        paired
+    if batch.isEmpty then Seq.empty
+    else
+      val items: Seq[CreateItem] = batch.map: (picture, token) =>
+        val name: String = Files.splitOnLast(picture.path, '/')._2.getOrElse(picture.path)
+        CreateItem(token, s"$name.${picture.extension}")
+      val results: Either[String, Seq[Created]] =
+        try Right(transport.batchCreate(items))
+        catch case error: Exception => Left(messageOf(error))
+      results match
+        case Left(message) =>
+          batch.foreach((picture, _) => fail(picture.path, picture.targets.mkString(","), message))
+          Seq.empty
+        case Right(created) =>
+          val paired: Seq[(UploadNew, String)] = batch.zip(created).flatMap: (pictureToken, result) =>
+            val (picture, _) = pictureToken
+            acceptMediaId(picture, result, fail)
+          batch.drop(created.length).foreach((picture, _) => rejectMissingId(picture, None, fail))
+          paired
 
   private def acceptMediaId(
     picture: UploadNew,
-    mediaItemId: Option[String],
+    result: Created,
     fail: (String, String, String) => Unit
   ): Option[(UploadNew, String)] =
-    mediaItemId.filter(_.nonEmpty) match
+    result.mediaItemId.filter(_.nonEmpty) match
       case Some(id) =>
         Files.write(Metadata.encode(picture.metadata.copy(`google-media-item-id` = Some(id))), picture.metadataFile)
         Some(picture -> id)
       case None =>
-        rejectMissingId(picture, fail)
+        rejectMissingId(picture, result.status, fail)
         None
 
-  private def rejectMissingId(picture: UploadNew, fail: (String, String, String) => Unit): Unit =
+  private def rejectMissingId(
+    picture: UploadNew,
+    status: Option[String],
+    fail: (String, String, String) => Unit
+  ): Unit =
     // The duplicate result is unrecorded, so this is a failure.
-    fail(picture.path, picture.targets.mkString(","), "batchCreate returned no media item id")
+    val message: String = status.filter(_.nonEmpty).fold("batchCreate returned no media item id"): text =>
+      s"batchCreate returned no media item id: $text"
+    fail(picture.path, picture.targets.mkString(","), message)
 
   private def fileIntoAlbums(
     work: Seq[Work],
@@ -268,7 +281,6 @@ object Publish:
     originals: File,
     titles: Seq[String],
     albums: Map[String, LoadedAlbum],
-    filings: Map[String, Int],
     pictures: Seq[Claims.Resolved],
     transport: GoogleTransport,
     fail: (String, String, String) => Unit
@@ -289,7 +301,7 @@ object Publish:
         case Right(remote) =>
           val (ensured, _, _) = titles.foldLeft((Map.empty[String, String], remote, knownIds)): (state, title) =>
             val (done, remoteNow, idsNow) = state
-            ensureOne(albums(title), filings.getOrElse(title, 0), remoteNow, idsNow, transport) match
+            ensureOne(albums(title), remoteNow, idsNow, transport) match
               case Left(message) =>
                 failClaimers(title, message, pictures, fail)
                 (done, remoteNow, idsNow)
@@ -313,7 +325,6 @@ object Publish:
 
   private def ensureOne(
     loaded: LoadedAlbum,
-    filings: Int,
     remote: Seq[(String, String)],
     ids: Map[String, String],
     transport: GoogleTransport
@@ -343,19 +354,12 @@ object Publish:
 
     resolved.flatMap: (id, remoteNow, idsNow, wrote) =>
       val titleNeedsUpdate: Boolean = album.publishedTitle.isEmpty || album.publishedTitle != album.title
-      val updated: Either[String, Unit] =
-        if wrote || !titleNeedsUpdate then Right(())
-        else
-          try
-            transport.updateAlbumTitle(id, album.title)
-            Album.storeGoogle(loaded.file, id, album.title)
-            Right(())
-          catch case error: Exception => Left(messageOf(error))
-      updated.flatMap: _ =>
+      if wrote || !titleNeedsUpdate then Right(Ensured(id, remoteNow, idsNow))
+      else
         try
-          val count: Long = transport.mediaItemsCount(id)
-          if count + filings > albumCap then Left(s"album would exceed $albumCap media items")
-          else Right(Ensured(id, remoteNow, idsNow))
+          transport.updateAlbumTitle(id, album.title)
+          Album.storeGoogle(loaded.file, id, album.title)
+          Right(Ensured(id, remoteNow, idsNow))
         catch case error: Exception => Left(messageOf(error))
 
   private def plan(
@@ -377,19 +381,14 @@ object Publish:
         else metadata.`google-media-item-id`.filter(_.nonEmpty) match
           case Some(id) => FileExisting(picture.path, id, targets)
           case None =>
-            normalFile(directory, name) match
-              case Some((source, ext)) if uploadable.contains(ext) =>
+            literalUpload(directory, name) match
+              case Left(message) => Broken(picture.path, targets.mkString(","), message)
+              case Right(None) => StayLocal(picture.path)
+              case Right(Some((source, ext))) =>
                 ExifOverride(source, ext, metadata, tempDirectory) match
                   case Left(message) => Broken(picture.path, targets.mkString(","), message)
                   case Right((bytes, argv)) =>
                     UploadNew(picture.path, targets, metadata, metadataFile, source, bytes, ext, argv)
-              case _ =>
-                StayLocal(picture.path)
-
-  private def filingTitles(item: Work): Seq[String] = item match
-    case item: UploadNew => item.targets
-    case item: FileExisting => item.targets
-    case _ => Seq.empty
 
   private def cleanup(picture: UploadNew): Unit =
     if picture.bytes.getPath != picture.source.getPath && picture.bytes.isFile then picture.bytes.delete()
@@ -401,10 +400,6 @@ object Publish:
     case Extension.AVI.name => "video/x-msvideo"
     case Extension.TGP.name => "video/3gpp"
     case other => throw IllegalArgumentException(s"no mime type for $other")
-
-  private def fileName(path: String, ext: String): String = s"${pictureName(path)}.$ext"
-
-  private def pictureName(path: String): String = Files.splitOnLast(path, '/')._2.getOrElse(path)
 
   private def needsRecursive(prefix: Option[String]): Boolean =
     val segments: Seq[String] = prefix.filter(_.nonEmpty).toSeq.flatMap(_.split('/').filter(_.nonEmpty))
@@ -490,13 +485,10 @@ object Publish:
       Option.when(!name.headOption.exists(_.isDigit))(loadAlbum(originals, s"$year/$month/$day/$name"))
 
   private def childDirectories(directory: File): Seq[File] =
-    children(directory).filter(_.isDirectory).sortBy(_.getName)
+    Files.list(directory)._1.sortBy(_.getName)
 
   private def tomlFiles(directory: File): Seq[File] =
-    children(directory).filter(file => file.isFile && file.getName.endsWith(".toml")).sortBy(_.getName)
-
-  private def children(directory: File): Seq[File] =
-    Option(directory.listFiles).map(_.toSeq).getOrElse(Seq.empty)
+    Files.list(directory)._2.filter(_.getName.endsWith(".toml")).sortBy(_.getName)
 
   private def isNumber(name: String, length: Int): Boolean =
     name.length == length && name.forall(_.isDigit)
@@ -505,9 +497,29 @@ object Publish:
     val (parent, name) = Files.splitOnLast(picturePath, '/')
     (File(originals, parent), name.getOrElse(throw IllegalArgumentException(s"not a picture path: $picturePath")))
 
-  private def normalFile(directory: File, name: String): Option[(File, String)] =
-    val present: Seq[String] = Extension.normal.toSeq.map(_.name).filter(ext => File(directory, s"$name.$ext").isFile)
-    present.find(uploadable.contains).orElse(present.headOption).map(ext => File(directory, s"$name.$ext") -> ext)
+  // A grouped IMG_ or .JPG name is not renamed here. The literal name.ext must already be on disk.
+  private def literalUpload(directory: File, name: String): Either[String, Option[(File, String)]] =
+    val literal: Option[(File, String)] = uploadable
+      .find(ext => File(directory, s"$name.$ext").isFile)
+      .map(ext => File(directory, s"$name.$ext") -> ext)
+    literal match
+      case Some(found) => Right(Some(found))
+      case None =>
+        misnamedUpload(directory, name) match
+          case Some(actual) => Left(s"$actual is not the literal file")
+          case None => Right(None)
+
+  private def misnamedUpload(directory: File, name: String): Option[String] =
+    Files.list(directory)._2.map(_.getName).find(fileName => misnamedUploadable(fileName, name))
+
+  private def misnamedUploadable(fileName: String, pictureName: String): Boolean =
+    val (stem, extOpt) = Files.splitOnLast(fileName, '.')
+    extOpt match
+      case None => false
+      case Some(ext) =>
+        val stemFixed: String = if stem.startsWith("IMG_") then stem.drop("IMG_".length) else stem
+        val extFixed: String = if ext == "JPG" then Extension.JPG.name else ext
+        stemFixed == pictureName && uploadable.contains(extFixed) && fileName != s"$pictureName.$extFixed"
 
   private def messageOf(error: Exception): String =
     Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
@@ -524,8 +536,6 @@ object Publish:
       val album: GoogleAlbum = GoogleAlbum.newBuilder().setId(albumId).build()
       client.updateAlbumTitle(album, title)
 
-    override def mediaItemsCount(albumId: String): Long = client.getAlbum(albumId).getMediaItemsCount
-
     override def upload(file: File, mimeType: String): String =
       val data: RandomAccessFile = new RandomAccessFile(file, "r")
       try
@@ -539,14 +549,18 @@ object Publish:
 
     override def batchCreate(items: Seq[CreateItem]): Seq[Created] =
       val newItems = items.map: item =>
-        NewMediaItemFactory.createNewMediaItem(item.uploadToken, item.fileName, item.fileName)
+        // The only overload that sets fileName requires a non-empty description.
+        NewMediaItemFactory.createNewMediaItem(item.uploadToken, item.fileName, " ")
       .asJava
       val results = client.batchCreateMediaItems(newItems).getNewMediaItemResultsList.asScala.toSeq
       results.map: result =>
         val id: Option[String] =
           if result.hasMediaItem && result.getMediaItem.getId.nonEmpty then Some(result.getMediaItem.getId)
           else None
-        Created(Option(result.getUploadToken).getOrElse(""), id)
+        val status: Option[String] =
+          if id.isDefined then None
+          else Option(result.getStatus).map(_.getMessage).filter(text => text != null && text.nonEmpty)
+        Created(Option(result.getUploadToken).getOrElse(""), id, status)
 
     override def batchAdd(albumId: String, mediaItemIds: Seq[String]): Unit =
       client.batchAddMediaItemsToAlbum(albumId, mediaItemIds.asJava)
