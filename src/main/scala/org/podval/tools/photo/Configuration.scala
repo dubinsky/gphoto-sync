@@ -1,17 +1,17 @@
 package org.podval.tools.photo
 
-import org.podval.tools.toml.TomlCodec
-import zio.schema.codec.DecodeError
-import zio.schema.{DeriveSchema, Schema}
+import io.github.wasabithumb.jtoml.JToml
+import io.github.wasabithumb.jtoml.except.TomlException
+import io.github.wasabithumb.jtoml.value.table.TomlTable
 import java.io.File
-import java.time.ZoneId
+import java.time.{DateTimeException, ZoneId}
 
 final case class Configuration(
   rootPath: String,
   byYearDirectoryName: String,
   uploadDirectoryName: String,
   zoneId: ZoneId
-):
+) derives CanEqual:
   private def rootDirectory: File = File(Configuration.homeDirectory, rootPath)
   def byYearDirectory: File = File(rootDirectory, byYearDirectoryName)
   def uploadDirectory: File = File(rootDirectory, uploadDirectoryName)
@@ -28,18 +28,58 @@ object Configuration:
     zoneId = ZoneId.of("America/New_York")
   )
 
-  given Schema[Configuration] = DeriveSchema.gen
-
   private val configurationFileName: String = "org.podval.tools.photo.toml"
 
   private def configurationFile: File = File(File(homeDirectory, ".config"), configurationFileName)
 
   def read: Configuration =
     if !configurationFile.exists() then write(default)
-
-    TomlCodec.decode[Configuration](Files.read(configurationFile)) match
-      case Left(error: DecodeError) => throw IllegalArgumentException(s"Error parsing configuration file '$configurationFile': ${error.getMessage}")
-      case Right(value) => value
+    try decode(Files.read(configurationFile))
+    catch
+      case exception: IllegalArgumentException => parsingFailure(exception)
+      case exception: TomlException => parsingFailure(exception)
 
   def write(configuration: Configuration): Unit =
-    Files.write(TomlCodec.encode(configuration), configurationFile)
+    Files.write(encode(configuration), configurationFile)
+
+  private[photo] def decode(text: String): Configuration =
+    val table: TomlTable =
+      if text.isBlank then TomlTable.create()
+      else JToml.jToml.readFromString(text)
+    val rootPath: String = requiredString(table, "rootPath")
+    val byYearDirectoryName: String = requiredString(table, "byYearDirectoryName")
+    val uploadDirectoryName: String = requiredString(table, "uploadDirectoryName")
+    val zone: String = requiredString(table, "zoneId")
+    val zoneId: ZoneId =
+      try ZoneId.of(zone)
+      catch case exception: DateTimeException =>
+        throw IllegalArgumentException(s"zoneId '$zone' is not a zone", exception)
+    Configuration(
+      rootPath = rootPath,
+      byYearDirectoryName = byYearDirectoryName,
+      uploadDirectoryName = uploadDirectoryName,
+      zoneId = zoneId
+    )
+
+  private[photo] def encode(configuration: Configuration): String =
+    val table: TomlTable = TomlTable.create()
+    table.put("rootPath", configuration.rootPath)
+    table.put("byYearDirectoryName", configuration.byYearDirectoryName)
+    table.put("uploadDirectoryName", configuration.uploadDirectoryName)
+    table.put("zoneId", configuration.zoneId.toString)
+    JToml.jToml.writeToString(table)
+
+  private def requiredString(table: TomlTable, key: String): String =
+    Option(table.get(key)) match
+      case None =>
+        throw IllegalArgumentException(s"$key is required")
+      case Some(value) if value.isPrimitive && value.asPrimitive.isString =>
+        value.asPrimitive.asString
+      case _ =>
+        throw IllegalArgumentException(s"$key must be a string")
+
+  private def parsingFailure(exception: Exception): Nothing =
+    throw IllegalArgumentException(
+      s"Error parsing configuration file '$configurationFile': ${exception.getMessage}",
+      exception
+    )
