@@ -3,7 +3,7 @@ package org.podval.tools.photo
 import com.google.api.client.json.GenericJson
 import com.google.api.client.json.JsonObjectParser
 import com.google.api.client.json.gson.GsonFactory
-import com.google.auth.oauth2.{ClientId, DefaultPKCEProvider, TokenStore, UserAuthorizer}
+import com.google.auth.oauth2.{ClientId, DefaultPKCEProvider, TokenStore, UserAuthorizer, UserCredentials}
 import java.awt.Desktop
 import java.io.{BufferedReader, File, FileInputStream, IOException, InputStreamReader}
 import java.net.{Inet6Address, InetAddress, InetSocketAddress, ServerSocket, Socket, SocketTimeoutException, URI, URLDecoder}
@@ -102,6 +102,23 @@ object GoogleAuth:
       println(s"logged out (${tokenFile.getAbsolutePath})")
     else
       println(s"not logged in (${tokenFile.getAbsolutePath})")
+
+  // Stored user credential only. Does not open a browser or start a login.
+  private[photo] def loadUserCredentials(
+    clientFile: File = clientJson,
+    tokenFile: File = tokenJson
+  ): UserCredentials =
+    if !tokenFile.isFile then throw IllegalArgumentException(s"not logged in (${tokenFile.getAbsolutePath})")
+    val (clientId, redirect) = readClient(clientFile)
+    val authorizer = UserAuthorizer.newBuilder()
+      .setClientId(clientId)
+      .setScopes(scopes)
+      .setCallbackUri(redirect)
+      .setTokenStore(TokenFileStore(tokenFile))
+      .build()
+    Option(authorizer.getCredentials(tokenUser)).getOrElse(
+      throw IllegalArgumentException(s"not logged in (${tokenFile.getAbsolutePath})")
+    )
 
   private[photo] def readClient(file: File): (ClientId, URI) =
     requireClientJson(file)

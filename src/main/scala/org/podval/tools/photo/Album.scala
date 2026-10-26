@@ -119,6 +119,16 @@ object Album:
       publishedTitle = common.publishedTitle
     )
 
+  // Same JToml table the reader accepted. Do not hand-write TOML.
+  def storeGoogle(file: File, googleAlbumId: String, publishedTitle: String): Unit =
+    val text: String = Files.read(file)
+    val table: TomlTable =
+      if text.isBlank then TomlTable.create()
+      else JToml.jToml.readFromString(text)
+    table.put("google-album-id", googleAlbumId)
+    table.put("published-title", publishedTitle)
+    Files.write(JToml.jToml.writeToString(table), file)
+
   private final case class Common(
     exclude: Set[String],
     external: Boolean,

@@ -102,6 +102,16 @@ object Cli extends ZIOCliDefault:
     .withHelp(HelpDoc.p("list album claims"))
     .map(ListAlbums(_))
 
+  private val publish: Command[Publish] = Command(
+    name = "publish",
+    args = Args.text("path").atMost(1).map(_.headOption.map(Root.get.parse)),
+    options = Options.boolean("recursive") ++ Options.boolean("dry-run")
+  )
+    .withHelp(HelpDoc.p("publish albums to Google Photos"))
+    .map { case ((recursive, dryRun), path) =>
+      Publish(path, recursive = recursive, dryRun = dryRun)
+    }
+
   override val cliApp: CliApp[Any, Any, Unit] = CliApp.make[Any, Any, Operation, Unit](
     name = "Photo Archive Tool",
     version = "0.0.1",
@@ -111,6 +121,7 @@ object Cli extends ZIOCliDefault:
       ls,
       setMetadata,
       albums,
+      publish,
       login,
       status,
       logout
