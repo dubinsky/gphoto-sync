@@ -95,6 +95,13 @@ object Cli extends ZIOCliDefault:
       )
     }
 
+  private val albums: Command[ListAlbums] = Command(
+    name = "albums",
+    args = Args.text("path").atMost(1).map(_.headOption.map(Root.get.parse))
+  )
+    .withHelp(HelpDoc.p("list album claims"))
+    .map(ListAlbums(_))
+
   override val cliApp: CliApp[Any, Any, Unit] = CliApp.make[Any, Any, Operation, Unit](
     name = "Photo Archive Tool",
     version = "0.0.1",
@@ -103,6 +110,7 @@ object Cli extends ZIOCliDefault:
       lsd,
       ls,
       setMetadata,
+      albums,
       login,
       status,
       logout
