@@ -47,6 +47,13 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       one(originals, "2009/03/10/2412").dated shouldBe Some("2009/03/10/Late")
       one(originals, "2009/03/10/1000").dated shouldBe None
 
+  it should "read a filename clock after one trailing _1" in :
+    withOriginals: originals =>
+      touch(originals, "2012/06/17/20120617_102453_1.jpg")
+      write(originals, "2012/06/17/Morning.toml", "from = 2012-06-17T09:00\n")
+      write(originals, "2012/06/17/Early.toml", "to = 2012-06-17T01:00\n")
+      one(originals, "2012/06/17/20120617_102453_1").dated shouldBe Some("2012/06/17/Morning")
+
   it should "return Left when two events claim one picture" in :
     withOriginals: originals =>
       touch(originals, "2009/03/10/2412.jpg")

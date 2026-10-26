@@ -111,11 +111,13 @@ object Claims:
       .orElse(timeFromName(name, zone, folderDay))
       .getOrElse(folderDay.atStartOfDay)
 
+  // One trailing _1 is stripped only here, as in Picture.timestampFromName. The picture name is unchanged.
   private def timeFromName(name: String, zone: ZoneId, folderDay: LocalDate): Option[LocalDateTime] =
-    Dates.NameFull.get(name, zone).map(civil)
-      .orElse(Dates.NameCompact.get(name, zone).map(civil))
-      .orElse(Dates.NameMillis.get(name, zone).map(_.atZone(zone).toLocalDateTime))
-      .orElse(Dates.NameShort.get(name, zone, folderDay).map(civil))
+    val clock: String = if name.endsWith("_1") then name.dropRight("_1".length) else name
+    Dates.NameFull.get(clock, zone).map(civil)
+      .orElse(Dates.NameCompact.get(clock, zone).map(civil))
+      .orElse(Dates.NameMillis.get(clock, zone).map(_.atZone(zone).toLocalDateTime))
+      .orElse(Dates.NameShort.get(clock, zone, folderDay).map(civil))
 
   // NameFull, NameCompact, and NameShort store the civil clock as a UTC instant.
   private def civil(instant: Instant): LocalDateTime = LocalDateTime.ofInstant(instant, ZoneOffset.UTC)
