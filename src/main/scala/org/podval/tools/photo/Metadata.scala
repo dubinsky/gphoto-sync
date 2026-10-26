@@ -1,8 +1,10 @@
 package org.podval.tools.photo
 
-import org.podval.tools.toml.TomlCodec
-import zio.schema.{DeriveSchema, Schema}
-import zio.schema.codec.DecodeError
+import io.github.wasabithumb.jtoml.JToml
+import io.github.wasabithumb.jtoml.except.TomlException
+import io.github.wasabithumb.jtoml.value.TomlValue
+import io.github.wasabithumb.jtoml.value.primitive.TomlPrimitive
+import io.github.wasabithumb.jtoml.value.table.TomlTable
 import java.io.File
 import java.time.LocalDate
 
@@ -24,10 +26,62 @@ object Metadata:
 
   val default: Metadata = Metadata()
 
-  given Schema[Metadata] = DeriveSchema.gen
+  def read(file: File): Metadata =
+    try decode(Files.read(file))
+    catch
+      case error: IllegalArgumentException => fail(file, error)
+      case error: TomlException => fail(file, error)
 
-  def read(file: File): Metadata = TomlCodec.decode[Metadata](Files.read(file)) match
-    case Left(error: DecodeError) => throw IllegalArgumentException(s"Error parsing TOML file '$file': $error")
-    case Right(value) => value
+  private[photo] def decode(text: String): Metadata =
+    val table: TomlTable =
+      if text.isBlank then TomlTable.create()
+      else JToml.jToml.readFromString(text)
+    Metadata(
+      source = optionalString(table, "source"),
+      timestamp = optionalString(table, "timestamp"),
+      date = optionalDate(table, "date"),
+      `bad-raw` = optionalBoolean(table, "bad-raw"),
+      orientation = optionalString(table, "orientation"),
+      `google-media-item-id` = optionalString(table, "google-media-item-id"),
+      `already-in-google` = optionalBoolean(table, "already-in-google")
+    )
 
-  def encode(metadata: Metadata): String = TomlCodec.encode(metadata)
+  def encode(metadata: Metadata): String =
+    val table: TomlTable = TomlTable.create()
+    metadata.source.foreach(value => table.put("source", value))
+    metadata.timestamp.foreach(value => table.put("timestamp", value))
+    metadata.date.foreach(value => table.put("date", value))
+    metadata.`bad-raw`.foreach(value => table.put("bad-raw", value))
+    metadata.orientation.foreach(value => table.put("orientation", value))
+    metadata.`google-media-item-id`.foreach(value => table.put("google-media-item-id", value))
+    metadata.`already-in-google`.foreach(value => table.put("already-in-google", value))
+    JToml.jToml.writeToString(table)
+
+  private def optionalString(table: TomlTable, key: String): Option[String] =
+    Option(table.get(key)).map: value =>
+      val primitive: TomlPrimitive = primitiveOf(key, value, "must be a string")
+      if primitive.isString then primitive.asString
+      else reject(key, "must be a string")
+
+  private def optionalBoolean(table: TomlTable, key: String): Option[Boolean] =
+    Option(table.get(key)).map: value =>
+      val primitive: TomlPrimitive = primitiveOf(key, value, "must be a boolean")
+      if primitive.isBoolean then primitive.asBoolean
+      else reject(key, "must be a boolean")
+
+  private def optionalDate(table: TomlTable, key: String): Option[LocalDate] =
+    Option(table.get(key)).map: value =>
+      val primitive: TomlPrimitive = primitiveOf(key, value, "must be a local date")
+      if primitive.isLocalDate then primitive.asLocalDate
+      else reject(key, "must be a local date")
+
+  // as* coerces the wrong primitive (a string "false" becomes true). Check first.
+  private def primitiveOf(key: String, value: TomlValue, expected: String): TomlPrimitive =
+    if value.isPrimitive then value.asPrimitive
+    else reject(key, expected)
+
+  private def reject(key: String, message: String): Nothing =
+    throw IllegalArgumentException(s"key '$key' $message")
+
+  private def fail(file: File, error: Throwable): Nothing =
+    throw IllegalArgumentException(s"Error parsing TOML file '$file': ${error.getMessage}", error)

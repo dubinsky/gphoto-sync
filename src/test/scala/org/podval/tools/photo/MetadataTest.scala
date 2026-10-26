@@ -1,6 +1,5 @@
 package org.podval.tools.photo
 
-import org.podval.tools.toml.TomlCodec
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.time.LocalDate
@@ -22,9 +21,38 @@ class MetadataTest extends AnyFlatSpec, Matchers:
     )
     decode(Metadata.encode(metadata)) shouldBe metadata
 
-  it should "omit the new keys when they are absent" in :
+  it should "omit absent keys" in :
     val encoded: String = Metadata.encode(Metadata())
-    newKeys.foreach(key => encoded should not include key)
+    Property.all.map(_.name).foreach(key => encoded should not include key)
+
+  it should "round-trip a fully populated value" in :
+    val metadata: Metadata = Metadata(
+      source = Some("scan"),
+      timestamp = Some("2011-06-29T09:45:00"),
+      date = Some(LocalDate.parse("2012-04-04")),
+      `bad-raw` = Some(true),
+      orientation = Some("Rotate 90 CW"),
+      `google-media-item-id` = Some("media-item-1"),
+      `already-in-google` = Some(true)
+    )
+    val encoded: String = Metadata.encode(metadata)
+    Property.all.map(_.name).foreach(name => encoded should include (name))
+    decode(encoded) shouldBe metadata
+
+  it should "ignore an unknown key and drop it on write" in :
+    val decoded: Metadata = decode("nope = true\nbad-raw = true")
+    decoded shouldBe Metadata(`bad-raw` = Some(true))
+    val encoded: String = Metadata.encode(decoded)
+    encoded.trim shouldBe "bad-raw = true"
+    encoded should not include "nope"
+
+  it should "encode false" in :
+    val encoded: String = Metadata.encode(Metadata(`already-in-google` = Some(false)))
+    encoded should include ("already-in-google = false")
+
+  it should "reject a string where a boolean is required" in :
+    val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy decode("""bad-raw = "false"""")
+    caught.getMessage should include ("bad-raw")
 
   private def assertLegacy(toml: String, expected: Metadata): Unit =
     val decoded: Metadata = decode(toml)
@@ -34,6 +62,4 @@ class MetadataTest extends AnyFlatSpec, Matchers:
     encoded.trim shouldBe toml
     decode(encoded) shouldBe expected
 
-  private def decode(toml: String): Metadata = TomlCodec.decode[Metadata](toml) match
-    case Right(value) => value
-    case Left(error) => fail(error.toString)
+  private def decode(toml: String): Metadata = Metadata.decode(toml)
