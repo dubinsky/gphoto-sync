@@ -141,36 +141,61 @@ object GoogleAuth:
     (clientId, redirect)
 
   private[photo] def loopbackBindHosts(host: String): Seq[String] =
-    host match
-      case "localhost" => Seq("127.0.0.1", "::1")
-      case "127.0.0.1" | "::1" => Seq(host)
-      case _ => throw IllegalArgumentException(s"redirect host is not loopback: $host")
+    // This JDK's URI.getHost keeps one pair of brackets on an IPv6 literal.
+    val normalized = stripOneBracketPair(host)
+    if normalized.equalsIgnoreCase("localhost") then Seq("127.0.0.1", "::1")
+    else if normalized == "127.0.0.1" then Seq("127.0.0.1")
+    else if isIpv6Loopback(normalized) then Seq("::1")
+    else throw IllegalArgumentException(s"redirect host is not loopback: $host")
+
+  private def stripOneBracketPair(host: String): String =
+    if host.startsWith("[") && host.endsWith("]") && host.length >= 2 then host.substring(1, host.length - 1)
+    else host
+
+  private def isIpv6Loopback(host: String): Boolean =
+    expandIpv6(host.toLowerCase).exists: groups =>
+      groups.length == 8 && groups.dropRight(1).forall(_ == 0) && groups.last == 1
+
+  private def expandIpv6(host: String): Option[Seq[Int]] =
+    if host.isEmpty || host.contains('%') then None
+    else
+      def hextets(side: String): Option[Seq[Int]] =
+        if side.isEmpty then Some(Seq.empty)
+        else side.split(':').toList.foldLeft(Option(Seq.empty[Int])): (acc, part) =>
+          acc.flatMap(groups => parseHextet(part).map(groups :+ _))
+      host.split("::", -1).toList match
+        case List(only) => hextets(only).filter(_.length == 8)
+        case List(left, right) =>
+          for
+            parsedLeft <- hextets(left)
+            parsedRight <- hextets(right)
+            if parsedLeft.length + parsedRight.length < 8
+          yield parsedLeft ++ Seq.fill(8 - parsedLeft.length - parsedRight.length)(0) ++ parsedRight
+        case _ => None
+
+  private def parseHextet(part: String): Option[Int] =
+    if part.isEmpty || part.length > 4 || !part.forall(isHex) then None
+    else Some(Integer.parseInt(part, 16))
+
+  private def isHex(c: Char): Boolean =
+    (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
 
   private def openLoopback(host: String): Seq[ServerSocket] =
-    val bindHosts = loopbackBindHosts(host)
-    val first = new ServerSocket()
-    try
-      first.setReuseAddress(true)
-      first.bind(new InetSocketAddress(bindHosts.head, 0))
-      val port = first.getLocalPort
-      val rest = bindHosts.drop(1).foldLeft(Seq.empty[ServerSocket]): (opened, bindHost) =>
-        val socket = new ServerSocket()
-        try
-          socket.setReuseAddress(true)
-          socket.bind(new InetSocketAddress(bindHost, port))
-          opened :+ socket
-        catch
-          case e: Exception =>
-            socket.close()
-            opened.foreach(_.close())
-            throw e
-      val sockets = first +: rest
-      sockets.foreach(_.setSoTimeout(200))
-      sockets
-    catch
-      case e: Exception =>
-        first.close()
-        throw e
+    val (sockets, _) = loopbackBindHosts(host).foldLeft((Seq.empty[ServerSocket], 0)): (state, bindHost) =>
+      val (opened, port) = state
+      val socket = new ServerSocket()
+      try
+        socket.setReuseAddress(true)
+        socket.bind(new InetSocketAddress(bindHost, port))
+        val boundPort = if port == 0 then socket.getLocalPort else port
+        (opened :+ socket, boundPort)
+      catch
+        case _: IOException =>
+          socket.close()
+          (opened, port)
+    if sockets.isEmpty then throw IllegalStateException("cannot bind the loopback listener")
+    sockets.foreach(_.setSoTimeout(200))
+    sockets
 
   private def newState(): String =
     val bytes = new Array[Byte](32)

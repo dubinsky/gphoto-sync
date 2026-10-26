@@ -9,8 +9,12 @@ import java.nio.file.attribute.PosixFilePermissions
 class GoogleAuthTest extends AnyFlatSpec, Matchers:
   "loopbackBindHosts" should "listen on both loopback addresses only for localhost" in :
     GoogleAuth.loopbackBindHosts("localhost") shouldBe Seq("127.0.0.1", "::1")
+    GoogleAuth.loopbackBindHosts("LOCALHOST") shouldBe Seq("127.0.0.1", "::1")
     GoogleAuth.loopbackBindHosts("127.0.0.1") shouldBe Seq("127.0.0.1")
     GoogleAuth.loopbackBindHosts("::1") shouldBe Seq("::1")
+    GoogleAuth.loopbackBindHosts("[::1]") shouldBe Seq("::1")
+    GoogleAuth.loopbackBindHosts("0:0:0:0:0:0:0:1") shouldBe Seq("::1")
+    GoogleAuth.loopbackBindHosts(GoogleAuth.redirectHost(URI.create("http://[::1]/cb"))) shouldBe Seq("::1")
     val rejected = intercept[IllegalArgumentException]:
       GoogleAuth.loopbackBindHosts("example.com")
     rejected.getMessage shouldBe "redirect host is not loopback: example.com"
