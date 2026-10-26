@@ -7,6 +7,14 @@ import java.net.URI
 import java.nio.file.attribute.PosixFilePermissions
 
 class GoogleAuthTest extends AnyFlatSpec, Matchers:
+  "loopbackBindHosts" should "listen on both loopback addresses only for localhost" in :
+    GoogleAuth.loopbackBindHosts("localhost") shouldBe Seq("127.0.0.1", "::1")
+    GoogleAuth.loopbackBindHosts("127.0.0.1") shouldBe Seq("127.0.0.1")
+    GoogleAuth.loopbackBindHosts("::1") shouldBe Seq("::1")
+    val rejected = intercept[IllegalArgumentException]:
+      GoogleAuth.loopbackBindHosts("example.com")
+    rejected.getMessage shouldBe "redirect host is not loopback: example.com"
+
   "redirectHost" should "take the host from the redirect URI" in :
     GoogleAuth.redirectHost(URI.create("http://localhost:1234/cb")) shouldBe "localhost"
     GoogleAuth.redirectHost(URI.create("http://127.0.0.1/cb")) shouldBe "127.0.0.1"
@@ -28,13 +36,11 @@ class GoogleAuthTest extends AnyFlatSpec, Matchers:
         file.toPath,
         s"""{"installed":{"client_id":"test-client-id","client_secret":"$secret","redirect_uris":["http://127.0.0.1/cb"],"auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token"}}"""
       )
-      val (clientId, redirect, authUri, tokenUri) = GoogleAuth.readClient(file)
+      val (clientId, redirect) = GoogleAuth.readClient(file)
       GoogleAuth.redirectHost(redirect) shouldBe "127.0.0.1"
       redirect.getRawPath shouldBe "/cb"
       clientId.getClientId shouldBe "test-client-id"
       Option(clientId.getClientSecret).exists(_.nonEmpty) shouldBe true
-      authUri.map(_.toString) shouldBe Some("https://accounts.google.com/o/oauth2/auth")
-      tokenUri.map(_.toString) shouldBe Some("https://oauth2.googleapis.com/token")
     finally
       java.nio.file.Files.deleteIfExists(file.toPath)
       java.nio.file.Files.deleteIfExists(dir)
