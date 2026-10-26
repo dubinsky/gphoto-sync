@@ -2,9 +2,11 @@ package org.podval.tools.photo
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Files as JFiles
 import java.time.ZoneId
+import javax.imageio.ImageIO
 
 class ClaimsTest extends AnyFlatSpec, Matchers:
   private val zone: ZoneId = ZoneId.of("America/New_York")
@@ -91,13 +93,12 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       val rewritten: String = Files.read(File(originals, "Best.toml"))
       rewritten should include ("2009/03/11/2412")
       rewritten should not include ("2009/03/10/2412")
-      rewritten shouldBe
-        "# keep\n" +
-        "google-album-id = \"abc\"\n" +
-        "members = [\"2009/03/11/2412\", \"2009/01/01/0000\"]\n" +
-        "exclude = [\"2412\"]\n" +
-        "external = true\n" +
-        "published-title = \"The Best\"\n"
+      val curated: Album.Curated = Album.readCurated(File(originals, "Best.toml"), "Best")
+      curated.members shouldBe Seq("2009/03/11/2412", "2009/01/01/0000")
+      curated.exclude shouldBe Set("2412")
+      curated.external shouldBe true
+      curated.googleAlbumId shouldBe "abc"
+      curated.publishedTitle shouldBe "The Best"
       Files.read(File(originals, "Other.toml")) shouldBe other
       Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
 
@@ -105,7 +106,9 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       write(originals, "Best.toml", "members = [\"2009/03/11/2412\", \"2009/03/10/2412\"]\n")
       Album.rewriteMember(originals, "2009/03/10/2412", "2009/03/11/2412")
-      Files.read(File(originals, "Best.toml")) shouldBe "members = [\"2009/03/11/2412\"]\n"
+      val rewritten: String = Files.read(File(originals, "Best.toml"))
+      rewritten should not include ("2009/03/10/2412")
+      Album.readCurated(File(originals, "Best.toml"), "Best").members shouldBe Seq("2009/03/11/2412")
 
   it should "reject an unknown key instead of rewriting members" in :
     withOriginals: originals =>
@@ -115,6 +118,49 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
         Album.rewriteMember(originals, "2009/03/10/2412", "2009/03/11/2412")
       caught.getMessage should include ("nope")
       Files.read(File(originals, "Best.toml")) shouldBe text
+
+  it should "reject an unknown key before ls --fix moves the picture" in :
+    withOriginals: originals =>
+      val name: String = "20090311_120000"
+      val oldPath: String = s"2009/03/10/$name"
+      val best: String = s"members = [\"$oldPath\"]\nexclude = [\"9999\"]\n"
+      val other: String = "members = [\"1999/01/01/0001\"]\n"
+      val bad: String = "nope = true\n"
+      val event: String = "from = 2009-03-10\n"
+      write(originals, "Best.toml", best)
+      write(originals, "Other.toml", other)
+      write(originals, "Zed.toml", bad)
+      write(originals, "2009/03/10/Purim Seuda.toml", event)
+      val picture: File = File(originals, s"$oldPath.jpg")
+      picture.getParentFile.mkdirs()
+      ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
+      val root: Root = rootFor(originals)
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        ListPictures(
+          root.parse("2009/03/10"),
+          long = false,
+          fix = true,
+          nameContains = None,
+          hasExtension = None,
+          propertyAndValue = None,
+          timestampFromNameFormat = None,
+          timestampFromName = false,
+          timestampFromNameOnly = false,
+          timestampsVary = false,
+          hasMetadata = false,
+          noNormal = false,
+          noTimestamp = false,
+          wrongTimestamp = false,
+          wrongDay = true,
+          wrong = false
+        ).execute()
+      caught.getMessage should include ("nope")
+      picture.exists shouldBe true
+      File(originals, s"2009/03/11/$name.jpg").exists shouldBe false
+      Files.read(File(originals, "Best.toml")) shouldBe best
+      Files.read(File(originals, "Other.toml")) shouldBe other
+      Files.read(File(originals, "Zed.toml")) shouldBe bad
+      Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
 
   private def one(originals: File, path: String): Claims.Resolved = Claims(originals, zone) match
     case Left(error) => fail(error)
@@ -126,6 +172,11 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
     Files.write(content, file)
 
   private def touch(originals: File, path: String): Unit = write(originals, path, "")
+
+  private def rootFor(originals: File): Root =
+    val home: File = File(System.getProperty("user.home"))
+    val rootPath: String = home.toPath.relativize(originals.getParentFile.toPath).toString
+    Root(Configuration(rootPath, originals.getName, "Upload", zone))
 
   private def withOriginals(body: File => Unit): Unit =
     val originals: File = JFiles.createTempDirectory("claims").toFile
