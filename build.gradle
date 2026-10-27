@@ -12,9 +12,7 @@ version = '0.0.1'
 project.gradle.startParameter.excludedTaskNames.add('compileJava')
 
 dependencies {
-//  implementation 'org.slf4j:slf4j-api:2.0.17'
   implementation 'com.drewnoakes:metadata-extractor:2.22.0'
-  //libraryDependencies += "org.scala-lang" % "scala-reflect"  % scalaVersion.value % "provided"
   implementation 'io.github.wasabithumb:jtoml:1.8.2'
   implementation 'com.google.photos.library:google-photos-library-client:1.7.3'
   implementation 'com.google.auth:google-auth-library-oauth2-http:1.24.0'
