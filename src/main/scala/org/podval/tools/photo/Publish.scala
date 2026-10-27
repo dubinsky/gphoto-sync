@@ -1,7 +1,6 @@
 package org.podval.tools.photo
 
-import com.google.api.gax.core.FixedCredentialsProvider
-import com.google.photos.library.v1.{PhotosLibraryClient, PhotosLibrarySettings}
+import com.google.photos.library.v1.PhotosLibraryClient
 import com.google.photos.library.v1.upload.UploadMediaItemRequest
 import com.google.photos.library.v1.util.NewMediaItemFactory
 import com.google.photos.types.proto.Album as GoogleAlbum
@@ -67,12 +66,7 @@ object Publish:
       val detail: String = output.trim
       Left(if detail.isEmpty then s"exiftool exited with $code" else s"exiftool exited with $code: $detail")
 
-  private[photo] def openLibrary(): GoogleTransport =
-    val credentials = GoogleAuth.loadUserCredentials()
-    val settings = PhotosLibrarySettings.newBuilder()
-      .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
-      .build()
-    LibraryTransport(PhotosLibraryClient.initialize(settings))
+  private[photo] def openLibrary(): GoogleTransport = LibraryTransport(Google.newClient())
 
   private[photo] def run(
     originals: File,
@@ -88,19 +82,25 @@ object Publish:
     if Album.needsRecursive(selectedPrefix) && !recursive then
       throw IllegalArgumentException("year or root requires --recursive")
 
-    val pictures: Seq[Claims.Resolved] = Claims(originals, zone) match
+    val scan: Archive.Scan = Archive.scan(originals)
+    val pictures: Seq[Claims.Resolved] = Claims.resolve(scan, zone) match
       case Left(error) =>
         println(error)
         throw IllegalArgumentException(error)
       case Right(value) => value
 
-    val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix)
-    if !selected.exists(picture => picture.dated.nonEmpty || picture.curated.nonEmpty) then
+    val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix).filter: picture =>
+      picture.dated.nonEmpty || picture.curated.nonEmpty || picture.excludedOnly
+    if selected.isEmpty then
       println("no albums")
     else
       val titles: Seq[String] = distinctTitles(selected)
-      val albums: Map[String, Album.Loaded] = titles.map(title => title -> Album.load(originals, title)).toMap
-      val work: Seq[Work] = selected.map(picture => plan(originals, picture, albums, tempDirectory))
+      val byTitle: Map[String, Album.Loaded] = scan.albums.map(loaded => loaded.album.title -> loaded).toMap
+      val albums: Map[String, Album.Loaded] = titles.map(title => title -> byTitle(title)).toMap
+      val facts: Map[String, Archive.Picture] = scan.pictures.map(picture => picture.path -> picture).toMap
+      val work: Seq[Work] = selected.map: picture =>
+        if picture.excludedOnly then SkipExcluded(picture.path)
+        else plan(picture, albums, facts(picture.path), tempDirectory)
       // Only albums that will receive an upload or an existing media id.
       val ensuredTitles: Seq[String] = work.flatMap {
         case item: UploadNew => item.targets
@@ -112,7 +112,7 @@ object Publish:
         ensuredTitles.foreach(println)
       else
         publish(
-          originals,
+          scan.albums,
           selected,
           albums,
           work,
@@ -122,7 +122,7 @@ object Publish:
         )
 
   private def publish(
-    originals: File,
+    allAlbums: Seq[Album.Loaded],
     selected: Seq[Claims.Resolved],
     albums: Map[String, Album.Loaded],
     work: Seq[Work],
@@ -155,7 +155,7 @@ object Publish:
       // Open before album writes so a missing token fails with its path and does not look like an ensure error.
       if ensuredTitles.nonEmpty then
         val _: GoogleTransport = transport
-      val ensured: Map[String, String] = ensure(originals, ensuredTitles, albums, selected, transport, fail)
+      val ensured: Map[String, String] = ensure(allAlbums, ensuredTitles, albums, selected, transport, fail)
       val (uploadedItems, alreadyInGoogle) = uploadNew(work, ensured, exiftool, transport, fail)
       uploaded = uploadedItems.length
       skippedExists += alreadyInGoogle
@@ -299,7 +299,7 @@ object Publish:
           acc
 
   private def ensure(
-    originals: File,
+    allAlbums: Seq[Album.Loaded],
     titles: Seq[String],
     albums: Map[String, Album.Loaded],
     pictures: Seq[Claims.Resolved],
@@ -308,7 +308,7 @@ object Publish:
   ): Map[String, String] =
     if titles.isEmpty then Map.empty
     else
-      val knownIds: Map[String, String] = localAlbumIds(originals)
+      val knownIds: Map[String, String] = localAlbumIds(allAlbums)
       val needRemote: Boolean = titles.exists(title => albums(title).album.googleAlbumId.isEmpty)
       val remoteResult: Either[String, Seq[(String, String)]] =
         if !needRemote then Right(Seq.empty)
@@ -384,9 +384,9 @@ object Publish:
         catch case error: Exception => Left(Album.messageOf(error))
 
   private def plan(
-    originals: File,
     picture: Claims.Resolved,
     albums: Map[String, Album.Loaded],
+    fact: Archive.Picture,
     tempDirectory: File
   ): Work =
     val titles: Seq[String] = picture.dated.toSeq ++ picture.curated
@@ -395,9 +395,10 @@ object Publish:
       val targets: Seq[String] = titles.filterNot(title => albums(title).album.external)
       if targets.isEmpty then SkipExcluded(picture.path)
       else
-        val (directory, name) = locate(originals, picture.path)
+        val directory: File = fact.directory
+        val name: String = fact.name
         val metadataFile: File = File(directory, s"$name.toml")
-        val metadata: Metadata = if metadataFile.isFile then Metadata.read(metadataFile) else Metadata.default
+        val metadata: Metadata = fact.metadata
         if metadata.`already-in-google`.contains(true) then AlreadyInGoogle(picture.path)
         else metadata.`google-media-item-id`.filter(_.nonEmpty) match
           case Some(id) => FileExisting(picture.path, id, targets)
@@ -446,14 +447,10 @@ object Publish:
     argv: Option[Seq[String]]
   ) extends Work
 
-  private def localAlbumIds(originals: File): Map[String, String] =
-    Album.loadAll(originals).foldLeft(Map.empty[String, String]): (ids, loaded) =>
+  private def localAlbumIds(albums: Seq[Album.Loaded]): Map[String, String] =
+    albums.foldLeft(Map.empty[String, String]): (ids, loaded) =>
       val id: String = loaded.album.googleAlbumId
       if id.isEmpty then ids else ids.updated(id, loaded.album.title)
-
-  private def locate(originals: File, picturePath: String): (File, String) =
-    val (parent, name) = Files.splitOnLast(picturePath, '/')
-    (File(originals, parent), name.getOrElse(throw IllegalArgumentException(s"not a picture path: $picturePath")))
 
   // A grouped IMG_ or .JPG name is not renamed here. The literal name.ext must already be on disk.
   private def literalUpload(directory: File, name: String): Either[String, Option[(File, String)]] =

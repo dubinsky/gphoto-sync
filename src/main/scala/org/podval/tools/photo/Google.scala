@@ -1,5 +1,8 @@
 package org.podval.tools.photo
 
+import com.google.api.gax.core.FixedCredentialsProvider
+import com.google.photos.library.v1.{PhotosLibraryClient, PhotosLibrarySettings}
+
 object Google:
   // TODO there is no way to list albums that were not created by my app!!!
 
@@ -12,4 +15,9 @@ object Google:
   // matching JPEG DateTimeOriginal. A Keys:CreationDate offset did not, and Rotation=90 produced
   // no width or height. A video timestamp is CreateDate. A video orientation override stays a failure.
 
-  def main(args: Array[String]): Unit = println("use photo login")
+  def newClient(): PhotosLibraryClient =
+    val credentials = GoogleAuth.loadUserCredentials()
+    val settings = PhotosLibrarySettings.newBuilder()
+      .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
+      .build()
+    PhotosLibraryClient.initialize(settings)

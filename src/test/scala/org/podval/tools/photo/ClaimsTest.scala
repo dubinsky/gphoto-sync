@@ -119,7 +119,7 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       caught.getMessage should include ("nope")
       Files.read(File(originals, "Best.toml")) shouldBe text
 
-  it should "reject an unknown key before ls --fix moves the picture" in :
+  it should "reject an unknown key before repair --days moves the picture" in :
     withOriginals: originals =>
       val name: String = "20090311_120000"
       val oldPath: String = s"2009/03/10/$name"
@@ -136,24 +136,14 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
       val root: Root = rootFor(originals)
       val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
-        ListPictures(
+        Repair.run(
           root.parse("2009/03/10"),
-          long = false,
-          fix = true,
-          nameContains = None,
-          hasExtension = None,
-          propertyAndValue = None,
-          timestampFromNameFormat = None,
-          timestampFromName = false,
-          timestampFromNameOnly = false,
-          timestampsVary = false,
-          hasMetadata = false,
-          noNormal = false,
-          noTimestamp = false,
-          wrongTimestamp = false,
-          wrongDay = true,
-          wrong = false
-        ).execute()
+          names = false,
+          raw = false,
+          timestamps = false,
+          days = true,
+          dryRun = false
+        )
       caught.getMessage should include ("nope")
       picture.exists shouldBe true
       File(originals, s"2009/03/11/$name.jpg").exists shouldBe false

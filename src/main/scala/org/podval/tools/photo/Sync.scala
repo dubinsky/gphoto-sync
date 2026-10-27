@@ -1,7 +1,6 @@
 package org.podval.tools.photo
 
-import com.google.api.gax.core.FixedCredentialsProvider
-import com.google.photos.library.v1.{PhotosLibraryClient, PhotosLibrarySettings}
+import com.google.photos.library.v1.PhotosLibraryClient
 import java.io.File
 import java.time.{LocalDate, ZoneId}
 import scala.jdk.CollectionConverters.{IterableHasAsScala, ListHasAsScala, SeqHasAsJava}
@@ -28,12 +27,7 @@ object Sync:
     def removeFromAlbum(albumId: String, ids: Seq[String]): Unit
     override def close(): Unit = ()
 
-  private[photo] def openLibrary(): Library =
-    val credentials = GoogleAuth.loadUserCredentials()
-    val settings = PhotosLibrarySettings.newBuilder()
-      .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
-      .build()
-    ClientLibrary(PhotosLibraryClient.initialize(settings))
+  private[photo] def openLibrary(): Library = ClientLibrary(Google.newClient())
 
   private[photo] def run(
     originals: File,
@@ -47,23 +41,25 @@ object Sync:
     if Album.needsRecursive(selectedPrefix) && !recursive then
       throw IllegalArgumentException("year or root requires --recursive")
 
-    val pictures: Seq[Claims.Resolved] = Claims(originals, zone) match
+    val scan: Archive.Scan = Archive.scan(originals)
+    val pictures: Seq[Claims.Resolved] = Claims.resolve(scan, zone) match
       case Left(error) =>
         println(error)
         throw IllegalArgumentException(error)
       case Right(value) => value
 
     val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix)
-    val albums: Seq[LoadedAlbum] = Album.loadAll(originals)
+    val albums: Seq[LoadedAlbum] = scan.albums
     val byTitle: Map[String, LoadedAlbum] = albums.map(loaded => loaded.album.title -> loaded).toMap
+    val facts: Map[String, Archive.Picture] = scan.pictures.map(picture => picture.path -> picture).toMap
     val inScope: Seq[LoadedAlbum] = scope(selected, byTitle, albums)
     if inScope.isEmpty then println("no albums")
-    else syncAlbums(originals, selected, byTitle, albums, inScope, dryRun, google)
+    else syncAlbums(facts, selected, byTitle, albums, inScope, dryRun, google)
 
   // Membership is remote, so a dry run still lists and batchGets in order to print the same lines.
   // It does not write album files and does not call batchRemove.
   private def syncAlbums(
-    originals: File,
+    facts: Map[String, Archive.Picture],
     selected: Seq[Claims.Resolved],
     byTitle: Map[String, LoadedAlbum],
     albums: Seq[LoadedAlbum],
@@ -74,7 +70,7 @@ object Sync:
     val library: Library = google()
     try
       val mediaByTitle: Map[String, Set[String]] = listAll(library, inScope, selected)
-      val filed: Seq[(Claims.Resolved, String)] = filedPictures(originals, selected, byTitle, albums)
+      val filed: Seq[(Claims.Resolved, String)] = filedPictures(facts, selected, byTitle, albums)
       val present: Set[String] = lookup(library, filed, byTitle, albums)
       val plan: Plan = planFor(filed, byTitle, albums, mediaByTitle, present)
       printPlan(plan)
@@ -134,13 +130,13 @@ object Sync:
     throw IllegalArgumentException(lines.mkString("\n"))
 
   private def filedPictures(
-    originals: File,
+    facts: Map[String, Archive.Picture],
     selected: Seq[Claims.Resolved],
     byTitle: Map[String, LoadedAlbum],
     albums: Seq[LoadedAlbum]
   ): Seq[(Claims.Resolved, String)] =
     selected.flatMap: picture =>
-      mediaId(originals, picture.path).flatMap: id =>
+      facts.get(picture.path).flatMap(_.metadata.`google-media-item-id`.filter(_.nonEmpty)).flatMap: id =>
         val relevant: Boolean =
           clientClaims(picture, byTitle).nonEmpty || excludedAlbums(picture, albums).nonEmpty
         Option.when(relevant)(picture -> id)
@@ -255,13 +251,6 @@ object Sync:
   )
   private final case class RemoveChange(albumId: String, title: String, name: String, path: String, mediaId: String)
   private final case class Plan(excludes: Seq[ExcludeChange], removes: Seq[RemoveChange])
-
-  private def mediaId(originals: File, picturePath: String): Option[String] =
-    val (parent, name) = Files.splitOnLast(picturePath, '/')
-    val stem: String = name.getOrElse(throw IllegalArgumentException(s"not a picture path: $picturePath"))
-    val file: File = File(File(originals, parent), s"$stem.toml")
-    if !file.isFile then None
-    else Metadata.read(file).`google-media-item-id`.filter(_.nonEmpty)
 
   private def pictureName(path: String): String = Files.splitOnLast(path, '/')._2.getOrElse(path)
 

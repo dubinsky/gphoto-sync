@@ -1,12 +1,10 @@
 package org.podval.tools.photo
 
-import java.io.File
-import java.time.{Instant, LocalDate}
+import java.time.Instant
 
 final case class ListPictures(
   path: Path,
   long: Boolean,
-  fix: Boolean,
   nameContains: Option[String],
   hasExtension: Option[String],
   propertyAndValue: Option[Property.AndValue[?]],
@@ -25,54 +23,11 @@ final case class ListPictures(
   override def execute(): Unit = forEachPicture(path)
 
   private def forEachPicture(path: Path): Unit = path match
-    case pictures: Pictures => pictures.lsd(fix).foreach(ls)
+    case pictures: Pictures => pictures.lsd(NameMode.Leave).foreach(ls)
     case directory: Directory => directory.lsd.foreach(forEachPicture)
 
   private def ls(picture: Picture): Unit =
-    var timestampCalculated: Boolean = false
-
-    lazy val (
-      isTimestampsVary: Boolean,
-      timestamp: Option[Instant],
-      isTimestampWrong: Boolean,
-      dayShouldBe: Option[Day]
-    ) =
-      timestampCalculated = true
-
-      // Note: in the pictures saw where metadata timestamp is present and file name also encodes the timestamp:
-      // - for '3gp' and 'mp4' metadata timestamp is sometimes later than the file name timestamp
-      //   (and a few hours for the timezone offset) - metadata probably records timestamp of the end of recording;
-      // - for 'jpg' metadata timestamp is sometimes earlier than the file name timestamp by a second;
-      // I pick the earliest ;)
-      val timestamps: Set[Option[Instant]] = picture.extensions.map(_.fromMetadata) ++ Set(picture.timestampFromName.map(_._1))
-      val timestampEarliest: Option[Instant] = Dates.earliest(timestamps)
-      val timestampLatest: Option[Instant] = Dates.latest(timestamps)
-      val isTimestampsVary: Boolean = timestampEarliest.isDefined && timestampLatest.isDefined &&
-        Dates.distanceInMinutes(timestampEarliest.get, timestampLatest.get) > 60
-
-      val timestamp: Option[Instant] = Dates.FromMetadata.get(picture).orElse(timestampEarliest)
-
-      val isTimestampWrong: Boolean = timestamp.fold(false)(timestamp =>
-        picture.extensions.exists(extension => !Dates.equal(timestamp, extension.current))
-      )
-
-      val dayShouldBe: Option[Day] = timestamp.flatMap: timestamp =>
-        val date: LocalDate = Dates.toZonedDateTime(timestamp).toLocalDate
-        val year: Int = date.getYear
-        val month: Int = date.getMonthValue
-        val day: Int = date.getDayOfMonth
-
-        // some photos were taken with no time set on the camera...
-        val isDefaultDate: Boolean = month == 1 && day == 1 && (year == 1980 || year == 2000)
-        val isCorrectDay: Boolean = picture.parent.day.exists(_.date.isEqual(date))
-        Option.when(!isDefaultDate && !isCorrectDay)(picture.root.year(year).month(month).day(day))
-
-      (
-        isTimestampsVary,
-        timestamp,
-        isTimestampWrong,
-        dayShouldBe
-      )
+    lazy val audit: PictureAudit.Result = PictureAudit(picture)
 
     val included: Boolean =
       (nameContains.isEmpty || picture.name.contains(nameContains.get)) &&
@@ -81,17 +36,16 @@ final case class ListPictures(
       (timestampFromNameFormat.isEmpty || picture.timestampFromName.map(_._2).contains(timestampFromNameFormat.get)) &&
       (!timestampFromName || picture.timestampFromName.isDefined) &&
       (!timestampFromNameOnly || picture.timestampFromName.isDefined && picture.extensions.forall(_.fromMetadata.isEmpty)) &&
-      (!timestampsVary || isTimestampsVary) &&
+      (!timestampsVary || audit.timestampsVary) &&
       (!hasMetadata || picture.hasMetadata) &&
       (!noNormal || picture.normal.isEmpty) &&
-      (!noTimestamp || timestamp.isEmpty) &&
-      (!wrongTimestamp || isTimestampWrong) &&
-      (!wrongDay || dayShouldBe.isDefined) &&
-      (!wrong || (picture.normal.isEmpty || timestamp.isEmpty || isTimestampWrong || dayShouldBe.isDefined))
+      (!noTimestamp || audit.timestamp.isEmpty) &&
+      (!wrongTimestamp || audit.timestampWrong) &&
+      (!wrongDay || audit.dayShouldBe.isDefined) &&
+      (!wrong || (picture.normal.isEmpty || audit.timestamp.isEmpty || audit.timestampWrong || audit.dayShouldBe.isDefined))
 
     if included then
-      if long then timestamp
-
+      val showAudit: Boolean = long || timestampsVary || noTimestamp || wrongTimestamp || wrongDay || wrong
       val normalGenerationSuppressed: Boolean = picture.metadata.`bad-raw`.contains(true)
 
       println(
@@ -100,48 +54,13 @@ final case class ListPictures(
         (if picture.normal.isDefined then "" else " NO NORMAL IMAGE" ++ (if !normalGenerationSuppressed then "" else "; GENERATION SUPPRESSED")) ++
         (if !picture.hasMetadata then "" else s" [${picture.metadata}]") ++
         picture.timestampFromName.fold("")(timestampFromName => s" timestampFromName=${timestampFromName._1} (${timestampFromName._2})") ++
-        (if !timestampCalculated then "" else
-          timestamp.fold(" NO TIMESTAMP")(timestamp => s" timestamp=$timestamp") ++
-            dayShouldBe.fold("")(dayShouldBe => s" WRONG DAY; SHOULD BE: $dayShouldBe") ++
+        (if !showAudit then "" else
+          audit.timestamp.fold(" NO TIMESTAMP")(timestamp => s" timestamp=$timestamp") ++
+            audit.dayShouldBe.fold("")(dayShouldBe => s" WRONG DAY; SHOULD BE: $dayShouldBe") ++
             "\n" ++
-            picture.extensions.map(extensionToString(_, timestamp)).mkString("\n")
+            picture.extensions.map(extensionToString(_, audit.timestamp)).mkString("\n")
           )
       )
-
-      if picture.normal.isEmpty && !normalGenerationSuppressed then
-        execute(s"$picture: generating '${RawConverter.extension}' from raw file")(
-          RawConverter.DCRaw.generate(picture)
-        )
-
-      if timestampCalculated then
-        timestamp.foreach: timestamp =>
-          picture.extensions.foreach(extension =>
-            if !Dates.equal(timestamp, extension.current) then
-              execute(s"$extension: changing timestamp ${extension.current} to $timestamp")(
-                Dates.FromFile.set(picture, extension.name, timestamp)
-              )
-          )
-
-        dayShouldBe.foreach: dayShouldBe =>
-          execute(s"moving $picture to $dayShouldBe") {
-            val originals: File = picture.root.configuration.byYearDirectory
-            val from: String = s"${Album.relative(originals, picture.parent.directory)}/${picture.name}"
-            val to: String = s"${Album.relative(originals, dayShouldBe.directory)}/${picture.name}"
-            // Reject a bad curated file before any picture moves, so a later ls --fix can retry.
-            Album.rewriteMember(originals, from, to)
-            Files.mkDirs(dayShouldBe.directory)
-            val extensionNamesAll: Set[String] = picture.extensions.map(_.name) ++ Option.when(picture.hasMetadata)(Metadata.extension).toSet
-            extensionNamesAll.foreach(extension => Files.move(
-              File(picture.parent.directory, s"${picture.name}.$extension"),
-              File(dayShouldBe   .directory, s"${picture.name}.$extension")
-            ))
-            Files.deleteEmptyDirectories(picture.parent.directory)
-          }
-
-  private def execute(message: String)(action: => Unit): Unit =
-    if !fix then println(s"$message - skipping: no --fix ") else
-      println(message)
-      action
 
   private def extensionToString(extension: Extension, timestamp: Option[Instant]): String =
     s"  .${extension.name}" ++

@@ -230,6 +230,31 @@ class PublishTest extends AnyFlatSpec, Matchers:
       out should include ("Best")
       out should not include ("uploaded=")
 
+  it should "not count an unclaimed picture as excluded" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2))
+      writeBytes(originals, "2009/03/10/1000.jpg", Array[Byte](3))
+      write(originals, "2009/03/10/Party.toml", "from = 2009-03-10\nname-from = \"2412\"\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads should have size 1
+      out should include ("uploaded=1 filed=1 skipped-excluded=0 skipped-external=0 skipped-exists=0 failed=0")
+      out should not include ("2009/03/10/1000")
+
+  it should "count a picture excluded from its only album and not upload it" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "exclude = [\"2412\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.adds shouldBe empty
+      out should include ("skipped-excluded=1")
+      out should include ("uploaded=0")
+      out should not include ("no albums")
+
   it should "report no albums when nothing is claimed" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))

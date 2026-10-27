@@ -167,6 +167,14 @@ object Dates:
       catch
         case _: DateTimeParseException => None
 
+  // One trailing _1 is stripped here. Callers choose the date NameShort may use.
+  def fromFileName(name: String, zone: ZoneId, shortDate: Option[LocalDate]): Option[(Instant, String)] =
+    val clock: String = if name.endsWith("_1") then name.dropRight("_1".length) else name
+    NameFull.get(clock, zone).map(_ -> "full")
+      .orElse(NameCompact.get(clock, zone).map(_ -> "compact"))
+      .orElse(NameMillis.get(clock, zone).map(_ -> "millis"))
+      .orElse(shortDate.flatMap(date => NameShort.get(clock, zone, date).map(_ -> "short")))
+
   object FromMetadata extends Dater(isZoned = false):
     def get(picture: Picture): Option[Instant] = Option.when(picture.hasMetadata)(picture.metadata)
       .flatMap(_.timestamp)

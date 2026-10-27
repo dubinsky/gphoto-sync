@@ -25,9 +25,6 @@ final class Picture(
 
   lazy val metadata: Metadata = Option.when(hasMetadata)(Metadata.read(metadataFile)).getOrElse(Metadata.default)
 
+  // Sidecar date is a short-name input here. Claims passes only the folder day.
   lazy val timestampFromName: Option[(Instant, String)] =
-    val name: String = if !this.name.endsWith("_1") then this.name else this.name.substring(0, this.name.length - "_1".length)
-              Dates.NameFull   .get(name, zone).map(_ -> "full"   )
-      .orElse(Dates.NameCompact.get(name, zone).map(_ -> "compact"))
-      .orElse(Dates.NameMillis .get(name, zone).map(_ -> "millis" ))
-      .orElse(metadata.date.orElse(parent.day.map(_.date)).flatMap(Dates.NameShort.get(name, zone, _)).map(_ -> "short"))
+    Dates.fromFileName(name, zone, metadata.date.orElse(parent.day.map(_.date)))

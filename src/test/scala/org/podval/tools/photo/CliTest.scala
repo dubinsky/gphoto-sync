@@ -25,11 +25,9 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("ls", "2009")) shouldBe ls("2009")
     Cli.parse(List("ls", "--long", "false")) shouldBe ls(path = "false", long = true)
     Cli.parse(List("ls", "--long=false", "2009")) shouldBe ls("2009", long = false)
-    Cli.parse(List("ls", "--fix=false", "2009")) shouldBe ls("2009")
     Cli.parse(List(
       "ls",
       "--long",
-      "--fix",
       "--name-contains", "mid",
       "--has-extension", "jpg",
       "--property", "bad-raw",
@@ -47,7 +45,6 @@ class CliTest extends AnyFlatSpec, Matchers:
     )) shouldBe ls(
       path = "2009/03",
       long = true,
-      fix = true,
       nameContains = Some("mid"),
       hasExtension = Some("jpg"),
       property = Some("bad-raw"),
@@ -102,6 +99,13 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("sync", "--recursive", "--dry-run=FALSE", "2009")) shouldBe
       sync(Some("2009"), recursive = true, dryRun = false)
 
+    Cli.parse(List("repair", "--names", "2009")) shouldBe
+      repair("2009", names = true)
+    Cli.parse(List("repair", "--raw", "--timestamps", "--days", "--dry-run", "2009/03")) shouldBe
+      repair("2009/03", raw = true, timestamps = true, days = true, dryRun = true)
+    Cli.parse(List("repair", "--names=false", "--raw", "2009")) shouldBe
+      repair("2009", raw = true)
+
     Cli.parse(List("login")) shouldBe Cli.Run(Cli.LoginArgs)
     Cli.parse(List("status")) shouldBe Cli.Run(Cli.StatusArgs)
     Cli.parse(List("logout")) shouldBe Cli.Run(Cli.LogoutArgs)
@@ -114,6 +118,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |
         |lsd  list directories
         |ls  list pictures
+        |repair  repair picture names, raw files, timestamps, or day folders
         |set-metadata  set metadata property
         |albums  list album claims
         |publish  publish albums to Google Photos
@@ -131,7 +136,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |directory  required
         |
         |Flags:
-        |--long, -l  boolean""".stripMargin
+        |--long, -l  boolean  list nested directories""".stripMargin
     helpOf("lsd", "-h") shouldBe helpOf("lsd", "--help")
 
     helpOf("ls", "--help") shouldBe
@@ -141,23 +146,36 @@ class CliTest extends AnyFlatSpec, Matchers:
         |path  required
         |
         |Flags:
-        |--long, -l  boolean
-        |--fix  boolean
-        |--name-contains, -n  text
-        |--has-extension, -e  text
-        |--property  text
-        |--timestamp-from-name-format  text
-        |--timestamp-from-name  boolean
-        |--timestamp-from-name-only  boolean
-        |--timestamps-vary  boolean
-        |--has-metadata  boolean
-        |--no-normal  boolean
-        |--no-timestamp  boolean
-        |--wrong-timestamp  boolean
-        |--wrong-day  boolean
-        |--wrong  boolean""".stripMargin
+        |--long, -l  boolean  show per-file timestamps and day mismatches
+        |--name-contains, -n  text  keep pictures whose name contains this text
+        |--has-extension, -e  text  keep pictures that have this extension
+        |--property  text  keep pictures whose sidecar property matches
+        |--timestamp-from-name-format  text  keep pictures whose filename clock uses this format
+        |--timestamp-from-name  boolean  keep pictures whose filename encodes a time
+        |--timestamp-from-name-only  boolean  keep pictures with a filename clock and no file metadata time
+        |--timestamps-vary  boolean  keep pictures whose file times differ by more than an hour
+        |--has-metadata  boolean  keep pictures that have a sidecar
+        |--no-normal  boolean  keep pictures with no normal image
+        |--no-timestamp  boolean  keep pictures with no assessed timestamp
+        |--wrong-timestamp  boolean  keep pictures whose file mtime differs from the assessed timestamp
+        |--wrong-day  boolean  keep pictures filed on a different day than the assessed timestamp
+        |--wrong  boolean  keep pictures with no normal image, no timestamp, a wrong timestamp, or a wrong day""".stripMargin
     helpOf("ls", "-h") shouldBe helpOf("ls", "--help")
     helpOf("ls", "--long", "--help") shouldBe helpOf("ls", "--help")
+
+    helpOf("repair", "--help") shouldBe
+      """repair  repair picture names, raw files, timestamps, or day folders
+        |
+        |Positionals:
+        |path  required
+        |
+        |Flags:
+        |--names  boolean  rename IMG_ and .JPG
+        |--raw  boolean  make a JPEG from RAW with dcraw when no normal image exists
+        |--timestamps  boolean  set file mtimes from the assessed instant
+        |--days  boolean  move a picture into the assessed day folder
+        |--dry-run  boolean  print those actions and write nothing""".stripMargin
+    helpOf("repair", "-h") shouldBe helpOf("repair", "--help")
 
     helpOf("set-metadata", "--help") shouldBe
       """set-metadata  set metadata property
@@ -187,8 +205,8 @@ class CliTest extends AnyFlatSpec, Matchers:
         |path  optional
         |
         |Flags:
-        |--recursive  boolean
-        |--dry-run  boolean""".stripMargin
+        |--recursive  boolean  required for a year or the archive root
+        |--dry-run  boolean  print the local plan and do not call Google""".stripMargin
     helpOf("publish", "-h") shouldBe helpOf("publish", "--help")
     helpOf("publish", "--recursive", "--help") shouldBe helpOf("publish", "--help")
 
@@ -199,8 +217,8 @@ class CliTest extends AnyFlatSpec, Matchers:
         |path  optional
         |
         |Flags:
-        |--recursive  boolean
-        |--dry-run  boolean""".stripMargin
+        |--recursive  boolean  required for a year or the archive root
+        |--dry-run  boolean  read Google, print exclude and remove lines, and do not write""".stripMargin
     helpOf("sync", "-h") shouldBe helpOf("sync", "--help")
 
     helpOf("login", "--help") shouldBe
@@ -242,6 +260,10 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("lsd", "--bogus") -> "unknown option '--bogus'",
       List("albums", "--bogus") -> "unknown option '--bogus'",
       List("ls", "--dry-run", "2009") -> "unknown option '--dry-run'",
+      List("ls", "--fix", "2009") -> "unknown option '--fix'",
+      List("repair") -> "missing path",
+      List("repair", "2009") -> "missing repair action",
+      List("repair", "--dry-run", "2009") -> "missing repair action",
       List("login", "--long") -> "unknown option '--long'",
       List("ls", "-abc", "2009") -> "unknown option '-abc'",
       List("ls", "-nfoo", "2009") -> "unknown option '-nfoo'",
@@ -310,8 +332,8 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parsePropertyAndValue("already-in-google=false").set(Metadata()) shouldBe
       Metadata(`already-in-google` = Some(false))
 
-    a [NoSuchElementException] should be thrownBy Cli.parsePropertyAndValue("nope")
-    a [NoSuchElementException] should be thrownBy Cli.parsePropertyAndValue("source=a=b")
+    an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("nope")
+    an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("source=a=b")
 
   private def helpOf(args: String*): String = Cli.parse(args.toList) match
     case Cli.Help(text) => text
@@ -320,7 +342,6 @@ class CliTest extends AnyFlatSpec, Matchers:
   private def ls(
     path: String,
     long: Boolean = false,
-    fix: Boolean = false,
     nameContains: Option[String] = None,
     hasExtension: Option[String] = None,
     property: Option[String] = None,
@@ -337,7 +358,6 @@ class CliTest extends AnyFlatSpec, Matchers:
   ): Cli.Outcome = Cli.Run(Cli.Ls(
     path,
     long,
-    fix,
     nameContains,
     hasExtension,
     property,
@@ -352,6 +372,15 @@ class CliTest extends AnyFlatSpec, Matchers:
     wrongDay,
     wrong
   ))
+
+  private def repair(
+    path: String,
+    names: Boolean = false,
+    raw: Boolean = false,
+    timestamps: Boolean = false,
+    days: Boolean = false,
+    dryRun: Boolean = false
+  ): Cli.Outcome = Cli.Run(Cli.RepairArgs(path, names, raw, timestamps, days, dryRun))
 
   private def publish(path: Option[String], recursive: Boolean, dryRun: Boolean): Cli.Outcome =
     Cli.Run(Cli.PublishArgs(path, recursive, dryRun))

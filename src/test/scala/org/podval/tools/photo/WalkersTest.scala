@@ -25,7 +25,7 @@ class WalkersTest extends AnyFlatSpec, Matchers:
       val jpg: File = touch(directory, "2412.jpg")
       val sidecar: File = touch(directory, "2412.toml")
       val album: File = touch(directory, "Purim Seuda.toml")
-      Pictures.group(Seq(jpg, sidecar, album), fix = false) shouldBe Seq("2412" -> Set("jpg", "toml"))
+      Pictures.group(Seq(jpg, sidecar, album), NameMode.Leave) shouldBe Seq("2412" -> Set("jpg", "toml"))
       album.getName shouldBe "Purim Seuda.toml"
       sidecar.getName shouldBe "2412.toml"
 
@@ -33,7 +33,7 @@ class WalkersTest extends AnyFlatSpec, Matchers:
     withTemp: directory =>
       val album: File = touch(directory, "IMG_notes.toml")
       val picture: File = touch(directory, "IMG_2412.JPG")
-      Pictures.group(Seq(album, picture), fix = true) shouldBe Seq("2412" -> Set("jpg"))
+      Pictures.group(Seq(album, picture), NameMode.Apply) shouldBe Seq("2412" -> Set("jpg"))
       album.exists shouldBe true
       album.getName shouldBe "IMG_notes.toml"
       picture.exists shouldBe false

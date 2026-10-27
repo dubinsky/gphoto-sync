@@ -10,7 +10,6 @@ object Cli:
   private[photo] final case class Ls(
     path: String,
     long: Boolean,
-    fix: Boolean,
     nameContains: Option[String],
     hasExtension: Option[String],
     property: Option[String],
@@ -29,6 +28,14 @@ object Cli:
   private[photo] final case class Albums(path: Option[String]) extends Parsed
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
+  private[photo] final case class RepairArgs(
+    path: String,
+    names: Boolean,
+    raw: Boolean,
+    timestamps: Boolean,
+    days: Boolean,
+    dryRun: Boolean
+  ) extends Parsed
   private[photo] case object LoginArgs extends Parsed
   private[photo] case object StatusArgs extends Parsed
   private[photo] case object LogoutArgs extends Parsed
@@ -43,7 +50,12 @@ object Cli:
         System.err.println(usageLine(message))
         sys.exit(1)
       case Run(parsed) =>
-        toOperation(parsed).execute()
+        try toOperation(parsed).execute()
+        catch
+          case error: (IllegalArgumentException | IllegalStateException) =>
+            val message: String = Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
+            System.err.println(usageLine(message))
+            sys.exit(1)
 
   private[photo] def parse(args: List[String]): Outcome = args match
     case Nil =>
@@ -62,7 +74,6 @@ object Cli:
       ListPictures(
         Root.get.parse(ls.path),
         ls.long,
-        ls.fix,
         ls.nameContains,
         ls.hasExtension,
         ls.property.map(parsePropertyAndValue),
@@ -88,6 +99,14 @@ object Cli:
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
+    case RepairArgs(path, names, raw, timestamps, days, dryRun) =>
+      Repair(Root.get.parse(path), names, raw, timestamps, days, dryRun)
+
+  private def finish(parsed: Parsed): Outcome = parsed match
+    case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
+      Usage("missing repair action")
+    case other =>
+      Run(other)
 
   private[photo] def usageLine(message: String): String = s"Photo Archive Tool: $message"
 
@@ -101,7 +120,7 @@ object Cli:
       case Right((values, positionals)) =>
         checkPositionals(command.positionals, positionals) match
           case Some(message) => Usage(message)
-          case None => Run(command.build(values, positionals))
+          case None => finish(command.build(values, positionals))
 
   private def readFlags(
     command: Command,
@@ -230,7 +249,7 @@ object Cli:
     val kind: String = flag.kind match
       case BooleanKind => "boolean"
       case TextKind => "text"
-    s"$names  $kind"
+    s"$names  $kind  ${flag.description}"
 
   private sealed trait Positional
   private final case class Required(name: String) extends Positional
@@ -240,7 +259,7 @@ object Cli:
   private case object BooleanKind extends FlagKind
   private case object TextKind extends FlagKind
 
-  private final case class Flag(name: String, alias: Option[String], kind: FlagKind)
+  private final case class Flag(name: String, alias: Option[String], kind: FlagKind, description: String)
 
   private final case class Values(
     bools: Map[String, Boolean] = Map.empty,
@@ -258,26 +277,32 @@ object Cli:
     build: (Values, List[String]) => Parsed
   )
 
-  private val longFlag: Flag = Flag("long", Some("l"), BooleanKind)
-  private val recursiveFlag: Flag = Flag("recursive", None, BooleanKind)
-  private val dryRunFlag: Flag = Flag("dry-run", None, BooleanKind)
+  private val lsdLongFlag: Flag = Flag("long", Some("l"), BooleanKind, "list nested directories")
+  private val lsLongFlag: Flag = Flag("long", Some("l"), BooleanKind, "show per-file timestamps and day mismatches")
 
   private val lsFlags: List[Flag] = List(
-    longFlag,
-    Flag("fix", None, BooleanKind),
-    Flag("name-contains", Some("n"), TextKind),
-    Flag("has-extension", Some("e"), TextKind),
-    Flag("property", None, TextKind),
-    Flag("timestamp-from-name-format", None, TextKind),
-    Flag("timestamp-from-name", None, BooleanKind),
-    Flag("timestamp-from-name-only", None, BooleanKind),
-    Flag("timestamps-vary", None, BooleanKind),
-    Flag("has-metadata", None, BooleanKind),
-    Flag("no-normal", None, BooleanKind),
-    Flag("no-timestamp", None, BooleanKind),
-    Flag("wrong-timestamp", None, BooleanKind),
-    Flag("wrong-day", None, BooleanKind),
-    Flag("wrong", None, BooleanKind)
+    lsLongFlag,
+    Flag("name-contains", Some("n"), TextKind, "keep pictures whose name contains this text"),
+    Flag("has-extension", Some("e"), TextKind, "keep pictures that have this extension"),
+    Flag("property", None, TextKind, "keep pictures whose sidecar property matches"),
+    Flag("timestamp-from-name-format", None, TextKind, "keep pictures whose filename clock uses this format"),
+    Flag("timestamp-from-name", None, BooleanKind, "keep pictures whose filename encodes a time"),
+    Flag("timestamp-from-name-only", None, BooleanKind, "keep pictures with a filename clock and no file metadata time"),
+    Flag("timestamps-vary", None, BooleanKind, "keep pictures whose file times differ by more than an hour"),
+    Flag("has-metadata", None, BooleanKind, "keep pictures that have a sidecar"),
+    Flag("no-normal", None, BooleanKind, "keep pictures with no normal image"),
+    Flag("no-timestamp", None, BooleanKind, "keep pictures with no assessed timestamp"),
+    Flag("wrong-timestamp", None, BooleanKind, "keep pictures whose file mtime differs from the assessed timestamp"),
+    Flag("wrong-day", None, BooleanKind, "keep pictures filed on a different day than the assessed timestamp"),
+    Flag("wrong", None, BooleanKind, "keep pictures with no normal image, no timestamp, a wrong timestamp, or a wrong day")
+  )
+
+  private val repairFlags: List[Flag] = List(
+    Flag("names", None, BooleanKind, "rename IMG_ and .JPG"),
+    Flag("raw", None, BooleanKind, "make a JPEG from RAW with dcraw when no normal image exists"),
+    Flag("timestamps", None, BooleanKind, "set file mtimes from the assessed instant"),
+    Flag("days", None, BooleanKind, "move a picture into the assessed day folder"),
+    Flag("dry-run", None, BooleanKind, "print those actions and write nothing")
   )
 
   private val commands: List[Command] = List(
@@ -285,7 +310,7 @@ object Cli:
       name = "lsd",
       help = "list directories",
       positionals = List(Required("directory")),
-      flags = List(longFlag),
+      flags = List(lsdLongFlag),
       build = (values, args) => Lsd(args.head, bool(values, "long"))
     ),
     Command(
@@ -296,7 +321,6 @@ object Cli:
       build = (values, args) => Ls(
         path = args.head,
         long = bool(values, "long"),
-        fix = bool(values, "fix"),
         nameContains = values.texts.get("name-contains"),
         hasExtension = values.texts.get("has-extension"),
         property = values.texts.get("property"),
@@ -310,6 +334,20 @@ object Cli:
         wrongTimestamp = bool(values, "wrong-timestamp"),
         wrongDay = bool(values, "wrong-day"),
         wrong = bool(values, "wrong")
+      )
+    ),
+    Command(
+      name = "repair",
+      help = "repair picture names, raw files, timestamps, or day folders",
+      positionals = List(Required("path")),
+      flags = repairFlags,
+      build = (values, args) => RepairArgs(
+        path = args.head,
+        names = bool(values, "names"),
+        raw = bool(values, "raw"),
+        timestamps = bool(values, "timestamps"),
+        days = bool(values, "days"),
+        dryRun = bool(values, "dry-run")
       )
     ),
     Command(
@@ -330,7 +368,10 @@ object Cli:
       name = "publish",
       help = "publish albums to Google Photos",
       positionals = List(Optional("path")),
-      flags = List(recursiveFlag, dryRunFlag),
+      flags = List(
+        Flag("recursive", None, BooleanKind, "required for a year or the archive root"),
+        Flag("dry-run", None, BooleanKind, "print the local plan and do not call Google")
+      ),
       build = (values, args) => PublishArgs(
         path = args.headOption,
         recursive = bool(values, "recursive"),
@@ -341,7 +382,10 @@ object Cli:
       name = "sync",
       help = "sync album removals into local exclude lists",
       positionals = List(Optional("path")),
-      flags = List(recursiveFlag, dryRunFlag),
+      flags = List(
+        Flag("recursive", None, BooleanKind, "required for a year or the archive root"),
+        Flag("dry-run", None, BooleanKind, "read Google, print exclude and remove lines, and do not write")
+      ),
       build = (values, args) => SyncArgs(
         path = args.headOption,
         recursive = bool(values, "recursive"),

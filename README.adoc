@@ -1,10 +1,102 @@
 = Google Photo Synchronization
 
-Manage local photo collection and synchronize it with Google Photos.
+Manage the local photo archive and publish its albums to Google Photos.
+
+== Archive layout
+
+Originals are laid out as `YYYY/MM/DD`.
+Album files sit beside those directories.
+There is no year album, and `YYYY.toml` is not an album.
+`YYYY/MM.toml` is a month album.
+`YYYY/MM/DD.toml` is a day album.
+A day-folder `.toml` with a non-digit name is an event.
+A digit name is a picture sidecar.
+Curated albums are `.toml` files directly in originals.
+Upload is JPEG and video.
+RAW stays local.
+jtoml rewrites sort keys and drops comments.
+
+== Clock
+
+Filename clocks and JPEG `DateTimeOriginal` are civil times stored as UTC instants.
+A video timestamp override writes that same string as QuickTime `CreateDate`.
+File mtime still goes through the zoned conversion marked TODO on `Dates.FromFile`.
+This program does not change that conversion.
+One trailing `_1` is ignored.
+Full, compact, and short names store the civil clock as a UTC instant.
+A 13-digit name is an epoch instant.
+`ls` may use the sidecar `date` for a short name.
+Album membership uses only the folder day for that form.
+`ls` and `repair` share one assessment.
+The assessed instant is the sidecar timestamp when one is present, otherwise the earliest of the file metadata times and
+the filename clock.
+File times more than 60 minutes apart are reported as varying.
+January 1 of 1980 and January 1 of 2000 stay in their folders.
+`repair --timestamps` sets file mtimes from that instant.
+`repair --days` moves the picture to the calendar day of that instant, read as a UTC civil date.
+
+== Commands
+
+`photo lsd <directory>` lists directories.
+`--long` lists nested directories.
+
+`photo ls <path>` lists pictures and prints name, timestamp, and day mismatches.
+It does not rename, generate, set mtimes, rewrite albums, or move files.
+
+`photo repair <path>` writes repairs.
+At least one of `--names`, `--raw`, `--timestamps`, and `--days` is required.
+`--names` renames `IMG_` and `.JPG`.
+`--raw` makes a JPEG from RAW with dcraw when no normal image exists and `bad-raw` is not set.
+`--timestamps` sets file mtimes from the assessed instant.
+`--days` moves a picture into the assessed day folder, rewriting curated member paths before any file moves.
+The steps run in that order, and each later step sees the files written by the earlier ones.
+`--dry-run` prints those actions and writes nothing.
+
+`photo set-metadata <property> <picture>` sets one sidecar property.
+The picture argument is the stem, without `.jpg`.
+
+`photo albums [path]` lists album claims.
+
+`photo publish [path]` uploads JPEG and video into albums and files existing media ids.
+A year or the archive root requires `--recursive`.
+`--dry-run` prints the local plan and does not call Google.
+A picture in any external album is not uploaded.
+An unclaimed picture is left out of the summary.
+A picture excluded from every album that matches it counts as skipped-excluded and is not uploaded.
+
+`photo sync [path]` reads Google and turns removals into local exclude entries.
+A year or the archive root requires `--recursive`.
+`--dry-run` reads Google, prints exclude and remove lines, and does not write.
+
+`photo login`, `photo status`, and `photo logout` manage the Google Photos token.
+
+== OAuth and config
+
+The Desktop client JSON is `~/.config/org.podval.tools.photo.client.json`.
+The token is `~/.config/org.podval.tools.photo.token.json`.
+The config file is `~/.config/org.podval.tools.photo.toml`.
+
+== Google Photos API
+
+The Library API, since 31 March 2025, can create albums and upload, and can list or edit only content this OAuth client
+created.
+It cannot list or rename albums I made by hand, and it cannot delete media.
+
+- https://issuetracker.google.com/issues/368779600?pli=1
+
+
+- https://rclone.org/googlephotos/[RClone Google Photo documentation]
+- https://rclone.org/drive/#making-your-own-client-id[RClone Google Photo OAuth documentation]
+- https://github.com/rclone/gphotosdl[RClone Download Proxy]
+- https://developers.google.com/photos/library/guides/get-started-library[Google Photos API]
+- https://developers.google.com/photos/overview/get-started-java[Google Photo Client Library]
+- https://developers.google.com/photos/picker/guides/get-started-picker[NEW Picker API]
+
+== History
 
 I started dabbling in this area around year 2000, when our daughter was born and I got my first digital camera :)
 
-== Metadata Extraction
+=== Metadata Extraction
 
 My take on extracting metadata from image files is in the (now archived)
 https://github.com/dubinsky/podval-imageio[podval-imageio] repository.
@@ -25,7 +117,7 @@ I contributed small discoveries I made in 2002 about Canon RAW format (crw) to D
 In the end I realized: it does not make sense to do this myself when there are groups of people who dedicate significant
 time to developing and maintaining dedicated tools like `dcraw`, `metadata-extractor` and `ffmpeg` :)
 
-== Metadata Extraction Tools
+=== Metadata Extraction Tools
 
 - https://github.com/drewnoakes/metadata-extractor[metadata-extractor] (originally, https://drewnoakes.com/code/exif/)
   by https://github.com/drewnoakes[Drew Noakes]
@@ -37,7 +129,7 @@ time to developing and maintaining dedicated tools like `dcraw`, `metadata-extra
 - http://www.sentex.net/~mwandel/jhead/[jhead]
 - http://jphoto.sourceforge.net/[Java USB Camera Tools]
 
-== Synchronization with the Cloud
+=== Synchronization with the Cloud
 
 My previous attempt at code to synchronize local photo archive with the cloud photo services is in the (now archived)
 https://github.com/dubinsky/podval-photo-sync[podval-photo-sync] repository.
@@ -59,19 +151,3 @@ this repository finally delivers.
 This client publishes albums whose files I have written.
 Historical albums are renamed by hand and marked `external`.
 Cron is out of scope.
-
-== Google Photos API
-
-The Library API, since 31 March 2025, can create albums and upload, and can list or edit only content this OAuth client
-created.
-It cannot list or rename albums I made by hand, and it cannot delete media.
-
-- https://issuetracker.google.com/issues/368779600?pli=1
-
-
-- https://rclone.org/googlephotos/[RClone Google Photo documentation]
-- https://rclone.org/drive/#making-your-own-client-id[RClone Google Photo OAuth documentation]
-- https://github.com/rclone/gphotosdl[RClone Download Proxy]
-- https://developers.google.com/photos/library/guides/get-started-library[Google Photos API]
-- https://developers.google.com/photos/overview/get-started-java[Google Photo Client Library]
-- https://developers.google.com/photos/picker/guides/get-started-picker[NEW Picker API]

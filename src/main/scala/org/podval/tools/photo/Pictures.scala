@@ -7,12 +7,13 @@ trait Pictures extends Directory:
 
   override def lsd: Seq[Directory] = Seq.empty
 
-  final def item(name: String): Picture = mkPicture(name, group(fix = false).find(_._1 == name).get._2)
+  final def item(name: String): Picture = mkPicture(name, group(NameMode.Leave).find(_._1 == name).get._2)
 
-  final def lsd(fix: Boolean): Seq[Picture] = for (name, extensions) <- group(fix) yield mkPicture(name, extensions)
+  final def lsd(names: NameMode): Seq[Picture] =
+    for (name, extensions) <- group(names) yield mkPicture(name, extensions)
 
-  private def group(fix: Boolean): Seq[(String, Set[String])] =
-    Pictures.group(Files.listFiles(directory), fix)
+  private def group(names: NameMode): Seq[(String, Set[String])] =
+    Pictures.group(Files.listFiles(directory), names)
 
   private def mkPicture(
     name: String,
@@ -40,21 +41,24 @@ trait Pictures extends Directory:
       aux         = noMoreThanOne(Extension.aux      , "aux"      )
     )
 
+enum NameMode:
+  case Leave, Preview, Apply
+
 object Pictures:
   // Package-visible so tests can group a temp day folder without Root.
-  private[photo] def group(files: Seq[File], fix: Boolean): Seq[(String, Set[String])] = files
+  private[photo] def group(files: Seq[File], names: NameMode): Seq[(String, Set[String])] = files
     .filterNot: file =>
       val (name, extension) = Files.nameAndExtension(file)
       // Event files are non-digit .toml; a digit name is a picture sidecar.
       extension.contains(Metadata.extension) && !name.headOption.exists(_.isDigit)
-    .map(nameAndExtension(_, fix))
+    .map(nameAndExtension(_, names))
     .groupBy(_._1)
     .view
     .mapValues(_.map(_._2).toSet)
     .toSeq
     .sortBy(_._1)
 
-  private def nameAndExtension(file: File, fix: Boolean): (String, String) =
+  private def nameAndExtension(file: File, names: NameMode): (String, String) =
     val (name, extensionOpt) = Files.nameAndExtension(file)
     val extension: String = extensionOpt.getOrElse(throw IllegalArgumentException(s"$file: no extension"))
 
@@ -74,9 +78,11 @@ object Pictures:
       val nameCorrect: String = nameShouldBe.getOrElse(name)
       val extensionCorrect: String = extensionShouldBe.getOrElse(extension)
       val shouldBe: String = s"$nameCorrect.$extensionCorrect"
-      if fix
-      then Files.move(file, File(file.getParentFile, shouldBe))
-      else println(s"$file: WRONG NAME; SHOULD BE $shouldBe; no '--fix'")
+      val destination: File = File(file.getParentFile, shouldBe)
+      names match
+        case NameMode.Apply => Files.move(file, destination)
+        case NameMode.Preview => println(s"moving $file to $destination")
+        case NameMode.Leave => println(s"$file: WRONG NAME; SHOULD BE $shouldBe; repair --names")
       (nameCorrect, extensionCorrect)
 
   private val extensions: Set[String] = Extension.all.map(_.name) ++ Set(

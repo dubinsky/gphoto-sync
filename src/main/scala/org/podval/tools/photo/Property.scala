@@ -30,7 +30,8 @@ object Property:
     AlreadyInGoogle
   )
 
-  def forName(name: String): Property[?] = all.find(_.name == name).get
+  def forName(name: String): Property[?] =
+    all.find(_.name == name).getOrElse(throw IllegalArgumentException(s"unknown property '$name'"))
 
   sealed abstract class StringProperty(
     name: String,
