@@ -194,8 +194,6 @@ object Cli:
 
   private def bool(values: Values, name: String): Boolean = values.bools.getOrElse(name, false)
 
-  private def text(values: Values, name: String): Option[String] = values.texts.get(name)
-
   private def topHelp: String =
     val header: List[String] = List(
       "Photo Archive Tool 0.0.1",
@@ -299,10 +297,10 @@ object Cli:
         path = args.head,
         long = bool(values, "long"),
         fix = bool(values, "fix"),
-        nameContains = text(values, "name-contains"),
-        hasExtension = text(values, "has-extension"),
-        property = text(values, "property"),
-        timestampFromNameFormat = text(values, "timestamp-from-name-format"),
+        nameContains = values.texts.get("name-contains"),
+        hasExtension = values.texts.get("has-extension"),
+        property = values.texts.get("property"),
+        timestampFromNameFormat = values.texts.get("timestamp-from-name-format"),
         timestampFromName = bool(values, "timestamp-from-name"),
         timestampFromNameOnly = bool(values, "timestamp-from-name-only"),
         timestampsVary = bool(values, "timestamps-vary"),
