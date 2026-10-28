@@ -227,7 +227,9 @@ object Sync:
     case event: Album.Event =>
       folderDay(picturePath).exists(day => Claims.folderDayInInterval(event, day))
     case day: Album.Day => picturePath.startsWith(s"${day.title}/")
-    case month: Album.Month => picturePath.startsWith(s"${month.title}/")
+    case month: Album.Month =>
+      Album.monthYearMonth(month.title).exists: key =>
+        picturePath.startsWith(s"${Album.monthPrefix(key)}/")
     case curated: Album.Curated => !curated.members.contains(picturePath)
 
   private def folderDay(picturePath: String): Option[LocalDate] =

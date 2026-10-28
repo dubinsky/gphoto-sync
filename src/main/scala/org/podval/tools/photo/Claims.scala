@@ -46,6 +46,7 @@ object Claims:
   private val empty: Loaded = Loaded(Seq.empty, Map.empty, Map.empty, Seq.empty, Seq.empty)
 
   private def index(scan: Archive.Scan, zone: ZoneId): Loaded =
+    rejectDuplicateMonths(scan.albums)
     val albums: Loaded = scan.albums.foldLeft(empty): (loaded, item) =>
       item.album match
         case event: Album.Event =>
@@ -70,9 +71,22 @@ object Claims:
     case Seq(year, month, day) => LocalDate.of(year.toInt, month.toInt, day.toInt)
     case _ => throw IllegalArgumentException(s"not a day album title: $title")
 
-  private def monthKey(title: String): YearMonth = title.split('/').filter(_.nonEmpty).toSeq match
-    case Seq(year, month) => YearMonth.of(year.toInt, month.toInt)
-    case _ => throw IllegalArgumentException(s"not a month album title: $title")
+  private def monthKey(title: String): YearMonth =
+    Album.monthYearMonth(title).getOrElse(throw IllegalArgumentException(s"not a month album title: $title"))
+
+  private def rejectDuplicateMonths(albums: Seq[Album.Loaded]): Unit =
+    val dupes: Seq[(YearMonth, Seq[Album.Loaded])] = albums
+      .filter(_.album.isInstanceOf[Album.Month])
+      .groupBy(loaded => monthKey(loaded.album.title))
+      .toSeq
+      .filter(_._2.sizeIs > 1)
+      .sortBy(_._1.toString)
+    if dupes.nonEmpty then
+      val text: String = dupes.map: (key, loaded) =>
+        val paths: String = loaded.map(_.file.getPath).sorted.mkString(" and ")
+        s"more than one month album for $key: $paths"
+      .mkString("\n")
+      throw IllegalArgumentException(text)
 
   // timestamp wins over the filename. metadata.date is not a membership input; NameShort gets the folder day.
   private def pictureTime(name: String, metadata: Metadata, folderDay: LocalDate, zone: ZoneId): LocalDateTime =
@@ -158,9 +172,6 @@ final case class ListAlbums(path: Option[Path]) extends Operation:
 
     selected(pictures).foreach(picture => println(picture.line))
 
-  private def selected(pictures: Seq[Claims.Resolved]): Seq[Claims.Resolved] = path match
-    case None => pictures
-    case Some(path) =>
-      val prefix: String = path.toString.stripPrefix("/")
-      if prefix.isEmpty then pictures
-      else pictures.filter(picture => picture.path == prefix || picture.path.startsWith(s"$prefix/"))
+  private def selected(pictures: Seq[Claims.Resolved]): Seq[Claims.Resolved] =
+    val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
+    pictures.filter(picture => Album.matchesPrefix(picture.path, prefix))

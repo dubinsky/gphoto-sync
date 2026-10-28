@@ -8,7 +8,7 @@ import io.github.wasabithumb.jtoml.value.primitive.TomlPrimitive
 import io.github.wasabithumb.jtoml.value.table.TomlTable
 import scala.jdk.CollectionConverters.{IteratorHasAsScala, ListHasAsScala, SetHasAsScala}
 import java.io.File
-import java.time.{LocalDate, LocalDateTime}
+import java.time.{DateTimeException, LocalDate, LocalDateTime, YearMonth}
 import java.time.format.DateTimeParseException
 
 // Metadata's codec accepts unknown keys. Album files must reject them.
@@ -93,6 +93,8 @@ object Album:
         readEvent(file, title, LocalDate.of(year.toInt, month.toInt, day.toInt))
       case Seq(year, month, day) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
         readDay(file, title)
+      case Seq(year, month, name) if isNumber(year, 4) && isNumber(month, 2) && isTitledMonthName(name) =>
+        readMonth(file, title)
       case Seq(year, month) if isNumber(year, 4) && isNumber(month, 2) =>
         readMonth(file, title)
       case Seq(_) =>
@@ -106,7 +108,29 @@ object Album:
     segments.isEmpty || (segments.sizeIs == 1 && isNumber(segments.head, 4))
 
   private[photo] def matchesPrefix(path: String, prefix: Option[String]): Boolean =
-    prefix.filter(_.nonEmpty).forall(selected => path == selected || path.startsWith(s"$selected/"))
+    prefix.filter(_.nonEmpty).forall: selected =>
+      val needle: String = monthYearMonth(selected).map(monthPrefix).getOrElse(selected)
+      path == needle || path.startsWith(s"$needle/")
+
+  // "4" is a label. "32" and "00" are two-digit, so they stay day titles.
+  private[photo] def isTitledMonthName(name: String): Boolean =
+    name.nonEmpty && !isNumber(name, 2)
+
+  private[photo] def monthPrefix(key: YearMonth): String =
+    f"${key.getYear}%04d/${key.getMonthValue}%02d"
+
+  private[photo] def monthYearMonth(title: String): Option[YearMonth] =
+    title.split('/').filter(_.nonEmpty).toSeq match
+      case Seq(year, month) if isNumber(year, 4) && isNumber(month, 2) =>
+        yearMonth(year, month)
+      case Seq(year, month, name) if isNumber(year, 4) && isNumber(month, 2) && isTitledMonthName(name) =>
+        yearMonth(year, month)
+      case _ =>
+        None
+
+  private def yearMonth(year: String, month: String): Option[YearMonth] =
+    try Some(YearMonth.of(year.toInt, month.toInt))
+    catch case _: DateTimeException => None
 
   private[photo] def messageOf(error: Exception): String =
     Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)

@@ -41,11 +41,13 @@ object Archive:
   private def scanMonth(originals: File, year: Int, yearName: String, monthDir: File): Scan =
     val monthName: String = monthDir.getName
     val month: Int = monthName.toInt
-    val days: Seq[Album.Loaded] = tomlFiles(monthDir).flatMap: file =>
+    val albums: Seq[Album.Loaded] = tomlFiles(monthDir).flatMap: file =>
       val (name, _) = Files.nameAndExtension(file)
-      Option.when(isDay(name)):
-        Album.Loaded(file, Album.readDay(file, s"$yearName/$monthName/$name"))
-    childDirectories(monthDir).filter(dir => isDay(dir.getName)).foldLeft(Scan(days, Seq.empty)):
+      val title: String = s"$yearName/$monthName/$name"
+      if isDay(name) then Some(Album.Loaded(file, Album.readDay(file, title)))
+      else if Album.isTitledMonthName(name) then Some(Album.Loaded(file, Album.readMonth(file, title)))
+      else None
+    childDirectories(monthDir).filter(dir => isDay(dir.getName)).foldLeft(Scan(albums, Seq.empty)):
       (scan, dayDir) => scan ++ scanDay(originals, year, month, dayDir)
 
   private def scanDay(originals: File, year: Int, month: Int, dayDir: File): Scan =

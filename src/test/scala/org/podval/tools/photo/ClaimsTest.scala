@@ -152,6 +152,128 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       Files.read(File(originals, "Zed.toml")) shouldBe bad
       Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
 
+  it should "load a labeled month and date a picture to it" in :
+    withOriginals: originals =>
+      val text: String =
+        "exclude = [\"9999\"]\n" +
+        "external = false\n" +
+        "google-album-id = \"album-trip\"\n" +
+        "published-title = \"March trip\"\n"
+      write(originals, "2009/03/Trip.toml", text)
+      touch(originals, "2009/03/01/1000.jpg")
+      Album.load(originals, "2009/03/Trip").album match
+        case month: Album.Month =>
+          month.title shouldBe "2009/03/Trip"
+          month.exclude shouldBe Set("9999")
+          month.external shouldBe false
+          month.googleAlbumId shouldBe "album-trip"
+          month.publishedTitle shouldBe "March trip"
+        case other => fail(s"expected a month, got $other")
+      one(originals, "2009/03/01/1000").dated shouldBe Some("2009/03/Trip")
+
+  it should "keep a two-digit third segment as a day" in :
+    withOriginals: originals =>
+      write(originals, "2009/03/02.toml", "")
+      write(originals, "2009/03/Trip.toml", "")
+      touch(originals, "2009/03/02/2000.jpg")
+      Album.load(originals, "2009/03/02").album match
+        case day: Album.Day => day.title shouldBe "2009/03/02"
+        case other => fail(s"expected a day, got $other")
+      one(originals, "2009/03/02/2000").dated shouldBe Some("2009/03/02")
+      write(originals, "2009/03/02/Party.toml", "")
+      Album.load(originals, "2009/03/02/Party").album match
+        case event: Album.Event => event.title shouldBe "2009/03/02/Party"
+        case other => fail(s"expected an event, got $other")
+      val extra: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Album.load(originals, "2005/04/Toronto/extra")
+      extra.getMessage shouldBe "not an album title: 2005/04/Toronto/extra"
+      val yearName: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Album.load(originals, "2005/Toronto")
+      yearName.getMessage shouldBe "not an album title: 2005/Toronto"
+    withOriginals: originals =>
+      write(originals, "2009/03/4.toml", "")
+      Album.load(originals, "2009/03/4").album match
+        case month: Album.Month => month.title shouldBe "2009/03/4"
+        case other => fail(s"expected a month, got $other")
+      Album.matchesPrefix("2005/04/05/1", Some("2005/04/4")) shouldBe true
+      Album.matchesPrefix("2005/04/05/1", Some("2005/04/04")) shouldBe false
+
+  it should "ignore a two-digit name that is not a day" in :
+    withOriginals: originals =>
+      write(originals, "2009/03/32.toml", "")
+      touch(originals, "2009/03/01/1000.jpg")
+      Album.load(originals, "2009/03/32").album match
+        case day: Album.Day => day.title shouldBe "2009/03/32"
+        case other => fail(s"expected a day, got $other")
+      one(originals, "2009/03/01/1000").dated shouldBe None
+
+  it should "reject a plain month and a labeled month for one year-month" in :
+    withOriginals: originals =>
+      write(originals, "2009/03.toml", "")
+      write(originals, "2009/03/Trip.toml", "")
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy Claims(originals, zone)
+      monthClash(originals, Seq("2009/03.toml", "2009/03/Trip.toml"), caught.getMessage)
+
+  it should "reject two labeled months for one year-month" in :
+    withOriginals: originals =>
+      write(originals, "2009/03/A.toml", "")
+      write(originals, "2009/03/B.toml", "")
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy Claims(originals, zone)
+      monthClash(originals, Seq("2009/03/A.toml", "2009/03/B.toml"), caught.getMessage)
+
+  it should "reject three month files for one year-month" in :
+    withOriginals: originals =>
+      write(originals, "2009/03.toml", "")
+      write(originals, "2009/03/A.toml", "")
+      write(originals, "2009/03/B.toml", "")
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy Claims(originals, zone)
+      monthClash(originals, Seq("2009/03.toml", "2009/03/A.toml", "2009/03/B.toml"), caught.getMessage)
+
+  it should "let an event win over a labeled month" in :
+    withOriginals: originals =>
+      write(originals, "2009/03/Trip.toml", "")
+      write(originals, "2009/03/03/Party.toml", "")
+      touch(originals, "2009/03/03/3000.jpg")
+      touch(originals, "2009/03/01/1000.jpg")
+      one(originals, "2009/03/03/3000").dated shouldBe Some("2009/03/03/Party")
+      one(originals, "2009/03/01/1000").dated shouldBe Some("2009/03/Trip")
+
+  it should "not date a picture outside an event when there is no month album" in :
+    withOriginals: originals =>
+      write(
+        originals,
+        "2009/06/18/Toronto.toml",
+        "to = 2009-06-22\nname-from = \"3427\"\nname-to = \"3899\"\n"
+      )
+      touch(originals, "2009/06/20/1000.jpg")
+      Album.load(originals, "2009/06/18/Toronto").album shouldBe a[Album.Event]
+      one(originals, "2009/06/20/1000").dated shouldBe None
+
+  it should "exclude a stem from a labeled month" in :
+    withOriginals: originals =>
+      write(originals, "2009/03/Trip.toml", "exclude = [\"1000\"]\n")
+      touch(originals, "2009/03/01/1000.jpg")
+      val picture: Claims.Resolved = one(originals, "2009/03/01/1000")
+      picture.dated shouldBe None
+      picture.excludedOnly shouldBe true
+
+  it should "select a labeled month by its year and month" in :
+    Album.needsRecursive(None) shouldBe true
+    Album.needsRecursive(Some("")) shouldBe true
+    Album.needsRecursive(Some("2005")) shouldBe true
+    Album.needsRecursive(Some("2005/04")) shouldBe false
+    Album.needsRecursive(Some("2005/04/Toronto")) shouldBe false
+    Album.needsRecursive(Some("2005/04/28")) shouldBe false
+    Album.matchesPrefix("2005/04/28/4216", Some("2005/04/Toronto")) shouldBe true
+    Album.matchesPrefix("2005/05/01/0001", Some("2005/04/Toronto")) shouldBe false
+    Album.matchesPrefix("2005/04/29/1", Some("2005/04/28")) shouldBe false
+    Album.matchesPrefix("2005/04/28/4216", Some("2005/13/Name")) shouldBe false
+
+  private def monthClash(originals: File, names: Seq[String], actual: String): Unit =
+    actual should not include ("Photo Archive Tool:")
+    val paths: String = names.map(name => File(originals, name).getPath).sorted.mkString(" and ")
+    actual shouldBe s"more than one month album for 2009-03: $paths"
+
   private def one(originals: File, path: String): Claims.Resolved = Claims(originals, zone) match
     case Left(error) => fail(error)
     case Right(pictures) => pictures.find(_.path == path).getOrElse(fail(s"missing $path"))

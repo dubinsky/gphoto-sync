@@ -427,6 +427,50 @@ class SyncTest extends AnyFlatSpec, Matchers:
       Album.readCurated(best, "Best").members shouldBe Seq("2011/06/29/2412")
       Album.readCurated(best, "Best").exclude shouldBe Set("2412")
 
+  it should "remove an excluded id that is still in a labeled month" in :
+    withOriginals: originals =>
+      val stem: String = "1000"
+      writeBytes(originals, s"2009/03/01/$stem.jpg", Array[Byte](1))
+      write(originals, s"2009/03/01/$stem.toml", "google-media-item-id = \"media-1\"\n")
+      val month: File = write(
+        originals,
+        "2009/03/Trip.toml",
+        s"exclude = [\"$stem\"]\ngoogle-album-id = \"album-trip\"\n"
+      )
+      val before: Map[String, Seq[Byte]] = snapshot(originals)
+      val fake: Fake = Fake(
+        albums = Map("album-trip" -> Set("media-1")),
+        library = Set("media-1")
+      )
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      expectOk(thrown, out)
+      lines(out) shouldBe Seq(s"remove 2009/03/Trip $stem")
+      fake.removed.toList shouldBe List("album-trip" -> Seq("media-1"))
+      snapshot(originals) shouldBe before
+      Album.readMonth(month, "2009/03/Trip").exclude shouldBe Set(stem)
+
+  it should "remove an excluded id that is still in a plain month" in :
+    withOriginals: originals =>
+      val stem: String = "1000"
+      writeBytes(originals, s"2009/03/01/$stem.jpg", Array[Byte](1))
+      write(originals, s"2009/03/01/$stem.toml", "google-media-item-id = \"media-1\"\n")
+      val month: File = write(
+        originals,
+        "2009/03.toml",
+        s"exclude = [\"$stem\"]\ngoogle-album-id = \"album-month\"\n"
+      )
+      val before: Map[String, Seq[Byte]] = snapshot(originals)
+      val fake: Fake = Fake(
+        albums = Map("album-month" -> Set("media-1")),
+        library = Set("media-1")
+      )
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      expectOk(thrown, out)
+      lines(out) shouldBe Seq(s"remove 2009/03 $stem")
+      fake.removed.toList shouldBe List("album-month" -> Seq("media-1"))
+      snapshot(originals) shouldBe before
+      Album.readMonth(month, "2009/03").exclude shouldBe Set(stem)
+
   private def run(
     originals: File,
     fake: Fake,

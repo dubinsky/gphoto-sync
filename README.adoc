@@ -7,10 +7,13 @@ Manage the local photo archive and publish its albums to Google Photos.
 Originals are laid out as `YYYY/MM/DD`.
 Album files sit beside those directories.
 There is no year album, and `YYYY.toml` is not an album.
-`YYYY/MM.toml` is a month album.
-`YYYY/MM/DD.toml` is a day album.
+`YYYY/MM.toml` in the year directory is a month album titled `YYYY/MM`.
+`YYYY/MM/Name.toml` in the month directory is a month album titled `YYYY/MM/Name`.
+The third segment is a label, not a day and not an event.
+A two-digit third segment is still the day album `YYYY/MM/DD.toml`.
 A day-folder `.toml` with a non-digit name is an event.
 A digit name is a picture sidecar.
+At most one month file per year-month.
 Curated albums are `.toml` files directly in originals.
 Upload is JPEG and video.
 RAW stays local.

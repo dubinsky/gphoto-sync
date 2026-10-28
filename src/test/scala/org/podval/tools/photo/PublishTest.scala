@@ -430,6 +430,19 @@ class PublishTest extends AnyFlatSpec, Matchers:
       out should include ("skipped-exists=1")
       out should include ("failed=0")
 
+  it should "publish a labeled month without --recursive" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/01/1000.jpg", Array[Byte](1))
+      write(originals, "2009/03/Trip.toml", "")
+      writeBytes(originals, "2009/04/02/2000.jpg", Array[Byte](2))
+      write(originals, "2009/04.toml", "")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/Trip"), recursive = false))
+      expectOk(thrown, out)
+      fake.createdAlbums.toSeq shouldBe Seq("2009/03/Trip")
+      fake.uploads.map(_.getName).toSeq shouldBe Seq("1000.jpg")
+      out should not include ("year or root requires --recursive")
+
   private def run(
     originals: File,
     fake: Fake,
