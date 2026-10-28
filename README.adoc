@@ -159,5 +159,8 @@ In the end, while chasing ever-changing cloud, I neglected the management of the
 this repository finally delivers.
 
 This client publishes albums whose files I have written.
-Historical albums are renamed by hand and marked `external`.
+Historical albums are marked `external`.
+Ones I own are renamed by hand.
+Ones I do not own have `owner` and `google-title` and are not renamed.
+Publish does not upload or rename an external album, and it does not call `updateAlbumTitle` for an album with `owner`.
 Cron is out of scope.

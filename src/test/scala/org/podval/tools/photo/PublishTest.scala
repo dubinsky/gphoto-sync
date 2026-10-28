@@ -228,6 +228,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       out should include ("2009/03/10/2412 dated=2009/03/10/Party curated=Best")
       out should include ("2009/03/10/Party")
       out should include ("Best")
+      out should not include ("google ")
       out should not include ("uploaded=")
 
   it should "not count an unclaimed picture as excluded" in :
@@ -443,6 +444,369 @@ class PublishTest extends AnyFlatSpec, Matchers:
       fake.uploads.map(_.getName).toSeq shouldBe Seq("1000.jpg")
       out should not include ("year or root requires --recursive")
 
+  it should "rename to the path title when google-title is absent" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(
+        originals,
+        "2009/03/10/Party.toml",
+        "from = 2009-03-10\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
+      )
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums.toSeq shouldBe Seq("album-party" -> "2009/03/10/Party")
+      val event: Album.Event = readEvent(originals, "2009/03/10/Party")
+      event.title shouldBe "2009/03/10/Party"
+      event.publishedTitle shouldBe "2009/03/10/Party"
+      event.googleTitle shouldBe ""
+
+  it should "create an album at google-title and keep that title on the file" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "from = 2009-03-10\ngoogle-title = \"Party night\"\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums.toSeq shouldBe Seq("Party night")
+      fake.updatedAlbums shouldBe empty
+      val event: Album.Event = readEvent(originals, "2009/03/10/Party")
+      event.title shouldBe "2009/03/10/Party"
+      event.publishedTitle shouldBe "Party night"
+      event.googleTitle shouldBe "Party night"
+      out should include ("failed=0")
+
+  it should "send a leading space to createAlbum and keep it on the file" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "from = 2009-03-10\ngoogle-title = \" Party night\"\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums.toSeq shouldBe Seq(" Party night")
+      fake.updatedAlbums shouldBe empty
+      val event: Album.Event = readEvent(originals, "2009/03/10/Party")
+      event.googleTitle shouldBe " Party night"
+      event.publishedTitle shouldBe " Party night"
+
+  it should "rename a stored album to google-title" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(
+        originals,
+        "2009/03/10/Party.toml",
+        "from = 2009-03-10\ngoogle-album-id = \"album-party\"\n" +
+          "published-title = \"2009/03/10/Party\"\ngoogle-title = \"Party night\"\n"
+      )
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums.toSeq shouldBe Seq("album-party" -> "Party night")
+      val event: Album.Event = readEvent(originals, "2009/03/10/Party")
+      event.publishedTitle shouldBe "Party night"
+      event.googleTitle shouldBe "Party night"
+      event.googleAlbumId shouldBe "album-party"
+
+  it should "not rename when published-title is already the desired title" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val album: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "from = 2009-03-10\ngoogle-album-id = \"album-party\"\n" +
+          "published-title = \"Party night\"\ngoogle-title = \"Party night\"\n"
+      )
+      val before: Seq[Byte] = bytes(album)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums shouldBe empty
+      bytes(album) shouldBe before
+
+  it should "rewrite an empty id even when published-title is already desired" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val album: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "published-title = \"Party night\"\ngoogle-title = \"Party night\"\n"
+      )
+      val before: Seq[Byte] = bytes(album)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums.toSeq shouldBe Seq("Party night")
+      fake.updatedAlbums shouldBe empty
+      bytes(album) should not be before
+      val event: Album.Event = readEvent(originals, "2009/03/10/Party")
+      event.googleAlbumId.nonEmpty shouldBe true
+      event.publishedTitle shouldBe "Party night"
+      event.googleTitle shouldBe "Party night"
+
+  it should "adopt the remote album titled with google-title" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "from = 2009-03-10\ngoogle-title = \"Party night\"\n")
+      val fake: Fake = Fake(initialRemote =
+        Seq("album-path" -> "2009/03/10/Party", "album-night" -> "Party night")
+      )
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums shouldBe empty
+      fake.remoteAlbums shouldBe Seq("album-path" -> "2009/03/10/Party", "album-night" -> "Party night")
+      val event: Album.Event = readEvent(originals, "2009/03/10/Party")
+      event.googleAlbumId shouldBe "album-night"
+      event.publishedTitle shouldBe "Party night"
+      event.title shouldBe "2009/03/10/Party"
+
+  it should "fail every album that desires the same title and still create a different one" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
+      writeBytes(originals, "2009/03/12/2414.jpg", Array[Byte](3))
+      val party: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "google-album-id = \"album-party\"\npublished-title = \"Old\"\ngoogle-title = \"Party night\"\n"
+      )
+      val other: File = write(
+        originals,
+        "2009/03/11/Other.toml",
+        "google-title = \"Party night\"\n"
+      )
+      write(originals, "2009/03/12/Third.toml", "google-title = \"Third night\"\n")
+      val partyBefore: Seq[Byte] = bytes(party)
+      val otherBefore: Seq[Byte] = bytes(other)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.createdAlbums.toSeq shouldBe Seq("Third night")
+      fake.createdAlbums should not contain ("Party night")
+      fake.updatedAlbums shouldBe empty
+      bytes(party) shouldBe partyBefore
+      bytes(other) shouldBe otherBefore
+      out should include ("2009/03/10/Party")
+      out should include ("2009/03/11/Other")
+      out should include ("also desired")
+      out should include ("failed=")
+
+  it should "fail two stored albums that desire the same title without renaming" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
+      val party: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "google-album-id = \"album-party\"\npublished-title = \"Keep party\"\ngoogle-title = \"Party night\"\n"
+      )
+      val other: File = write(
+        originals,
+        "2009/03/11/Other.toml",
+        "google-album-id = \"album-other\"\npublished-title = \"Keep other\"\ngoogle-title = \"Party night\"\n"
+      )
+      val partyBefore: Seq[Byte] = bytes(party)
+      val otherBefore: Seq[Byte] = bytes(other)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums shouldBe empty
+      bytes(party) shouldBe partyBefore
+      bytes(other) shouldBe otherBefore
+      out should include ("2009/03/10/Party")
+      out should include ("2009/03/11/Other")
+      out should include ("failed=")
+
+  it should "not let an external google title block a client album" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "google-title = \"Party night\"\n")
+      val shared: File = write(
+        originals,
+        "Shared.toml",
+        "external = true\ngoogle-title = \"Party night\"\nmembers = [\"1999/01/01/0000\"]\n"
+      )
+      val sharedBefore: Seq[Byte] = bytes(shared)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.createdAlbums.toSeq shouldBe Seq("Party night")
+      bytes(shared) shouldBe sharedBefore
+
+  it should "keep publishing the other album when createAlbum throws" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "google-title = \"Party night\"\n")
+      write(originals, "2009/03/11/Other.toml", "google-title = \"Other night\"\n")
+      val fake: Fake = Fake(failCreateTitles = Set("Party night"))
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.createdAlbums.toSeq shouldBe Seq("Other night")
+      out should include ("failed=")
+      out should include ("create failed")
+
+  it should "keep publishing the other album when updateAlbumTitle throws" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
+      val party: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "google-album-id = \"album-party\"\npublished-title = \"Old party\"\ngoogle-title = \"Party night\"\n"
+      )
+      write(
+        originals,
+        "2009/03/11/Other.toml",
+        "google-album-id = \"album-other\"\npublished-title = \"Old other\"\ngoogle-title = \"Other night\"\n"
+      )
+      val partyBefore: Seq[Byte] = bytes(party)
+      val fake: Fake = Fake(failUpdateTitles = Set("Party night"))
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums.map(_._2).toSeq shouldBe Seq("Other night")
+      bytes(party) shouldBe partyBefore
+      readEvent(originals, "2009/03/11/Other").publishedTitle shouldBe "Other night"
+      out should include ("failed=")
+
+  it should "not upload or rename an album owned by someone else" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val event: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "external = true\ngoogle-title = \"Hawaii \"\nowner = \"Ada Owner\"\n"
+      )
+      val before: Seq[Byte] = bytes(event)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums shouldBe empty
+      bytes(event) shouldBe before
+      out should include ("skipped-external=1")
+      out should include ("uploaded=0")
+
+  it should "refuse ensureOne for an album with an owner before any transport call" in :
+    withOriginals: originals =>
+      val file: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "external = true\ngoogle-title = \"Hawaii \"\nowner = \"Ada Owner\"\n"
+      )
+      val before: Seq[Byte] = bytes(file)
+      val album: Album.Event = Album.Event(
+        title = "2009/03/10/Party",
+        pathDay = LocalDate.of(2009, 3, 10),
+        from = None,
+        to = None,
+        nameFrom = None,
+        nameTo = None,
+        exclude = Set.empty,
+        external = true,
+        googleAlbumId = "",
+        publishedTitle = "",
+        googleTitle = "Hawaii ",
+        owner = Some("Ada Owner")
+      )
+      val fake: Fake = Fake()
+      Publish.ensureOne(Album.Loaded(file, album), Seq.empty, Map.empty, fake) shouldBe
+        Left("2009/03/10/Party is owned by someone else")
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums shouldBe empty
+      fake.uploads shouldBe empty
+      bytes(file) shouldBe before
+
+  it should "print a google line only under an open album whose title differs" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "google-title = \"Party night\"\n")
+      write(originals, "Best.toml", "members = [\"2009/03/10/2412\"]\n")
+      val fake: Fake = Fake()
+      var opened: Boolean = false
+      val (out, thrown) = capture:
+        run(originals, fake, Some("2009/03/10"), dryRun = true, onOpen = () => opened = true)
+      expectOk(thrown, out)
+      opened shouldBe false
+      fake.createdAlbums shouldBe empty
+      out.trim.linesIterator.toSeq shouldBe Seq(
+        "2009/03/10/2412 dated=2009/03/10/Party curated=Best",
+        "2009/03/10/Party",
+        "google \"2009/03/10/Party\" \"Party night\"",
+        "Best"
+      )
+      out should not include ("uploaded=")
+
+  it should "print collision lines and no google line on a dry run" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "google-title = \"Party night\"\n")
+      write(originals, "2009/03/11/Other.toml", "google-title = \"Party night\"\n")
+      val fake: Fake = Fake()
+      var opened: Boolean = false
+      val (out, thrown) = capture:
+        run(originals, fake, Some("2009/03"), dryRun = true, onOpen = () => opened = true)
+      expectOk(thrown, out)
+      opened shouldBe false
+      val lines: Seq[String] = out.trim.linesIterator.toSeq
+      lines.take(2).foreach(_ should include ("dated="))
+      lines.drop(2).foreach(_ should include ("also desired"))
+      lines should not contain ("2009/03/10/Party")
+      lines should not contain ("2009/03/11/Other")
+      lines.exists(_.startsWith("google ")) shouldBe false
+      out should include ("2009/03/10/2412 2009/03/10/Party:")
+      out should include ("2009/03/11/2413 2009/03/11/Other:")
+      out should not include ("uploaded=")
+
+  it should "not add a list error to an album already blocked by a shared title" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
+      writeBytes(originals, "2009/03/12/2414.jpg", Array[Byte](3))
+      write(
+        originals,
+        "2009/03/10/Party.toml",
+        "google-album-id = \"album-party\"\npublished-title = \"Old\"\ngoogle-title = \"Party night\"\n"
+      )
+      write(originals, "2009/03/11/Other.toml", "google-title = \"Party night\"\n")
+      write(originals, "2009/03/12/Third.toml", "google-title = \"Third night\"\n")
+      val fake: Fake = Fake(failList = true)
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums shouldBe empty
+      val party: Seq[String] = out.linesIterator.filter(_.startsWith("2009/03/10/2412")).toSeq
+      val other: Seq[String] = out.linesIterator.filter(_.startsWith("2009/03/11/2413")).toSeq
+      val third: Seq[String] = out.linesIterator.filter(_.startsWith("2009/03/12/2414")).toSeq
+      party should have size 1
+      other should have size 1
+      party.foreach: line =>
+        line should include ("also desired")
+        line should not include ("list failed")
+      other.foreach: line =>
+        line should include ("also desired")
+        line should not include ("list failed")
+      third shouldBe Seq("2009/03/12/2414 2009/03/12/Third: list failed")
+      out should include ("failed=")
+
+  private def readEvent(originals: File, title: String): Album.Event =
+    val day: LocalDate = title.split('/').toSeq match
+      case Seq(year, month, day, _) => LocalDate.of(year.toInt, month.toInt, day.toInt)
+      case _ => fail(s"not an event title: $title")
+    Album.readEvent(File(originals, s"$title.toml"), title, day)
+
   private def run(
     originals: File,
     fake: Fake,
@@ -521,7 +885,11 @@ class PublishTest extends AnyFlatSpec, Matchers:
     missingId: Boolean = false,
     statusMessage: Option[String] = None,
     failCreateAfter: Option[Int] = None,
-    unowned: Boolean = false
+    unowned: Boolean = false,
+    initialRemote: Seq[(String, String)] = Seq.empty,
+    failList: Boolean = false,
+    failCreateTitles: Set[String] = Set.empty,
+    failUpdateTitles: Set[String] = Set.empty
   ) extends Publish.GoogleTransport:
     val uploads: scala.collection.mutable.ArrayBuffer[File] = scala.collection.mutable.ArrayBuffer.empty
     val events: scala.collection.mutable.ArrayBuffer[String] = scala.collection.mutable.ArrayBuffer.empty
@@ -529,13 +897,20 @@ class PublishTest extends AnyFlatSpec, Matchers:
       scala.collection.mutable.ArrayBuffer.empty
     val adds: scala.collection.mutable.ArrayBuffer[(String, Seq[String])] = scala.collection.mutable.ArrayBuffer.empty
     val createdAlbums: scala.collection.mutable.ArrayBuffer[String] = scala.collection.mutable.ArrayBuffer.empty
+    val updatedAlbums: scala.collection.mutable.ArrayBuffer[(String, String)] =
+      scala.collection.mutable.ArrayBuffer.empty
     var onUpload: File => Unit = _ => ()
-    private var remote: Seq[(String, String)] = Seq.empty
+    private var remote: Seq[(String, String)] = initialRemote
     private var next: Int = 0
 
-    override def listAppAlbums(): Seq[(String, String)] = remote
+    def remoteAlbums: Seq[(String, String)] = remote
+
+    override def listAppAlbums(): Seq[(String, String)] =
+      if failList then throw IllegalStateException("list failed")
+      remote
 
     override def createAlbum(title: String): String =
+      if failCreateTitles.contains(title) then throw IllegalStateException(s"create failed: $title")
       next += 1
       val id: String = s"album-$next"
       remote = remote :+ (id, title)
@@ -543,6 +918,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
       id
 
     override def updateAlbumTitle(albumId: String, title: String): Unit =
+      if failUpdateTitles.contains(title) then throw IllegalStateException(s"update failed: $title")
+      updatedAlbums += ((albumId, title))
       remote = remote.map:
         case (id, _) if id == albumId => (id, title)
         case pair => pair

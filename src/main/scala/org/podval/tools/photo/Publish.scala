@@ -109,7 +109,19 @@ object Publish:
       }.distinct
       if dryRun then
         selected.foreach(picture => println(picture.line))
-        ensuredTitles.foreach(println)
+        val split: DesiredSplit = splitDesired(ensuredTitles, albums)
+        split.blocked.foreach: title =>
+          reportClaimers(
+            title,
+            collisionText(title, ensuredTitles, albums),
+            selected,
+            (picture, album, message) => println(s"$picture $album: $message")
+          )
+        split.open.foreach: title =>
+          println(title)
+          val album: Album = albums(title).album
+          if album.desiredGoogleTitle != album.title then
+            println(s"google ${Album.quote(album.title)} ${Album.quote(album.desiredGoogleTitle)}")
       else
         publish(
           scan.albums,
@@ -309,7 +321,11 @@ object Publish:
     if titles.isEmpty then Map.empty
     else
       val knownIds: Map[String, String] = localAlbumIds(allAlbums)
-      val needRemote: Boolean = titles.exists(title => albums(title).album.googleAlbumId.isEmpty)
+      val split: DesiredSplit = splitDesired(titles, albums)
+      split.blocked.foreach: title =>
+        failClaimers(title, collisionText(title, titles, albums), pictures, fail)
+      val open: Seq[String] = split.open
+      val needRemote: Boolean = open.exists(title => albums(title).album.googleAlbumId.isEmpty)
       val remoteResult: Either[String, Seq[(String, String)]] =
         if !needRemote then Right(Seq.empty)
         else
@@ -317,10 +333,10 @@ object Publish:
           catch case error: Exception => Left(Album.messageOf(error))
       remoteResult match
         case Left(message) =>
-          titles.foreach(title => failClaimers(title, message, pictures, fail))
+          open.foreach(title => failClaimers(title, message, pictures, fail))
           Map.empty
         case Right(remote) =>
-          val (ensured, _, _) = titles.foldLeft((Map.empty[String, String], remote, knownIds)): (state, title) =>
+          val (ensured, _, _) = open.foldLeft((Map.empty[String, String], remote, knownIds)): (state, title) =>
             val (done, remoteNow, idsNow) = state
             ensureOne(albums(title), remoteNow, idsNow, transport) match
               case Left(message) =>
@@ -336,52 +352,86 @@ object Publish:
     pictures: Seq[Claims.Resolved],
     fail: (String, String, String) => Unit
   ): Unit =
+    reportClaimers(title, message, pictures, fail)
+
+  private def reportClaimers(
+    title: String,
+    message: String,
+    pictures: Seq[Claims.Resolved],
+    report: (String, String, String) => Unit
+  ): Unit =
     val claimers: Seq[Claims.Resolved] = pictures.filter(picture =>
       picture.dated.contains(title) || picture.curated.contains(title)
     )
-    if claimers.isEmpty then fail("-", title, message)
-    else claimers.foreach(picture => fail(picture.path, title, message))
+    if claimers.isEmpty then report("-", title, message)
+    else claimers.foreach(picture => report(picture.path, title, message))
 
-  private final case class Ensured(id: String, remote: Seq[(String, String)], ids: Map[String, String])
+  private final case class DesiredSplit(blocked: Set[String], open: Seq[String])
 
-  private def ensureOne(
+  private def splitDesired(titles: Seq[String], albums: Map[String, Album.Loaded]): DesiredSplit =
+    val blocked: Set[String] = titles.filter { title =>
+      val desired: String = albums(title).album.desiredGoogleTitle
+      titles.exists(other => other != title && albums(other).album.desiredGoogleTitle == desired)
+    }.toSet
+    DesiredSplit(blocked, titles.filterNot(blocked.contains))
+
+  private def collisionText(title: String, titles: Seq[String], albums: Map[String, Album.Loaded]): String =
+    val desired: String = albums(title).album.desiredGoogleTitle
+    val others: String = titles
+      .filter(other => other != title && albums(other).album.desiredGoogleTitle == desired)
+      .mkString(", ")
+    s"google title ${Album.quote(desired)} is also desired by $others"
+
+  private[photo] final case class Ensured(id: String, remote: Seq[(String, String)], ids: Map[String, String])
+
+  private[photo] def ensureOne(
     loaded: Album.Loaded,
     remote: Seq[(String, String)],
     ids: Map[String, String],
     transport: GoogleTransport
   ): Either[String, Ensured] =
     val album: Album = loaded.album
-    val resolved: Either[String, (String, Seq[(String, String)], Map[String, String], Boolean)] =
-      if album.googleAlbumId.nonEmpty then Right((album.googleAlbumId, remote, ids, false))
-      else
-        remote.filter(_._2 == album.title) match
-          case Seq() =>
-            try
-              val id: String = transport.createAlbum(album.title)
-              Album.storeGoogle(loaded.file, id, album.title)
-              Right((id, remote :+ (id, album.title), ids.updated(id, album.title), true))
-            catch case error: Exception => Left(Album.messageOf(error))
-          case Seq((id, _)) =>
-            ids.get(id) match
-              case Some(other) if other != album.title =>
-                Left(s"google album id is already stored on $other")
-              case _ =>
-                try
-                  Album.storeGoogle(loaded.file, id, album.title)
-                  Right((id, remote, ids.updated(id, album.title), true))
-                catch case error: Exception => Left(Album.messageOf(error))
-          case _ =>
-            Left(s"more than one Google album titled ${album.title}")
+    if album.owner.nonEmpty then
+      Left(s"${album.title} is owned by someone else")
+    else
+      val desired: String = album.desiredGoogleTitle
+      val resolved: Either[String, (String, Seq[(String, String)], Map[String, String], Boolean)] =
+        if album.googleAlbumId.nonEmpty then Right((album.googleAlbumId, remote, ids, false))
+        else
+          remote.filter(_._2 == desired) match
+            case Seq() =>
+              try
+                val id: String = transport.createAlbum(desired)
+                Album.storeGoogle(loaded.file, id, desired)
+                Right((id, remote :+ (id, desired), ids.updated(id, album.title), true))
+              catch case error: Exception => Left(Album.messageOf(error))
+            case Seq((id, _)) =>
+              ids.get(id) match
+                case Some(other) if other != album.title =>
+                  Left(s"google album id is already stored on $other")
+                case _ =>
+                  try
+                    Album.storeGoogle(loaded.file, id, desired)
+                    Right((id, remote, ids.updated(id, album.title), true))
+                  catch case error: Exception => Left(Album.messageOf(error))
+            case _ =>
+              Left(s"more than one Google album titled $desired")
 
-    resolved.flatMap: (id, remoteNow, idsNow, wrote) =>
-      val titleNeedsUpdate: Boolean = album.publishedTitle.isEmpty || album.publishedTitle != album.title
-      if wrote || !titleNeedsUpdate then Right(Ensured(id, remoteNow, idsNow))
-      else
-        try
-          transport.updateAlbumTitle(id, album.title)
-          Album.storeGoogle(loaded.file, id, album.title)
-          Right(Ensured(id, remoteNow, idsNow))
-        catch case error: Exception => Left(Album.messageOf(error))
+      resolved.flatMap: (id, remoteNow, idsNow, wrote) =>
+        val titleNeedsUpdate: Boolean =
+          album.publishedTitle.isEmpty || album.publishedTitle != desired
+        if wrote || !titleNeedsUpdate then Right(Ensured(id, remoteNow, idsNow))
+        else
+          try
+            transport.updateAlbumTitle(id, desired)
+            Album.storeGoogle(loaded.file, id, desired)
+            val seen: Seq[(String, String)] = remoteNow.map:
+              case (existing, _) if existing == id => (id, desired)
+              case pair => pair
+            val remoteAfter: Seq[(String, String)] =
+              if seen.exists(_._1 == id) then seen else seen :+ (id, desired)
+            Right(Ensured(id, remoteAfter, idsNow))
+          catch case error: Exception => Left(Album.messageOf(error))
 
   private def plan(
     picture: Claims.Resolved,
