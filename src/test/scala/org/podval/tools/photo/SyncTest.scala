@@ -25,7 +25,8 @@ class SyncTest extends AnyFlatSpec, Matchers:
         originals,
         "Best.toml",
         "members = [\"2009/03/10/2412\", \"2009/05/01/0001\"]\nexclude = [\"other\"]\n" +
-          "google-album-id = \"album-best\"\npublished-title = \"Best shots\"\n"
+          "google-album-id = \"album-best\"\npublished-title = \"Best shots\"\n" +
+          "google-title = \"Desired\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -50,6 +51,8 @@ class SyncTest extends AnyFlatSpec, Matchers:
       curated.exclude shouldBe Set("other", "2412")
       curated.googleAlbumId shouldBe "album-best"
       curated.publishedTitle shouldBe "Best shots"
+      curated.googleTitle shouldBe "Desired"
+      curated.owner shouldBe None
       stringArray(best, "exclude") shouldBe Seq("other", "2412")
       stringArray(best, "members") shouldBe Seq("2009/05/01/0001")
 
@@ -93,7 +96,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "external = true\nfrom = 2009-03-10\ngoogle-album-id = \"album-ext\"\n"
+        "external = true\nfrom = 2009-03-10\ngoogle-title = \"Party night \"\nowner = \"Ada Owner\"\n"
       )
       val best: File = write(
         originals,
@@ -110,6 +113,11 @@ class SyncTest extends AnyFlatSpec, Matchers:
       fake.listed.toList shouldBe List("album-best")
       fake.removed shouldBe empty
       bytes(event) shouldBe beforeEvent
+      val party: Album.Event = Album.readEvent(event, "2009/03/10/Party", LocalDate.of(2009, 3, 10))
+      party.external shouldBe true
+      party.googleAlbumId shouldBe ""
+      party.googleTitle shouldBe "Party night "
+      party.owner shouldBe Some("Ada Owner")
       lines(out) should contain ("exclude Best 2412")
       lines(out).exists(line => line.contains("Party")) shouldBe false
       Album.readCurated(best, "Best").exclude shouldBe Set("2412")

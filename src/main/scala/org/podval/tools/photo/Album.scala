@@ -18,6 +18,11 @@ sealed trait Album:
   def external: Boolean
   def googleAlbumId: String
   def publishedTitle: String
+  def googleTitle: String
+  def owner: Option[String]
+
+  def desiredGoogleTitle: String =
+    if googleTitle.nonEmpty then googleTitle else title
 
 object Album:
   final case class Event(
@@ -30,7 +35,9 @@ object Album:
     exclude: Set[String],
     external: Boolean,
     googleAlbumId: String,
-    publishedTitle: String
+    publishedTitle: String,
+    googleTitle: String,
+    owner: Option[String]
   ) extends Album
 
   final case class Day(
@@ -38,7 +45,9 @@ object Album:
     exclude: Set[String],
     external: Boolean,
     googleAlbumId: String,
-    publishedTitle: String
+    publishedTitle: String,
+    googleTitle: String,
+    owner: Option[String]
   ) extends Album
 
   final case class Month(
@@ -46,7 +55,9 @@ object Album:
     exclude: Set[String],
     external: Boolean,
     googleAlbumId: String,
-    publishedTitle: String
+    publishedTitle: String,
+    googleTitle: String,
+    owner: Option[String]
   ) extends Album
 
   final case class Curated(
@@ -55,7 +66,9 @@ object Album:
     exclude: Set[String],
     external: Boolean,
     googleAlbumId: String,
-    publishedTitle: String
+    publishedTitle: String,
+    googleTitle: String,
+    owner: Option[String]
   ) extends Album
 
   sealed trait When
@@ -74,6 +87,7 @@ object Album:
     if from != to then
       val changes: Seq[(File, String)] = curatedFiles(originals).flatMap: file =>
         val (table, values) = parsed(file, curatedKeys)
+        checkGoogle(file, readCommon(file, values))
         val members: Seq[String] = stringSeq(file, values, "members")
         Option.when(members.contains(from)):
           val updated: TomlArray = TomlArray.create()
@@ -135,6 +149,9 @@ object Album:
   private[photo] def messageOf(error: Exception): String =
     Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
 
+  def quote(text: String): String =
+    "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
   private def isNumber(name: String, length: Int): Boolean =
     name.length == length && name.forall(_.isDigit)
 
@@ -151,16 +168,34 @@ object Album:
       exclude = common.exclude,
       external = common.external,
       googleAlbumId = common.googleAlbumId,
-      publishedTitle = common.publishedTitle
+      publishedTitle = common.publishedTitle,
+      googleTitle = common.googleTitle,
+      owner = common.owner
     )
 
   def readDay(file: File, title: String): Day =
     val common: Common = commonOf(file, checked(file, folderKeys))
-    Day(title, common.exclude, common.external, common.googleAlbumId, common.publishedTitle)
+    Day(
+      title,
+      common.exclude,
+      common.external,
+      common.googleAlbumId,
+      common.publishedTitle,
+      common.googleTitle,
+      common.owner
+    )
 
   def readMonth(file: File, title: String): Month =
     val common: Common = commonOf(file, checked(file, folderKeys))
-    Month(title, common.exclude, common.external, common.googleAlbumId, common.publishedTitle)
+    Month(
+      title,
+      common.exclude,
+      common.external,
+      common.googleAlbumId,
+      common.publishedTitle,
+      common.googleTitle,
+      common.owner
+    )
 
   def readCurated(file: File, title: String): Curated =
     val values: Map[String, TomlValue] = checked(file, curatedKeys)
@@ -171,7 +206,9 @@ object Album:
       exclude = common.exclude,
       external = common.external,
       googleAlbumId = common.googleAlbumId,
-      publishedTitle = common.publishedTitle
+      publishedTitle = common.publishedTitle,
+      googleTitle = common.googleTitle,
+      owner = common.owner
     )
 
   // Same JToml table the reader accepted. Do not hand-write TOML.
@@ -206,19 +243,46 @@ object Album:
     exclude: Set[String],
     external: Boolean,
     googleAlbumId: String,
-    publishedTitle: String
+    publishedTitle: String,
+    googleTitle: String,
+    owner: Option[String]
   )
 
-  private val folderKeys: Set[String] = Set("exclude", "external", "google-album-id", "published-title")
+  private val folderKeys: Set[String] =
+    Set("exclude", "external", "google-album-id", "published-title", "google-title", "owner")
   private val eventKeys: Set[String] = folderKeys ++ Set("from", "to", "name-from", "name-to")
   private val curatedKeys: Set[String] = folderKeys + "members"
 
-  private def commonOf(file: File, values: Map[String, TomlValue]): Common = Common(
+  private def commonOf(file: File, values: Map[String, TomlValue]): Common =
+    val common: Common = readCommon(file, values)
+    checkGoogle(file, common)
+    common
+
+  private def readCommon(file: File, values: Map[String, TomlValue]): Common = Common(
     exclude = stringSeq(file, values, "exclude").toSet,
     external = boolean(file, values, "external", default = false),
     googleAlbumId = string(file, values, "google-album-id", default = ""),
-    publishedTitle = string(file, values, "published-title", default = "")
+    publishedTitle = string(file, values, "published-title", default = ""),
+    googleTitle = string(file, values, "google-title", default = ""),
+    owner = optionalString(file, values, "owner")
   )
+
+  // Spaces are significant. A title of only spaces is a title. Tab, CR, and LF are not.
+  private def checkGoogle(file: File, common: Common): Unit =
+    rejectControl(file, "google-title", common.googleTitle)
+    common.owner.foreach(name => rejectControl(file, "owner", name))
+    common.owner.foreach: name =>
+      if name.trim.isEmpty then failGoogle(file, "owner must be a non-empty display name")
+      else if !common.external then failGoogle(file, "owner requires external = true")
+      else if common.googleAlbumId.nonEmpty then failGoogle(file, "owner must not be combined with google-album-id")
+      else if common.googleTitle.isEmpty then failGoogle(file, "owner requires a non-empty google-title")
+
+  private def rejectControl(file: File, key: String, text: String): Unit =
+    if text.exists(ch => ch == '\t' || ch == '\r' || ch == '\n') then
+      reject(file, key, "must not contain a tab, CR, or LF")
+
+  private def failGoogle(file: File, message: String): Nothing =
+    throw IllegalArgumentException(s"$file: $message")
 
   private def checked(file: File, allowed: Set[String]): Map[String, TomlValue] =
     parsed(file, allowed)._2

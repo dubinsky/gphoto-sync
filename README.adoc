@@ -18,6 +18,11 @@ Curated albums are `.toml` files directly in originals.
 Upload is JPEG and video.
 RAW stays local.
 jtoml rewrites sort keys and drops comments.
+`google-title`, when set, is the Google Photos title, stored exactly, including spaces.
+Empty means that title is the path title.
+`owner`, when set, is the display name of someone else who owns the album.
+That file is `external`, has no `google-album-id`, and is not renamed.
+`published-title` is the title this client last wrote, not that override.
 
 == Clock
 

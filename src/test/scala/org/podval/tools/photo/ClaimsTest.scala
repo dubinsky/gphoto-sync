@@ -75,18 +75,98 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy Claims(originals, zone)
       caught.getMessage should include ("nope")
 
+  it should "load an exact google title and an owner on an external event" in :
+    withOriginals: originals =>
+      write(
+        originals,
+        "2009/03/10/Party.toml",
+        "external = true\nfrom = 2009-03-10\n" +
+          "google-title = \" Shifra Rabiski's wedding\"\nowner = \"Ada Owner\"\n"
+      )
+      Album.load(originals, "2009/03/10/Party").album match
+        case event: Album.Event =>
+          event.googleTitle shouldBe " Shifra Rabiski's wedding"
+          event.desiredGoogleTitle shouldBe " Shifra Rabiski's wedding"
+          event.owner shouldBe Some("Ada Owner")
+          event.external shouldBe true
+          event.googleAlbumId shouldBe ""
+        case other => fail(s"expected an event, got $other")
+
+  it should "load a trailing space on a curated google title" in :
+    withOriginals: originals =>
+      write(originals, "Hawaii.toml", "google-title = \"Hawaii \"\n")
+      val curated: Album.Curated = Album.readCurated(File(originals, "Hawaii.toml"), "Hawaii")
+      curated.googleTitle shouldBe "Hawaii "
+      curated.desiredGoogleTitle shouldBe "Hawaii "
+      curated.owner shouldBe None
+      write(
+        originals,
+        "Spaces.toml",
+        "external = true\ngoogle-title = \"   \"\nowner = \" Ada \"\n"
+      )
+      val padded: Album.Curated = Album.readCurated(File(originals, "Spaces.toml"), "Spaces")
+      padded.googleTitle shouldBe "   "
+      padded.owner shouldBe Some(" Ada ")
+
+  it should "quote a title without trimming" in :
+    Album.quote("a\\b\"c") shouldBe "\"a\\\\b\\\"c\""
+    Album.quote(" Hawaii ") shouldBe "\" Hawaii \""
+
+  it should "reject an illegal google title or owner" in :
+    withOriginals: originals =>
+      def reject(text: String, needle: String): Unit =
+        write(originals, "2009/03/10/Party.toml", text)
+        val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+          Album.load(originals, "2009/03/10/Party")
+        caught.getMessage should include (needle)
+
+      reject(
+        "external = true\ngoogle-title = \"X\"\nowner = \"\"\n",
+        "owner must be a non-empty display name"
+      )
+      reject(
+        "external = true\ngoogle-title = \"X\"\nowner = \"   \"\n",
+        "owner must be a non-empty display name"
+      )
+      reject(
+        "google-title = \"X\"\nowner = \"Ada Owner\"\n",
+        "owner requires external = true"
+      )
+      reject(
+        "external = true\ngoogle-title = \"X\"\ngoogle-album-id = \"abc\"\nowner = \"Ada Owner\"\n",
+        "owner must not be combined with google-album-id"
+      )
+      reject(
+        "external = true\nowner = \"Ada Owner\"\n",
+        "owner requires a non-empty google-title"
+      )
+      reject(
+        "google-title = \"bad\\ttitle\"\nowner = \"   \"\nexternal = true\n",
+        "key 'google-title' must not contain a tab, CR, or LF"
+      )
+      reject("owner = true\n", "must be a string")
+      reject("owned = false\n", "unknown key 'owned'")
+      reject("google_title = \"X\"\n", "unknown key 'google_title'")
+
   it should "rewrite a curated member when a picture moves" in :
     withOriginals: originals =>
       val best: String =
         "# keep\n" +
         "google-album-id = \"abc\"\n" +
+        "google-title = \"Keep me\"\n" +
         "members = [\"2009/03/10/2412\", \"2009/01/01/0000\"]\n" +
         "exclude = [\"2412\"]\n" +
         "external = true\n" +
         "published-title = \"The Best\"\n"
+      val owned: String =
+        "external = true\n" +
+        "google-title = \"Hawaii \"\n" +
+        "owner = \"Ada Owner\"\n" +
+        "members = [\"2009/03/10/2412\"]\n"
       val other: String = "members = [\"1999/01/01/0001\"]\nexternal = false\n"
       val event: String = "from = 2009-03-10\nexclude = [\"2412\"]\n"
       write(originals, "Best.toml", best)
+      write(originals, "Owned.toml", owned)
       write(originals, "Other.toml", other)
       write(originals, "2009/03/10/Purim Seuda.toml", event)
       Album.rewriteMember(originals, "2009/03/10/2412", "2009/03/11/2412")
@@ -99,6 +179,14 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       curated.external shouldBe true
       curated.googleAlbumId shouldBe "abc"
       curated.publishedTitle shouldBe "The Best"
+      curated.googleTitle shouldBe "Keep me"
+      curated.owner shouldBe None
+      val shared: Album.Curated = Album.readCurated(File(originals, "Owned.toml"), "Owned")
+      shared.members shouldBe Seq("2009/03/11/2412")
+      shared.external shouldBe true
+      shared.googleAlbumId shouldBe ""
+      shared.googleTitle shouldBe "Hawaii "
+      shared.owner shouldBe Some("Ada Owner")
       Files.read(File(originals, "Other.toml")) shouldBe other
       Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
 
@@ -152,13 +240,84 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       Files.read(File(originals, "Zed.toml")) shouldBe bad
       Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
 
+  it should "reject owner with a google album id before repair --days moves the picture" in :
+    withOriginals: originals =>
+      val name: String = "20090311_120000"
+      val oldPath: String = s"2009/03/10/$name"
+      val best: String =
+        "external = true\n" +
+        "google-title = \"Hawaii \"\n" +
+        "google-album-id = \"abc\"\n" +
+        "owner = \"Ada Owner\"\n" +
+        s"members = [\"$oldPath\"]\n"
+      val other: String = "members = [\"1999/01/01/0001\"]\n"
+      val event: String = "from = 2009-03-10\n"
+      write(originals, "Best.toml", best)
+      write(originals, "Other.toml", other)
+      write(originals, "2009/03/10/Purim Seuda.toml", event)
+      val picture: File = File(originals, s"$oldPath.jpg")
+      picture.getParentFile.mkdirs()
+      ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
+      val root: Root = rootFor(originals)
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Repair.run(
+          root.parse("2009/03/10"),
+          names = false,
+          raw = false,
+          timestamps = false,
+          days = true,
+          dryRun = false
+        )
+      caught.getMessage should include ("owner must not be combined with google-album-id")
+      picture.exists shouldBe true
+      File(originals, s"2009/03/11/$name.jpg").exists shouldBe false
+      Files.read(File(originals, "Best.toml")) shouldBe best
+      Files.read(File(originals, "Other.toml")) shouldBe other
+      Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
+
+  it should "reject owner with a google album id on a curated file that lacks the member" in :
+    withOriginals: originals =>
+      val name: String = "20090311_120000"
+      val oldPath: String = s"2009/03/10/$name"
+      val best: String = s"members = [\"$oldPath\"]\nexclude = [\"9999\"]\n"
+      val other: String =
+        "external = true\n" +
+        "google-title = \"Hawaii \"\n" +
+        "google-album-id = \"abc\"\n" +
+        "owner = \"Ada Owner\"\n" +
+        "members = [\"1999/01/01/0001\"]\n"
+      val event: String = "from = 2009-03-10\n"
+      write(originals, "Best.toml", best)
+      write(originals, "Other.toml", other)
+      write(originals, "2009/03/10/Purim Seuda.toml", event)
+      val picture: File = File(originals, s"$oldPath.jpg")
+      picture.getParentFile.mkdirs()
+      ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
+      val root: Root = rootFor(originals)
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Repair.run(
+          root.parse("2009/03/10"),
+          names = false,
+          raw = false,
+          timestamps = false,
+          days = true,
+          dryRun = false
+        )
+      caught.getMessage should include ("owner must not be combined with google-album-id")
+      picture.exists shouldBe true
+      File(originals, s"2009/03/11/$name.jpg").exists shouldBe false
+      Files.read(File(originals, "Best.toml")) shouldBe best
+      Files.read(File(originals, "Other.toml")) shouldBe other
+      Files.read(File(originals, "2009/03/10/Purim Seuda.toml")) shouldBe event
+
   it should "load a labeled month and date a picture to it" in :
     withOriginals: originals =>
       val text: String =
         "exclude = [\"9999\"]\n" +
         "external = false\n" +
         "google-album-id = \"album-trip\"\n" +
-        "published-title = \"March trip\"\n"
+        "published-title = \"March trip\"\n" +
+        "google-title = \"March trip\"\n"
       write(originals, "2009/03/Trip.toml", text)
       touch(originals, "2009/03/01/1000.jpg")
       Album.load(originals, "2009/03/Trip").album match
@@ -168,6 +327,9 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
           month.external shouldBe false
           month.googleAlbumId shouldBe "album-trip"
           month.publishedTitle shouldBe "March trip"
+          month.googleTitle shouldBe "March trip"
+          month.owner shouldBe None
+          month.desiredGoogleTitle shouldBe "March trip"
         case other => fail(s"expected a month, got $other")
       one(originals, "2009/03/01/1000").dated shouldBe Some("2009/03/Trip")
 
