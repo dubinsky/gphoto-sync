@@ -3,7 +3,8 @@ package org.podval.tools.photo
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.awt.image.BufferedImage
-import java.io.File
+import java.io.{ByteArrayOutputStream, File}
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files as JFiles
 import java.time.ZoneId
 import javax.imageio.ImageIO
@@ -430,6 +431,97 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
     Album.matchesPrefix("2005/05/01/0001", Some("2005/04/Toronto")) shouldBe false
     Album.matchesPrefix("2005/04/29/1", Some("2005/04/28")) shouldBe false
     Album.matchesPrefix("2005/04/28/4216", Some("2005/13/Name")) shouldBe false
+
+  it should "print the google title and owner before the picture line" in :
+    withOriginals: originals =>
+      touch(originals, "2009/03/10/2412.jpg")
+      write(
+        originals,
+        "2009/03/10/Party.toml",
+        "external = true\nfrom = 2009-03-10\n" +
+          "google-title = \" Shifra Rabiski's wedding\"\nowner = \"Ada Owner\"\n"
+      )
+      val lines: Seq[String] = listLines(originals, "")
+      lines shouldBe Seq(
+        "album \"2009/03/10/Party\" google=\" Shifra Rabiski's wedding\" owner=\"Ada Owner\"",
+        "2009/03/10/2412 dated=2009/03/10/Party curated=-"
+      )
+
+  it should "print a trailing space on a curated google title and no owner" in :
+    withOriginals: originals =>
+      write(originals, "Hawaii.toml", "google-title = \"Hawaii \"\n")
+      listLines(originals, "") shouldBe Seq("album \"Hawaii\" google=\"Hawaii \"")
+
+  it should "print a month google title and keep the path title on dated" in :
+    withOriginals: originals =>
+      write(originals, "2009/03/Trip.toml", "google-title = \"March trip\"\n")
+      touch(originals, "2009/03/01/1000.jpg")
+      listLines(originals, "") shouldBe Seq(
+        "album \"2009/03/Trip\" google=\"March trip\"",
+        "2009/03/01/1000 dated=2009/03/Trip curated=-"
+      )
+
+  it should "print no album line when google title and owner are absent" in :
+    withOriginals: originals =>
+      touch(originals, "2009/03/10/2412.jpg")
+      write(originals, "2009/03/10/Party.toml", "")
+      val lines: Seq[String] = listLines(originals, "")
+      lines shouldBe Seq("2009/03/10/2412 dated=2009/03/10/Party curated=-")
+      lines.exists(_.startsWith("album ")) shouldBe false
+
+  it should "print no album line when google title repeats the path title" in :
+    withOriginals: originals =>
+      touch(originals, "2009/03/10/2412.jpg")
+      write(originals, "2009/03/10/Party.toml", "google-title = \"2009/03/10/Party\"\n")
+      listLines(originals, "") shouldBe Seq("2009/03/10/2412 dated=2009/03/10/Party curated=-")
+
+  it should "print no album line and no picture line when two events claim one picture" in :
+    withOriginals: originals =>
+      touch(originals, "2009/03/10/2412.jpg")
+      write(originals, "2009/03/10/One.toml", "google-title = \"One night\"\n")
+      write(originals, "2009/03/10/Two.toml", "google-title = \"Two night\"\n")
+      val root: Root = rootFor(originals)
+      val (out, thrown) = capture(ListAlbums(Some(root)).execute())
+      thrown.get shouldBe a[IllegalArgumentException]
+      out should include ("2009/03/10/2412")
+      out should include ("claimed by")
+      out should not include ("album ")
+      out should not include ("dated=")
+
+  it should "escape a quote and a backslash in the google title" in :
+    withOriginals: originals =>
+      write(originals, "Quoted.toml", "google-title = \"say \\\"hi\\\" \\\\ now\"\n")
+      listLines(originals, "") shouldBe Seq("album \"Quoted\" google=\"say \\\"hi\\\" \\\\ now\"")
+
+  it should "filter album lines by prefix and still print an album with no selected picture" in :
+    withOriginals: originals =>
+      write(originals, "2009/03/Trip.toml", "google-title = \"March trip\"\n")
+      write(originals, "Hawaii.toml", "google-title = \"Hawaii \"\nmembers = [\"2009/04/01/2000\"]\n")
+      touch(originals, "2009/04/01/2000.jpg")
+      listLines(originals, "2009/03") shouldBe Seq("album \"2009/03/Trip\" google=\"March trip\"")
+      val all: Seq[String] = listLines(originals, "")
+      all shouldBe Seq(
+        "album \"2009/03/Trip\" google=\"March trip\"",
+        "album \"Hawaii\" google=\"Hawaii \"",
+        "2009/04/01/2000 dated=- curated=Hawaii"
+      )
+
+  private def listLines(originals: File, prefix: String): Seq[String] =
+    val root: Root = rootFor(originals)
+    val path: Path = if prefix.isEmpty then root else root.parse(prefix)
+    val (out, thrown) = capture(ListAlbums(Some(path)).execute())
+    thrown match
+      case Some(error) => fail(s"$error\n$out")
+      case None => out.trim.linesIterator.toSeq
+
+  private def capture(body: => Unit): (String, Option[Throwable]) =
+    val buffer: ByteArrayOutputStream = new ByteArrayOutputStream
+    val thrown: Option[Throwable] =
+      try
+        Console.withOut(buffer)(body)
+        None
+      catch case error: Throwable => Some(error)
+    (buffer.toString(StandardCharsets.UTF_8), thrown)
 
   private def monthClash(originals: File, names: Seq[String], actual: String): Unit =
     actual should not include ("Photo Archive Tool:")

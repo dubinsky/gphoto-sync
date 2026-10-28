@@ -164,14 +164,32 @@ object Claims:
 final case class ListAlbums(path: Option[Path]) extends Operation:
   override def execute(): Unit =
     val root: Root = path.fold(Root.get)(_.root)
-    val pictures: Seq[Claims.Resolved] = Claims(root.configuration.byYearDirectory, root.configuration.zoneId) match
+    val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
+    val scan: Archive.Scan = Archive.scan(root.configuration.byYearDirectory)
+    val pictures: Seq[Claims.Resolved] = Claims.resolve(scan, root.configuration.zoneId) match
       case Left(error) =>
         println(error)
         throw IllegalArgumentException(error)
-      case Right(pictures) => pictures
+      case Right(value) => value
 
-    selected(pictures).foreach(picture => println(picture.line))
+    annotations(scan.albums, prefix).foreach(println)
+    pictures.filter(picture => Album.matchesPrefix(picture.path, prefix)).foreach(picture => println(picture.line))
 
-  private def selected(pictures: Seq[Claims.Resolved]): Seq[Claims.Resolved] =
-    val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
-    pictures.filter(picture => Album.matchesPrefix(picture.path, prefix))
+  private def annotations(albums: Seq[Album.Loaded], prefix: Option[String]): Seq[String] =
+    albums
+      .map(_.album)
+      .filter(album => Album.matchesPrefix(album.title, prefix))
+      .filter(showAnnotation)
+      .sortBy(_.title)
+      .map(annotation)
+
+  private def showAnnotation(album: Album): Boolean =
+    album.owner.nonEmpty || (album.googleTitle.nonEmpty && album.googleTitle != album.title)
+
+  private def annotation(album: Album): String =
+    val google: String =
+      if album.googleTitle.isEmpty then ""
+      else s" google=${Album.quote(album.googleTitle)}"
+    val ownerText: String = album.owner.fold(""): name =>
+      s" owner=${Album.quote(name)}"
+    s"album ${Album.quote(album.title)}$google$ownerText"
