@@ -164,3 +164,12 @@ Ones I own are renamed by hand.
 Ones I do not own have `owner` and `google-title` and are not renamed.
 Publish does not upload or rename an external album, and it does not call `updateAlbumTitle` for an album with `owner`.
 Cron is out of scope.
+
+== TODO
+
+- CLI get pictures from a memory card
+- CLI shell mode
+- CLI packaging/publishing
+- CLI commands for the needs of the local agent
+- CLI webapp
+- everything (cloud rules, local rules, protocol) packaged within a Grok Bot template
