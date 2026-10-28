@@ -58,25 +58,27 @@ object Pictures:
     .toSeq
     .sortBy(_._1)
 
+  private val droppedPrefixes: Seq[String] = Seq("IMG_", "VID_", "MVI_")
+
+  private[photo] def repaired(stem: String, extension: String): (String, String) =
+    val stemFixed: String = droppedPrefixes
+      .find(prefix => stem.startsWith(prefix))
+      .map(prefix => stem.drop(prefix.length))
+      .getOrElse(stem)
+    val lower: String = extension.toLowerCase(java.util.Locale.ROOT)
+    val extensionFixed: String =
+      if extension != lower && Extension.all.exists(_.name == lower) then lower else extension
+    (stemFixed, extensionFixed)
+
   private def nameAndExtension(file: File, names: NameMode): (String, String) =
     val (name, extensionOpt) = Files.nameAndExtension(file)
     val extension: String = extensionOpt.getOrElse(throw IllegalArgumentException(s"$file: no extension"))
-
-    val nameShouldBe: Option[String] =
-      if name.startsWith("IMG_") then Some(name.drop("IMG_".length)) else None
-
-    val extensionShouldBe: Option[String] =
-      if extension == "JPG" then Some("jpg") else None
-
+    val (nameCorrect, extensionCorrect) = repaired(name, extension)
     // Check the corrected extension so a ".JPG" rename is not rejected first.
-    verifyExtension(file.toString, extensionShouldBe.getOrElse(extension))
-
-    if nameShouldBe.isEmpty && extensionShouldBe.isEmpty
-    then
+    verifyExtension(file.toString, extensionCorrect)
+    if name == nameCorrect && extension == extensionCorrect then
       (name, extension)
     else
-      val nameCorrect: String = nameShouldBe.getOrElse(name)
-      val extensionCorrect: String = extensionShouldBe.getOrElse(extension)
       val shouldBe: String = s"$nameCorrect.$extensionCorrect"
       val destination: File = File(file.getParentFile, shouldBe)
       names match

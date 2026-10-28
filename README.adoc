@@ -45,7 +45,9 @@ It does not rename, generate, set mtimes, rewrite albums, or move files.
 
 `photo repair <path>` writes repairs.
 At least one of `--names`, `--raw`, `--timestamps`, and `--days` is required.
-`--names` renames `IMG_` and `.JPG`.
+`--names` renames a leading `IMG_`, `VID_`, or `MVI_`, and lowercases a known extension.
+It rewrites `JPG` to `jpg`, `CR2` to `cr2`, and `Mp4` to `mp4`.
+It does not rename `JPEG` or `PXL_`.
 `--raw` makes a JPEG from RAW with dcraw when no normal image exists and `bad-raw` is not set.
 `--timestamps` sets file mtimes from the assessed instant.
 `--days` moves a picture into the assessed day folder, rewriting curated member paths before any file moves.

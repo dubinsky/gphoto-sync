@@ -452,7 +452,7 @@ object Publish:
       val id: String = loaded.album.googleAlbumId
       if id.isEmpty then ids else ids.updated(id, loaded.album.title)
 
-  // A grouped IMG_ or .JPG name is not renamed here. The literal name.ext must already be on disk.
+  // A grouped name that repair would change is not renamed here. The literal name.ext must already be on disk.
   private def literalUpload(directory: File, name: String): Either[String, Option[(File, String)]] =
     val literal: Option[(File, String)] = uploadable
       .find(ext => File(directory, s"$name.$ext").isFile)
@@ -469,12 +469,9 @@ object Publish:
 
   private def misnamedUploadable(fileName: String, pictureName: String): Boolean =
     val (stem, extOpt) = Files.splitOnLast(fileName, '.')
-    extOpt match
-      case None => false
-      case Some(ext) =>
-        val stemFixed: String = if stem.startsWith("IMG_") then stem.drop("IMG_".length) else stem
-        val extFixed: String = if ext == "JPG" then Extension.JPG.name else ext
-        stemFixed == pictureName && uploadable.contains(extFixed) && fileName != s"$pictureName.$extFixed"
+    extOpt.exists: ext =>
+      val (stemFixed, extFixed) = Pictures.repaired(stem, ext)
+      stemFixed == pictureName && uploadable.contains(extFixed) && fileName != s"$pictureName.$extFixed"
 
   private final class LibraryTransport(client: PhotosLibraryClient) extends GoogleTransport:
     override def close(): Unit = client.close()

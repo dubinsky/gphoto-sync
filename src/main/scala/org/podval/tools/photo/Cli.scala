@@ -298,7 +298,7 @@ object Cli:
   )
 
   private val repairFlags: List[Flag] = List(
-    Flag("names", None, BooleanKind, "rename IMG_ and .JPG"),
+    Flag("names", None, BooleanKind, "rename IMG_, VID_, MVI_, and lowercase known extensions"),
     Flag("raw", None, BooleanKind, "make a JPEG from RAW with dcraw when no normal image exists"),
     Flag("timestamps", None, BooleanKind, "set file mtimes from the assessed instant"),
     Flag("days", None, BooleanKind, "move a picture into the assessed day folder"),

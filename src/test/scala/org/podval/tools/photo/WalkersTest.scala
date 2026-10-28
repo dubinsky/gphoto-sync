@@ -39,6 +39,31 @@ class WalkersTest extends AnyFlatSpec, Matchers:
       picture.exists shouldBe false
       File(directory.toFile, "2412.jpg").exists shouldBe true
 
+  it should "leave PXL_ img_ and MVIMG_ names" in :
+    withTemp: directory =>
+      val pxl: File = touch(directory, "PXL_1234.jpg")
+      val img: File = touch(directory, "img_1234.jpg")
+      val mvimg: File = touch(directory, "MVIMG_1234.jpg")
+      Pictures.group(Seq(pxl, img, mvimg), NameMode.Apply) shouldBe Seq(
+        "MVIMG_1234" -> Set("jpg"),
+        "PXL_1234" -> Set("jpg"),
+        "img_1234" -> Set("jpg")
+      )
+      pxl.exists shouldBe true
+      img.exists shouldBe true
+      mvimg.exists shouldBe true
+      pxl.getName shouldBe "PXL_1234.jpg"
+      img.getName shouldBe "img_1234.jpg"
+      mvimg.getName shouldBe "MVIMG_1234.jpg"
+
+  it should "drop only one leading prefix" in :
+    withTemp: directory =>
+      val picture: File = touch(directory, "IMG_VID_1.jpg")
+      Pictures.group(Seq(picture), NameMode.Apply) shouldBe Seq("VID_1" -> Set("jpg"))
+      picture.exists shouldBe false
+      File(directory.toFile, "VID_1.jpg").exists shouldBe true
+      File(directory.toFile, "1.jpg").exists shouldBe false
+
   private def touch(directory: Path, name: String): File =
     JFiles.createFile(directory.resolve(name)).toFile
 

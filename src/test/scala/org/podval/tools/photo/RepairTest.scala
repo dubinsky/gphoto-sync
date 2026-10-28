@@ -22,6 +22,39 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.exists shouldBe false
       File(originals, "2009/03/10/2412.jpg").isFile shouldBe true
 
+  it should "rename VID_ and MVI_ and lowercase a known extension" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val renames: Seq[(String, String)] = Seq(
+        "2009/03/10/VID_0063.MP4" -> "2009/03/10/0063.mp4",
+        "2009/03/11/MVI_0063.MP4" -> "2009/03/11/0063.mp4",
+        "2009/03/10/2412.CR2" -> "2009/03/10/2412.cr2",
+        "2009/03/10/2412.Jpg" -> "2009/03/10/2412.jpg"
+      )
+      val sources: Seq[File] = renames.map: (from, _) =>
+        val file: File = File(originals, from)
+        file.getParentFile.mkdirs()
+        file.createNewFile()
+        file
+      run(root, "2009/03", names = true)
+      sources.foreach(_.exists shouldBe false)
+      renames.foreach: (_, to) =>
+        File(originals, to).isFile shouldBe true
+
+  it should "not rename JPEG" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/03/10/1000.JPEG")
+      picture.getParentFile.mkdirs()
+      picture.createNewFile()
+      Pictures.repaired("1000", "JPEG") shouldBe ("1000", "JPEG")
+      val thrown: IllegalArgumentException = intercept[IllegalArgumentException]:
+        run(root, "2009/03/10", names = true)
+      picture.exists shouldBe true
+      File(originals, "2009/03/10/1000.jpg").exists shouldBe false
+      thrown.getMessage should include ("illegal extension JPEG")
+      thrown.getMessage should not include ("illegal extension jpeg")
+
   it should "not rename on a dry run" in :
     withOriginals: originals =>
       val root: Root = rootFor(originals)
