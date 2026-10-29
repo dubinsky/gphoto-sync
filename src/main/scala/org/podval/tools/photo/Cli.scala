@@ -28,7 +28,6 @@ object Cli:
   private[photo] final case class Albums(path: Option[String]) extends Parsed
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
-  private[photo] final case class MigrateArgs(dryRun: Boolean) extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -97,8 +96,6 @@ object Cli:
       Publish(path.map(Root.get.parse), recursive = recursive, dryRun = dryRun)
     case SyncArgs(path, recursive, dryRun) =>
       Sync(path.map(Root.get.parse), recursive = recursive, dryRun = dryRun)
-    case MigrateArgs(dryRun) =>
-      MigrateAlbums(dryRun)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -394,15 +391,6 @@ object Cli:
         recursive = bool(values, "recursive"),
         dryRun = bool(values, "dry-run")
       )
-    ),
-    Command(
-      name = "migrate-albums",
-      help = "rewrite old album files into include lists",
-      positionals = Nil,
-      flags = List(
-        Flag("dry-run", None, BooleanKind, "print the review and do not write")
-      ),
-      build = (values, _) => MigrateArgs(bool(values, "dry-run"))
     ),
     Command(
       name = "login",

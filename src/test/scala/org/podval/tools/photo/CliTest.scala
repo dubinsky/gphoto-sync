@@ -99,9 +99,6 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("sync", "--recursive", "--dry-run=FALSE", "2009")) shouldBe
       sync(Some("2009"), recursive = true, dryRun = false)
 
-    Cli.parse(List("migrate-albums")) shouldBe Cli.Run(Cli.MigrateArgs(false))
-    Cli.parse(List("migrate-albums", "--dry-run")) shouldBe Cli.Run(Cli.MigrateArgs(true))
-
     Cli.parse(List("repair", "--names", "2009")) shouldBe
       repair("2009", names = true)
     Cli.parse(List("repair", "--raw", "--timestamps", "--days", "--dry-run", "2009/03")) shouldBe
@@ -126,7 +123,6 @@ class CliTest extends AnyFlatSpec, Matchers:
         |albums  list album claims
         |publish  publish albums to Google Photos
         |sync  sync album removals into local except lists
-        |migrate-albums  rewrite old album files into include lists
         |login  log in to Google Photos
         |status  show Google Photos login status
         |logout  log out of Google Photos""".stripMargin
@@ -225,16 +221,6 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--dry-run  boolean  read Google, print except and remove lines, and do not write""".stripMargin
     helpOf("sync", "-h") shouldBe helpOf("sync", "--help")
 
-    helpOf("migrate-albums", "--help") shouldBe
-      """migrate-albums  rewrite old album files into include lists
-        |
-        |Positionals:
-        |none
-        |
-        |Flags:
-        |--dry-run  boolean  print the review and do not write""".stripMargin
-    helpOf("migrate-albums", "-h") shouldBe helpOf("migrate-albums", "--help")
-
     helpOf("login", "--help") shouldBe
       """login  log in to Google Photos
         |
@@ -326,7 +312,6 @@ class CliTest extends AnyFlatSpec, Matchers:
       Publish(None, recursive = true, dryRun = false)
     Cli.toOperation(Cli.SyncArgs(None, recursive = false, dryRun = true)) shouldBe
       Sync(None, recursive = false, dryRun = true)
-    Cli.toOperation(Cli.MigrateArgs(true)) shouldBe MigrateAlbums(true)
 
   "parsePropertyAndValue" should "split on the last equals and use a real property name" in :
     Files.splitOnLast("bad-raw", '=') shouldBe ("bad-raw", None)

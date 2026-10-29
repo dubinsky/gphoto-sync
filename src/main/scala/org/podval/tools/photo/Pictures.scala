@@ -49,7 +49,7 @@ object Pictures:
   private[photo] def group(files: Seq[File], names: NameMode): Seq[(String, Set[String])] = files
     .filterNot: file =>
       val (name, extension) = Files.nameAndExtension(file)
-      // Event files are non-digit .toml; a digit name is a picture sidecar.
+      // Album files are non-digit .toml; a digit name is a picture sidecar.
       extension.contains(Metadata.extension) && !name.headOption.exists(_.isDigit)
     .map(nameAndExtension(_, names))
     .groupBy(_._1)

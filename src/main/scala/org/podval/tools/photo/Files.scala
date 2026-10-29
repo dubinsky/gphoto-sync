@@ -32,7 +32,7 @@ object Files:
 
   def listDirectories(directory: File): Seq[File] =
     val (directories: Seq[File], files: Seq[File]) = list(directory)
-    // Album files sit beside year and month directories.
+    // Album .toml files are not stray, so lsd leaves them in place.
     val stray: Seq[File] = files.filterNot(_.getName.endsWith(".toml"))
     require(stray.isEmpty, stray)
     directories.sortBy(_.getName)
