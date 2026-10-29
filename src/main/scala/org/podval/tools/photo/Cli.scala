@@ -28,6 +28,7 @@ object Cli:
   private[photo] final case class Albums(path: Option[String]) extends Parsed
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
+  private[photo] final case class MigrateArgs(dryRun: Boolean) extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -96,6 +97,8 @@ object Cli:
       Publish(path.map(Root.get.parse), recursive = recursive, dryRun = dryRun)
     case SyncArgs(path, recursive, dryRun) =>
       Sync(path.map(Root.get.parse), recursive = recursive, dryRun = dryRun)
+    case MigrateArgs(dryRun) =>
+      MigrateAlbums(dryRun)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -380,17 +383,26 @@ object Cli:
     ),
     Command(
       name = "sync",
-      help = "sync album removals into local exclude lists",
+      help = "sync album removals into local except lists",
       positionals = List(Optional("path")),
       flags = List(
         Flag("recursive", None, BooleanKind, "required for a year or the archive root"),
-        Flag("dry-run", None, BooleanKind, "read Google, print exclude and remove lines, and do not write")
+        Flag("dry-run", None, BooleanKind, "read Google, print except and remove lines, and do not write")
       ),
       build = (values, args) => SyncArgs(
         path = args.headOption,
         recursive = bool(values, "recursive"),
         dryRun = bool(values, "dry-run")
       )
+    ),
+    Command(
+      name = "migrate-albums",
+      help = "rewrite old album files into include lists",
+      positionals = Nil,
+      flags = List(
+        Flag("dry-run", None, BooleanKind, "print the review and do not write")
+      ),
+      build = (values, _) => MigrateArgs(bool(values, "dry-run"))
     ),
     Command(
       name = "login",

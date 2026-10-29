@@ -99,6 +99,9 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("sync", "--recursive", "--dry-run=FALSE", "2009")) shouldBe
       sync(Some("2009"), recursive = true, dryRun = false)
 
+    Cli.parse(List("migrate-albums")) shouldBe Cli.Run(Cli.MigrateArgs(false))
+    Cli.parse(List("migrate-albums", "--dry-run")) shouldBe Cli.Run(Cli.MigrateArgs(true))
+
     Cli.parse(List("repair", "--names", "2009")) shouldBe
       repair("2009", names = true)
     Cli.parse(List("repair", "--raw", "--timestamps", "--days", "--dry-run", "2009/03")) shouldBe
@@ -122,7 +125,8 @@ class CliTest extends AnyFlatSpec, Matchers:
         |set-metadata  set metadata property
         |albums  list album claims
         |publish  publish albums to Google Photos
-        |sync  sync album removals into local exclude lists
+        |sync  sync album removals into local except lists
+        |migrate-albums  rewrite old album files into include lists
         |login  log in to Google Photos
         |status  show Google Photos login status
         |logout  log out of Google Photos""".stripMargin
@@ -211,15 +215,25 @@ class CliTest extends AnyFlatSpec, Matchers:
     helpOf("publish", "--recursive", "--help") shouldBe helpOf("publish", "--help")
 
     helpOf("sync", "--help") shouldBe
-      """sync  sync album removals into local exclude lists
+      """sync  sync album removals into local except lists
         |
         |Positionals:
         |path  optional
         |
         |Flags:
         |--recursive  boolean  required for a year or the archive root
-        |--dry-run  boolean  read Google, print exclude and remove lines, and do not write""".stripMargin
+        |--dry-run  boolean  read Google, print except and remove lines, and do not write""".stripMargin
     helpOf("sync", "-h") shouldBe helpOf("sync", "--help")
+
+    helpOf("migrate-albums", "--help") shouldBe
+      """migrate-albums  rewrite old album files into include lists
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--dry-run  boolean  print the review and do not write""".stripMargin
+    helpOf("migrate-albums", "-h") shouldBe helpOf("migrate-albums", "--help")
 
     helpOf("login", "--help") shouldBe
       """login  log in to Google Photos
@@ -312,6 +326,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       Publish(None, recursive = true, dryRun = false)
     Cli.toOperation(Cli.SyncArgs(None, recursive = false, dryRun = true)) shouldBe
       Sync(None, recursive = false, dryRun = true)
+    Cli.toOperation(Cli.MigrateArgs(true)) shouldBe MigrateAlbums(true)
 
   "parsePropertyAndValue" should "split on the last equals and use a real property name" in :
     Files.splitOnLast("bad-raw", '=') shouldBe ("bad-raw", None)

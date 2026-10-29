@@ -5,7 +5,6 @@ import com.google.photos.library.v1.upload.UploadMediaItemRequest
 import com.google.photos.library.v1.util.NewMediaItemFactory
 import com.google.photos.types.proto.Album as GoogleAlbum
 import java.io.{File, RandomAccessFile}
-import java.time.ZoneId
 import scala.jdk.CollectionConverters.{IterableHasAsScala, ListHasAsScala, SeqHasAsJava}
 import scala.jdk.OptionConverters.*
 
@@ -15,7 +14,6 @@ final case class Publish(path: Option[Path], recursive: Boolean, dryRun: Boolean
     val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
     Publish.run(
       originals = root.configuration.byYearDirectory,
-      zone = root.configuration.zoneId,
       prefix = prefix,
       recursive = recursive,
       dryRun = dryRun,
@@ -70,7 +68,6 @@ object Publish:
 
   private[photo] def run(
     originals: File,
-    zone: ZoneId,
     prefix: Option[String],
     recursive: Boolean,
     dryRun: Boolean,
@@ -83,14 +80,9 @@ object Publish:
       throw IllegalArgumentException("year or root requires --recursive")
 
     val scan: Archive.Scan = Archive.scan(originals)
-    val pictures: Seq[Claims.Resolved] = Claims.resolve(scan, zone) match
-      case Left(error) =>
-        println(error)
-        throw IllegalArgumentException(error)
-      case Right(value) => value
-
+    val pictures: Seq[Claims.Resolved] = Claims.resolve(scan)
     val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix).filter: picture =>
-      picture.dated.nonEmpty || picture.curated.nonEmpty || picture.excludedOnly
+      picture.albums.nonEmpty || picture.excludedOnly
     if selected.isEmpty then
       println("no albums")
     else
@@ -360,9 +352,7 @@ object Publish:
     pictures: Seq[Claims.Resolved],
     report: (String, String, String) => Unit
   ): Unit =
-    val claimers: Seq[Claims.Resolved] = pictures.filter(picture =>
-      picture.dated.contains(title) || picture.curated.contains(title)
-    )
+    val claimers: Seq[Claims.Resolved] = pictures.filter(_.albums.contains(title))
     if claimers.isEmpty then report("-", title, message)
     else claimers.foreach(picture => report(picture.path, title, message))
 
@@ -439,7 +429,7 @@ object Publish:
     fact: Archive.Picture,
     tempDirectory: File
   ): Work =
-    val titles: Seq[String] = picture.dated.toSeq ++ picture.curated
+    val titles: Seq[String] = picture.albums
     if titles.exists(title => albums(title).album.external) then SkipExternal(picture.path)
     else
       val targets: Seq[String] = titles.filterNot(title => albums(title).album.external)
@@ -474,10 +464,10 @@ object Publish:
     case other => throw IllegalArgumentException(s"no mime type for $other")
 
   private def select(pictures: Seq[Claims.Resolved], prefix: Option[String]): Seq[Claims.Resolved] =
-    pictures.filter(picture => Album.matchesPrefix(picture.path, prefix))
+    pictures.filter(picture => Album.pictureMatches(picture.path, prefix))
 
   private def distinctTitles(pictures: Seq[Claims.Resolved]): Seq[String] =
-    pictures.flatMap(picture => picture.dated.toSeq ++ picture.curated).distinct
+    pictures.flatMap(_.albums).distinct
 
   private sealed trait Work
   private final case class SkipExternal(path: String) extends Work

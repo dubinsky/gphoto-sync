@@ -63,7 +63,7 @@ object Repair:
         val from: String = s"${Album.relative(originals, picture.parent.directory)}/${picture.name}"
         val to: String = s"${Album.relative(originals, dayShouldBe.directory)}/${picture.name}"
         // Reject a bad curated file before any picture moves, so a later repair --days can retry.
-        Album.rewriteMember(originals, from, to)
+        Album.rewriteInclude(originals, from, to)
         Files.mkDirs(dayShouldBe.directory)
         val extensionNamesAll: Set[String] =
           picture.extensions.map(_.name) ++ Option.when(picture.hasMetadata)(Metadata.extension).toSet

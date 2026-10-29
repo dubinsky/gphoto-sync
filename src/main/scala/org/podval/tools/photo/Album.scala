@@ -8,208 +8,100 @@ import io.github.wasabithumb.jtoml.value.primitive.TomlPrimitive
 import io.github.wasabithumb.jtoml.value.table.TomlTable
 import scala.jdk.CollectionConverters.{IteratorHasAsScala, ListHasAsScala, SetHasAsScala}
 import java.io.File
-import java.time.{DateTimeException, LocalDate, LocalDateTime, YearMonth}
-import java.time.format.DateTimeParseException
+import java.time.LocalDate
 
-// Metadata's codec accepts unknown keys. Album files must reject them.
-sealed trait Album:
-  def title: String
-  def exclude: Set[String]
-  def external: Boolean
-  def googleAlbumId: String
-  def publishedTitle: String
-  def googleTitle: String
-  def owner: Option[String]
-
+// One album. The title is not the path: the file sits in the start folder, and a span's end is `to-` in the name.
+final case class Album(
+  title: String,
+  span: Option[Title.Span],
+  include: Seq[Include.Entry],
+  external: Boolean,
+  googleAlbumId: String,
+  publishedTitle: String,
+  googleTitle: String,
+  owner: Option[String]
+):
   def desiredGoogleTitle: String =
     if googleTitle.nonEmpty then googleTitle else title
 
+  def startDir: String = span.fold(title)(_.startDir)
+
+  def claims(day: LocalDate, stem: String): Boolean =
+    include.exists(entry => Include.claims(span, entry, day, stem))
+
+  def positive(day: LocalDate, stem: String): Boolean =
+    include.exists(entry => Include.positive(span, entry, day, stem))
+
 object Album:
-  final case class Event(
-    title: String,
-    pathDay: LocalDate,
-    from: Option[When],
-    to: Option[When],
-    nameFrom: Option[String],
-    nameTo: Option[String],
-    exclude: Set[String],
-    external: Boolean,
-    googleAlbumId: String,
-    publishedTitle: String,
-    googleTitle: String,
-    owner: Option[String]
-  ) extends Album
-
-  final case class Day(
-    title: String,
-    exclude: Set[String],
-    external: Boolean,
-    googleAlbumId: String,
-    publishedTitle: String,
-    googleTitle: String,
-    owner: Option[String]
-  ) extends Album
-
-  final case class Month(
-    title: String,
-    exclude: Set[String],
-    external: Boolean,
-    googleAlbumId: String,
-    publishedTitle: String,
-    googleTitle: String,
-    owner: Option[String]
-  ) extends Album
-
-  final case class Curated(
-    title: String,
-    members: Seq[String],
-    exclude: Set[String],
-    external: Boolean,
-    googleAlbumId: String,
-    publishedTitle: String,
-    googleTitle: String,
-    owner: Option[String]
-  ) extends Album
-
-  sealed trait When
-  object When:
-    final case class Date(value: LocalDate) extends When
-    final case class DateTime(value: LocalDateTime) extends When
-
   def relative(originals: File, file: File): String =
     originals.toPath.relativize(file.toPath).iterator.asScala.map(_.toString).mkString("/")
 
-  def title(originals: File, file: File): String = relative(originals, file).stripSuffix(".toml")
+  def fileFor(originals: File, title: String): File =
+    Title.parse(title) match
+      case Some(parsed) => Title.file(originals, parsed)
+      case None => throw IllegalArgumentException(s"not an album title: $title")
 
-  // Curated albums are the .toml files directly in the originals directory, as Claims loads them.
-  // Every file is accepted before any is written. Only `members` is replaced.
-  def rewriteMember(originals: File, from: String, to: String): Unit =
-    if from != to then
-      val changes: Seq[(File, String)] = curatedFiles(originals).flatMap: file =>
-        val (table, values) = parsed(file, curatedKeys)
-        checkGoogle(file, readCommon(file, values))
-        val members: Seq[String] = stringSeq(file, values, "members")
-        Option.when(members.contains(from)):
-          val updated: TomlArray = TomlArray.create()
-          moveMember(members, from, to).foreach(member => updated.add(member))
-          table.put("members", updated)
-          file -> JToml.jToml.writeToString(table)
-      changes.foreach: (file, text) =>
-        Files.write(text, file)
+  def read(originals: File, file: File): Album =
+    val parsed: Title.Parsed = Title.fromLocation(directoryOf(originals, file), stemOf(file)).getOrElse(
+      throw IllegalArgumentException(s"$file: not an album file")
+    )
+    val values: Map[String, TomlValue] = checked(file, keys)
+    val common: Common = commonOf(file, values)
+    val span: Option[Title.Span] = parsed.span
+    val include: Seq[Include.Entry] = stringSeq(file, values, "include").map: text =>
+      val entry: Include.Entry =
+        try Include.parse(text)
+        catch case error: IllegalArgumentException =>
+          reject(file, "include", Album.messageOf(error))
+      if Include.inside(span, entry) then entry
+      else reject(file, "include", s"'$text' is outside the album")
+    Album(
+      title = parsed.title,
+      span = span,
+      include = include,
+      external = common.external,
+      googleAlbumId = common.googleAlbumId,
+      publishedTitle = common.publishedTitle,
+      googleTitle = common.googleTitle,
+      owner = common.owner
+    )
+
+  // Hand-written order. jtoml is only for storeGoogle and the sync rewrite.
+  def renderFile(album: Album): String =
+    val lines: Seq[String] = Seq(
+      Option.when(album.external)(Seq("external = true")).getOrElse(Seq.empty),
+      Option.when(album.googleTitle.nonEmpty)(Seq(s"google-title = ${quote(album.googleTitle)}")).getOrElse(Seq.empty),
+      album.owner.map(name => s"owner = ${quote(name)}").toSeq,
+      if album.googleAlbumId.isEmpty then Seq.empty
+      else Seq(
+        s"google-album-id = ${quote(album.googleAlbumId)}",
+        s"published-title = ${quote(album.publishedTitle)}"
+      ),
+      if album.include.isEmpty then Seq.empty
+      else Seq("include = [") ++ album.include.map(entry => s"  ${quote(Include.render(entry))},") ++ Seq("]")
+    ).flatten
+    if lines.isEmpty then "" else lines.mkString("", "\n", "\n")
 
   private[photo] final case class Loaded(file: File, album: Album)
-
-  private[photo] def load(originals: File, title: String): Loaded =
-    val file: File = File(originals, s"$title.toml")
-    val segments: Seq[String] = title.split('/').toSeq.filter(_.nonEmpty)
-    val album: Album = segments match
-      case Seq(year, month, day, _) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
-        readEvent(file, title, LocalDate.of(year.toInt, month.toInt, day.toInt))
-      case Seq(year, month, day) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
-        readDay(file, title)
-      case Seq(year, month, name) if isNumber(year, 4) && isNumber(month, 2) && isTitledMonthName(name) =>
-        readMonth(file, title)
-      case Seq(year, month) if isNumber(year, 4) && isNumber(month, 2) =>
-        readMonth(file, title)
-      case Seq(_) =>
-        readCurated(file, title)
-      case _ =>
-        throw IllegalArgumentException(s"not an album title: $title")
-    Loaded(file, album)
 
   private[photo] def needsRecursive(prefix: Option[String]): Boolean =
     val segments: Seq[String] = prefix.filter(_.nonEmpty).toSeq.flatMap(_.split('/').filter(_.nonEmpty))
     segments.isEmpty || (segments.sizeIs == 1 && isNumber(segments.head, 4))
 
-  private[photo] def matchesPrefix(path: String, prefix: Option[String]): Boolean =
+  def pictureMatches(path: String, prefix: Option[String]): Boolean =
+    prefix.filter(_.nonEmpty).forall(selected => path == selected || path.startsWith(s"$selected/"))
+
+  def albumMatches(startDir: String, title: String, prefix: Option[String]): Boolean =
     prefix.filter(_.nonEmpty).forall: selected =>
-      val needle: String = monthYearMonth(selected).map(monthPrefix).getOrElse(selected)
-      path == needle || path.startsWith(s"$needle/")
-
-  // "4" is a label. "32" and "00" are two-digit, so they stay day titles.
-  private[photo] def isTitledMonthName(name: String): Boolean =
-    name.nonEmpty && !isNumber(name, 2)
-
-  private[photo] def monthPrefix(key: YearMonth): String =
-    f"${key.getYear}%04d/${key.getMonthValue}%02d"
-
-  private[photo] def monthYearMonth(title: String): Option[YearMonth] =
-    title.split('/').filter(_.nonEmpty).toSeq match
-      case Seq(year, month) if isNumber(year, 4) && isNumber(month, 2) =>
-        yearMonth(year, month)
-      case Seq(year, month, name) if isNumber(year, 4) && isNumber(month, 2) && isTitledMonthName(name) =>
-        yearMonth(year, month)
-      case _ =>
-        None
-
-  private def yearMonth(year: String, month: String): Option[YearMonth] =
-    try Some(YearMonth.of(year.toInt, month.toInt))
-    catch case _: DateTimeException => None
+      val titleHit: Boolean = title == selected || title.startsWith(s"$selected/")
+      val startHit: Boolean = startDir == selected || startDir.startsWith(s"$selected/")
+      titleHit || startHit
 
   private[photo] def messageOf(error: Exception): String =
     Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
 
   def quote(text: String): String =
     "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-
-  private def isNumber(name: String, length: Int): Boolean =
-    name.length == length && name.forall(_.isDigit)
-
-  def readEvent(file: File, title: String, pathDay: LocalDate): Event =
-    val values: Map[String, TomlValue] = checked(file, eventKeys)
-    val common: Common = commonOf(file, values)
-    Event(
-      title,
-      pathDay,
-      from = when(file, values, "from"),
-      to = when(file, values, "to"),
-      nameFrom = optionalString(file, values, "name-from"),
-      nameTo = optionalString(file, values, "name-to"),
-      exclude = common.exclude,
-      external = common.external,
-      googleAlbumId = common.googleAlbumId,
-      publishedTitle = common.publishedTitle,
-      googleTitle = common.googleTitle,
-      owner = common.owner
-    )
-
-  def readDay(file: File, title: String): Day =
-    val common: Common = commonOf(file, checked(file, folderKeys))
-    Day(
-      title,
-      common.exclude,
-      common.external,
-      common.googleAlbumId,
-      common.publishedTitle,
-      common.googleTitle,
-      common.owner
-    )
-
-  def readMonth(file: File, title: String): Month =
-    val common: Common = commonOf(file, checked(file, folderKeys))
-    Month(
-      title,
-      common.exclude,
-      common.external,
-      common.googleAlbumId,
-      common.publishedTitle,
-      common.googleTitle,
-      common.owner
-    )
-
-  def readCurated(file: File, title: String): Curated =
-    val values: Map[String, TomlValue] = checked(file, curatedKeys)
-    val common: Common = commonOf(file, values)
-    Curated(
-      title,
-      members = stringSeq(file, values, "members"),
-      exclude = common.exclude,
-      external = common.external,
-      googleAlbumId = common.googleAlbumId,
-      publishedTitle = common.publishedTitle,
-      googleTitle = common.googleTitle,
-      owner = common.owner
-    )
 
   // Same JToml table the reader accepted. Do not hand-write TOML.
   def storeGoogle(file: File, googleAlbumId: String, publishedTitle: String): Unit =
@@ -221,26 +113,59 @@ object Album:
     table.put("published-title", publishedTitle)
     Files.write(JToml.jToml.writeToString(table), file)
 
-  // Append exclude names and drop curated member paths on the table the reader accepted.
-  def storeRemovals(file: File, excludeNames: Seq[String], dropMembers: Seq[String]): Unit =
+  // Recompress each include entry that claims one of these stems. An empty album writes include = [].
+  def storeRemovals(
+    file: File,
+    originals: File,
+    removals: Seq[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
+  ): Unit =
+    val album: Album = read(originals, file)
+    val next: Seq[Include.Entry] = removals.foldLeft(album.include): (include, pair) =>
+      Include.drop(include, album.span, pair, universe).sortBy(Include.logical)
+    if !sameEntries(next, album.include) then putInclude(file, next)
+
+  // Curated include paths, before any picture moves. A bad curated file fails first.
+  def rewriteInclude(originals: File, from: String, to: String): Unit =
+    if from != to then
+      val fromPair: (LocalDate, String) = splitPath(from)
+      val toPair: (LocalDate, String) = splitPath(to)
+      val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+      val loaded: Seq[(File, Album)] = curatedFiles(originals).map(file => file -> read(originals, file))
+      val changes: Seq[(File, Seq[Include.Entry])] = loaded.flatMap: (file, album) =>
+        val next: Seq[Include.Entry] = Include.relocate(album.include, album.span, fromPair, toPair, universe)
+        Option.when(!sameEntries(next, album.include))(file -> next)
+      changes.foreach: (file, include) =>
+        putInclude(file, include)
+
+  def splitPath(path: String): (LocalDate, String) =
+    path.split('/').filter(_.nonEmpty).toSeq match
+      case Seq(year, month, day, stem) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
+        (LocalDate.of(year.toInt, month.toInt, day.toInt), stem)
+      case _ =>
+        throw IllegalArgumentException(s"not a picture path: $path")
+
+  private def sameEntries(left: Seq[Include.Entry], right: Seq[Include.Entry]): Boolean =
+    left.map(Include.render).equals(right.map(Include.render))
+
+  private def directoryOf(originals: File, file: File): String =
+    val directory: String = relative(originals, file.getParentFile)
+    if directory == "." then "" else directory
+
+  private def stemOf(file: File): String =
+    val (name, extension) = Files.nameAndExtension(file)
+    if extension.contains("toml") then name
+    else throw IllegalArgumentException(s"$file: not an album file")
+
+  private def putInclude(file: File, include: Seq[Include.Entry]): Unit =
     val text: String = Files.read(file)
     val table: TomlTable =
       if text.isBlank then TomlTable.create()
       else JToml.jToml.readFromString(text)
-    val exclude: Seq[String] = tomlStrings(table, "exclude")
-    val withNames: Seq[String] = appendUnique(exclude, excludeNames)
-    val members: Seq[String] = tomlStrings(table, "members")
-    val dropping: Set[String] = dropMembers.toSet
-    val nextMembers: Seq[String] = if dropping.isEmpty then members else members.filterNot(dropping.contains)
-    val excludeChanged: Boolean = withNames != exclude
-    val membersChanged: Boolean = nextMembers != members
-    if excludeChanged || membersChanged then
-      if excludeChanged then table.put("exclude", tomlArray(withNames))
-      if membersChanged then table.put("members", tomlArray(nextMembers))
-      Files.write(JToml.jToml.writeToString(table), file)
+    table.put("include", tomlArray(include.map(Include.render)))
+    Files.write(JToml.jToml.writeToString(table), file)
 
   private final case class Common(
-    exclude: Set[String],
     external: Boolean,
     googleAlbumId: String,
     publishedTitle: String,
@@ -248,10 +173,8 @@ object Album:
     owner: Option[String]
   )
 
-  private val folderKeys: Set[String] =
-    Set("exclude", "external", "google-album-id", "published-title", "google-title", "owner")
-  private val eventKeys: Set[String] = folderKeys ++ Set("from", "to", "name-from", "name-to")
-  private val curatedKeys: Set[String] = folderKeys + "members"
+  private val keys: Set[String] =
+    Set("external", "google-album-id", "published-title", "google-title", "owner", "include")
 
   private def commonOf(file: File, values: Map[String, TomlValue]): Common =
     val common: Common = readCommon(file, values)
@@ -259,7 +182,6 @@ object Album:
     common
 
   private def readCommon(file: File, values: Map[String, TomlValue]): Common = Common(
-    exclude = stringSeq(file, values, "exclude").toSet,
     external = boolean(file, values, "external", default = false),
     googleAlbumId = string(file, values, "google-album-id", default = ""),
     publishedTitle = string(file, values, "published-title", default = ""),
@@ -287,7 +209,6 @@ object Album:
   private def checked(file: File, allowed: Set[String]): Map[String, TomlValue] =
     parsed(file, allowed)._2
 
-  // The table is the one just read, so a member rewrite can put the new list back on it.
   private def parsed(file: File, allowed: Set[String]): (TomlTable, Map[String, TomlValue]) =
     val text: String = Files.read(file)
     val table: TomlTable = if text.isBlank then TomlTable.create() else JToml.jToml.readFromString(text)
@@ -317,21 +238,6 @@ object Album:
       if !value.isArray then reject(file, key, "must be an array of strings")
       else value.asArray.asScala.toSeq.map(asString(file, key, _))
 
-  private def when(file: File, values: Map[String, TomlValue], key: String): Option[When] =
-    values.get(key).map: value =>
-      val primitive: TomlPrimitive = primitiveOf(file, key, value)
-      if primitive.isLocalDate then When.Date(primitive.asLocalDate)
-      else if primitive.isLocalDateTime then When.DateTime(primitive.asLocalDateTime)
-      else if primitive.isString then whenString(file, key, primitive.asString)
-      else reject(file, key, "must be a date or a date-time")
-
-  private def whenString(file: File, key: String, text: String): When =
-    try When.DateTime(LocalDateTime.parse(text))
-    catch case _: DateTimeParseException =>
-      try When.Date(LocalDate.parse(text))
-      catch case _: DateTimeParseException =>
-        reject(file, key, s"must be a date or a date-time, not '$text'")
-
   private def asString(file: File, key: String, value: TomlValue): String =
     val primitive: TomlPrimitive = primitiveOf(file, key, value)
     if primitive.isString then primitive.asString
@@ -349,23 +255,8 @@ object Album:
       .filter(file => file.isFile && file.getName.endsWith(".toml"))
       .sortBy(_.getName)
 
-  private def moveMember(members: Seq[String], from: String, to: String): Seq[String] =
-    members.foldLeft(Seq.empty[String]): (acc, member) =>
-      val path: String = if member == from then to else member
-      if path == to && acc.contains(to) then acc else acc :+ path
-
-  private def appendUnique(existing: Seq[String], names: Seq[String]): Seq[String] =
-    names.foldLeft(existing): (acc, name) =>
-      if acc.contains(name) then acc else acc :+ name
-
-  private def tomlStrings(table: TomlTable, key: String): Seq[String] =
-    Option(table.get(key)).fold(Seq.empty): value =>
-      if !value.isArray then Seq.empty
-      else value.asArray.asScala.toSeq.flatMap(tomlText)
-
-  private def tomlText(value: TomlValue): Option[String] =
-    if value.isPrimitive && value.asPrimitive.isString then Some(value.asPrimitive.asString)
-    else None
+  private def isNumber(name: String, length: Int): Boolean =
+    name.length == length && name.forall(_.isDigit)
 
   private def tomlArray(values: Seq[String]): TomlArray =
     val array: TomlArray = TomlArray.create()

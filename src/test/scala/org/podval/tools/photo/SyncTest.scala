@@ -1,30 +1,25 @@
 package org.podval.tools.photo
 
-import io.github.wasabithumb.jtoml.JToml
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.io.{ByteArrayOutputStream, File}
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files as JFiles
-import java.time.{LocalDate, LocalDateTime, ZoneId}
-import scala.jdk.CollectionConverters.ListHasAsScala
 
 class SyncTest extends AnyFlatSpec, Matchers:
-  private val zone: ZoneId = ZoneId.of("America/New_York")
-
-  "sync" should "exclude a picture removed from Best and leave the event alone" in :
+  "sync" should "except a picture removed from Best and leave the other album alone" in :
     withOriginals: originals =>
       val jpeg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2, 3))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "from = 2009-03-10\nname-from = \"1000\"\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
+        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
       )
       val best: File = write(
         originals,
         "Best.toml",
-        "members = [\"2009/03/10/2412\", \"2009/05/01/0001\"]\nexclude = [\"other\"]\n" +
+        "include = [\"2009/03/10 2412\", \"2009/05/01 0001\"]\n" +
           "google-album-id = \"album-best\"\npublished-title = \"Best shots\"\n" +
           "google-title = \"Desired\"\n"
       )
@@ -35,8 +30,8 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
-      lines(out) should contain ("exclude Best 2412")
-      lines(out).exists(_.startsWith("exclude 2009/03/10/Party")) shouldBe false
+      lines(out) should contain ("except Best \"2412\"")
+      lines(out).exists(_.startsWith("except 2009/03/10/Party")) shouldBe false
       lines(out).exists(_.startsWith("remove ")) shouldBe false
       fake.removed shouldBe empty
       fake.listed.toList shouldBe List("album-party", "album-best")
@@ -46,29 +41,26 @@ class SyncTest extends AnyFlatSpec, Matchers:
       Metadata.read(sidecar).`already-in-google` shouldBe None
       Files.read(sidecar) should not include ("already-in-google")
       bytes(event) shouldBe before(event.getAbsolutePath)
-      val curated: Album.Curated = Album.readCurated(best, "Best")
-      curated.members shouldBe Seq("2009/05/01/0001")
-      curated.exclude shouldBe Set("other", "2412")
+      val curated: Album = Album.read(originals, best)
+      curated.include.map(Include.logical) shouldBe Seq("2009/05/01 0001")
       curated.googleAlbumId shouldBe "album-best"
       curated.publishedTitle shouldBe "Best shots"
       curated.googleTitle shouldBe "Desired"
       curated.owner shouldBe None
-      stringArray(best, "exclude") shouldBe Seq("other", "2412")
-      stringArray(best, "members") shouldBe Seq("2009/05/01/0001")
 
-  it should "remove an excluded id that is still in Best and not rewrite the event" in :
+  it should "remove an excepted id that is still in Best and not rewrite the other album" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "from = 2009-03-10\ngoogle-album-id = \"album-party\"\n"
+        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n"
       )
       val best: File = write(
         originals,
         "Best.toml",
-        "members = [\"2009/05/01/0001\"]\nexclude = [\"2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "include = [\"2009/05/01 0001\", \"2009/03/10 except 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -77,8 +69,8 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
-      lines(out) should contain ("remove Best 2412")
-      lines(out).exists(_.startsWith("exclude ")) shouldBe false
+      lines(out) should contain ("remove Best \"2412\"")
+      lines(out).exists(_.startsWith("except ")) shouldBe false
       lines(out).exists(_.startsWith("remove 2009/03/10/Party")) shouldBe false
       fake.removed.toList shouldBe List("album-best" -> Seq("media-1"))
       fake.listed.toList should contain ("album-party")
@@ -86,8 +78,8 @@ class SyncTest extends AnyFlatSpec, Matchers:
       snapshot(originals) shouldBe before
       bytes(event) shouldBe before(event.getAbsolutePath)
       bytes(best) shouldBe before(best.getAbsolutePath)
-      Album.readCurated(best, "Best").exclude shouldBe Set("2412")
-      Album.readCurated(best, "Best").members shouldBe Seq("2009/05/01/0001")
+      val curated: Album = Album.read(originals, best)
+      curated.include.map(Include.logical) shouldBe Seq("2009/05/01 0001", "2009/03/10 except 2412")
 
   it should "not list or change an external album" in :
     withOriginals: originals =>
@@ -96,12 +88,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "external = true\nfrom = 2009-03-10\ngoogle-title = \"Party night \"\nowner = \"Ada Owner\"\n"
+        "external = true\ninclude = [\"all\"]\ngoogle-title = \"Party night \"\nowner = \"Ada Owner\"\n"
       )
       val best: File = write(
         originals,
         "Best.toml",
-        "members = [\"2009/03/10/2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "include = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val beforeEvent: Seq[Byte] = bytes(event)
       val fake: Fake = Fake(
@@ -113,15 +105,14 @@ class SyncTest extends AnyFlatSpec, Matchers:
       fake.listed.toList shouldBe List("album-best")
       fake.removed shouldBe empty
       bytes(event) shouldBe beforeEvent
-      val party: Album.Event = Album.readEvent(event, "2009/03/10/Party", LocalDate.of(2009, 3, 10))
+      val party: Album = Album.read(originals, event)
       party.external shouldBe true
       party.googleAlbumId shouldBe ""
       party.googleTitle shouldBe "Party night "
       party.owner shouldBe Some("Ada Owner")
-      lines(out) should contain ("exclude Best 2412")
+      lines(out) should contain ("except Best \"2412\"")
       lines(out).exists(line => line.contains("Party")) shouldBe false
-      Album.readCurated(best, "Best").exclude shouldBe Set("2412")
-      Album.readCurated(best, "Best").members shouldBe Seq.empty[String]
+      Album.read(originals, best).include.isEmpty shouldBe true
 
   it should "print no albums when the only claim is external" in :
     withOriginals: originals =>
@@ -130,7 +121,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "external = true\nfrom = 2009-03-10\ngoogle-album-id = \"album-ext\"\n"
+        "external = true\ninclude = [\"all\"]\ngoogle-album-id = \"album-ext\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(albums = Map("album-ext" -> Set.empty), library = Set("media-1"))
@@ -152,11 +143,11 @@ class SyncTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2413.jpg", Array[Byte](2))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
       write(originals, "2009/03/10/2413.toml", "google-media-item-id = \"media-2\"\n")
-      write(originals, "2009/03/10/Party.toml", "google-album-id = \"album-party\"\n")
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
       write(
         originals,
         "Best.toml",
-        "members = [\"2009/03/10/2412\"]\nexclude = [\"2413\"]\ngoogle-album-id = \"album-best\"\n"
+        "include = [\"2009/03/10 2412\", \"2009/03/10 2413 except 2413\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -165,12 +156,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10"), dryRun = true))
       expectOk(thrown, out)
-      lines(out) should contain ("exclude Best 2412")
-      lines(out) should contain ("remove Best 2413")
+      lines(out) should contain ("except Best \"2412\"")
+      lines(out) should contain ("remove Best \"2413\"")
       fake.removed shouldBe empty
       snapshot(originals) shouldBe before
 
-  it should "exclude every non-external claim when the id is gone from the library" in :
+  it should "except every non-external claim when the id is gone from the library" in :
     withOriginals: originals =>
       val jpeg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](9))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
@@ -178,19 +169,18 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "from = 2009-03-10\nto = 2009-03-10T23:59:00\nname-from = \"1000\"\nname-to = \"9000\"\n" +
-          "exclude = [\"9999\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
+        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
       )
       val best: File = write(
         originals,
         "Best.toml",
-        "members = [\"2009/03/10/2412\", \"2009/08/01/0008\"]\nexclude = [\"keep\"]\n" +
+        "include = [\"2009/03/10 2412\", \"2009/08/01 0008\"]\n" +
           "google-album-id = \"album-best\"\npublished-title = \"Best shots\"\n"
       )
       val shared: File = write(
         originals,
         "Shared.toml",
-        "external = true\nmembers = [\"2009/03/10/2412\"]\ngoogle-album-id = \"album-shared\"\n"
+        "external = true\ninclude = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-shared\"\n"
       )
       val sharedBytes: Seq[Byte] = bytes(shared)
       val fake: Fake = Fake(
@@ -203,8 +193,8 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
-      lines(out) should contain ("exclude 2009/03/10/Party 2412")
-      lines(out) should contain ("exclude Best 2412")
+      lines(out) should contain ("except 2009/03/10/Party \"2412\"")
+      lines(out) should contain ("except Best \"2412\"")
       lines(out).exists(_.contains("Shared")) shouldBe false
       lines(out).exists(_.startsWith("remove ")) shouldBe false
       fake.removed shouldBe empty
@@ -214,31 +204,21 @@ class SyncTest extends AnyFlatSpec, Matchers:
       Metadata.read(sidecar).`google-media-item-id` shouldBe Some("media-1")
       Metadata.read(sidecar).`already-in-google` shouldBe None
       bytes(shared) shouldBe sharedBytes
-      val party: Album.Event = Album.readEvent(event, "2009/03/10/Party", LocalDate.of(2009, 3, 10))
-      party.from match
-        case Some(Album.When.Date(date)) => date.toString shouldBe "2009-03-10"
-        case other => fail(s"from was $other")
-      party.to match
-        case Some(Album.When.DateTime(value)) =>
-          value.toString shouldBe LocalDateTime.parse("2009-03-10T23:59:00").toString
-        case other => fail(s"to was $other")
-      party.nameFrom shouldBe Some("1000")
-      party.nameTo shouldBe Some("9000")
+      val party: Album = Album.read(originals, event)
+      party.include.isEmpty shouldBe true
       party.googleAlbumId shouldBe "album-party"
       party.publishedTitle shouldBe "Party"
       party.external shouldBe false
-      stringArray(event, "exclude") shouldBe Seq("9999", "2412")
-      val curated: Album.Curated = Album.readCurated(best, "Best")
-      curated.members shouldBe Seq("2009/08/01/0008")
+      val curated: Album = Album.read(originals, best)
+      curated.include.map(Include.logical) shouldBe Seq("2009/08/01 0008")
       curated.googleAlbumId shouldBe "album-best"
       curated.publishedTitle shouldBe "Best shots"
-      stringArray(best, "exclude") shouldBe Seq("keep", "2412")
 
   it should "reject a year or the root without --recursive and write nothing" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
-      write(originals, "2009/03/10/Party.toml", "google-album-id = \"album-party\"\n")
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(albums = Map("album-party" -> Set.empty), library = Set("media-1"))
       var opened: Boolean = false
@@ -263,8 +243,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
       write(originals, "2009/03/11/2413.toml", "google-media-item-id = \"media-2\"\n")
-      write(originals, "2009/03/10/Party.toml", "google-album-id = \"album-party\"\n")
-      val other: File = write(originals, "2009/03/11/Other.toml", "google-album-id = \"album-other\"\n")
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
+      val other: File = write(
+        originals,
+        "2009/03/11/Other.toml",
+        "include = [\"all\"]\ngoogle-album-id = \"album-other\"\n"
+      )
       val otherBytes: Seq[Byte] = bytes(other)
       val fake: Fake = Fake(
         albums = Map("album-party" -> Set.empty, "album-other" -> Set.empty),
@@ -272,24 +256,33 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("/2009/03/10")))
       expectOk(thrown, out)
-      lines(out) should contain ("exclude 2009/03/10/Party 2412")
+      lines(out) should contain ("except 2009/03/10/Party \"2412\"")
       lines(out).exists(_.contains("2009/03/11")) shouldBe false
       lines(out).exists(_.contains("2413")) shouldBe false
       fake.listed.toList shouldBe List("album-party")
       fake.removed shouldBe empty
       bytes(other) shouldBe otherBytes
-      Album.readEvent(File(originals, "2009/03/10/Party.toml"), "2009/03/10/Party", LocalDate.of(2009, 3, 10))
-        .exclude shouldBe Set("2412")
+      val party: Album = Album.read(originals, File(originals, "2009/03/10/Party.toml"))
+      party.include.isEmpty shouldBe true
+      party.googleAlbumId shouldBe "album-party"
 
-  it should "remove excluded ids in batches of 50" in :
+  it should "remove excepted ids in batches of 50" in :
     withOriginals: originals =>
       val names: Seq[String] = (0 until 51).map(n => f"$n%04d")
       names.foreach: name =>
         writeBytes(originals, s"2009/03/10/$name.jpg", Array[Byte](1))
         write(originals, s"2009/03/10/$name.toml", s"google-media-item-id = \"id-$name\"\n")
-      val excluded: String = names.map(name => s"\"$name\"").mkString("exclude = [", ", ", "]\n")
-      val best: File = write(originals, "Best.toml", excluded + "google-album-id = \"album-best\"\n")
-      val event: File = write(originals, "2009/03/10/Party.toml", "google-album-id = \"album-party\"\n")
+      val entry: String = "2009/03/10 except " + names.mkString(" ")
+      val best: File = write(
+        originals,
+        "Best.toml",
+        s"include = [${Album.quote(entry)}]\ngoogle-album-id = \"album-best\"\n"
+      )
+      val event: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n"
+      )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val ids: Set[String] = names.map(name => s"id-$name").toSet
       val fake: Fake = Fake(
@@ -303,32 +296,29 @@ class SyncTest extends AnyFlatSpec, Matchers:
       fake.removed.forall(_._2.sizeIs <= 50) shouldBe true
       fake.removed.flatMap(_._2).toSet shouldBe ids
       lines(out).count(_.startsWith("remove Best ")) shouldBe 51
-      lines(out).exists(_.startsWith("exclude ")) shouldBe false
+      lines(out).exists(_.startsWith("except ")) shouldBe false
       snapshot(originals) shouldBe before
       bytes(best) shouldBe before(best.getAbsolutePath)
       bytes(event) shouldBe before(event.getAbsolutePath)
       Metadata.read(File(originals, "2009/03/10/0050.toml")).`google-media-item-id` shouldBe Some("id-0050")
 
-  it should "print a claims conflict and write nothing" in :
+  it should "except both albums when they claim one picture" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
-      write(originals, "2009/03/10/Dinner.toml", "google-album-id = \"album-dinner\"\n")
-      write(originals, "2009/03/10/Party.toml", "google-album-id = \"album-party\"\n")
-      val before: Map[String, Seq[Byte]] = snapshot(originals)
-      val fake: Fake = Fake(albums = Map.empty, library = Set("media-1"))
+      write(originals, "2009/03/10/Dinner.toml", "include = [\"all\"]\ngoogle-album-id = \"album-dinner\"\n")
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
+      val fake: Fake = Fake(albums = Map("album-dinner" -> Set.empty, "album-party" -> Set.empty), library = Set("media-1"))
       var opened: Boolean = false
       val (out, thrown) = capture:
         run(originals, fake, Some("2009/03/10"), onOpen = () => opened = true)
-      thrown.get shouldBe a[IllegalArgumentException]
-      opened shouldBe false
-      fake.listed shouldBe empty
+      expectOk(thrown, out)
+      opened shouldBe true
+      lines(out) shouldBe Seq("except 2009/03/10/Dinner \"2412\"", "except 2009/03/10/Party \"2412\"")
+      fake.listed.toList shouldBe List("album-dinner", "album-party")
       fake.removed shouldBe empty
-      out should include ("2009/03/10/2412")
-      out should include ("claimed by")
-      out should include ("2009/03/10/Dinner")
-      out should include ("2009/03/10/Party")
-      snapshot(originals) shouldBe before
+      Album.read(originals, File(originals, "2009/03/10/Dinner.toml")).include.isEmpty shouldBe true
+      Album.read(originals, File(originals, "2009/03/10/Party.toml")).include.isEmpty shouldBe true
 
   it should "print the picture path and album title when listing fails" in :
     withOriginals: originals =>
@@ -337,7 +327,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        "members = [\"2009/03/10/2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "include = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -360,7 +350,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        "exclude = [\"2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "include = [\"2009/03/10 except 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -370,7 +360,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]
-      val removeAt: Int = out.indexOf("remove Best 2412")
+      val removeAt: Int = out.indexOf("remove Best \"2412\"")
       val errorAt: Int = out.indexOf("2009/03/10/2412 Best: remove failed")
       removeAt should be >= 0
       errorAt should be > removeAt
@@ -379,7 +369,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       bytes(best) shouldBe before(best.getAbsolutePath)
       Metadata.read(sidecar).`google-media-item-id` shouldBe Some("media-1")
 
-  it should "remove an event exclude for every folder day inside from/to" in :
+  it should "remove an excepted stem on each folder day inside the span" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/09/2420.jpg", Array[Byte](1))
       writeBytes(originals, "2009/03/11/2420.jpg", Array[Byte](2))
@@ -389,10 +379,14 @@ class SyncTest extends AnyFlatSpec, Matchers:
       write(originals, "2009/03/13/2420.toml", "google-media-item-id = \"media-after\"\n")
       val purim: File = write(
         originals,
-        "2009/03/10/Purim Seuda.toml",
-        "to = 2009-03-12\nexclude = [\"2420\"]\ngoogle-album-id = \"album-purim\"\n"
+        "2009/03/10/to-12 Purim Seuda.toml",
+        "include = [\"all except 2420\"]\ngoogle-album-id = \"album-purim\"\n"
       )
-      val day: File = write(originals, "2009/03/11.toml", "google-album-id = \"album-day\"\n")
+      val day: File = write(
+        originals,
+        "2009/03/11/album.toml",
+        "include = [\"all\"]\ngoogle-album-id = \"album-day\"\n"
+      )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
         albums = Map(
@@ -403,14 +397,14 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
       expectOk(thrown, out)
-      lines(out) shouldBe Seq("remove 2009/03/10/Purim Seuda 2420")
+      lines(out) shouldBe Seq("remove 2009/03/10-12/Purim Seuda \"2420\"")
       fake.removed.toList shouldBe List("album-purim" -> Seq("media-span"))
       fake.listed.toList shouldBe List("album-purim", "album-day")
       snapshot(originals) shouldBe before
       bytes(purim) shouldBe before(purim.getAbsolutePath)
       bytes(day) shouldBe before(day.getAbsolutePath)
 
-  it should "not remove a curated name that is still listed in members" in :
+  it should "not remove a curated stem that another entry still claims" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       writeBytes(originals, "2011/06/29/2412.jpg", Array[Byte](2))
@@ -419,7 +413,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        "members = [\"2011/06/29/2412\"]\nexclude = [\"2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "include = [\"2009/03/10 except 2412\", \"2011/06/29 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -428,14 +422,14 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, None, recursive = true))
       expectOk(thrown, out)
-      lines(out) shouldBe Seq("remove Best 2412")
+      lines(out) shouldBe Seq("remove Best \"2412\"")
       fake.removed.toList shouldBe List("album-best" -> Seq("media-2009"))
       snapshot(originals) shouldBe before
       bytes(best) shouldBe before(best.getAbsolutePath)
-      Album.readCurated(best, "Best").members shouldBe Seq("2011/06/29/2412")
-      Album.readCurated(best, "Best").exclude shouldBe Set("2412")
+      Album.read(originals, best).include.map(Include.logical) shouldBe
+        Seq("2009/03/10 except 2412", "2011/06/29 2412")
 
-  it should "remove an excluded id that is still in a labeled month" in :
+  it should "remove an excepted id that is still in a named month" in :
     withOriginals: originals =>
       val stem: String = "1000"
       writeBytes(originals, s"2009/03/01/$stem.jpg", Array[Byte](1))
@@ -443,7 +437,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val month: File = write(
         originals,
         "2009/03/Trip.toml",
-        s"exclude = [\"$stem\"]\ngoogle-album-id = \"album-trip\"\n"
+        s"include = [\"all except $stem\"]\ngoogle-album-id = \"album-trip\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -452,20 +446,20 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
       expectOk(thrown, out)
-      lines(out) shouldBe Seq(s"remove 2009/03/Trip $stem")
+      lines(out) shouldBe Seq(s"remove 2009/03/Trip \"$stem\"")
       fake.removed.toList shouldBe List("album-trip" -> Seq("media-1"))
       snapshot(originals) shouldBe before
-      Album.readMonth(month, "2009/03/Trip").exclude shouldBe Set(stem)
+      Album.read(originals, month).include.map(Include.logical) shouldBe Seq(s"all except $stem")
 
-  it should "remove an excluded id that is still in a plain month" in :
+  it should "remove an excepted id that is still in a plain month" in :
     withOriginals: originals =>
       val stem: String = "1000"
       writeBytes(originals, s"2009/03/01/$stem.jpg", Array[Byte](1))
       write(originals, s"2009/03/01/$stem.toml", "google-media-item-id = \"media-1\"\n")
       val month: File = write(
         originals,
-        "2009/03.toml",
-        s"exclude = [\"$stem\"]\ngoogle-album-id = \"album-month\"\n"
+        "2009/03/album.toml",
+        s"include = [\"all except $stem\"]\ngoogle-album-id = \"album-month\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -474,10 +468,11 @@ class SyncTest extends AnyFlatSpec, Matchers:
       )
       val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
       expectOk(thrown, out)
-      lines(out) shouldBe Seq(s"remove 2009/03 $stem")
+      lines(out) shouldBe Seq(s"remove 2009/03 \"$stem\"")
       fake.removed.toList shouldBe List("album-month" -> Seq("media-1"))
       snapshot(originals) shouldBe before
-      Album.readMonth(month, "2009/03").exclude shouldBe Set(stem)
+      Album.read(originals, month).title shouldBe "2009/03"
+      Album.read(originals, month).include.map(Include.logical) shouldBe Seq(s"all except $stem")
 
   private def run(
     originals: File,
@@ -489,7 +484,6 @@ class SyncTest extends AnyFlatSpec, Matchers:
   ): Unit =
     Sync.run(
       originals = originals,
-      zone = zone,
       prefix = prefix,
       recursive = recursive,
       dryRun = dryRun,
@@ -516,10 +510,6 @@ class SyncTest extends AnyFlatSpec, Matchers:
 
   private def without(files: Map[String, Seq[Byte]], skip: File): Map[String, Seq[Byte]] =
     files.filterNot(_._1 == skip.getAbsolutePath)
-
-  private def stringArray(file: File, key: String): Seq[String] =
-    val table = JToml.jToml.readFromString(Files.read(file))
-    table.get(key).asArray.asScala.toSeq.map(_.asPrimitive.asString)
 
   private def snapshot(root: File): Map[String, Seq[Byte]] =
     def walk(file: File): Seq[File] =
