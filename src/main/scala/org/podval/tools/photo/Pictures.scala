@@ -134,28 +134,26 @@ object Pictures:
       else digitStem(stem, stemRows)
 
   private def digitStem(stem: String, rows: Seq[Planned]): Seq[Planned] =
-    markNoPicture(stem, markFreeze(stem, markSecondNormal(stem, markOccupied(markCollisions(rows)))))
+    markNoPicture(stem, markFreeze(stem, markSecondNormal(stem, markCollisions(rows))))
 
   private def markCollisions(rows: Seq[Planned]): Seq[Planned] =
     val byExtension: Map[String, Seq[Planned]] = rows.groupBy(_.extension)
     rows.map: row =>
       val same: Seq[Planned] = byExtension(row.extension)
-      if same.size < 2 then row
-      else same.find(_.literal) match
-        case Some(kept) if kept.file eq row.file => row
-        case Some(_) =>
-          row.copy(omitted = true, notRenamed = Some(s"${row.finalName} already exists"))
-        case None =>
-          val others: String = same.filterNot(_.file eq row.file).map(_.file.getName).sorted.mkString(", ")
-          row.copy(omitted = true, notRenamed = Some(s"${row.finalName} collides with $others"))
-
-  // The name can belong to a row that is leaving. Do not move onto it, and do not invent another suffix.
-  private def markOccupied(rows: Seq[Planned]): Seq[Planned] =
-    rows.map: row =>
-      if row.omitted || row.literal then row
-      else if File(row.file.getParentFile, row.finalName).exists then
-        row.copy(omitted = true, notRenamed = Some(s"${row.finalName} already exists"))
-      else row
+      val decided: Planned =
+        if same.size < 2 then row
+        else same.find(_.literal) match
+          case Some(kept) if kept.file eq row.file => row
+          case Some(_) =>
+            row.copy(omitted = true, notRenamed = Some(s"${row.finalName} already exists"))
+          case None =>
+            val others: String = same.filterNot(_.file eq row.file).map(_.file.getName).sorted.mkString(", ")
+            row.copy(omitted = true, notRenamed = Some(s"${row.finalName} collides with $others"))
+      // The name can belong to a row that is leaving. Do not move onto it.
+      val destination: File = File(decided.file.getParentFile, decided.finalName)
+      if decided.omitted || decided.literal || destination.getPath == decided.file.getPath || !destination.exists
+      then decided
+      else decided.copy(omitted = true, notRenamed = Some(s"${decided.finalName} already exists"))
 
   // Keep every already-literal normal. Dropping one would let publish upload a single file.
   private def markSecondNormal(stem: String, rows: Seq[Planned]): Seq[Planned] =
