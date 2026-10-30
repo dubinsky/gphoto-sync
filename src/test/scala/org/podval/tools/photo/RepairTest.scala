@@ -166,7 +166,11 @@ class RepairTest extends AnyFlatSpec, Matchers:
       setTimestamp = setTimestamp
     )
 
-  private def capture(body: => Unit): String = Transcript.text(body)
+  private def capture(body: => Unit): String =
+    val (out, thrown) = Transcript.collect(body)
+    thrown match
+      case Some(error) => throw error
+      case None => out
 
   private def rootFor(originals: File): Root =
     val home: File = File(System.getProperty("user.home"))

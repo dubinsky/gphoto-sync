@@ -3,7 +3,7 @@ package org.podval.tools.photo
 enum Json:
   case Null
   case Bool(value: Boolean)
-  case Long(value: Long)
+  case Long(value: scala.Long)
   case Str(value: String)
   case Arr(values: Seq[Json])
   case Obj(fields: Seq[(String, Json)])

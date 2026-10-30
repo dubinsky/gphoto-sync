@@ -409,7 +409,11 @@ class WalkersTest extends AnyFlatSpec, Matchers:
         case day: Pictures => body(day, picture)
         case other => fail(s"$other is not a picture directory")
 
-  private def capture(body: => Unit): String = Transcript.text(body)
+  private def capture(body: => Unit): String =
+    val (out, thrown) = Transcript.collect(body)
+    thrown match
+      case Some(error) => throw error
+      case None => out
 
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))

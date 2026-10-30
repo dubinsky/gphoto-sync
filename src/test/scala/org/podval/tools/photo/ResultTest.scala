@@ -49,6 +49,9 @@ class ResultTest extends AnyFlatSpec, Matchers:
         message should not be "NumberFormatException"
       case other => fail(other.toString)
 
+  it should "store a JSON long" in :
+    Json.Long(1L).value shouldBe 1L
+
   it should "let any other exception abort and not keep its lines" in :
     an [RuntimeException] should be thrownBy Operation.run(session):
       Transcript.println("partial")
