@@ -100,6 +100,8 @@ object Publish:
       }.distinct
       if dryRun then
         selected.foreach(picture => println(picture.line))
+        work.collect { case SkipUploader(path) => path }.foreach: path =>
+          println(s"$path: uploader set; not uploaded")
         val split: DesiredSplit = splitDesired(ensuredTitles, albums)
         split.blocked.foreach: title =>
           reportClaimers(
@@ -139,6 +141,7 @@ object Publish:
 
     var skippedExcluded: Int = 0
     var skippedExternal: Int = 0
+    var skippedUploader: Int = 0
     var skippedExists: Int = 0
     var uploaded: Int = 0
     var filed: Int = 0
@@ -169,6 +172,7 @@ object Publish:
     work.foreach:
       case _: SkipExcluded => skippedExcluded += 1
       case _: SkipExternal => skippedExternal += 1
+      case _: SkipUploader => skippedUploader += 1
       case _: AlreadyInGoogle => skippedExists += 1
       case _: FileExisting => skippedExists += 1
       case _: Broken => ()
@@ -179,7 +183,8 @@ object Publish:
     val failed: Int = failureLines.length
     println(
       s"uploaded=$uploaded filed=$filed skipped-excluded=$skippedExcluded " +
-        s"skipped-external=$skippedExternal skipped-exists=$skippedExists failed=$failed"
+        s"skipped-external=$skippedExternal skipped-uploader=$skippedUploader " +
+        s"skipped-exists=$skippedExists failed=$failed"
     )
     if failed > 0 then throw IllegalArgumentException("publish failed")
 
@@ -433,6 +438,7 @@ object Publish:
     else
       val targets: Seq[String] = titles.filterNot(title => albums(title).album.external)
       if targets.isEmpty then SkipExcluded(picture.path)
+      else if fact.metadata.uploader.isDefined then SkipUploader(picture.path)
       else if twoNormals(fact) then Broken(picture.path, targets.mkString(","), "too many normal extensions")
       else
         val directory: File = fact.directory
@@ -471,6 +477,7 @@ object Publish:
 
   private sealed trait Work
   private final case class SkipExternal(path: String) extends Work
+  private final case class SkipUploader(path: String) extends Work
   private final case class SkipExcluded(path: String) extends Work
   private final case class StayLocal(path: String) extends Work
   private final case class AlreadyInGoogle(path: String) extends Work

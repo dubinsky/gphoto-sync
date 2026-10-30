@@ -15,7 +15,8 @@ final case class Metadata(
   `bad-raw`: Option[Boolean] = None,
   orientation: Option[String] = None,
   `google-media-item-id`: Option[String] = None,
-  `already-in-google`: Option[Boolean] = None
+  `already-in-google`: Option[Boolean] = None,
+  uploader: Option[String] = None
 ) derives CanEqual:
   override def toString: String = Property.all
     .flatMap(property => property.get(this).map(value => s"${property.name}=$value"))
@@ -42,7 +43,8 @@ object Metadata:
       `bad-raw` = optionalBoolean(table, "bad-raw"),
       orientation = optionalString(table, "orientation"),
       `google-media-item-id` = optionalString(table, "google-media-item-id"),
-      `already-in-google` = optionalBoolean(table, "already-in-google")
+      `already-in-google` = optionalBoolean(table, "already-in-google"),
+      uploader = optionalString(table, "uploader").map(parseUploader)
     )
 
   def encode(metadata: Metadata): String =
@@ -54,7 +56,16 @@ object Metadata:
     metadata.orientation.foreach(value => table.put("orientation", value))
     metadata.`google-media-item-id`.foreach(value => table.put("google-media-item-id", value))
     metadata.`already-in-google`.foreach(value => table.put("already-in-google", value))
+    metadata.uploader.foreach(value => table.put("uploader", value))
     JToml.jToml.writeToString(table)
+
+  // String.trim counts tab, CR, and LF as whitespace, so those are rejected first.
+  private[photo] def parseUploader(value: String): String =
+    if value.exists(ch => ch == '\t' || ch == '\r' || ch == '\n') then
+      reject("uploader", "must not contain a tab, CR, or LF")
+    else if value.trim.isEmpty then
+      reject("uploader", "must be a non-empty display name")
+    else value
 
   private def optionalString(table: TomlTable, key: String): Option[String] =
     Option(table.get(key)).map: value =>

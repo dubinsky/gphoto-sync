@@ -159,6 +159,7 @@ A picture is added to every non-external album that lists it.
 A picture in any external album is not uploaded.
 An unclaimed picture is left out of the summary.
 A picture excluded from every album that matches it counts as skipped-excluded and is not uploaded.
+A picture sidecar `uploader`, when set, is not uploaded, and the summary counts `skipped-uploader`.
 
 `photo sync [path]` reads Google and turns removals into local except lists.
 A year or the archive root requires `--recursive`.

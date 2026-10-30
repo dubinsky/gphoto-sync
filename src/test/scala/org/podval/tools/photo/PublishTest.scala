@@ -63,7 +63,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       best.include.map(Include.logical) shouldBe Seq("2009/03/10 2412")
       best.googleAlbumId.nonEmpty shouldBe true
       best.publishedTitle shouldBe "Best"
-      out should include ("uploaded=1 filed=2 skipped-excluded=0 skipped-external=0 skipped-exists=0 failed=0")
+      out should include ("uploaded=1 filed=2 skipped-excluded=0 skipped-external=0 skipped-uploader=0 skipped-exists=0 failed=0")
 
   it should "not upload a picture claimed by an external album" in :
     withOriginals: originals =>
@@ -84,6 +84,104 @@ class PublishTest extends AnyFlatSpec, Matchers:
       out should include ("skipped-external=1")
       out should include ("uploaded=0")
       out should include ("filed=0")
+
+  it should "skip upload when the sidecar sets uploader" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val sidecar: File = write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
+      val sidecarBytes: Seq[Byte] = bytes(sidecar)
+      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val albumBytes: Seq[Byte] = bytes(album)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.batchCreates shouldBe empty
+      fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      bytes(sidecar) shouldBe sidecarBytes
+      bytes(album) shouldBe albumBytes
+      Files.read(sidecar) should not include ("google-media-item-id")
+      Files.read(sidecar) should not include ("already-in-google")
+      out should include (
+        "uploaded=0 filed=0 skipped-excluded=0 skipped-external=0 skipped-uploader=1 skipped-exists=0 failed=0"
+      )
+
+  it should "count an external album ahead of a set uploader" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
+      write(
+        originals,
+        "2009/03/10/Party.toml",
+        "external = true\ninclude = [\"all\"]\ngoogle-title = \"Hawaii \"\nowner = \"Ada Owner\"\n"
+      )
+      write(originals, "Best.toml", "include = [\"2009/03/10 2412\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      out should include ("skipped-external=1")
+      out should include ("skipped-uploader=0")
+      out should include ("uploaded=0")
+      out should include ("failed=0")
+
+  it should "upload a picture whose sidecar does not set uploader" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads should have size 1
+      fake.batchCreates should have size 1
+      metadata(originals, "2009/03/10/2412").uploader shouldBe None
+      metadata(originals, "2009/03/10/2412").`google-media-item-id`.nonEmpty shouldBe true
+      out should include ("uploaded=1")
+      out should include ("skipped-uploader=0")
+      out should include ("failed=0")
+
+  it should "count an excluded-only picture as skipped-excluded when uploader is set" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
+      write(originals, "2009/03/10/Party.toml", "include = [\"all except 2412\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      out should include ("skipped-excluded=1")
+      out should include ("skipped-uploader=0")
+      out should include ("uploaded=0")
+      out should include ("failed=0")
+
+  it should "print an uploader line and not call Google on a dry run" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2, 3))
+      write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val before: Map[String, Seq[Byte]] = snapshot(originals)
+      val fake: Fake = Fake()
+      var opened: Boolean = false
+      val (out, thrown) = capture:
+        run(originals, fake, Some("2009/03/10"), dryRun = true, onOpen = () => opened = true)
+      expectOk(thrown, out)
+      opened shouldBe false
+      fake.uploads shouldBe empty
+      fake.batchCreates shouldBe empty
+      fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      snapshot(originals) shouldBe before
+      out.trim.linesIterator.toSeq shouldBe Seq(
+        "2009/03/10/2412 albums=2009/03/10/Party",
+        "2009/03/10/2412: uploader set; not uploaded"
+      )
+      out should not include ("uploaded=")
 
   it should "upload a timestamped jpeg from the exiftool temp copy" in :
     withOriginals: originals =>
@@ -231,7 +329,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
       fake.uploads should have size 1
-      out should include ("uploaded=1 filed=1 skipped-excluded=0 skipped-external=0 skipped-exists=0 failed=0")
+      out should include ("uploaded=1 filed=1 skipped-excluded=0 skipped-external=0 skipped-uploader=0 skipped-exists=0 failed=0")
       out should not include ("2009/03/10/1000")
 
   it should "count a picture excluded from its only album and not upload it" in :
@@ -389,7 +487,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       bytes(album) shouldBe before
       fake.uploads shouldBe empty
       fake.createdAlbums shouldBe empty
-      out should include ("uploaded=0 filed=0 skipped-excluded=0 skipped-external=0 skipped-exists=0 failed=0")
+      out should include ("uploaded=0 filed=0 skipped-excluded=0 skipped-external=0 skipped-uploader=0 skipped-exists=0 failed=0")
 
   it should "write each batch of media ids before uploading the next files" in :
     withOriginals: originals =>

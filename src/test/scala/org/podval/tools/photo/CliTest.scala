@@ -331,6 +331,15 @@ class CliTest extends AnyFlatSpec, Matchers:
       Metadata(`google-media-item-id` = Some("media-item-1"))
     Cli.parsePropertyAndValue("already-in-google=false").set(Metadata()) shouldBe
       Metadata(`already-in-google` = Some(false))
+    Cli.parsePropertyAndValue("uploader=Ada").set(Metadata()) shouldBe Metadata(uploader = Some("Ada"))
+    Cli.parsePropertyAndValue("uploader= Ada ").set(Metadata()) shouldBe Metadata(uploader = Some(" Ada "))
+    Cli.parsePropertyAndValue("uploader").set(Metadata(uploader = Some("Ada"))) shouldBe Metadata()
+    val blank: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+      Cli.parsePropertyAndValue("uploader=   ").set(Metadata())
+    blank.getMessage shouldBe "key 'uploader' must be a non-empty display name"
+    val tab: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+      Cli.parsePropertyAndValue("uploader=Ada\t").set(Metadata())
+    tab.getMessage shouldBe "key 'uploader' must not contain a tab, CR, or LF"
 
     an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("nope")
     an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("source=a=b")

@@ -27,7 +27,8 @@ object Property:
     BadRaw,
     Orientation,
     GoogleMediaItemId,
-    AlreadyInGoogle
+    AlreadyInGoogle,
+    Uploader
   )
 
   def forName(name: String): Property[?] =
@@ -72,3 +73,7 @@ object Property:
 
   private case object AlreadyInGoogle extends BooleanProperty("already-in-google", _.`already-in-google`):
     def set(metadata: Metadata, value: Option[Boolean]): Metadata = metadata.copy(`already-in-google` = value)
+
+  private case object Uploader extends Property[String]("uploader", _.uploader):
+    def set(metadata: Metadata, value: Option[String]): Metadata = metadata.copy(uploader = value)
+    def parser(string: String): String = Metadata.parseUploader(string)
