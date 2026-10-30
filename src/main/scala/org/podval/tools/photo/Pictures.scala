@@ -10,7 +10,10 @@ trait Pictures extends Directory:
   final def item(name: String): Picture = mkPicture(name, group(NameMode.Leave).find(_._1 == name).get._2)
 
   final def lsd(names: NameMode): Seq[Picture] =
-    for (name, extensions) <- group(names) yield mkPicture(name, extensions)
+    fromGrouped(group(names))
+
+  private[photo] final def fromGrouped(grouped: Seq[(String, Set[String])]): Seq[Picture] =
+    for (name, extensions) <- grouped yield mkPicture(name, extensions)
 
   private def group(names: NameMode): Seq[(String, Set[String])] =
     Pictures.group(Files.listFiles(directory), names)
@@ -62,6 +65,13 @@ object Pictures:
   private[photo] def group(files: Seq[File], names: NameMode): Seq[(String, Set[String])] =
     val planned: Seq[Planned] = plan(files)
     enact(planned, names)
+    stems(planned)
+
+  // Silent fill for the index. Leave's WRONG NAME stays on group, which still enacts.
+  private[photo] def grouped(files: Seq[File]): Seq[(String, Set[String])] =
+    stems(plan(files))
+
+  private def stems(planned: Seq[Planned]): Seq[(String, Set[String])] =
     planned
       .filterNot(_.omitted)
       .groupBy(_.stem)

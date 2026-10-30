@@ -3,6 +3,9 @@ package org.podval.tools.photo
 import java.time.Instant
 
 final class Extension(val picture: Picture, val descriptor: Extension.Descriptor):
+  // Shell hit test: a cached ls must not construct Extension.
+  Extension.constructed += 1
+
   def name: String = descriptor.name
   
   override def toString: String = s"$picture.$name"
@@ -12,6 +15,8 @@ final class Extension(val picture: Picture, val descriptor: Extension.Descriptor
   lazy val fromMetadata: Option[Instant] = descriptor.dater.get(picture, name)
 
 object Extension:
+  private[photo] var constructed: Long = 0
+
   sealed class Descriptor(
     val name: String,
     val dater: Dates.FromFileMetadata

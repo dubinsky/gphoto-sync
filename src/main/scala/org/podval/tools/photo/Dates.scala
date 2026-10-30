@@ -184,13 +184,15 @@ object Dates:
 
   object FromFile extends Dater(isZoned = true):
     def get(picture: Picture, extension: String): Instant =
-      val file: File = picture.file(extension)
-      val instant: Instant =
+      instant(picture.file(extension), picture.zone)
+
+    private[photo] def instant(file: File, zone: ZoneId): Instant =
+      val read: Instant =
         //Instant.ofEpochMilli(file.lastModified)
         Files.getLastModifiedTime(file.toPath).toInstant
 
       // TODO isZoned
-      fromZone(instant, picture.zone)
+      fromZone(read, zone)
 
     def set(picture: Picture, extension: String, instant: Instant): Unit =
       val file: File = picture.file(extension)

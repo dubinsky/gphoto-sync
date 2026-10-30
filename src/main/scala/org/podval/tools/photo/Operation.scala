@@ -5,16 +5,23 @@ trait Operation:
 
 object Operation:
   def run(session: Session)(body: => Unit): (Session, Result) =
-    val (text, thrown) = Transcript.collect(body)
-    thrown match
-      case None =>
-        (session, Result.Ok(text, Json.Null))
-      case Some(error: (IllegalArgumentException | IllegalStateException)) =>
-        val message: String = messageOf(error)
-        if text.isEmpty then (session, Result.Usage(message))
-        else (session, Result.Failed(text, Json.Null, message))
-      case Some(error) =>
-        throw error
+    // Usage returns the session passed in. Ok and Failed return index edits made by the body.
+    // end only restores the caller; it does not drop.
+    val previous: Option[DirectoryIndex.Frame] = DirectoryIndex.begin(session)
+    try
+      val (text, thrown) = Transcript.collect(body)
+      val edited: Session = DirectoryIndex.now
+      thrown match
+        case None =>
+          (edited, Result.Ok(text, Json.Null))
+        case Some(error: (IllegalArgumentException | IllegalStateException)) =>
+          val message: String = messageOf(error)
+          if text.isEmpty then (session, Result.Usage(message))
+          else (edited, Result.Failed(text, Json.Null, message))
+        case Some(error) =>
+          throw error
+    finally
+      DirectoryIndex.end(previous)
 
   def messageOf(error: Throwable): String =
     Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)

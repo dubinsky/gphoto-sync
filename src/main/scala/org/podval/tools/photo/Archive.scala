@@ -23,9 +23,87 @@ object Archive:
   private val pictureExtensions: Set[String] = (Extension.normal ++ Extension.raw).map(_.name)
 
   def scan(originals: File): Scan =
+    // One-shot stays a cold walk, so WRONG NAME and lazy PictureAudit stay what the tests lock.
+    DirectoryIndex.cursor.filter(session => sameArchive(session, originals)) match
+      case Some(_) => scanIndexed(originals)
+      case None => scanCold(originals)
+
+  private def sameArchive(session: Session, originals: File): Boolean =
+    DirectoryIndex.key(session.root.configuration.archive) == DirectoryIndex.key(originals)
+
+  private def scanCold(originals: File): Scan =
     val curated: Seq[Album.Loaded] = albumFiles(originals).map(file => Album.Loaded(file, Album.read(originals, file)))
     childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(Scan(curated, Seq.empty)):
       (scan, yearDir) => scan ++ scanYear(originals, yearDir)
+
+  // Readdir the root, every month, and every day. A year hit does not skip a month, and a month hit does not skip a day.
+  private def scanIndexed(originals: File): Scan =
+    val curated: Seq[Album.Loaded] = loadRoot(originals)
+    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(Scan(curated, Seq.empty)):
+      (scan, yearDir) =>
+        rejectToml(yearDir)
+        val year: Int = yearDir.getName.toInt
+        val months: Seq[File] = childDirectories(yearDir).filter(dir => isMonth(dir.getName))
+        rememberYear(yearDir, months)
+        months.foldLeft(scan): (scan, monthDir) =>
+          val month: Int = monthDir.getName.toInt
+          val monthAlbums: Seq[Album.Loaded] = loadMonth(originals, monthDir)
+          childDirectories(monthDir).filter(dir => isDay(dir.getName)).foldLeft(Scan(scan.albums ++ monthAlbums, scan.pictures)):
+            (scan, dayDir) => scan ++ loadDay(originals, year, month, dayDir)
+
+  private def loadRoot(originals: File): Seq[Album.Loaded] =
+    val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(originals, filesOnly = false)
+    DirectoryIndex.now.cached(originals) match
+      case Some(entry) if entry.fingerprint == fingerprint =>
+        entry.albums
+      case _ =>
+        val albums: Seq[Album.Loaded] = albumFiles(originals).map(file => Album.Loaded(file, Album.read(originals, file)))
+        DirectoryIndex.replace(DirectoryIndex.now.remember(
+          originals,
+          DirEntry(fingerprint, Seq.empty, albums, None)
+        ))
+        albums
+
+  // Month names only. albums stays empty: a year directory rejects album files.
+  private def rememberYear(yearDir: File, months: Seq[File]): Unit =
+    val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(yearDir, filesOnly = false)
+    DirectoryIndex.now.cached(yearDir) match
+      case Some(entry) if entry.fingerprint == fingerprint =>
+        ()
+      case _ =>
+        val names: Seq[(String, Set[String])] = months.map(month => month.getName -> Set.empty[String])
+        DirectoryIndex.replace(DirectoryIndex.now.remember(
+          yearDir,
+          DirEntry(fingerprint, names, Seq.empty, None)
+        ))
+
+  private def loadMonth(originals: File, monthDir: File): Seq[Album.Loaded] =
+    val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(monthDir, filesOnly = false)
+    DirectoryIndex.now.cached(monthDir) match
+      case Some(entry) if entry.fingerprint == fingerprint =>
+        entry.albums
+      case _ =>
+        val albums: Seq[Album.Loaded] = albumFiles(monthDir).map(file => Album.Loaded(file, Album.read(originals, file)))
+        DirectoryIndex.replace(DirectoryIndex.now.remember(
+          monthDir,
+          DirEntry(fingerprint, Seq.empty, albums, None)
+        ))
+        albums
+
+  private def loadDay(originals: File, year: Int, month: Int, dayDir: File): Scan =
+    val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(dayDir, filesOnly = true)
+    DirectoryIndex.now.cached(dayDir) match
+      case Some(entry) if entry.fingerprint == fingerprint =>
+        Scan(entry.albums, picturesFrom(originals, year, month, dayDir, entry.grouped))
+      case _ =>
+        // Grouped, not group: a warm albums must not print WRONG NAME. Listing, if any, is stale.
+        val grouped: Seq[(String, Set[String])] = Pictures.grouped(Files.listFiles(dayDir))
+        val albums: Seq[Album.Loaded] = dayAlbums(originals, dayDir)
+        DirectoryIndex.replace(DirectoryIndex.now.remember(
+          dayDir,
+          DirEntry(fingerprint, grouped, albums, None)
+        ))
+        Scan(albums, picturesFrom(originals, year, month, dayDir, grouped))
 
   // Pictures only. The migrator uses this while album files still have the old keys.
   def pictures(originals: File): Seq[Picture] =
@@ -54,14 +132,21 @@ object Archive:
       (scan, dayDir) => scan ++ scanDay(originals, year, month, dayDir)
 
   private def scanDay(originals: File, year: Int, month: Int, dayDir: File): Scan =
-    val albums: Seq[Album.Loaded] = dayFiles(dayDir).filter(isAlbumFile).map: file =>
-      Album.Loaded(file, Album.read(originals, file))
-    Scan(albums, dayPictures(originals, year, month, dayDir))
+    Scan(dayAlbums(originals, dayDir), dayPictures(originals, year, month, dayDir))
 
   private def dayPictures(originals: File, year: Int, month: Int, dayDir: File): Seq[Picture] =
-    val folderDay: LocalDate = LocalDate.of(year, month, dayDir.getName.toInt)
     val files: Seq[File] = Files.listFiles(dayDir)
-    Pictures.group(files, NameMode.Leave).flatMap: (name, extensions) =>
+    picturesFrom(originals, year, month, dayDir, Pictures.group(files, NameMode.Leave))
+
+  private def picturesFrom(
+    originals: File,
+    year: Int,
+    month: Int,
+    dayDir: File,
+    grouped: Seq[(String, Set[String])]
+  ): Seq[Picture] =
+    val folderDay: LocalDate = LocalDate.of(year, month, dayDir.getName.toInt)
+    grouped.flatMap: (name, extensions) =>
       Option.when(extensions.exists(pictureExtensions.contains)):
         Picture(
           path = s"${Album.relative(originals, dayDir)}/$name",
@@ -72,6 +157,9 @@ object Archive:
           extensions = extensions,
           metadata = readMetadata(dayDir, name, extensions)
         )
+
+  private[photo] def dayAlbums(originals: File, dayDir: File): Seq[Album.Loaded] =
+    dayFiles(dayDir).filter(isAlbumFile).map(file => Album.Loaded(file, Album.read(originals, file)))
 
   private def readMetadata(directory: File, name: String, extensions: Set[String]): Metadata =
     if extensions.contains(Metadata.extension)

@@ -13,8 +13,12 @@ final case class Repair(
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
+      val parsed: Path = session.parse(path)
+      // A dry run writes nothing, so the index stays. Days move, and curated files at the root are rewritten.
+      if !dryRun && days then DirectoryIndex.dropAll()
+      else if !dryRun && (names || raw || timestamps) then DirectoryIndex.armDropReads()
       Repair.run(
-        session.parse(path),
+        parsed,
         names = names,
         raw = raw,
         timestamps = timestamps,
@@ -38,15 +42,23 @@ object Repair:
     if timestamps then each(path)(repairTimestamps(_, dryRun, setTimestamp))
     if days then each(path)(repairDays(_, dryRun))
 
-  private def walk(path: Path, names: NameMode): Unit = path match
-    case pictures: Pictures =>
-      val _: Seq[Picture] = pictures.lsd(names)
-    case directory: Directory =>
-      directory.lsd.foreach(child => walk(child, names))
+  private def walk(path: Path, names: NameMode): Unit =
+    note(path)
+    path match
+      case pictures: Pictures =>
+        val _: Seq[Picture] = pictures.lsd(names)
+      case directory: Directory =>
+        directory.lsd.foreach(child => walk(child, names))
 
-  private def each(path: Path)(use: Picture => Unit): Unit = path match
-    case pictures: Pictures => pictures.lsd(NameMode.Leave).foreach(use)
-    case directory: Directory => directory.lsd.foreach(child => each(child)(use))
+  private def each(path: Path)(use: Picture => Unit): Unit =
+    note(path)
+    path match
+      case pictures: Pictures => pictures.lsd(NameMode.Leave).foreach(use)
+      case directory: Directory => directory.lsd.foreach(child => each(child)(use))
+
+  private def note(path: Path): Unit = path match
+    case directory: Directory => DirectoryIndex.noteRead(directory.directory)
+    case _ => ()
 
   private def repairRaw(picture: Picture, dryRun: Boolean, generate: Picture => Unit): Unit =
     val suppressed: Boolean = picture.metadata.`bad-raw`.contains(true)

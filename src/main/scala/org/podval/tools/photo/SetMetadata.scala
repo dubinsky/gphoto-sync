@@ -10,8 +10,13 @@ final case class SetMetadata(picture: String, property: String) extends Operatio
 
       if metadataUpdated == Metadata.default then
         Transcript.println(s"$parsed: deleting metadata file")
+        dropDay(parsed)
         Files.delete(parsed.metadataFile)
       else
         val string: String = Metadata.encode(metadataUpdated)
         Transcript.println(s"$parsed: writing metadata file\n$string")
+        dropDay(parsed)
         Files.write(string, parsed.metadataFile)
+
+  private def dropDay(picture: Picture): Unit =
+    picture.parent.day.foreach(day => DirectoryIndex.drop(day.directory))

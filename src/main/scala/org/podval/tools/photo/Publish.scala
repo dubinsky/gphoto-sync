@@ -81,6 +81,8 @@ object Publish:
       throw IllegalArgumentException("year or root requires --recursive")
 
     val scan: Archive.Scan = Archive.scan(originals)
+    // Album files and sidecar bytes. A dry run leaves the index.
+    if !dryRun then DirectoryIndex.dropAll()
     val pictures: Seq[Claims.Resolved] = Claims.resolve(scan)
     val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix).filter: picture =>
       picture.albums.nonEmpty || picture.excludedOnly

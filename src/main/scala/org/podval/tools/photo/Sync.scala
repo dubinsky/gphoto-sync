@@ -42,6 +42,8 @@ object Sync:
       throw IllegalArgumentException("year or root requires --recursive")
 
     val scan: Archive.Scan = Archive.scan(originals)
+    // Album files only. Sync does not write sidecar bytes. A dry run leaves the index.
+    if !dryRun then DirectoryIndex.dropAll()
     val pictures: Seq[Claims.Resolved] = Claims.resolve(scan)
     val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix)
     val albums: Seq[LoadedAlbum] = scan.albums

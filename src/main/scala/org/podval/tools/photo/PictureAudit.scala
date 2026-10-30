@@ -12,13 +12,21 @@ object PictureAudit:
   )
 
   def apply(picture: Picture): Result =
+    assessed(picture, picture.extensions.map(_.fromMetadata), picture.extensions.map(_.current))
+
+  // currents is only the equality check. A listing miss whose corrected path is absent passes source-file instants.
+  private[photo] def assessed(
+    picture: Picture,
+    fromMetadata: Set[Option[Instant]],
+    currents: Iterable[Instant]
+  ): Result =
     // Note: in the pictures saw where metadata timestamp is present and file name also encodes the timestamp:
     // - for '3gp' and 'mp4' metadata timestamp is sometimes later than the file name timestamp
     //   (and a few hours for the timezone offset) - metadata probably records timestamp of the end of recording;
     // - for 'jpg' metadata timestamp is sometimes earlier than the file name timestamp by a second;
     // I pick the earliest ;)
     val timestamps: Set[Option[Instant]] =
-      picture.extensions.map(_.fromMetadata) ++ Set(picture.timestampFromName.map(_._1))
+      fromMetadata ++ Set(picture.timestampFromName.map(_._1))
     val timestampEarliest: Option[Instant] = Dates.earliest(timestamps)
     val timestampLatest: Option[Instant] = Dates.latest(timestamps)
     val timestampsVary: Boolean = timestampEarliest.isDefined && timestampLatest.isDefined &&
@@ -27,7 +35,7 @@ object PictureAudit:
     val timestamp: Option[Instant] = Dates.FromMetadata.get(picture).orElse(timestampEarliest)
 
     val timestampWrong: Boolean = timestamp.fold(false)(timestamp =>
-      picture.extensions.exists(extension => !Dates.equal(timestamp, extension.current))
+      currents.exists(current => !Dates.equal(timestamp, current))
     )
 
     val dayShouldBe: Option[Day] = timestamp.flatMap: timestamp =>
