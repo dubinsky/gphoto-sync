@@ -15,8 +15,18 @@ A `.toml` in a year directory is not an album.
 A digit-leading `.toml` in a day folder is a picture sidecar.
 A curated album is `originals/<Name>.toml`.
 The name is not a 4-digit year, not `album`, and not `to-…`.
-Upload is JPEG and video.
+`rootPath` in the config file is the archive.
+On this machine that is `Pictures/originals`.
+The inbox is the child `.upload`.
+Publish uploads JPEG and video.
 RAW stays local.
+The old sibling `Upload` is gone.
+`lsd` skips a child whose name starts with `.` at year, month, and day, then puts `.upload` back on the archive root.
+`AGENTS.md` may sit in the archive root.
+Any other non-toml file next to child directories is stray.
+`.gphoto-sync/` is the agent's workspace.
+This program does not read it.
+There is no config key for it.
 
 The title uses `/` on both sides of a range.
 `-` means only "through".
@@ -159,6 +169,10 @@ A remove line is `remove`, the album title, and the stem in quotes.
 The Desktop client JSON is `~/.config/org.podval.tools.photo.client.json`.
 The token is `~/.config/org.podval.tools.photo.token.json`.
 The config file is `~/.config/org.podval.tools.photo.toml`.
+It has `rootPath` and `zoneId`.
+`rootPath` is the archive, relative to the home directory.
+`byYearDirectoryName` or `uploadDirectoryName` is an error.
+`rootPath` must be the archive.
 
 == Google Photos API
 
@@ -241,9 +255,30 @@ Cron is out of scope.
 
 == TODO
 
+- download all pictures?
+- use space to separate album date from name?
+
 - CLI get pictures from a memory card
 - CLI shell mode
 - CLI packaging/publishing
-- CLI commands for the needs of the local agent
+- CLI commands for the needs of the local agent - MCP?
 - CLI webapp
 - everything (cloud rules, local rules, protocol) packaged within a Grok Bot template
+
+
+Common:
+
+- metaprotocol
+- protocol (including request for inventory)
+- inventory format
+
+Build (archive agent) only:
+
+- archive format and conventions
+- matching rules
+- use of the gphoto-sync tool
+
+Bot only:
+
+- protocol commands handling
+- inventory creation and maintenance
