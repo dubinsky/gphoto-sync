@@ -645,6 +645,8 @@ object Cli:
           catch
             case error: IllegalArgumentException =>
               (session, Result.Usage(Operation.messageOf(error)))
+            case _: NoSuchElementException =>
+              (session, Result.Usage("no such directory"))
 
   private object Pwd extends Operation:
     override def execute(session: Session): (Session, Result) =

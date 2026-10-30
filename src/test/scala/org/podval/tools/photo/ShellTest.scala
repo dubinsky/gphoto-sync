@@ -66,6 +66,10 @@ class ShellTest extends AnyFlatSpec, Matchers:
         "pwd",
         "cd \"2010/07/19\"",
         "pwd",
+        "cd 2010/07/19/9999",
+        "pwd",
+        "cd 2010/07/19/2412.jpg",
+        "pwd",
         "cd /",
         "cd 2010/07/\\19",
         "pwd",
@@ -87,6 +91,8 @@ class ShellTest extends AnyFlatSpec, Matchers:
           |/
           |/
           |/
+          |2010/07/19
+          |2010/07/19
           |2010/07/19
           |2010/07/19
           |2010/07/19
