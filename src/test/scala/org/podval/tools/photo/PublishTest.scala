@@ -831,6 +831,62 @@ class PublishTest extends AnyFlatSpec, Matchers:
       )
       out should include ("failed=1")
 
+  it should "not upload a video that still occupies the still's extension path" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.gif", Array[Byte](1))
+      val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      video.getName shouldBe "2412.mp4"
+      File(originals, "2009/03/10/2412.toml").isFile shouldBe false
+      out should include ("uploaded=0")
+      out should include ("failed=0")
+
+    withOriginals: originals =>
+      val still: File = writeBytes(originals, "2009/03/10/IMG_2412.jpg", Array[Byte](1))
+      val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.uploads shouldBe empty
+      still.getName shouldBe "IMG_2412.jpg"
+      video.getName shouldBe "2412.mp4"
+      File(originals, "2009/03/10/2412.jpg").isFile shouldBe false
+      out should include ("2009/03/10/2412 2009/03/10/Party: IMG_2412.jpg is not the literal file")
+      out should include ("failed=1")
+
+    withOriginals: originals =>
+      val still: File = writeBytes(originals, "2009/03/10/2412.JPG", Array[Byte](1))
+      val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.uploads shouldBe empty
+      still.getName shouldBe "2412.JPG"
+      video.getName shouldBe "2412.mp4"
+      File(originals, "2009/03/10/2412.jpg").isFile shouldBe false
+      out should include ("2009/03/10/2412 2009/03/10/Party: 2412.JPG is not the literal file")
+      out should include ("failed=1")
+
+    withOriginals: originals =>
+      val still: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
+      expectOk(thrown, out)
+      fake.uploads.map(_.getName).toSeq shouldBe Seq(still.getName)
+      video.getName shouldBe "2412.mp4"
+      out should include ("uploaded=1")
+      out should include ("failed=0")
+
   it should "not upload either video when both would share a v stem" in :
     withOriginals: originals =>
       val still: File = writeBytes(originals, "2019/12/20/20191220_141955.jpg", Array[Byte](1))

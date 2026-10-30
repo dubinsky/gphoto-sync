@@ -134,7 +134,7 @@ object Pictures:
       else digitStem(stem, stemRows)
 
   private def digitStem(stem: String, rows: Seq[Planned]): Seq[Planned] =
-    markNoPicture(stem, markFreeze(stem, markSecondNormal(stem, markCollisions(rows))))
+    markNoPicture(stem, markFreeze(stem, markSecondNormal(stem, markOccupied(markCollisions(rows)))))
 
   private def markCollisions(rows: Seq[Planned]): Seq[Planned] =
     val byExtension: Map[String, Seq[Planned]] = rows.groupBy(_.extension)
@@ -148,6 +148,14 @@ object Pictures:
         case None =>
           val others: String = same.filterNot(_.file eq row.file).map(_.file.getName).sorted.mkString(", ")
           row.copy(omitted = true, notRenamed = Some(s"${row.finalName} collides with $others"))
+
+  // The name can belong to a row that is leaving. Do not move onto it, and do not invent another suffix.
+  private def markOccupied(rows: Seq[Planned]): Seq[Planned] =
+    rows.map: row =>
+      if row.omitted || row.literal then row
+      else if File(row.file.getParentFile, row.finalName).exists then
+        row.copy(omitted = true, notRenamed = Some(s"${row.finalName} already exists"))
+      else row
 
   // Keep every already-literal normal. Dropping one would let publish upload a single file.
   private def markSecondNormal(stem: String, rows: Seq[Planned]): Seq[Planned] =

@@ -288,6 +288,26 @@ class WalkersTest extends AnyFlatSpec, Matchers:
       out should include (s"$incoming: NOT RENAMED; 20191220_141955v.mp4 already exists")
       out should not include ("moving")
 
+  it should "not move onto a v name whose file is leaving" in :
+    withTemp: directory =>
+      val still: File = touch(directory, "2412.jpg")
+      val video: File = touch(directory, "2412.mp4")
+      val otherStill: File = touch(directory, "2412v.jpg")
+      val otherVideo: File = touch(directory, "2412v.mp4")
+      val out: String = capture:
+        Pictures.group(Seq(still, video, otherStill, otherVideo), NameMode.Apply) shouldBe Seq(
+          "2412" -> Set("jpg"),
+          "2412v" -> Set("jpg"),
+          "2412vv" -> Set("mp4")
+        )
+      still.getName shouldBe "2412.jpg"
+      video.getName shouldBe "2412.mp4"
+      otherStill.getName shouldBe "2412v.jpg"
+      otherVideo.exists shouldBe false
+      File(directory.toFile, "2412vv.mp4").isFile shouldBe true
+      File(directory.toFile, "2412vvv.mp4").exists shouldBe false
+      out should include (s"$video: NOT RENAMED; 2412v.mp4 already exists")
+
   it should "not merge two jpegs or rename a prefixed raw onto that stem" in :
     withTemp: directory =>
       val first: File = touch(directory, "IMG_2412.jpg")

@@ -492,22 +492,23 @@ object Publish:
       val id: String = loaded.album.googleAlbumId
       if id.isEmpty then ids else ids.updated(id, loaded.album.title)
 
-  // A grouped name that repair would change is not renamed here. The literal name.ext must already be on disk.
+  // A path {name}.ext can be a video whose planned stem is {name}v. Only a literal planned row counts.
   private def literalUpload(directory: File, name: String): Either[String, Option[(File, String)]] =
-    val literal: Option[(File, String)] = uploadable
-      .find(ext => File(directory, s"$name.$ext").isFile)
-      .map(ext => File(directory, s"$name.$ext") -> ext)
+    val rows: Seq[Pictures.Planned] = Pictures.plan(Files.list(directory)._2)
+    val literal: Option[Pictures.Planned] = uploadable.flatMap: ext =>
+      rows.find(row => row.stem == name && !row.omitted && row.extension == ext && row.literal)
+    .headOption
     literal match
-      case Some(_) if !name.headOption.exists(_.isDigit) =>
-        Left(s"$name does not start with a digit")
-      case Some(found) => Right(Some(found))
+      case Some(row) if !row.stem.headOption.exists(_.isDigit) =>
+        Left(s"${row.stem} does not start with a digit")
+      case Some(row) => Right(Some(row.file -> row.extension))
       case None =>
-        misnamedUpload(directory, name) match
+        misnamedUpload(rows, name) match
           case Some(actual) => Left(s"$actual is not the literal file")
           case None => Right(None)
 
-  private def misnamedUpload(directory: File, name: String): Option[String] =
-    Pictures.plan(Files.list(directory)._2).collectFirst:
+  private def misnamedUpload(rows: Seq[Pictures.Planned], name: String): Option[String] =
+    rows.collectFirst:
       case planned
         if planned.stem == name &&
           !planned.omitted &&
