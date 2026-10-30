@@ -22,7 +22,7 @@ final case class ListPictures(
 
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
-      val parsed: Path = session.root.parse(path)
+      val parsed: Path = session.parse(path)
       val propertyAndValue: Option[Property.AndValue[?]] = property.map(Cli.parsePropertyAndValue)
       forEachPicture(parsed, propertyAndValue)
 

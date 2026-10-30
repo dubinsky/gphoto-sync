@@ -4,7 +4,7 @@ final case class SetMetadata(picture: String, property: String) extends Operatio
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
       // A bad path fails before the property is checked.
-      val parsed: Picture = session.root.parsePicture(picture)
+      val parsed: Picture = session.parsePicture(picture)
       val propertyAndValue: Property.AndValue[?] = Cli.parsePropertyAndValue(property)
       val metadataUpdated: Metadata = propertyAndValue.set(parsed.metadata)
 

@@ -1,5 +1,7 @@
 package org.podval.tools.photo
 
+import scala.annotation.tailrec
+
 object Cli:
   private[photo] sealed trait Outcome
   private[photo] final case class Help(text: String) extends Outcome
@@ -39,8 +41,15 @@ object Cli:
   private[photo] case object LoginArgs extends Parsed
   private[photo] case object StatusArgs extends Parsed
   private[photo] case object LogoutArgs extends Parsed
+  private[photo] final case class CdArgs(path: Option[String]) extends Parsed
+  private[photo] case object PwdArgs extends Parsed
+  private[photo] case object ExitArgs extends Parsed
 
   private[photo] final case class Run(parsed: Parsed) extends Outcome
+  private[photo] case object ShellFront extends Outcome
+
+  private[photo] enum Front:
+    case OneShot, Shell
 
   def main(args: Array[String]): Unit =
     parse(args.toList) match
@@ -49,6 +58,9 @@ object Cli:
       case Usage(message) =>
         System.err.println(usageLine(message))
         sys.exit(1)
+      case ShellFront =>
+        val code: Int = shell(Session.open(PathStyle.Cursor), stdinLines)
+        if code != 0 then sys.exit(code)
       case Run(parsed) =>
         try
           val session: Session = Session.start
@@ -58,6 +70,9 @@ object Cli:
           case error: (IllegalArgumentException | IllegalStateException) =>
             System.err.println(usageLine(Operation.messageOf(error)))
             sys.exit(1)
+
+  private def stdinLines: Iterator[String] =
+    Iterator.continually(scala.io.StdIn.readLine()).takeWhile(_ != null)
 
   private def render(result: Result): Unit = result match
     case Result.Ok(text, _) =>
@@ -70,15 +85,122 @@ object Cli:
       System.err.println(usageLine(message))
       sys.exit(1)
 
-  private[photo] def parse(args: List[String]): Outcome = args match
+  private enum Step:
+    case Continue(session: Session)
+    case Stop
+
+  private[photo] def shell(
+    session: Session,
+    lines: Iterator[String],
+    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
+  ): Int =
+    @tailrec
+    def loop(current: Session): Int =
+      Console.err.print(current.prompt)
+      Console.err.flush()
+      if !lines.hasNext then 0
+      else step(current, lines.next(), run) match
+        case Step.Stop => 0
+        case Step.Continue(next) => loop(next)
+    loop(session)
+
+  private def step(session: Session, line: String, run: (Session, Parsed) => (Session, Result)): Step =
+    splitLine(line) match
+      case Left(message) =>
+        Console.err.println(usageLine(message))
+        Step.Continue(session)
+      case Right(Nil) =>
+        Step.Continue(session)
+      case Right(args) =>
+        parse(args, Front.Shell) match
+          case Help(text) =>
+            println(text)
+            Step.Continue(session)
+          case Usage(message) =>
+            Console.err.println(usageLine(message))
+            Step.Continue(session)
+          case ShellFront =>
+            Console.err.println(usageLine("already running"))
+            Step.Continue(session)
+          case Run(ExitArgs) =>
+            Step.Stop
+          case Run(parsed) =>
+            val (returned, result) = run(session, parsed)
+            result match
+              case Result.Ok(text, _) =>
+                print(text)
+                Step.Continue(returned)
+              case Result.Failed(text, _, message) =>
+                print(text)
+                Console.err.println(usageLine(message))
+                Step.Continue(returned)
+              case Result.Usage(message) =>
+                Console.err.println(usageLine(message))
+                Step.Continue(session)
+
+  // Inside quotes only \\ and \" are escapes. Any other backslash stays in the token.
+  private[photo] def splitLine(line: String): Either[String, List[String]] =
+    collect(line, Nil)
+
+  @tailrec
+  private def collect(rest: String, acc: List[String]): Either[String, List[String]] =
+    val left: String = rest.dropWhile(_.isWhitespace)
+    if left.isEmpty then Right(acc.reverse)
+    else readToken(left, "") match
+      case Left(message) => Left(message)
+      case Right((token, more)) => collect(more, token :: acc)
+
+  private def readToken(rest: String, acc: String): Either[String, (String, String)] =
+    if rest.isEmpty || rest.head.isWhitespace then Right((acc, rest))
+    else rest.head match
+      case '\\' =>
+        val more: String = rest.drop(1)
+        if more.isEmpty then Left("trailing backslash")
+        else readToken(more.drop(1), acc + more.take(1))
+      case '"' =>
+        readQuoted(rest.drop(1), acc) match
+          case Left(message) => Left(message)
+          case Right((quoted, more)) => readToken(more, quoted)
+      case _ =>
+        val (bare, more) = rest.span(ch => !ch.isWhitespace && ch != '\\' && ch != '"')
+        readToken(more, acc + bare)
+
+  private def readQuoted(rest: String, acc: String): Either[String, (String, String)] =
+    if rest.isEmpty then Left("unclosed quote")
+    else
+      val (bare, more) = rest.span(ch => ch != '"' && ch != '\\')
+      val soFar: String = acc + bare
+      if more.isEmpty then Left("unclosed quote")
+      else if more.head == '"' then Right((soFar, more.drop(1)))
+      else
+        val escaped: String = more.drop(1)
+        if escaped.isEmpty then Left("unclosed quote")
+        else
+          val taken: String = escaped.head match
+            case '\\' => "\\"
+            case '"' => "\""
+            case other => s"\\$other"
+          readQuoted(escaped.drop(1), soFar + taken)
+
+  private[photo] def parse(args: List[String], front: Front = Front.OneShot): Outcome = args match
     case Nil =>
       Usage("missing command")
     case ("--help" | "-h") :: _ =>
-      Help(topHelp)
+      Help(topHelp(front))
+    case "shell" :: rest =>
+      front match
+        case Front.Shell =>
+          Usage("already running")
+        case Front.OneShot =>
+          rest match
+            case Nil =>
+              ShellFront
+            case extra :: _ =>
+              Usage(s"extra argument '$extra'")
     case name :: rest =>
-      commands.find(_.name == name) match
+      registry.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
-        case Some(command) => parseCommand(command, rest)
+        case Some(command) => parseCommand(command, rest, front)
 
   private[photo] def toOperation(parsed: Parsed): Operation = parsed match
     case Lsd(directory, long) =>
@@ -114,12 +236,30 @@ object Cli:
     case LogoutArgs => Logout
     case RepairArgs(path, names, raw, timestamps, days, dryRun) =>
       Repair(path, names, raw, timestamps, days, dryRun)
+    case CdArgs(path) =>
+      Cd(path)
+    case PwdArgs =>
+      Pwd
+    case ExitArgs =>
+      Exit
 
-  private def finish(parsed: Parsed): Outcome = parsed match
-    case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
-      Usage("missing repair action")
-    case other =>
-      Run(other)
+  private def finish(command: Command, values: Values, positionals: List[String], front: Front): Outcome =
+    if command.name == "help" then helpText(positionals, front)
+    else command.build(values, positionals) match
+      case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
+        Usage("missing repair action")
+      case other =>
+        Run(other)
+
+  private def helpText(positionals: List[String], front: Front): Outcome = positionals match
+    case Nil =>
+      Help(topHelp(front))
+    case name :: Nil =>
+      registry.find(_.name == name) match
+        case None => Usage(s"unknown command '$name'")
+        case Some(found) => Help(commandHelp(found))
+    case extra :: _ =>
+      Usage(s"extra argument '$extra'")
 
   private[photo] def usageLine(message: String): String = s"Photo Archive Tool: $message"
 
@@ -127,13 +267,13 @@ object Cli:
     val (name: String, value: Option[String]) = Files.splitOnLast(string, '=')
     Property.AndValue(Property.forName(name), value)
 
-  private def parseCommand(command: Command, args: List[String]): Outcome =
+  private def parseCommand(command: Command, args: List[String], front: Front): Outcome =
     readFlags(command, args, Values()) match
       case Left(outcome) => outcome
       case Right((values, positionals)) =>
         checkPositionals(command.positionals, positionals) match
           case Some(message) => Usage(message)
-          case None => finish(command.build(values, positionals))
+          case None => finish(command, values, positionals, front)
 
   private def readFlags(
     command: Command,
@@ -226,13 +366,24 @@ object Cli:
 
   private def bool(values: Values, name: String): Boolean = values.bools.getOrElse(name, false)
 
-  private def topHelp: String =
+  private def topHelp(front: Front): String =
     val header: List[String] = List(
       "Photo Archive Tool 0.0.1",
       "manipulates photo archive",
       ""
     )
-    (header ++ commands.map(command => s"${command.name}  ${command.help}")).mkString("\n")
+    val listed: List[Command] = front match
+      case Front.OneShot =>
+        commands ++ List(helpCommand)
+      case Front.Shell =>
+        commands ++ List(helpCommand, cdCommand, pwdCommand, exitCommand)
+    val lines: List[String] = listed.map(command => s"${command.name}  ${command.help}")
+    val body: List[String] = front match
+      case Front.OneShot =>
+        lines :+ shellLine
+      case Front.Shell =>
+        lines
+    (header ++ body).mkString("\n")
 
   private def commandHelp(command: Command): String =
     val positionals: String =
@@ -432,3 +583,81 @@ object Cli:
       build = (_, _) => LogoutArgs
     )
   )
+
+  private val helpCommand: Command = Command(
+    name = "help",
+    help = "print command help",
+    positionals = List(Optional("command")),
+    flags = Nil,
+    build = (_, _) => throw IllegalStateException("help is printed by the front")
+  )
+
+  private val cdCommand: Command = Command(
+    name = "cd",
+    help = "change the cursor; only available in the shell and in serve",
+    positionals = List(Optional("directory")),
+    flags = Nil,
+    build = (_, args) => CdArgs(args.headOption)
+  )
+
+  private val pwdCommand: Command = Command(
+    name = "pwd",
+    help = "print the cursor; only available in the shell and in serve",
+    positionals = Nil,
+    flags = Nil,
+    build = (_, _) => PwdArgs
+  )
+
+  private val exitCommand: Command = Command(
+    name = "exit",
+    help = "leave the session; only available in the shell and in serve",
+    positionals = Nil,
+    flags = Nil,
+    build = (_, _) => ExitArgs
+  )
+
+  private val registry: List[Command] =
+    commands ++ List(helpCommand, cdCommand, pwdCommand, exitCommand)
+
+  private val shellLine: String = "shell  start a session"
+
+  private def cursorOnly(session: Session, name: String): Option[Result] = session.style match
+    case PathStyle.OneShot =>
+      Some(Result.Usage(s"$name is only available in the shell and in serve"))
+    case PathStyle.Cursor =>
+      None
+
+  private final case class Cd(path: Option[String]) extends Operation:
+    override def execute(session: Session): (Session, Result) =
+      cursorOnly(session, "cd") match
+        case Some(result) =>
+          (session, result)
+        case None =>
+          try
+            val target: Path = path.fold(session.root)(session.parse)
+            target match
+              case directory: Directory if directory.directory.isDirectory =>
+                (session.copy(cursor = directory), Result.Ok("", Json.Null))
+              case _: Directory =>
+                (session, Result.Usage("no such directory"))
+              case _ =>
+                (session, Result.Usage("not a directory"))
+          catch
+            case error: IllegalArgumentException =>
+              (session, Result.Usage(Operation.messageOf(error)))
+
+  private object Pwd extends Operation:
+    override def execute(session: Session): (Session, Result) =
+      cursorOnly(session, "pwd") match
+        case Some(result) =>
+          (session, result)
+        case None =>
+          (session, Result.Ok(session.pwdLine, Json.Null))
+
+  private object Exit extends Operation:
+    override def execute(session: Session): (Session, Result) =
+      cursorOnly(session, "exit") match
+        case Some(result) =>
+          (session, result)
+        case None =>
+          (session, Result.Ok("", Json.Null))

@@ -25,7 +25,7 @@ object Claims:
 final case class ListAlbums(path: Option[String]) extends Operation:
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
-      val parsed: Option[Path] = path.map(session.root.parse)
+      val parsed: Option[Path] = path.map(session.parse)
       val root: Root = parsed.fold(session.root)(_.root)
       val prefix: Option[String] = parsed.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
       val scan: Archive.Scan = Archive.scan(root.configuration.archive)

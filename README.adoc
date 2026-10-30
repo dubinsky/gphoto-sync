@@ -260,22 +260,27 @@ Cron is out of scope.
 
 == TODO
 
-Use Webhook (best for Grok Build / gphoto-sync) to drive Grok Bot — I just saved a routine **Photos requests webhook**. When it fires, I re-read `protocol.md`, process `~/Pictures/originals/.gphoto-sync/requests.tsv` the same way as “handle requests,” write `results.tsv`, and ping you here only if a batch ran. Copy the webhook URL and sender key from that routine’s panel in the app, then have Grok Build or the CLI POST to it after writing `requests.tsv` (e.g. `curl -X POST …`).
+Use Webhook (best for Grok Build / gphoto-sync) to drive Grok Bot — I just saved a routine **Photos requests webhook**.
+When it fires, I re-read `protocol.md`, process `~/Pictures/originals/.gphoto-sync/requests.tsv` the same way as “handle
+requests,” write `results.tsv`, and ping you here only if a batch ran.
+Copy the webhook URL and sender key from that routine’s panel in the app, then have Grok Build or the CLI POST to it
+after writing `requests.tsv` (e.g. `curl -X POST …`).
 
 
 
 - add .m4v extension
 
-- download missing pictures from albums (including default dates? outside of albums?)
+- download missing pictures from albums (including default dates?
+  outside of albums?)
 
-- there probably is a way for Grok Bot to use Grok Build - but can we package enough functionality into the MCP (downloads, etc.) that the flow becomes: start MCP, expose it to the Bot, no nee for Grok Build?
+- there probably is a way for Grok Bot to use Grok Build - but can we package enough functionality into the MCP
+  (downloads, etc.) that the flow becomes: start MCP, expose it to the Bot, no nee for Grok Build?
 
 - use space to separate album date from name?
 
 - fix day and date-range albums: split, merge, month...
 
 - CLI get pictures from a memory card
-- CLI shell mode
 - CLI commands for the needs of the local agent - MCP?
 - CLI setup and agents bootstrap (including configuring webhook)
 - CLI webapp

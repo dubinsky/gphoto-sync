@@ -14,7 +14,7 @@ final case class Repair(
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
       Repair.run(
-        session.root.parse(path),
+        session.parse(path),
         names = names,
         raw = raw,
         timestamps = timestamps,

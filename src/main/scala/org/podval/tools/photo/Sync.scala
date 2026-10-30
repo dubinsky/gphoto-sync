@@ -8,7 +8,7 @@ import scala.jdk.CollectionConverters.{IterableHasAsScala, ListHasAsScala, SeqHa
 final case class Sync(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Operation:
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
-      val parsed: Option[Path] = path.map(session.root.parse)
+      val parsed: Option[Path] = path.map(session.parse)
       val root: Root = parsed.fold(session.root)(_.root)
       val prefix: Option[String] = parsed.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
       Sync.run(

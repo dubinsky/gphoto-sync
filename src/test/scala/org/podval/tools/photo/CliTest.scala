@@ -3,7 +3,7 @@ package org.podval.tools.photo
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import scala.annotation.targetName
-import java.time.LocalDate
+import java.time.{LocalDate, ZoneId}
 
 class CliTest extends AnyFlatSpec, Matchers:
   // strictEquality does not relate a sealed parent to its cases.
@@ -12,6 +12,9 @@ class CliTest extends AnyFlatSpec, Matchers:
 
   @targetName("operationCanEqual")
   private given [A <: Operation, B <: Operation] => CanEqual[A, B] = CanEqual.derived
+
+  @targetName("resultCanEqual")
+  private given [A <: Result, B <: Result] => CanEqual[A, B] = CanEqual.derived
 
   "parse" should "accept every subcommand" in :
     Cli.parse(List("lsd", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = false))
@@ -125,7 +128,9 @@ class CliTest extends AnyFlatSpec, Matchers:
         |sync  sync album removals into local except lists
         |login  log in to Google Photos
         |status  show Google Photos login status
-        |logout  log out of Google Photos""".stripMargin
+        |logout  log out of Google Photos
+        |help  print command help
+        |shell  start a session""".stripMargin
     helpOf("-h") shouldBe top
     helpOf("--help", "ls") shouldBe top
 
@@ -251,6 +256,35 @@ class CliTest extends AnyFlatSpec, Matchers:
         |none""".stripMargin
     helpOf("logout", "-h") shouldBe helpOf("logout", "--help")
 
+    helpOf("help") shouldBe top
+    helpOf("help", "ls") shouldBe helpOf("ls", "--help")
+    helpOf("help", "--", "ls") shouldBe helpOf("ls", "--help")
+    helpOf("help", "--help") shouldBe
+      """help  print command help
+        |
+        |Positionals:
+        |command  optional
+        |
+        |Flags:
+        |none""".stripMargin
+    val where: String = "only available in the shell and in serve"
+    helpOf("cd", "--help") should include (where)
+    helpOf("pwd", "--help") should include (where)
+    helpOf("exit", "--help") should include (where)
+    helpOf("cd", "--help") shouldBe
+      """cd  change the cursor; only available in the shell and in serve
+        |
+        |Positionals:
+        |directory  optional
+        |
+        |Flags:
+        |none""".stripMargin
+    top.linesIterator.exists(_.startsWith("cd")) shouldBe false
+    top.linesIterator.exists(_.startsWith("pwd")) shouldBe false
+    top.linesIterator.exists(_.startsWith("exit")) shouldBe false
+    top.linesIterator.exists(_.startsWith("agent")) shouldBe false
+    top.linesIterator.exists(_.startsWith("serve")) shouldBe false
+
   it should "reject usage errors" in :
     val errors: List[(List[String], String)] = List(
       List() -> "missing command",
@@ -293,11 +327,37 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("ls", "-n") -> "missing value for '--name-contains'",
       List("ls", "--name-contains", "--") -> "missing value for '--name-contains'",
       List("ls", "--name-contains", "-hidden") -> "value for '--name-contains' looks like a flag: '-hidden'",
-      List("ls", "-n", "-hidden", "2009") -> "value for '--name-contains' looks like a flag: '-hidden'"
+      List("ls", "-n", "-hidden", "2009") -> "value for '--name-contains' looks like a flag: '-hidden'",
+      List("help", "ls", "extra") -> "extra argument 'extra'",
+      List("help", "nope") -> "unknown command 'nope'",
+      List("cd", "--long") -> "unknown option '--long'",
+      List("pwd", "x") -> "extra argument 'x'",
+      List("exit", "now") -> "extra argument 'now'",
+      List("shell", "pwd") -> "extra argument 'pwd'",
+      List("shell", "--help") -> "extra argument '--help'"
     )
     errors.foreach: (args, message) =>
       withClue(args):
         Cli.parse(args) shouldBe Cli.Usage(message)
+
+  "one-shot" should "refuse cd, pwd, and exit" in :
+    val root: Root = Root(Configuration("Pictures/originals", ZoneId.of("America/New_York")))
+    val session: Session = Session(root)
+    def run(args: String*): Result = Cli.parse(args.toList) match
+      case Cli.Run(parsed) =>
+        val (kept, result) = Cli.toOperation(parsed).execute(session)
+        kept should be theSameInstanceAs session
+        result
+      case other => fail(other.toString)
+
+    run("cd") shouldBe Result.Usage("cd is only available in the shell and in serve")
+    run("cd", "2010") shouldBe Result.Usage("cd is only available in the shell and in serve")
+    run("cd", "/") shouldBe Result.Usage("cd is only available in the shell and in serve")
+    run("pwd") shouldBe Result.Usage("pwd is only available in the shell and in serve")
+    run("exit") shouldBe Result.Usage("exit is only available in the shell and in serve")
+    Cli.parse(List("shell")) shouldBe Cli.ShellFront
+    Cli.parse(List("shell"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
+    Cli.parse(List("shell", "--help"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
 
   "usageLine" should "prefix the program name" in :
     Cli.usageLine("missing command") shouldBe "Photo Archive Tool: missing command"
