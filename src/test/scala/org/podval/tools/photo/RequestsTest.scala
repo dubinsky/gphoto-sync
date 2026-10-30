@@ -157,7 +157,7 @@ class RequestsTest extends AnyFlatSpec, Matchers:
       text(file) shouldBe planted + "r2\tdownload-item\ta\tk1\tone.jpg\t\n"
       text(file).split("\n").count(_ == header) shouldBe 1
 
-  it should "repair a headerless file without dropping a committed row" in :
+  it should "initialize an empty file or a header prefix and reject any other bytes" in :
     withTemp: dir =>
       val empty: File = File(dir, "empty.tsv")
       NFiles.createFile(empty.toPath)
@@ -166,14 +166,28 @@ class RequestsTest extends AnyFlatSpec, Matchers:
       text(empty) shouldBe s"$header\nr1\trename-album\ta\t\tOld\tNew\n"
       text(empty).split("\n").count(_ == header) shouldBe 1
 
+      val prefix: File = write(dir, "prefix.tsv", header.take(8))
+      val repaired: Requests.Row =
+        Requests.append(prefix, Requests.Action.DownloadItem, "a", "k1", "one.jpg", "kept-whole")
+      repaired.id shouldBe "r1"
+      text(prefix) shouldBe s"$header\nr1\tdownload-item\ta\tk1\tone.jpg\tkept-whole\n"
+      text(prefix).split("\n").count(_ == header) shouldBe 1
+
+      val unfinished: File = write(dir, "unfinished.tsv", header)
+      Requests.append(unfinished, Requests.Action.MoveItem, "a", "k1", "one.jpg", "b").id shouldBe "r1"
+      text(unfinished) shouldBe s"$header\nr1\tmove-item\ta\tk1\tone.jpg\tb\n"
+
+      val finished: File = write(dir, "finished.tsv", s"$header\n")
+      Requests.append(finished, Requests.Action.SetDescription, "", "k1", "one.jpg", "cap").id shouldBe "r1"
+      text(finished) shouldBe s"$header\nr1\tset-description\t\tk1\tone.jpg\tcap\n"
+      text(finished).split("\n").count(_ == header) shouldBe 1
+
       val bare: File = write(dir, "bare.tsv", "r1\trename-album\ta\t\tOld\tNew\n")
-      val added: Requests.Row =
+      val bareBefore: Seq[Byte] = NFiles.readAllBytes(bare.toPath).toSeq
+      val bareError: IllegalArgumentException = intercept[IllegalArgumentException]:
         Requests.append(bare, Requests.Action.DownloadItem, "a", "k1", "one.jpg", "kept-whole")
-      added.id shouldBe "r2"
-      text(bare) shouldBe
-        s"$header\nr1\trename-album\ta\t\tOld\tNew\nr2\tdownload-item\ta\tk1\tone.jpg\tkept-whole\n"
-      text(bare).split("\n").count(_ == header) shouldBe 1
-      Requests.read(bare).map(_.`new`) shouldBe Seq("New", "kept-whole")
+      bareError.getMessage shouldBe "requests are not version 2"
+      NFiles.readAllBytes(bare.toPath).toSeq shouldBe bareBefore
 
       val foreign: File = write(dir, "foreign.tsv", "## \nr1\trename-album\ta\t\tOld\tNew\n")
       val before: Seq[Byte] = NFiles.readAllBytes(foreign.toPath).toSeq
@@ -184,9 +198,9 @@ class RequestsTest extends AnyFlatSpec, Matchers:
 
       val same: File = write(dir, "same.tsv", "r1\tdelete-item\ta\tk1\tone.jpg\t\n")
       val sameBefore: Seq[Byte] = NFiles.readAllBytes(same.toPath).toSeq
-      val duplicate: IllegalArgumentException = intercept[IllegalArgumentException]:
+      val notParsed: IllegalArgumentException = intercept[IllegalArgumentException]:
         Requests.append(same, Requests.Action.DeleteItem, "a", "k1", "one.jpg", "", Some("r1"))
-      duplicate.getMessage shouldBe "duplicate request id"
+      notParsed.getMessage shouldBe "requests are not version 2"
       NFiles.readAllBytes(same.toPath).toSeq shouldBe sameBefore
 
   it should "not let a read during an append observe a partial row" in :

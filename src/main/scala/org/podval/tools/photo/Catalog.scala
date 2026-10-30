@@ -16,8 +16,7 @@ private[photo] object TextLines:
     val first: Array[Byte] = bytes.takeWhile(_ != '\n'.toByte)
     if !first.sameElements(header.getBytes(StandardCharsets.UTF_8)) then
       throw IllegalArgumentException(versionError)
-    val text: String = decode(bytes)
-    if text.contains('\r') then throw IllegalArgumentException("carriage return")
+    val text: String = decoded(bytes)
     if !text.endsWith("\n") then throw IllegalArgumentException("trailing partial line")
     text
 
@@ -27,7 +26,7 @@ private[photo] object TextLines:
     if body.isEmpty then Seq.empty
     else body.dropRight(1).split("\n", -1).toSeq
 
-  // Shared by the requests reader. CR is rejected here; the caller checks the version line.
+  // UTF-8 decode, then a carriage return is an error. fromBytes calls this after the version bytes match.
   def decoded(bytes: Array[Byte]): String =
     val text: String = decode(bytes)
     if text.contains('\r') then throw IllegalArgumentException("carriage return")

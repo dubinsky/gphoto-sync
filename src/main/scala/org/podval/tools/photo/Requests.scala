@@ -116,9 +116,9 @@ object Requests:
       catch case _: FileAlreadyExistsException =>
         FileChannel.open(path, READ, WRITE)
 
-  // A headerless file is the CREATE_NEW window or a crash before the header, not a foreign version.
-  // Initialize it with the header and every row already committed, then this row.
-  // A file whose first line is a header, but not version 2, is left unchanged.
+  // Replace the file only when it is empty or a proper prefix of the header line.
+  // That is the CREATE_NEW window before the header is durable.
+  // A finished version line is appended to. Any other bytes are left unchanged.
   private def commit(
     channel: FileChannel,
     id: Option[String],
@@ -129,9 +129,9 @@ object Requests:
     `new`: String
   ): Row =
     val bytes: Array[Byte] = readBytes(channel)
-    val bare: Boolean = headerless(bytes)
+    val fresh: Boolean = incompleteHeader(bytes)
     val existing: Seq[Row] =
-      if bare then parseHeaderless(bytes)
+      if fresh then Seq.empty
       else parse(TextLines.fromBytes(bytes, Header, VersionError))
     val assigned: String = id match
       case Some(value) =>
@@ -140,27 +140,18 @@ object Requests:
       case None =>
         nextId(existing.map(_.id))
     val row: Row = Row(assigned, action, albumId, itemKey, current, `new`)
-    if bare then
+    if fresh then
       channel.position(0L)
-      writeAll(channel, Header + "\n" + existing.map(row => line(row)).mkString + line(row))
+      writeAll(channel, Header + "\n" + line(row))
       channel.truncate(channel.position())
     else
       channel.position(channel.size())
       writeAll(channel, line(row))
     row
 
-  private def headerless(bytes: Array[Byte]): Boolean =
-    bytes.takeWhile(_ != '\n'.toByte).headOption.forall(_ != '#'.toByte)
-
-  private def parseHeaderless(bytes: Array[Byte]): Seq[Row] =
-    if bytes.isEmpty then Seq.empty
-    else
-      val text: String = TextLines.decoded(bytes)
-      if !text.endsWith("\n") then throw IllegalArgumentException("trailing partial line")
-      val lines: Seq[String] =
-        if text.isEmpty then Seq.empty
-        else text.dropRight(1).split("\n", -1).toSeq
-      rowsOf(lines)
+  private def incompleteHeader(bytes: Array[Byte]): Boolean =
+    val headerBytes: Array[Byte] = (Header + "\n").getBytes(StandardCharsets.UTF_8)
+    bytes.length < headerBytes.length && bytes.sameElements(headerBytes.take(bytes.length))
 
   private def line(row: Row): String =
     Seq(row.id, row.action.wire, row.albumId, row.itemKey, row.current, row.`new`).mkString("\t") + "\n"
