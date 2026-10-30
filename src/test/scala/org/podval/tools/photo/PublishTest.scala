@@ -807,6 +807,237 @@ class PublishTest extends AnyFlatSpec, Matchers:
       third shouldBe Seq("2009/03/12/2414 2009/03/12/Third: list failed")
       out should include ("failed=")
 
+  it should "upload a still and reject the video until it is renamed with v" in :
+    withOriginals: originals =>
+      val still: File = writeBytes(originals, "2019/12/20/20191220_141955.jpg", Array[Byte](1))
+      val video: File = writeBytes(originals, "2019/12/20/VID_20191220_141955.mp4", Array[Byte](2))
+      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        Archive.scan(originals).pictures.map(_.name).sorted shouldBe Seq(
+          "20191220_141955",
+          "20191220_141955v"
+        )
+      expectOk(scanThrown, scanOut)
+      scanOut should include (s"$video: WRONG NAME; SHOULD BE 20191220_141955v.mp4; repair --names")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2019/12/20")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.uploads.map(_.getName).toSeq shouldBe Seq(still.getName)
+      video.getName shouldBe "VID_20191220_141955.mp4"
+      File(originals, "2019/12/20/20191220_141955v.mp4").exists shouldBe false
+      out should include (
+        "2019/12/20/20191220_141955v 2019/12/20/Party: VID_20191220_141955.mp4 is not the literal file"
+      )
+      out should include ("failed=1")
+
+  it should "not upload either video when both would share a v stem" in :
+    withOriginals: originals =>
+      val still: File = writeBytes(originals, "2019/12/20/20191220_141955.jpg", Array[Byte](1))
+      val mp4: File = writeBytes(originals, "2019/12/20/20191220_141955.mp4", Array[Byte](2))
+      val mov: File = writeBytes(originals, "2019/12/20/20191220_141955.mov", Array[Byte](3))
+      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        Archive.scan(originals).pictures.map(_.name) shouldBe Seq("20191220_141955")
+      expectOk(scanThrown, scanOut)
+      scanOut should include ("20191220_141955v would have two normal files")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2019/12/20")))
+      expectOk(thrown, out)
+      fake.uploads.map(_.getName).toSeq shouldBe Seq(still.getName)
+      mp4.getName shouldBe "20191220_141955.mp4"
+      mov.getName shouldBe "20191220_141955.mov"
+      out should include ("uploaded=1")
+      out should include ("failed=0")
+      out should not include ("is not the literal file")
+
+  it should "fail publish when two normal files are already literal" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2019/12/20/20191220_141955v.mp4", Array[Byte](1))
+      writeBytes(originals, "2019/12/20/20191220_141955v.mov", Array[Byte](2))
+      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        val pictures: Seq[Archive.Picture] = Archive.scan(originals).pictures
+        pictures.map(_.name) shouldBe Seq("20191220_141955v")
+        pictures.head.extensions shouldBe Set("mp4", "mov")
+      expectOk(scanThrown, scanOut)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2019/12/20")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.uploads shouldBe empty
+      out should include ("2019/12/20/20191220_141955v 2019/12/20/Party: too many normal extensions")
+      out should include ("failed=1")
+
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/10/2412.gif", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.uploads shouldBe empty
+      out should include ("2009/03/10/2412 2009/03/10/Party: too many normal extensions")
+      out should include ("failed=1")
+
+  it should "upload the one literal normal and leave the other" in :
+    withOriginals: originals =>
+      val jpg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val gif: File = writeBytes(originals, "2009/03/10/IMG_2412.gif", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads.map(_.getPath).toSeq shouldBe Seq(jpg.getPath)
+      gif.getName shouldBe "IMG_2412.gif"
+      out should include (s"$gif: NOT RENAMED; 2412 would have two normal files")
+      out should include ("uploaded=1")
+      out should include ("failed=0")
+
+  it should "plan a Pixel motion still apart from the plain frame" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2026/06/03/PXL_20260603_120000000.MP.jpg", Array[Byte](1))
+      writeBytes(originals, "2026/06/03/PXL_20260603_120000000.jpg", Array[Byte](2))
+      val video: File = writeBytes(originals, "2026/06/03/PXL_20260603_120000000.mp4", Array[Byte](3))
+      write(originals, "2026/06/03/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        Archive.scan(originals).pictures.map(_.name).sorted shouldBe Seq(
+          "20260603_120000000",
+          "20260603_120000000.MP",
+          "20260603_120000000v"
+        )
+      expectOk(scanThrown, scanOut)
+      scanOut should not include ("20260603_120000000.MPv")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2026/06/03/20260603_120000000v")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      fake.uploads shouldBe empty
+      video.getName shouldBe "PXL_20260603_120000000.mp4"
+      out should include (
+        "2026/06/03/20260603_120000000v 2026/06/03/Party: PXL_20260603_120000000.mp4 is not the literal file"
+      )
+      out should include ("failed=1")
+
+  it should "leave an incoming video when the v name is taken" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2019/12/20/20191220_141955.jpg", Array[Byte](1))
+      val occupant: File = writeBytes(originals, "2019/12/20/20191220_141955v.mp4", Array[Byte](2))
+      val incoming: File = writeBytes(originals, "2019/12/20/VID_20191220_141955.mp4", Array[Byte](3))
+      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        Archive.scan(originals).pictures.map(_.name).sorted shouldBe Seq(
+          "20191220_141955",
+          "20191220_141955v"
+        )
+      expectOk(scanThrown, scanOut)
+      scanOut should include (s"$incoming: NOT RENAMED; 20191220_141955v.mp4 already exists")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2019/12/20")))
+      expectOk(thrown, out)
+      incoming.getName shouldBe "VID_20191220_141955.mp4"
+      occupant.getName shouldBe "20191220_141955v.mp4"
+      File(originals, "2019/12/20/20191220_141955vv.mp4").exists shouldBe false
+      fake.uploads.map(_.getName) should not contain incoming.getName
+      fake.uploads.map(_.getName) should contain (occupant.getName)
+      out should include ("failed=0")
+
+  it should "not make a picture from two jpegs and a prefixed raw" in :
+    withOriginals: originals =>
+      val first: File = writeBytes(originals, "2009/03/10/IMG_2412.jpg", Array[Byte](1))
+      val second: File = writeBytes(originals, "2009/03/10/MVIMG_2412.jpg", Array[Byte](2))
+      val raw: File = writeBytes(originals, "2009/03/10/IMG_2412.CR2", Array[Byte](3))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        Archive.scan(originals).pictures shouldBe empty
+      expectOk(scanThrown, scanOut)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      first.getName shouldBe "IMG_2412.jpg"
+      second.getName shouldBe "MVIMG_2412.jpg"
+      raw.getName shouldBe "IMG_2412.CR2"
+      fake.uploads shouldBe empty
+      out should include ("no albums")
+      out should include ("collides with")
+      out should include ("is not one normal picture")
+
+  it should "keep a raw on the jpeg stem when that stem stays one picture" in :
+    withOriginals: originals =>
+      val jpg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val raw: File = writeBytes(originals, "2009/03/10/IMG_2412.CR2", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        val pictures: Seq[Archive.Picture] = Archive.scan(originals).pictures
+        pictures.map(_.name) shouldBe Seq("2412")
+        pictures.head.extensions shouldBe Set("jpg", "cr2")
+      expectOk(scanThrown, scanOut)
+      raw.getName shouldBe "IMG_2412.CR2"
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads.map(_.getPath).toSeq shouldBe Seq(jpg.getPath)
+      raw.getName shouldBe "IMG_2412.CR2"
+      out should include ("uploaded=1")
+      out should include ("failed=0")
+
+  it should "not publish a prefixed jpeg gif and raw as a picture" in :
+    withOriginals: originals =>
+      val jpg: File = writeBytes(originals, "2009/03/10/IMG_1.jpg", Array[Byte](1))
+      val gif: File = writeBytes(originals, "2009/03/10/IMG_1.gif", Array[Byte](2))
+      val raw: File = writeBytes(originals, "2009/03/10/IMG_1.CR2", Array[Byte](3))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        Archive.scan(originals).pictures shouldBe empty
+      expectOk(scanThrown, scanOut)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      jpg.getName shouldBe "IMG_1.jpg"
+      gif.getName shouldBe "IMG_1.gif"
+      raw.getName shouldBe "IMG_1.CR2"
+      File(originals, "2009/03/10/1.cr2").exists shouldBe false
+      fake.uploads shouldBe empty
+      out should include ("no albums")
+      out should include ("would have two normal files")
+      out should include ("is not one normal picture")
+
+  it should "scan a lone raw and omit a lone toml thm or tif" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/1002.cr2", Array[Byte](1))
+      writeBytes(originals, "2009/03/10/1005.toml", Array[Byte]())
+      writeBytes(originals, "2009/03/10/1003.thm", Array[Byte](2))
+      writeBytes(originals, "2009/03/10/1004.tif", Array[Byte](3))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val (scanOut, scanThrown) = capture:
+        Archive.scan(originals).pictures.map(_.name) shouldBe Seq("1002")
+      expectOk(scanThrown, scanOut)
+      scanOut should include ("1005 has no picture file")
+      scanOut should include ("1003 has no picture file")
+      scanOut should include ("1004 has no picture file")
+      scanOut should not include ("no images")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      out should include ("failed=0")
+      out should not include ("no images")
+
+  it should "fail a refused non-digit rename instead of staying local" in :
+    withOriginals: originals =>
+      val picture: File = writeBytes(originals, "2009/03/10/IMG_VID_1.jpg", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      picture.getName shouldBe "IMG_VID_1.jpg"
+      File(originals, "2009/03/10/VID_1.jpg").exists shouldBe false
+      fake.uploads shouldBe empty
+      out should include ("2009/03/10/VID_1 2009/03/10/Party: IMG_VID_1.jpg is not the literal file")
+      out should include ("failed=1")
+
   private def readAlbum(originals: File, title: String): Album =
     Album.read(originals, Album.fileFor(originals, title))
 

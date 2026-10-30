@@ -167,9 +167,10 @@ object Dates:
       catch
         case _: DateTimeParseException => None
 
-  // One trailing _1 is stripped here. Callers choose the date NameShort may use.
+  // One trailing v, then one trailing _1. The stored stem is not changed. Callers choose the date NameShort may use.
   def fromFileName(name: String, zone: ZoneId, shortDate: Option[LocalDate]): Option[(Instant, String)] =
-    val clock: String = if name.endsWith("_1") then name.dropRight("_1".length) else name
+    val withoutV: String = if name.endsWith("v") then name.dropRight(1) else name
+    val clock: String = if withoutV.endsWith("_1") then withoutV.dropRight("_1".length) else withoutV
     NameFull.get(clock, zone).map(_ -> "full")
       .orElse(NameCompact.get(clock, zone).map(_ -> "compact"))
       .orElse(NameMillis.get(clock, zone).map(_ -> "millis"))

@@ -70,6 +70,24 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, "2009/03/10/2412.jpg").exists shouldBe false
       out should include ("moving")
 
+  it should "print the video move and write nothing on a dry run" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val still: File = File(originals, "2009/03/10/20191220_141955.jpg")
+      val video: File = File(originals, "2009/03/10/VID_20191220_141955.mp4")
+      still.getParentFile.mkdirs()
+      still.createNewFile()
+      video.createNewFile()
+      val destination: File = File(originals, "2009/03/10/20191220_141955v.mp4")
+      val out: String = capture(run(root, "2009/03/10", names = true, dryRun = true))
+      still.exists shouldBe true
+      video.exists shouldBe true
+      destination.exists shouldBe false
+      out should include ("moving")
+      out should include (video.getName)
+      out should include ("20191220_141955v.mp4")
+      out should not include (still.getName)
+
   "ls" should "not rename" in :
     withOriginals: originals =>
       val root: Root = rootFor(originals)

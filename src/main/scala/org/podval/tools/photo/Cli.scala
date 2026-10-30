@@ -302,7 +302,7 @@ object Cli:
       "names",
       None,
       BooleanKind,
-      "rename one MVIMG_, PXL_, IMG_, VID_, or MVI_ prefix, refuse a non-digit stem, and lowercase known extensions"
+      "rename one MVIMG_, PXL_, IMG_, VID_, or MVI_ prefix, add v when a video shares a stem with a still, and lowercase known extensions"
     ),
     Flag("raw", None, BooleanKind, "make a JPEG from RAW with dcraw when no normal image exists"),
     Flag("timestamps", None, BooleanKind, "set file mtimes from the assessed instant"),

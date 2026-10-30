@@ -109,6 +109,7 @@ A video timestamp override writes that same string as QuickTime `CreateDate`.
 File mtime still goes through the zoned conversion marked TODO on `Dates.FromFile`.
 This program does not change that conversion.
 One trailing `_1` is ignored.
+One trailing `v` is dropped before the existing `_1` strip, and the stored stem is unchanged.
 Full, compact, and short names store the civil clock as a UTC instant.
 A 13-digit name is an epoch instant.
 `ls` may use the sidecar `date` for a short name.
@@ -131,8 +132,10 @@ It does not rename, generate, set mtimes, rewrite albums, or move files.
 
 `photo repair <path>` writes repairs.
 At least one of `--names`, `--raw`, `--timestamps`, and `--days` is required.
-`--names` renames one leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix, refuses a non-digit stem, and
-lowercases a known extension.
+`--names` renames one leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix and lowercases a known extension.
+When a video shares a repaired stem with a still, the video's stem gains a trailing `v`.
+It does not overwrite a file that is already there.
+A stem that does not start with a digit is not renamed.
 It rewrites `JPG` to `jpg`, `CR2` to `cr2`, and `Mp4` to `mp4`.
 It does not rename `JPEG`.
 `--raw` makes a JPEG from RAW with dcraw when no normal image exists and `bad-raw` is not set.

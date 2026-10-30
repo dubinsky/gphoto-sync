@@ -155,6 +155,221 @@ class WalkersTest extends AnyFlatSpec, Matchers:
       out should include ("WRONG NAME")
       out should not include ("moving")
 
+  it should "add v to a video that shares a repaired stem with a still" in :
+    withTemp: directory =>
+      val still: File = touch(directory, "20191220_141955.jpg")
+      val video: File = touch(directory, "VID_20191220_141955.mp4")
+      val out: String = capture:
+        Pictures.group(Seq(still, video), NameMode.Leave) shouldBe Seq(
+          "20191220_141955" -> Set("jpg"),
+          "20191220_141955v" -> Set("mp4")
+        )
+      still.getName shouldBe "20191220_141955.jpg"
+      video.getName shouldBe "VID_20191220_141955.mp4"
+      out should include (s"$video: WRONG NAME; SHOULD BE 20191220_141955v.mp4; repair --names")
+      out should not include ("NOT RENAMED")
+
+    withTemp: directory =>
+      val still: File = touch(directory, "20191220_141955.jpg")
+      val video: File = touch(directory, "VID_20191220_141955.mp4")
+      val destination: File = File(directory.toFile, "20191220_141955v.mp4")
+      val out: String = capture:
+        Pictures.group(Seq(still, video), NameMode.Preview) shouldBe Seq(
+          "20191220_141955" -> Set("jpg"),
+          "20191220_141955v" -> Set("mp4")
+        )
+      still.getName shouldBe "20191220_141955.jpg"
+      video.getName shouldBe "VID_20191220_141955.mp4"
+      destination.exists shouldBe false
+      out should include (s"moving $video to $destination")
+      out should not include (s"moving $still")
+
+    withTemp: directory =>
+      val still: File = touch(directory, "20191220_141955.jpg")
+      val video: File = touch(directory, "VID_20191220_141955.mp4")
+      val destination: File = File(directory.toFile, "20191220_141955v.mp4")
+      capture:
+        Pictures.group(Seq(still, video), NameMode.Apply) shouldBe Seq(
+          "20191220_141955" -> Set("jpg"),
+          "20191220_141955v" -> Set("mp4")
+        )
+      still.getName shouldBe "20191220_141955.jpg"
+      video.exists shouldBe false
+      destination.isFile shouldBe true
+      File(directory.toFile, "20191220_141955vv.mp4").exists shouldBe false
+      val again: String = capture:
+        Pictures.group(Seq(still, destination), NameMode.Leave) shouldBe Seq(
+          "20191220_141955" -> Set("jpg"),
+          "20191220_141955v" -> Set("mp4")
+        )
+      again shouldBe ""
+
+    withTemp: directory =>
+      val still: File = touch(directory, "1.gif")
+      val video: File = touch(directory, "1.mp4")
+      Pictures.group(Seq(still, video), NameMode.Apply) shouldBe Seq(
+        "1" -> Set("gif"),
+        "1v" -> Set("mp4")
+      )
+      still.getName shouldBe "1.gif"
+      File(directory.toFile, "1v.mp4").isFile shouldBe true
+
+  it should "omit two videos that would share a v stem" in :
+    withTemp: directory =>
+      val still: File = touch(directory, "20191220_141955.jpg")
+      val mp4: File = touch(directory, "20191220_141955.mp4")
+      val mov: File = touch(directory, "20191220_141955.mov")
+      val out: String = capture:
+        Pictures.group(Seq(still, mp4, mov), NameMode.Apply) shouldBe Seq(
+          "20191220_141955" -> Set("jpg")
+        )
+      still.getName shouldBe "20191220_141955.jpg"
+      mp4.getName shouldBe "20191220_141955.mp4"
+      mov.getName shouldBe "20191220_141955.mov"
+      out should include (s"$mp4: NOT RENAMED; 20191220_141955v would have two normal files")
+      out should include (s"$mov: NOT RENAMED; 20191220_141955v would have two normal files")
+      out should not include ("moving")
+
+  it should "return two normals that are already literal" in :
+    withTemp: directory =>
+      val mp4: File = touch(directory, "20191220_141955v.mp4")
+      val mov: File = touch(directory, "20191220_141955v.mov")
+      val out: String = capture:
+        Pictures.group(Seq(mp4, mov), NameMode.Leave) shouldBe Seq(
+          "20191220_141955v" -> Set("mov", "mp4")
+        )
+      out shouldBe ""
+      mp4.exists shouldBe true
+      mov.exists shouldBe true
+
+    withDay("2412.jpg"): (day, jpg) =>
+      touch(jpg.getParentFile.toPath, "2412.gif")
+      val out: String = capture:
+        val thrown: IllegalArgumentException = intercept[IllegalArgumentException](day.lsd(NameMode.Leave))
+        thrown.getMessage should include ("too many normal extensions")
+      jpg.getName shouldBe "2412.jpg"
+      out should not include ("NOT RENAMED")
+
+    withDay("20191220_141955v.mp4"): (day, mp4) =>
+      touch(mp4.getParentFile.toPath, "20191220_141955v.mov")
+      val thrown: IllegalArgumentException = intercept[IllegalArgumentException](day.lsd(NameMode.Leave))
+      thrown.getMessage should include ("too many normal extensions")
+
+  it should "keep a Pixel motion still off the plain stem" in :
+    withTemp: directory =>
+      val motion: File = touch(directory, "PXL_20260603_120000000.MP.jpg")
+      val plain: File = touch(directory, "PXL_20260603_120000000.jpg")
+      val video: File = touch(directory, "PXL_20260603_120000000.mp4")
+      Pictures.group(Seq(motion, plain, video), NameMode.Apply) shouldBe Seq(
+        "20260603_120000000" -> Set("jpg"),
+        "20260603_120000000.MP" -> Set("jpg"),
+        "20260603_120000000v" -> Set("mp4")
+      )
+      motion.exists shouldBe false
+      File(directory.toFile, "20260603_120000000.MP.jpg").isFile shouldBe true
+      File(directory.toFile, "20260603_120000000.jpg").isFile shouldBe true
+      File(directory.toFile, "20260603_120000000v.mp4").isFile shouldBe true
+      File(directory.toFile, "20260603_120000000.MPv.jpg").exists shouldBe false
+
+  it should "not rename a video onto an occupied v name" in :
+    withTemp: directory =>
+      val still: File = touch(directory, "20191220_141955.jpg")
+      val occupant: File = touch(directory, "20191220_141955v.mp4")
+      val incoming: File = touch(directory, "VID_20191220_141955.mp4")
+      val out: String = capture:
+        Pictures.group(Seq(still, occupant, incoming), NameMode.Apply) shouldBe Seq(
+          "20191220_141955" -> Set("jpg"),
+          "20191220_141955v" -> Set("mp4")
+        )
+      still.getName shouldBe "20191220_141955.jpg"
+      occupant.getName shouldBe "20191220_141955v.mp4"
+      incoming.getName shouldBe "VID_20191220_141955.mp4"
+      File(directory.toFile, "20191220_141955vv.mp4").exists shouldBe false
+      out should include (s"$incoming: NOT RENAMED; 20191220_141955v.mp4 already exists")
+      out should not include ("moving")
+
+  it should "not merge two jpegs or rename a prefixed raw onto that stem" in :
+    withTemp: directory =>
+      val first: File = touch(directory, "IMG_2412.jpg")
+      val second: File = touch(directory, "MVIMG_2412.jpg")
+      val raw: File = touch(directory, "IMG_2412.CR2")
+      val out: String = capture:
+        Pictures.group(Seq(first, second, raw), NameMode.Apply) shouldBe empty
+      first.exists shouldBe true
+      second.exists shouldBe true
+      raw.getName shouldBe "IMG_2412.CR2"
+      File(directory.toFile, "2412.jpg").exists shouldBe false
+      File(directory.toFile, "2412.cr2").exists shouldBe false
+      out should include (s"$first: NOT RENAMED; 2412.jpg collides with MVIMG_2412.jpg")
+      out should include (s"$second: NOT RENAMED; 2412.jpg collides with IMG_2412.jpg")
+      out should include (s"$raw: NOT RENAMED; 2412 is not one normal picture")
+
+    withTemp: directory =>
+      val occupant: File = touch(directory, "2412.jpg")
+      val other: File = touch(directory, "IMG_2412.jpg")
+      val raw: File = touch(directory, "IMG_2412.CR2")
+      val out: String = capture:
+        Pictures.group(Seq(occupant, other, raw), NameMode.Apply) shouldBe Seq("2412" -> Set("jpg"))
+      occupant.getName shouldBe "2412.jpg"
+      other.getName shouldBe "IMG_2412.jpg"
+      raw.getName shouldBe "IMG_2412.CR2"
+      File(directory.toFile, "2412.cr2").exists shouldBe false
+      out should include (s"$other: NOT RENAMED; 2412.jpg already exists")
+      out should include (s"$raw: NOT RENAMED; 2412 is not one normal picture")
+
+  it should "rename a prefixed raw beside one occupant" in :
+    withTemp: directory =>
+      val jpg: File = touch(directory, "2412.jpg")
+      val raw: File = touch(directory, "IMG_2412.CR2")
+      Pictures.group(Seq(jpg, raw), NameMode.Apply) shouldBe Seq("2412" -> Set("cr2", "jpg"))
+      jpg.getName shouldBe "2412.jpg"
+      raw.exists shouldBe false
+      File(directory.toFile, "2412.cr2").isFile shouldBe true
+
+  it should "leave a jpeg a gif and a raw prefixed" in :
+    withTemp: directory =>
+      val jpg: File = touch(directory, "IMG_1.jpg")
+      val gif: File = touch(directory, "IMG_1.gif")
+      val raw: File = touch(directory, "IMG_1.CR2")
+      val out: String = capture:
+        Pictures.group(Seq(jpg, gif, raw), NameMode.Apply) shouldBe empty
+      jpg.getName shouldBe "IMG_1.jpg"
+      gif.getName shouldBe "IMG_1.gif"
+      raw.getName shouldBe "IMG_1.CR2"
+      File(directory.toFile, "1.jpg").exists shouldBe false
+      File(directory.toFile, "1.gif").exists shouldBe false
+      File(directory.toFile, "1.cr2").exists shouldBe false
+      out should include (s"$jpg: NOT RENAMED; 1 would have two normal files")
+      out should include (s"$gif: NOT RENAMED; 1 would have two normal files")
+      out should include (s"$raw: NOT RENAMED; 1 is not one normal picture")
+
+  it should "omit a lone toml thm or tif and keep a lone raw" in :
+    withDay("1002.cr2"): (day, raw) =>
+      val dir: Path = raw.getParentFile.toPath
+      val toml: File = touch(dir, "1005.toml")
+      val thm: File = touch(dir, "1003.thm")
+      val tif: File = touch(dir, "1004.tif")
+      val root: File = raw.getParentFile.getParentFile.getParentFile.getParentFile
+      val out: String = capture:
+        day.lsd(NameMode.Leave).map(_.name) shouldBe Seq("1002")
+        Archive.scan(root).pictures.map(_.name) shouldBe Seq("1002")
+      raw.getName shouldBe "1002.cr2"
+      out should include (s"$toml: NOT RENAMED; 1005 has no picture file")
+      out should include (s"$thm: NOT RENAMED; 1003 has no picture file")
+      out should include (s"$tif: NOT RENAMED; 1004 has no picture file")
+      out should not include ("no images")
+
+  it should "still rename another file when one name collides" in :
+    withTemp: directory =>
+      val occupant: File = touch(directory, "2412.jpg")
+      val blocked: File = touch(directory, "IMG_2412.jpg")
+      val other: File = touch(directory, "IMG_1000.jpg")
+      Pictures.group(Seq(occupant, blocked, other), NameMode.Apply).map(_._1) shouldBe Seq("1000", "2412")
+      occupant.getName shouldBe "2412.jpg"
+      blocked.getName shouldBe "IMG_2412.jpg"
+      other.exists shouldBe false
+      File(directory.toFile, "1000.jpg").isFile shouldBe true
+
   private def touch(directory: Path, name: String): File =
     JFiles.createFile(directory.resolve(name)).toFile
 

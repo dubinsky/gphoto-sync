@@ -18,8 +18,21 @@ class DatesTest extends AnyFlatSpec, Matchers:
   it should "strip one trailing _1" in :
     labeled("20120812_013216_1", "2012-08-12T01:32:16") shouldBe "compact"
 
+  it should "drop one trailing v before _1 without rewriting the stem" in :
+    val plain: Long = clock("20191220_141955")
+    val burst: Long = clock("20191220_141955_1")
+    clock("20191220_141955v") shouldBe plain
+    clock("20191220_141955_1v") shouldBe burst
+    labeled("20191220_141955v", "2019-12-20T14:19:55") shouldBe "compact"
+    labeled("20191220_141955_1v", "2019-12-20T14:19:55") shouldBe "compact"
+    Dates.fromFileName("20191220_141955_2", zone, None) shouldBe None
+    Dates.fromFileName("20191220_141955_2v", zone, None) shouldBe None
+
   it should "skip a short name when no date is supplied" in :
     Dates.fromFileName("013216", zone, None).isEmpty shouldBe true
+
+  private def clock(name: String): Long =
+    Dates.fromFileName(name, zone, None).getOrElse(fail(s"no clock in $name"))._1.toEpochMilli
 
   private def labeled(name: String, clock: String, shortDate: Option[LocalDate] = None): String =
     val found: (Instant, String) = Dates.fromFileName(name, zone, shortDate).getOrElse(fail(s"no clock in $name"))

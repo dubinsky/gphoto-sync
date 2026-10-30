@@ -25,7 +25,6 @@ final case class Publish(path: Option[Path], recursive: Boolean, dryRun: Boolean
 object Publish:
   private val batchSize: Int = 50
 
-  // jpg first so a still and a video with the same stem upload the still.
   private val uploadable: Seq[String] = Seq(
     Extension.JPG.name,
     Extension.MOV.name,
@@ -434,6 +433,7 @@ object Publish:
     else
       val targets: Seq[String] = titles.filterNot(title => albums(title).album.external)
       if targets.isEmpty then SkipExcluded(picture.path)
+      else if twoNormals(fact) then Broken(picture.path, targets.mkString(","), "too many normal extensions")
       else
         val directory: File = fact.directory
         val name: String = fact.name
@@ -507,13 +507,16 @@ object Publish:
           case None => Right(None)
 
   private def misnamedUpload(directory: File, name: String): Option[String] =
-    Files.list(directory)._2.map(_.getName).find(fileName => misnamedUploadable(fileName, name))
+    Pictures.plan(Files.list(directory)._2).collectFirst:
+      case planned
+        if planned.stem == name &&
+          !planned.omitted &&
+          uploadable.contains(planned.extension) &&
+          planned.file.getName != s"$name.${planned.extension}" =>
+        planned.file.getName
 
-  private def misnamedUploadable(fileName: String, pictureName: String): Boolean =
-    val (stem, extOpt) = Files.splitOnLast(fileName, '.')
-    extOpt.exists: ext =>
-      val (stemFixed, extFixed) = Pictures.repaired(stem, ext)
-      stemFixed == pictureName && uploadable.contains(extFixed) && fileName != s"$pictureName.$extFixed"
+  private def twoNormals(fact: Archive.Picture): Boolean =
+    fact.extensions.count(name => Extension.normal.exists(_.name == name)) >= 2
 
   private final class LibraryTransport(client: PhotosLibraryClient) extends GoogleTransport:
     override def close(): Unit = client.close()
