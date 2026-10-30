@@ -22,12 +22,16 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.exists shouldBe false
       File(originals, "2009/03/10/2412.jpg").isFile shouldBe true
 
-  it should "rename VID_ and MVI_ and lowercase a known extension" in :
+  it should "rename a camera prefix and lowercase a known extension" in :
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val renames: Seq[(String, String)] = Seq(
         "2009/03/10/VID_0063.MP4" -> "2009/03/10/0063.mp4",
         "2009/03/11/MVI_0063.MP4" -> "2009/03/11/0063.mp4",
+        "2009/03/12/PXL_1111.jpg" -> "2009/03/12/1111.jpg",
+        "2009/03/12/img_2222.JPG" -> "2009/03/12/2222.jpg",
+        "2009/03/13/MVIMG_3333.jpg" -> "2009/03/13/3333.jpg",
+        "2009/03/14/Pxl_20260603_120000000.MP.jpg" -> "2009/03/14/20260603_120000000.MP.jpg",
         "2009/03/10/2412.CR2" -> "2009/03/10/2412.cr2",
         "2009/03/10/2412.Jpg" -> "2009/03/10/2412.jpg"
       )

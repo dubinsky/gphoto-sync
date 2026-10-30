@@ -170,7 +170,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |path  required
         |
         |Flags:
-        |--names  boolean  rename IMG_, VID_, MVI_, and lowercase known extensions
+        |--names  boolean  rename one MVIMG_, PXL_, IMG_, VID_, or MVI_ prefix, refuse a non-digit stem, and lowercase known extensions
         |--raw  boolean  make a JPEG from RAW with dcraw when no normal image exists
         |--timestamps  boolean  set file mtimes from the assessed instant
         |--days  boolean  move a picture into the assessed day folder

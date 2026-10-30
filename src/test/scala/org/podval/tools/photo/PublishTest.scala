@@ -337,6 +337,25 @@ class PublishTest extends AnyFlatSpec, Matchers:
       out should include ("2009/03/10/2413 2009/03/10/Party: 2413.JPG is not the literal file")
       out should include ("failed=2")
 
+  it should "fail an already-literal non-digit name" in :
+    withOriginals: originals =>
+      val picture: File = writeBytes(originals, "2009/03/10/Screenshot_1.jpg", Array[Byte](1))
+      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val before: Seq[Byte] = bytes(album)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      thrown.get shouldBe a[IllegalArgumentException]
+      thrown.get.getMessage shouldBe "publish failed"
+      picture.getName shouldBe "Screenshot_1.jpg"
+      bytes(album) shouldBe before
+      fake.uploads shouldBe empty
+      fake.createdAlbums shouldBe empty
+      out should include ("2009/03/10/Screenshot_1 2009/03/10/Party: Screenshot_1 does not start with a digit")
+      out should not include ("NOT RENAMED")
+      out should not include ("WRONG NAME")
+      out should not include ("is not the literal file")
+      out should include ("failed=1")
+
   it should "fail a misnamed VID upload and not rename it" in :
     withOriginals: originals =>
       val vid: File = writeBytes(originals, "2009/03/10/VID_0063.MP4", Array[Byte](1))

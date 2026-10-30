@@ -498,6 +498,8 @@ object Publish:
       .find(ext => File(directory, s"$name.$ext").isFile)
       .map(ext => File(directory, s"$name.$ext") -> ext)
     literal match
+      case Some(_) if !name.headOption.exists(_.isDigit) =>
+        Left(s"$name does not start with a digit")
       case Some(found) => Right(Some(found))
       case None =>
         misnamedUpload(directory, name) match

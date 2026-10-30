@@ -21,7 +21,7 @@ trait Pictures extends Directory:
   ): Picture =
     val nameFull: String = s"$this/$name"
 
-    require(name.head.isDigit, s"Non-digit name start: $nameFull")
+    require(name.nonEmpty && name.head.isDigit, s"Non-digit name start: $nameFull")
     require(extensions.nonEmpty, s"No files for $nameFull")
 
     extensions.foreach(Pictures.verifyExtension(nameFull, _))
@@ -58,13 +58,15 @@ object Pictures:
     .toSeq
     .sortBy(_._1)
 
-  private val droppedPrefixes: Seq[String] = Seq("IMG_", "VID_", "MVI_")
+  private val droppedPrefixes: Seq[String] = Seq("MVIMG_", "PXL_", "IMG_", "VID_", "MVI_")
+
+  private def dropOnePrefix(stem: String): String =
+    droppedPrefixes
+      .find(prefix => stem.take(prefix.length).equalsIgnoreCase(prefix))
+      .fold(stem)(prefix => stem.drop(prefix.length))
 
   private[photo] def repaired(stem: String, extension: String): (String, String) =
-    val stemFixed: String = droppedPrefixes
-      .find(prefix => stem.startsWith(prefix))
-      .map(prefix => stem.drop(prefix.length))
-      .getOrElse(stem)
+    val stemFixed: String = dropOnePrefix(stem)
     val lower: String = extension.toLowerCase(java.util.Locale.ROOT)
     val extensionFixed: String =
       if extension != lower && Extension.all.exists(_.name == lower) then lower else extension
@@ -76,16 +78,21 @@ object Pictures:
     val (nameCorrect, extensionCorrect) = repaired(name, extension)
     // Check the corrected extension so a ".JPG" rename is not rejected first.
     verifyExtension(file.toString, extensionCorrect)
-    if name == nameCorrect && extension == extensionCorrect then
-      (name, extension)
-    else
+    if name != nameCorrect || extension != extensionCorrect then
       val shouldBe: String = s"$nameCorrect.$extensionCorrect"
-      val destination: File = File(file.getParentFile, shouldBe)
-      names match
-        case NameMode.Apply => Files.move(file, destination)
-        case NameMode.Preview => println(s"moving $file to $destination")
-        case NameMode.Leave => println(s"$file: WRONG NAME; SHOULD BE $shouldBe; repair --names")
-      (nameCorrect, extensionCorrect)
+      if nameCorrect.nonEmpty && nameCorrect.head.isDigit then
+        val destination: File = File(file.getParentFile, shouldBe)
+        names match
+          case NameMode.Apply => Files.move(file, destination)
+          case NameMode.Preview => println(s"moving $file to $destination")
+          case NameMode.Leave => println(s"$file: WRONG NAME; SHOULD BE $shouldBe; repair --names")
+      else names match
+        case NameMode.Leave =>
+          println(s"$file: WRONG NAME; SHOULD BE $shouldBe; repair --names")
+          println(s"$file: NOT RENAMED; $shouldBe does not start with a digit")
+        case NameMode.Preview | NameMode.Apply =>
+          println(s"$file: NOT RENAMED; $shouldBe does not start with a digit")
+    (nameCorrect, extensionCorrect)
 
   private val extensions: Set[String] = Extension.all.map(_.name) ++ Set(
     Metadata.extension
