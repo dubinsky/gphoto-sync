@@ -4,15 +4,23 @@ import java.io.File
 import java.time.Instant
 
 final case class Repair(
-  path: Path,
+  path: String,
   names: Boolean,
   raw: Boolean,
   timestamps: Boolean,
   days: Boolean,
   dryRun: Boolean
 ) extends Operation:
-  override def execute(): Unit =
-    Repair.run(path, names = names, raw = raw, timestamps = timestamps, days = days, dryRun = dryRun)
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session):
+      Repair.run(
+        session.root.parse(path),
+        names = names,
+        raw = raw,
+        timestamps = timestamps,
+        days = days,
+        dryRun = dryRun
+      )
 
 object Repair:
   def run(
@@ -68,12 +76,12 @@ object Repair:
         val extensionNamesAll: Set[String] =
           picture.extensions.map(_.name) ++ Option.when(picture.hasMetadata)(Metadata.extension).toSet
         extensionNamesAll.foreach: extension =>
-          Files.move(
-            File(picture.parent.directory, s"${picture.name}.$extension"),
-            File(dayShouldBe.directory, s"${picture.name}.$extension")
-          )
+          val fromFile: File = File(picture.parent.directory, s"${picture.name}.$extension")
+          val toFile: File = File(dayShouldBe.directory, s"${picture.name}.$extension")
+          Transcript.println(s"moving $fromFile to $toFile")
+          Files.move(fromFile, toFile)
         Files.deleteEmptyDirectories(picture.parent.directory)
 
   private def act(dryRun: Boolean, message: String)(action: => Unit): Unit =
-    println(message)
+    Transcript.println(message)
     if !dryRun then action

@@ -50,12 +50,25 @@ object Cli:
         System.err.println(usageLine(message))
         sys.exit(1)
       case Run(parsed) =>
-        try toOperation(parsed).execute()
+        try
+          val session: Session = Session.start
+          val (_, result) = toOperation(parsed).execute(session)
+          render(result)
         catch
           case error: (IllegalArgumentException | IllegalStateException) =>
-            val message: String = Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
-            System.err.println(usageLine(message))
+            System.err.println(usageLine(Operation.messageOf(error)))
             sys.exit(1)
+
+  private def render(result: Result): Unit = result match
+    case Result.Ok(text, _) =>
+      print(text)
+    case Result.Failed(text, _, message) =>
+      print(text)
+      System.err.println(usageLine(message))
+      sys.exit(1)
+    case Result.Usage(message) =>
+      System.err.println(usageLine(message))
+      sys.exit(1)
 
   private[photo] def parse(args: List[String]): Outcome = args match
     case Nil =>
@@ -69,14 +82,14 @@ object Cli:
 
   private[photo] def toOperation(parsed: Parsed): Operation = parsed match
     case Lsd(directory, long) =>
-      ListDirectories(Root.get.parse(directory), isLong = long)
+      ListDirectories(directory, isLong = long)
     case ls: Ls =>
       ListPictures(
-        Root.get.parse(ls.path),
+        ls.path,
         ls.long,
         ls.nameContains,
         ls.hasExtension,
-        ls.property.map(parsePropertyAndValue),
+        ls.property,
         ls.timestampFromNameFormat,
         ls.timestampFromName,
         ls.timestampFromNameOnly,
@@ -89,18 +102,18 @@ object Cli:
         ls.wrong
       )
     case SetMetadataArgs(property, picture) =>
-      SetMetadata(Root.get.parsePicture(picture), parsePropertyAndValue(property))
+      SetMetadata(picture, property)
     case Albums(path) =>
-      ListAlbums(path.map(Root.get.parse))
+      ListAlbums(path)
     case PublishArgs(path, recursive, dryRun) =>
-      Publish(path.map(Root.get.parse), recursive = recursive, dryRun = dryRun)
+      Publish(path, recursive = recursive, dryRun = dryRun)
     case SyncArgs(path, recursive, dryRun) =>
-      Sync(path.map(Root.get.parse), recursive = recursive, dryRun = dryRun)
+      Sync(path, recursive = recursive, dryRun = dryRun)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
     case RepairArgs(path, names, raw, timestamps, days, dryRun) =>
-      Repair(Root.get.parse(path), names, raw, timestamps, days, dryRun)
+      Repair(path, names, raw, timestamps, days, dryRun)
 
   private def finish(parsed: Parsed): Outcome = parsed match
     case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>

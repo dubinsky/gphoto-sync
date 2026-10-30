@@ -3,8 +3,7 @@ package org.podval.tools.photo
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.awt.image.BufferedImage
-import java.io.{ByteArrayOutputStream, File}
-import java.nio.charset.StandardCharsets
+import java.io.File
 import java.nio.file.Files as JFiles
 import java.time.ZoneId
 import javax.imageio.ImageIO
@@ -94,24 +93,27 @@ class RepairTest extends AnyFlatSpec, Matchers:
       val picture: File = File(originals, "2009/03/10/IMG_2412.JPG")
       picture.getParentFile.mkdirs()
       ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
-      capture:
-        ListPictures(
-          root.parse("2009/03/10"),
-          long = false,
-          nameContains = None,
-          hasExtension = None,
-          propertyAndValue = None,
-          timestampFromNameFormat = None,
-          timestampFromName = false,
-          timestampFromNameOnly = false,
-          timestampsVary = false,
-          hasMetadata = false,
-          noNormal = false,
-          noTimestamp = false,
-          wrongTimestamp = false,
-          wrongDay = false,
-          wrong = false
-        ).execute()
+      val (_, result) = ListPictures(
+        "2009/03/10",
+        long = false,
+        nameContains = None,
+        hasExtension = None,
+        property = None,
+        timestampFromNameFormat = None,
+        timestampFromName = false,
+        timestampFromNameOnly = false,
+        timestampsVary = false,
+        hasMetadata = false,
+        noNormal = false,
+        noTimestamp = false,
+        wrongTimestamp = false,
+        wrongDay = false,
+        wrong = false
+      ).execute(Session(root))
+      result match
+        case Result.Ok(_, _) => ()
+        case Result.Failed(text, _, message) => fail(s"$message\n$text")
+        case Result.Usage(message) => fail(message)
       picture.exists shouldBe true
       File(originals, "2009/03/10/2412.jpg").exists shouldBe false
 
@@ -164,10 +166,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       setTimestamp = setTimestamp
     )
 
-  private def capture(body: => Unit): String =
-    val buffer: ByteArrayOutputStream = ByteArrayOutputStream()
-    Console.withOut(buffer)(body)
-    buffer.toString(StandardCharsets.UTF_8)
+  private def capture(body: => Unit): String = Transcript.text(body)
 
   private def rootFor(originals: File): Root =
     val home: File = File(System.getProperty("user.home"))

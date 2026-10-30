@@ -22,14 +22,18 @@ object Claims:
       val matched: Boolean = albums.exists(_.positive(picture.folderDay, picture.name))
       Resolved(picture.path, titles, excludedOnly = matched && titles.isEmpty)
 
-final case class ListAlbums(path: Option[Path]) extends Operation:
-  override def execute(): Unit =
-    val root: Root = path.fold(Root.get)(_.root)
-    val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
-    val scan: Archive.Scan = Archive.scan(root.configuration.archive)
-    val pictures: Seq[Claims.Resolved] = Claims.resolve(scan)
-    annotations(scan.albums, prefix).foreach(println)
-    pictures.filter(picture => Album.pictureMatches(picture.path, prefix)).foreach(picture => println(picture.line))
+final case class ListAlbums(path: Option[String]) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session):
+      val parsed: Option[Path] = path.map(session.root.parse)
+      val root: Root = parsed.fold(session.root)(_.root)
+      val prefix: Option[String] = parsed.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
+      val scan: Archive.Scan = Archive.scan(root.configuration.archive)
+      val pictures: Seq[Claims.Resolved] = Claims.resolve(scan)
+      annotations(scan.albums, prefix).foreach(Transcript.println)
+      pictures.filter(picture => Album.pictureMatches(picture.path, prefix)).foreach(picture =>
+        Transcript.println(picture.line)
+      )
 
   private def annotations(albums: Seq[Album.Loaded], prefix: Option[String]): Seq[String] =
     albums

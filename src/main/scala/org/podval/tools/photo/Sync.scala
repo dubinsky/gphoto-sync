@@ -5,17 +5,19 @@ import java.io.File
 import java.time.LocalDate
 import scala.jdk.CollectionConverters.{IterableHasAsScala, ListHasAsScala, SeqHasAsJava}
 
-final case class Sync(path: Option[Path], recursive: Boolean, dryRun: Boolean) extends Operation:
-  override def execute(): Unit =
-    val root: Root = path.fold(Root.get)(_.root)
-    val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
-    Sync.run(
-      originals = root.configuration.archive,
-      prefix = prefix,
-      recursive = recursive,
-      dryRun = dryRun,
-      google = () => Sync.openLibrary()
-    )
+final case class Sync(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session):
+      val parsed: Option[Path] = path.map(session.root.parse)
+      val root: Root = parsed.fold(session.root)(_.root)
+      val prefix: Option[String] = parsed.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
+      Sync.run(
+        originals = root.configuration.archive,
+        prefix = prefix,
+        recursive = recursive,
+        dryRun = dryRun,
+        google = () => Sync.openLibrary()
+      )
 
 object Sync:
   private val batchSize: Int = 50
@@ -47,7 +49,7 @@ object Sync:
     val facts: Map[String, Archive.Picture] = scan.pictures.map(picture => picture.path -> picture).toMap
     val universe: Map[LocalDate, Set[String]] = Archive.universe(scan.pictures)
     val inScope: Seq[LoadedAlbum] = scope(selected, byTitle, albums)
-    if inScope.isEmpty then println("no albums")
+    if inScope.isEmpty then Transcript.println("no albums")
     else syncAlbums(originals, universe, facts, selected, byTitle, albums, inScope, dryRun, google)
 
   // Membership is remote, so a dry run still lists and batchGets in order to print the same lines.
@@ -122,7 +124,7 @@ object Sync:
     else titles.map(title => s"${picture.path} $title: $message")
 
   private def fail(lines: Seq[String]): Nothing =
-    lines.foreach(println)
+    lines.foreach(Transcript.println)
     throw IllegalArgumentException(lines.mkString("\n"))
 
   private def filedPictures(
@@ -174,8 +176,8 @@ object Sync:
       RemoveChange(loaded.album.googleAlbumId, loaded.album.title, name, picture.path, id)
 
   private def printPlan(plan: Plan): Unit =
-    plan.excepts.foreach(change => println(s"except ${change.title} ${Album.quote(change.stem)}"))
-    plan.removes.foreach(change => println(s"remove ${change.title} ${Album.quote(change.stem)}"))
+    plan.excepts.foreach(change => Transcript.println(s"except ${change.title} ${Album.quote(change.stem)}"))
+    plan.removes.foreach(change => Transcript.println(s"remove ${change.title} ${Album.quote(change.stem)}"))
 
   private def applyPlan(
     originals: File,

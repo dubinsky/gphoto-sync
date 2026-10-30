@@ -27,6 +27,3 @@ final class Root(val configuration: Configuration) extends Directory:
   def parsePicture(path: String): Picture = parse(path) match
     case picture: Picture => picture
     case path => throw IllegalArgumentException(s"'$path' is not a picture")
-
-object Root:
-  lazy val get: Root = Root(Configuration.read)

@@ -3,8 +3,7 @@ package org.podval.tools.photo
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.awt.image.BufferedImage
-import java.io.{ByteArrayOutputStream, File}
-import java.nio.charset.StandardCharsets
+import java.io.File
 import java.nio.file.Files as JFiles
 import java.time.ZoneId
 import javax.imageio.ImageIO
@@ -472,20 +471,11 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
 
   private def listLines(originals: File, prefix: String): Seq[String] =
     val root: Root = rootFor(originals)
-    val path: Path = if prefix.isEmpty then root else root.parse(prefix)
-    val (out, thrown) = capture(ListAlbums(Some(path)).execute())
-    thrown match
-      case Some(error) => fail(s"$error\n$out")
-      case None => out.trim.linesIterator.toSeq
-
-  private def capture(body: => Unit): (String, Option[Throwable]) =
-    val buffer: ByteArrayOutputStream = new ByteArrayOutputStream
-    val thrown: Option[Throwable] =
-      try
-        Console.withOut(buffer)(body)
-        None
-      catch case error: Throwable => Some(error)
-    (buffer.toString(StandardCharsets.UTF_8), thrown)
+    val (_, result) = ListAlbums(Option.when(prefix.nonEmpty)(prefix)).execute(Session(root))
+    result match
+      case Result.Ok(text, _) => text.trim.linesIterator.toSeq
+      case Result.Failed(text, _, message) => fail(s"$message\n$text")
+      case Result.Usage(message) => fail(message)
 
   private def one(originals: File, path: String): Claims.Resolved =
     Claims(originals).find(_.path == path).getOrElse(fail(s"missing $path"))

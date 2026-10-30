@@ -8,19 +8,21 @@ import java.io.{File, RandomAccessFile}
 import scala.jdk.CollectionConverters.{IterableHasAsScala, ListHasAsScala, SeqHasAsJava}
 import scala.jdk.OptionConverters.*
 
-final case class Publish(path: Option[Path], recursive: Boolean, dryRun: Boolean) extends Operation:
-  override def execute(): Unit =
-    val root: Root = path.fold(Root.get)(_.root)
-    val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
-    Publish.run(
-      originals = root.configuration.archive,
-      prefix = prefix,
-      recursive = recursive,
-      dryRun = dryRun,
-      google = () => Publish.openLibrary(),
-      exiftool = Publish.runExiftool,
-      tempDirectory = File(System.getProperty("java.io.tmpdir"))
-    )
+final case class Publish(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session):
+      val parsed: Option[Path] = path.map(session.root.parse)
+      val root: Root = parsed.fold(session.root)(_.root)
+      val prefix: Option[String] = parsed.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
+      Publish.run(
+        originals = root.configuration.archive,
+        prefix = prefix,
+        recursive = recursive,
+        dryRun = dryRun,
+        google = () => Publish.openLibrary(),
+        exiftool = Publish.runExiftool,
+        tempDirectory = File(System.getProperty("java.io.tmpdir"))
+      )
 
 object Publish:
   private val batchSize: Int = 50
@@ -83,7 +85,7 @@ object Publish:
     val selected: Seq[Claims.Resolved] = select(pictures, selectedPrefix).filter: picture =>
       picture.albums.nonEmpty || picture.excludedOnly
     if selected.isEmpty then
-      println("no albums")
+      Transcript.println("no albums")
     else
       val titles: Seq[String] = distinctTitles(selected)
       val byTitle: Map[String, Album.Loaded] = scan.albums.map(loaded => loaded.album.title -> loaded).toMap
@@ -99,22 +101,22 @@ object Publish:
         case _ => Seq.empty
       }.distinct
       if dryRun then
-        selected.foreach(picture => println(picture.line))
+        selected.foreach(picture => Transcript.println(picture.line))
         work.collect { case SkipUploader(path) => path }.foreach: path =>
-          println(s"$path: uploader set; not uploaded")
+          Transcript.println(s"$path: uploader set; not uploaded")
         val split: DesiredSplit = splitDesired(ensuredTitles, albums)
         split.blocked.foreach: title =>
           reportClaimers(
             title,
             collisionText(title, ensuredTitles, albums),
             selected,
-            (picture, album, message) => println(s"$picture $album: $message")
+            (picture, album, message) => Transcript.println(s"$picture $album: $message")
           )
         split.open.foreach: title =>
-          println(title)
+          Transcript.println(title)
           val album: Album = albums(title).album
           if album.desiredGoogleTitle != album.title then
-            println(s"google ${Album.quote(album.title)} ${Album.quote(album.desiredGoogleTitle)}")
+            Transcript.println(s"google ${Album.quote(album.title)} ${Album.quote(album.desiredGoogleTitle)}")
       else
         publish(
           scan.albums,
@@ -179,9 +181,9 @@ object Publish:
       case _: StayLocal => ()
       case _: UploadNew => ()
 
-    failureLines.reverse.foreach(println)
+    failureLines.reverse.foreach(Transcript.println)
     val failed: Int = failureLines.length
-    println(
+    Transcript.println(
       s"uploaded=$uploaded filed=$filed skipped-excluded=$skippedExcluded " +
         s"skipped-external=$skippedExternal skipped-uploader=$skippedUploader " +
         s"skipped-exists=$skippedExists failed=$failed"

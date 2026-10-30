@@ -194,18 +194,19 @@ object Pictures:
       val destination: File = File(row.file.getParentFile, row.finalName)
       names match
         case NameMode.Leave =>
-          if changes then println(s"${row.file}: WRONG NAME; SHOULD BE ${row.finalName}; repair --names")
+          if changes then Transcript.println(s"${row.file}: WRONG NAME; SHOULD BE ${row.finalName}; repair --names")
         case NameMode.Preview =>
           if !row.omitted && !row.renameRefused && changes then
-            println(s"moving ${row.file} to $destination")
+            Transcript.println(s"moving ${row.file} to $destination")
         case NameMode.Apply =>
           if !row.omitted && !row.renameRefused && changes then
+            Transcript.println(s"moving ${row.file} to $destination")
             Files.move(row.file, destination)
       val reason: Option[String] =
         if row.omitted then row.notRenamed
         else if row.renameRefused && changes then Some(s"${row.finalName} does not start with a digit")
         else None
-      reason.foreach(text => println(s"${row.file}: NOT RENAMED; $text"))
+      reason.foreach(text => Transcript.println(s"${row.file}: NOT RENAMED; $text"))
 
   private val extensions: Set[String] = Extension.all.map(_.name) ++ Set(
     Metadata.extension

@@ -25,7 +25,6 @@ object Files:
       deleteEmptyDirectories(directory.getParentFile)
 
   def move(file: File, toFile: File): Unit =
-    println(s"moving $file to $toFile")
     NFiles.move(file.toPath, toFile.toPath)
   
   def mkDirs(file: File): Unit = file.mkdirs()

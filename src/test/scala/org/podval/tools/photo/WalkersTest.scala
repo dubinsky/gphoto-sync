@@ -2,8 +2,7 @@ package org.podval.tools.photo
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import java.io.{ByteArrayOutputStream, File}
-import java.nio.charset.StandardCharsets
+import java.io.File
 import java.nio.file.Files as JFiles
 import java.nio.file.Path
 import java.time.ZoneId
@@ -410,10 +409,7 @@ class WalkersTest extends AnyFlatSpec, Matchers:
         case day: Pictures => body(day, picture)
         case other => fail(s"$other is not a picture directory")
 
-  private def capture(body: => Unit): String =
-    val buffer: ByteArrayOutputStream = ByteArrayOutputStream()
-    Console.withOut(buffer)(body)
-    buffer.toString(StandardCharsets.UTF_8)
+  private def capture(body: => Unit): String = Transcript.text(body)
 
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))

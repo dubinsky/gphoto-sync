@@ -88,20 +88,20 @@ object GoogleAuth:
       )
       val credentials = authorizer.getCredentialsFromCode(code, callback)
       authorizer.storeCredentials(tokenUser, credentials)
-      println(s"logged in (${tokenFile.getAbsolutePath})")
+      Transcript.println(s"logged in (${tokenFile.getAbsolutePath})")
     finally
       sockets.foreach(_.close())
 
   def status(tokenFile: File = tokenJson): Unit =
-    if tokenFile.isFile then println(s"logged in (${tokenFile.getAbsolutePath})")
-    else println(s"not logged in (${tokenFile.getAbsolutePath})")
+    if tokenFile.isFile then Transcript.println(s"logged in (${tokenFile.getAbsolutePath})")
+    else Transcript.println(s"not logged in (${tokenFile.getAbsolutePath})")
 
   def logout(tokenFile: File = tokenJson): Unit =
     if tokenFile.isFile then
       java.nio.file.Files.delete(tokenFile.toPath)
-      println(s"logged out (${tokenFile.getAbsolutePath})")
+      Transcript.println(s"logged out (${tokenFile.getAbsolutePath})")
     else
-      println(s"not logged in (${tokenFile.getAbsolutePath})")
+      Transcript.println(s"not logged in (${tokenFile.getAbsolutePath})")
 
   // Stored user credential only. Does not open a browser or start a login.
   private[photo] def loadUserCredentials(
@@ -264,10 +264,13 @@ object GoogleAuth:
       if file.isFile then java.nio.file.Files.delete(file.toPath)
 
 case object Login extends Operation:
-  override def execute(): Unit = GoogleAuth.login()
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session)(GoogleAuth.login())
 
 case object Status extends Operation:
-  override def execute(): Unit = GoogleAuth.status()
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session)(GoogleAuth.status())
 
 case object Logout extends Operation:
-  override def execute(): Unit = GoogleAuth.logout()
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session)(GoogleAuth.logout())

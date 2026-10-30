@@ -2,8 +2,7 @@ package org.podval.tools.photo
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import java.io.{ByteArrayOutputStream, File}
-import java.nio.charset.StandardCharsets
+import java.io.File
 import java.nio.file.Files as JFiles
 
 class SyncTest extends AnyFlatSpec, Matchers:
@@ -497,14 +496,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
     case Some(error) => fail(s"$error\n$out")
     case None => ()
 
-  private def capture(body: => Unit): (String, Option[Throwable]) =
-    val buffer: ByteArrayOutputStream = new ByteArrayOutputStream
-    val thrown: Option[Throwable] =
-      try
-        Console.withOut(buffer)(body)
-        None
-      catch case error: Throwable => Some(error)
-    (buffer.toString(StandardCharsets.UTF_8), thrown)
+  private def capture(body: => Unit): (String, Option[Throwable]) = Transcript.collect(body)
 
   private def lines(out: String): Seq[String] = out.split('\n').toSeq.filter(_.nonEmpty)
 

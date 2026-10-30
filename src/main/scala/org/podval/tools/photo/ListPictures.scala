@@ -3,11 +3,11 @@ package org.podval.tools.photo
 import java.time.Instant
 
 final case class ListPictures(
-  path: Path,
+  path: String,
   long: Boolean,
   nameContains: Option[String],
   hasExtension: Option[String],
-  propertyAndValue: Option[Property.AndValue[?]],
+  property: Option[String],
   timestampFromNameFormat: Option[String],
   timestampFromName: Boolean,
   timestampFromNameOnly: Boolean,
@@ -20,13 +20,17 @@ final case class ListPictures(
   wrong: Boolean
 ) extends Operation:
 
-  override def execute(): Unit = forEachPicture(path)
+  override def execute(session: Session): (Session, Result) =
+    Operation.run(session):
+      val parsed: Path = session.root.parse(path)
+      val propertyAndValue: Option[Property.AndValue[?]] = property.map(Cli.parsePropertyAndValue)
+      forEachPicture(parsed, propertyAndValue)
 
-  private def forEachPicture(path: Path): Unit = path match
-    case pictures: Pictures => pictures.lsd(NameMode.Leave).foreach(ls)
-    case directory: Directory => directory.lsd.foreach(forEachPicture)
+  private def forEachPicture(path: Path, propertyAndValue: Option[Property.AndValue[?]]): Unit = path match
+    case pictures: Pictures => pictures.lsd(NameMode.Leave).foreach(ls(_, propertyAndValue))
+    case directory: Directory => directory.lsd.foreach(forEachPicture(_, propertyAndValue))
 
-  private def ls(picture: Picture): Unit =
+  private def ls(picture: Picture, propertyAndValue: Option[Property.AndValue[?]]): Unit =
     lazy val audit: PictureAudit.Result = PictureAudit(picture)
 
     val included: Boolean =
@@ -48,7 +52,7 @@ final case class ListPictures(
       val showAudit: Boolean = long || timestampsVary || noTimestamp || wrongTimestamp || wrongDay || wrong
       val normalGenerationSuppressed: Boolean = picture.metadata.`bad-raw`.contains(true)
 
-      println(
+      Transcript.println(
         s"$picture " ++
         picture.extensions.map(_.name).mkString("+") ++
         (if picture.normal.isDefined then "" else " NO NORMAL IMAGE" ++ (if !normalGenerationSuppressed then "" else "; GENERATION SUPPRESSED")) ++
