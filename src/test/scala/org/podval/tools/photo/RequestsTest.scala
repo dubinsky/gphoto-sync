@@ -157,6 +157,80 @@ class RequestsTest extends AnyFlatSpec, Matchers:
       text(file) shouldBe planted + "r2\tdownload-item\ta\tk1\tone.jpg\t\n"
       text(file).split("\n").count(_ == header) shouldBe 1
 
+  it should "repair a headerless file without dropping a committed row" in :
+    withTemp: dir =>
+      val empty: File = File(dir, "empty.tsv")
+      NFiles.createFile(empty.toPath)
+      val created: Requests.Row = Requests.append(empty, Requests.Action.RenameAlbum, "a", "", "Old", "New")
+      created.id shouldBe "r1"
+      text(empty) shouldBe s"$header\nr1\trename-album\ta\t\tOld\tNew\n"
+      text(empty).split("\n").count(_ == header) shouldBe 1
+
+      val bare: File = write(dir, "bare.tsv", "r1\trename-album\ta\t\tOld\tNew\n")
+      val added: Requests.Row =
+        Requests.append(bare, Requests.Action.DownloadItem, "a", "k1", "one.jpg", "kept-whole")
+      added.id shouldBe "r2"
+      text(bare) shouldBe
+        s"$header\nr1\trename-album\ta\t\tOld\tNew\nr2\tdownload-item\ta\tk1\tone.jpg\tkept-whole\n"
+      text(bare).split("\n").count(_ == header) shouldBe 1
+      Requests.read(bare).map(_.`new`) shouldBe Seq("New", "kept-whole")
+
+      val foreign: File = write(dir, "foreign.tsv", "## \nr1\trename-album\ta\t\tOld\tNew\n")
+      val before: Seq[Byte] = NFiles.readAllBytes(foreign.toPath).toSeq
+      val version: IllegalArgumentException = intercept[IllegalArgumentException]:
+        Requests.append(foreign, Requests.Action.MoveItem, "a", "k1", "one.jpg", "b")
+      version.getMessage shouldBe "requests are not version 2"
+      NFiles.readAllBytes(foreign.toPath).toSeq shouldBe before
+
+      val same: File = write(dir, "same.tsv", "r1\tdelete-item\ta\tk1\tone.jpg\t\n")
+      val sameBefore: Seq[Byte] = NFiles.readAllBytes(same.toPath).toSeq
+      val duplicate: IllegalArgumentException = intercept[IllegalArgumentException]:
+        Requests.append(same, Requests.Action.DeleteItem, "a", "k1", "one.jpg", "", Some("r1"))
+      duplicate.getMessage shouldBe "duplicate request id"
+      NFiles.readAllBytes(same.toPath).toSeq shouldBe sameBefore
+
+  it should "not let a read during an append observe a partial row" in :
+    withTemp: dir =>
+      resetProbes()
+      val file: File = File(dir, "requests.tsv")
+      Requests.append(file, Requests.Action.RenameAlbum, "a", "", "Old", "New")
+      val size: Long = NFiles.size(file.toPath)
+      val release: CountDownLatch = CountDownLatch(1)
+      val inLock: CountDownLatch = CountDownLatch(1)
+      val finished: CountDownLatch = CountDownLatch(1)
+      val errors: ConcurrentLinkedQueue[Throwable] = ConcurrentLinkedQueue()
+      val found = new java.util.concurrent.atomic.AtomicReference[Seq[String]]()
+      Requests.afterLock = () =>
+        inLock.countDown()
+        release.await()
+      val writer: Thread = new Thread(() =>
+        try Requests.append(file, Requests.Action.MoveItem, "a", "k1", "one.jpg", "kept-whole")
+        catch case error: Throwable => errors.add(error)
+        ()
+      )
+      val reader: Thread = new Thread(() =>
+        try found.set(Requests.read(file).map(_.`new`))
+        catch case error: Throwable => errors.add(error)
+        finally finished.countDown()
+        ()
+      )
+      try
+        writer.start()
+        inLock.await(5, TimeUnit.SECONDS) shouldBe true
+        reader.start()
+        waitUntilBlocked(reader) shouldBe true
+        finished.getCount shouldBe 1
+        NFiles.size(file.toPath) shouldBe size
+        release.countDown()
+        writer.join(5000)
+        finished.await(5, TimeUnit.SECONDS) shouldBe true
+        writer.isAlive shouldBe false
+      finally
+        release.countDown()
+        resetProbes()
+      if !errors.isEmpty then fail(String.valueOf(errors.peek))
+      found.get shouldBe Seq("New", "kept-whole")
+
   it should "give two overlapping appends one header and distinct ids" in :
     withTemp: dir =>
       resetProbes()
@@ -184,6 +258,16 @@ class RequestsTest extends AnyFlatSpec, Matchers:
       if !errors.isEmpty then fail(String.valueOf(errors.peek))
       Requests.read(file).map(_.id) shouldBe (1 to n).map(i => s"r$i")
       text(file).split("\n").count(_ == header) shouldBe 1
+
+  private def waitUntilBlocked(thread: Thread): Boolean =
+    val deadline: Long = System.nanoTime() + 5000000000L
+    var waiting: Boolean = false
+    while System.nanoTime() < deadline && !waiting do
+      val state: Thread.State = thread.getState
+      waiting = (state eq Thread.State.BLOCKED) || (state eq Thread.State.WAITING) ||
+        (state eq Thread.State.TIMED_WAITING)
+      if !waiting then Thread.sleep(1)
+    waiting
 
   private def fileInode(file: File): String =
     String.valueOf(NFiles.getAttribute(file.toPath, "unix:ino"))

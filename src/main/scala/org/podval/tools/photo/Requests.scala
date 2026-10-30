@@ -5,7 +5,8 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileAlreadyExistsException, Files as NFiles, NoSuchFileException, StandardOpenOption}
+import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, WRITE}
+import java.nio.file.{FileAlreadyExistsException, Files as NFiles, NoSuchFileException}
 import java.util.concurrent.ConcurrentHashMap
 
 object Requests:
@@ -47,14 +48,23 @@ object Requests:
   @volatile private[photo] var afterLock: () => Unit = () => ()
   @volatile private[photo] var onOverlap: () => Unit = () => ()
 
+  // Same monitor and exclusive lock as append, so a same-JVM read cannot close another descriptor
+  // and drop the writer's fcntl lock, and so it waits until the new line is complete.
+  // An absent file is no rows and is not created.
   def read(file: File): Seq[Row] =
     if !file.isFile then Seq.empty
-    else
-      try parse(TextLines.read(file, Header, VersionError))
-      catch case _: NoSuchFileException => Seq.empty
+    else gate(file).synchronized:
+      if !file.isFile then Seq.empty
+      else openRead(file) match
+        case None => Seq.empty
+        case Some(channel) =>
+          try
+            withExclusiveLock(channel):
+              parse(TextLines.fromBytes(readBytes(channel), Header, VersionError))
+          finally channel.close()
 
-  // Absent file: CREATE_NEW writes the header and one row. A loser does not append on that path.
-  // It takes the same exclusive lock as an existing file, re-reads ids, and appends one line.
+  // Absent file: CREATE_NEW, then the same exclusive lock as an existing file.
+  // The file is visible before the lock, so the body re-reads and does not overwrite a committed row.
   def append(
     file: File,
     action: Action,
@@ -67,20 +77,19 @@ object Requests:
     Seq(albumId, itemKey, current, `new`).foreach(rejectField)
     id.foreach(requireId)
     gate(file).synchronized:
-      val path = file.toPath
-      if NFiles.exists(path) then appendLocked(file, id, action, albumId, itemKey, current, `new`)
-      else
-        try
-          beforeCreateNew()
-          createNew(file, id, action, albumId, itemKey, current, `new`)
-        catch case _: FileAlreadyExistsException =>
-          appendLocked(file, id, action, albumId, itemKey, current, `new`)
+      val channel: FileChannel = openChannel(file)
+      try
+        withExclusiveLock(channel):
+          commit(channel, id, action, albumId, itemKey, current, `new`)
+      finally channel.close()
 
   private[photo] def requireId(id: String): Unit =
     if !id.matches("r[1-9][0-9]*") then throw IllegalArgumentException("request id is not valid")
 
-  private def parse(text: String): Seq[Row] =
-    TextLines.dataLines(text).filter(_.nonEmpty).foldLeft(Seq.empty[Row]): (rows, line) =>
+  private def parse(text: String): Seq[Row] = rowsOf(TextLines.dataLines(text))
+
+  private def rowsOf(lines: Seq[String]): Seq[Row] =
+    lines.filter(_.nonEmpty).foldLeft(Seq.empty[Row]): (rows, line) =>
       val row: Row = parseRow(line)
       if rows.exists(_.id == row.id) then throw IllegalArgumentException("duplicate request id")
       rows :+ row
@@ -93,25 +102,25 @@ object Requests:
       case _ =>
         throw IllegalArgumentException("wrong column count")
 
-  private def createNew(
-    file: File,
-    id: Option[String],
-    action: Action,
-    albumId: String,
-    itemKey: String,
-    current: String,
-    `new`: String
-  ): Row =
-    val channel: FileChannel = FileChannel.open(file.toPath, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
-    try
-      withExclusiveLock(channel):
-        val row: Row = Row(id.getOrElse("r1"), action, albumId, itemKey, current, `new`)
-        writeAll(channel, Header + "\n" + line(row))
-        row
-    finally channel.close()
+  private def openRead(file: File): Option[FileChannel] =
+    try Some(FileChannel.open(file.toPath, READ, WRITE))
+    catch case _: NoSuchFileException => None
 
-  private def appendLocked(
-    file: File,
+  private def openChannel(file: File): FileChannel =
+    val path = file.toPath
+    if NFiles.exists(path) then FileChannel.open(path, READ, WRITE)
+    else
+      try
+        beforeCreateNew()
+        FileChannel.open(path, CREATE_NEW, READ, WRITE)
+      catch case _: FileAlreadyExistsException =>
+        FileChannel.open(path, READ, WRITE)
+
+  // A headerless file is the CREATE_NEW window or a crash before the header, not a foreign version.
+  // Initialize it with the header and every row already committed, then this row.
+  // A file whose first line is a header, but not version 2, is left unchanged.
+  private def commit(
+    channel: FileChannel,
     id: Option[String],
     action: Action,
     albumId: String,
@@ -119,21 +128,39 @@ object Requests:
     current: String,
     `new`: String
   ): Row =
-    val channel: FileChannel = FileChannel.open(file.toPath, StandardOpenOption.READ, StandardOpenOption.WRITE)
-    try
-      withExclusiveLock(channel):
-        val existing: Seq[Row] = parse(TextLines.fromBytes(readBytes(channel), Header, VersionError))
-        val assigned: String = id match
-          case Some(value) =>
-            if existing.exists(_.id == value) then throw IllegalArgumentException("duplicate request id")
-            value
-          case None =>
-            nextId(existing.map(_.id))
-        val row: Row = Row(assigned, action, albumId, itemKey, current, `new`)
-        channel.position(channel.size())
-        writeAll(channel, line(row))
-        row
-    finally channel.close()
+    val bytes: Array[Byte] = readBytes(channel)
+    val bare: Boolean = headerless(bytes)
+    val existing: Seq[Row] =
+      if bare then parseHeaderless(bytes)
+      else parse(TextLines.fromBytes(bytes, Header, VersionError))
+    val assigned: String = id match
+      case Some(value) =>
+        if existing.exists(_.id == value) then throw IllegalArgumentException("duplicate request id")
+        value
+      case None =>
+        nextId(existing.map(_.id))
+    val row: Row = Row(assigned, action, albumId, itemKey, current, `new`)
+    if bare then
+      channel.position(0L)
+      writeAll(channel, Header + "\n" + existing.map(row => line(row)).mkString + line(row))
+      channel.truncate(channel.position())
+    else
+      channel.position(channel.size())
+      writeAll(channel, line(row))
+    row
+
+  private def headerless(bytes: Array[Byte]): Boolean =
+    bytes.takeWhile(_ != '\n'.toByte).headOption.forall(_ != '#'.toByte)
+
+  private def parseHeaderless(bytes: Array[Byte]): Seq[Row] =
+    if bytes.isEmpty then Seq.empty
+    else
+      val text: String = TextLines.decoded(bytes)
+      if !text.endsWith("\n") then throw IllegalArgumentException("trailing partial line")
+      val lines: Seq[String] =
+        if text.isEmpty then Seq.empty
+        else text.dropRight(1).split("\n", -1).toSeq
+      rowsOf(lines)
 
   private def line(row: Row): String =
     Seq(row.id, row.action.wire, row.albumId, row.itemKey, row.current, row.`new`).mkString("\t") + "\n"

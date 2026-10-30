@@ -27,6 +27,12 @@ private[photo] object TextLines:
     if body.isEmpty then Seq.empty
     else body.dropRight(1).split("\n", -1).toSeq
 
+  // Shared by the requests reader. CR is rejected here; the caller checks the version line.
+  def decoded(bytes: Array[Byte]): String =
+    val text: String = decode(bytes)
+    if text.contains('\r') then throw IllegalArgumentException("carriage return")
+    text
+
   def columns(line: String, count: Int): Seq[String] =
     val parts: Seq[String] = line.split("\t", -1).toSeq
     if parts.length != count then throw IllegalArgumentException("wrong column count")
