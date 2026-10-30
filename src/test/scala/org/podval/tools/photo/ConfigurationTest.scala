@@ -6,22 +6,21 @@ import java.time.ZoneId
 
 class ConfigurationTest extends AnyFlatSpec, Matchers:
   private val fixture: String =
-    """byYearDirectoryName = "originals"
-      |rootPath = "Pictures"
-      |uploadDirectoryName = "Upload"
+    """rootPath = "Pictures/originals"
       |zoneId = "America/New_York"
       |""".stripMargin
 
-  "Configuration" should "round-trip the four required keys" in :
+  "Configuration" should "round-trip the two required keys" in :
     val expected: Configuration = Configuration(
-      rootPath = "Pictures",
-      byYearDirectoryName = "originals",
-      uploadDirectoryName = "Upload",
+      rootPath = "Pictures/originals",
       zoneId = ZoneId.of("America/New_York")
     )
     val decoded: Configuration = Configuration.decode(fixture)
     decoded shouldBe expected
-    Configuration.encode(decoded) shouldBe fixture
+    val encoded: String = Configuration.encode(decoded)
+    encoded shouldBe fixture
+    encoded should not include "byYearDirectoryName"
+    encoded should not include "uploadDirectoryName"
 
   it should "reject a missing zoneId" in :
     val toml: String = fixture.linesIterator.filterNot(_.startsWith("zoneId")).mkString("\n")
@@ -32,9 +31,7 @@ class ConfigurationTest extends AnyFlatSpec, Matchers:
   it should "ignore an unknown key and drop it on encode" in :
     val decoded: Configuration = Configuration.decode(s"${fixture}extra = 1\n")
     decoded shouldBe Configuration(
-      rootPath = "Pictures",
-      byYearDirectoryName = "originals",
-      uploadDirectoryName = "Upload",
+      rootPath = "Pictures/originals",
       zoneId = ZoneId.of("America/New_York")
     )
     Configuration.encode(decoded) should not include "extra"
@@ -43,3 +40,22 @@ class ConfigurationTest extends AnyFlatSpec, Matchers:
     val exception: IllegalArgumentException = intercept[IllegalArgumentException]:
       Configuration.decode(fixture.replace("America/New_York", "Not/AZone"))
     exception.getMessage should include ("zoneId")
+
+  it should "reject byYearDirectoryName" in :
+    rejectRetired(s"""${fixture}byYearDirectoryName = "originals"\n""", "byYearDirectoryName")
+
+  it should "reject uploadDirectoryName" in :
+    rejectRetired(s"""${fixture}uploadDirectoryName = "Upload"\n""", "uploadDirectoryName")
+
+  it should "reject both retired keys" in :
+    val toml: String =
+      s"""${fixture}byYearDirectoryName = "originals"
+         |uploadDirectoryName = "Upload"
+         |""".stripMargin
+    rejectRetired(toml, "byYearDirectoryName and uploadDirectoryName")
+
+  private def rejectRetired(toml: String, keys: String): Unit =
+    val exception: IllegalArgumentException = intercept[IllegalArgumentException]:
+      Configuration.decode(toml)
+    exception.getMessage should include (keys)
+    exception.getMessage should include ("rootPath must be the archive")

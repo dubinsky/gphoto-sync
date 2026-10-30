@@ -26,7 +26,7 @@ final case class ListAlbums(path: Option[Path]) extends Operation:
   override def execute(): Unit =
     val root: Root = path.fold(Root.get)(_.root)
     val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
-    val scan: Archive.Scan = Archive.scan(root.configuration.byYearDirectory)
+    val scan: Archive.Scan = Archive.scan(root.configuration.archive)
     val pictures: Seq[Claims.Resolved] = Claims.resolve(scan)
     annotations(scan.albums, prefix).foreach(println)
     pictures.filter(picture => Album.pictureMatches(picture.path, prefix)).foreach(picture => println(picture.line))

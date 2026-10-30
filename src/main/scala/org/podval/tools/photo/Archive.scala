@@ -4,7 +4,8 @@ import java.io.File
 import java.time.{LocalDate, YearMonth}
 
 // One walk of originals for album files and picture facts.
-// Stray non-toml files are ignored. lsd still rejects them.
+// This walk ignores stray files. lsd allows album .toml files, AGENTS.md, and dotfiles.
+// Any other non-toml file is stray.
 object Archive:
   final case class Picture(
     path: String,

@@ -9,18 +9,18 @@ final class Root(val configuration: Configuration) extends Directory:
   
   override def toString: String = name
 
-  override protected def getDirectory: File = configuration.byYearDirectory
+  override protected def getDirectory: File = configuration.archive
 
   override def lsd: Seq[Directory] = uploadDirectory +: Year.lsd(this)
 
   override def item(name: String): Directory =
-    if name == configuration.uploadDirectoryName
+    if name == UploadDirectory.directoryName
     then uploadDirectory
     else Year(this, name)
 
   def year(num: Int): Year = Year(this, num)
 
-  private val uploadDirectory: UploadDirectory = UploadDirectory(this, configuration.uploadDirectoryName)
+  private val uploadDirectory: UploadDirectory = UploadDirectory(this, UploadDirectory.directoryName)
 
   def parse(path: String): Path = item(path.split("/").filter(_.nonEmpty).toList)
 

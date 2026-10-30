@@ -10,7 +10,7 @@ final case class Sync(path: Option[Path], recursive: Boolean, dryRun: Boolean) e
     val root: Root = path.fold(Root.get)(_.root)
     val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
     Sync.run(
-      originals = root.configuration.byYearDirectory,
+      originals = root.configuration.archive,
       prefix = prefix,
       recursive = recursive,
       dryRun = dryRun,

@@ -12,6 +12,8 @@ final class Year private(override val parent: Root, val number: Int) extends Ite
   def month(num: Int): Month = Month(this, num)
 
 object Year extends NumberedMaker[Root, Year]:
+  override def kind: String = "year"
+
   override def apply(root: Root, number: Int): Year = new Year(root, number)
   
   override def toString(number: Int) = f"$number%04d"

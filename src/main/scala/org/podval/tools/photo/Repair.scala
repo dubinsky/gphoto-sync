@@ -59,7 +59,7 @@ object Repair:
   private def repairDays(picture: Picture, dryRun: Boolean): Unit =
     PictureAudit(picture).dayShouldBe.foreach: dayShouldBe =>
       act(dryRun, s"moving $picture to $dayShouldBe"):
-        val originals: File = picture.root.configuration.byYearDirectory
+        val originals: File = picture.root.configuration.archive
         val from: String = s"${Album.relative(originals, picture.parent.directory)}/${picture.name}"
         val to: String = s"${Album.relative(originals, dayShouldBe.directory)}/${picture.name}"
         // Reject a bad curated file before any picture moves, so a later repair --days can retry.

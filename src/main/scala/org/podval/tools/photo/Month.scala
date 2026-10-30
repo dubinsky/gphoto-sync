@@ -12,6 +12,8 @@ final class Month private(override val parent: Year, val number: Int) extends It
   def day(num: Int): Day = Day(this, num)
 
 object Month extends NumberedMaker[Year, Month]:
+  override def kind: String = "month"
+
   override def apply(year: Year, number: Int): Month = new Month(year, number)
   
   override def toString(number: Int) = f"$number%02d"

@@ -13,7 +13,7 @@ final case class Publish(path: Option[Path], recursive: Boolean, dryRun: Boolean
     val root: Root = path.fold(Root.get)(_.root)
     val prefix: Option[String] = path.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
     Publish.run(
-      originals = root.configuration.byYearDirectory,
+      originals = root.configuration.archive,
       prefix = prefix,
       recursive = recursive,
       dryRun = dryRun,

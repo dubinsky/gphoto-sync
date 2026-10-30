@@ -8,13 +8,10 @@ import java.time.{DateTimeException, ZoneId}
 
 final case class Configuration(
   rootPath: String,
-  byYearDirectoryName: String,
-  uploadDirectoryName: String,
   zoneId: ZoneId
 ) derives CanEqual:
-  private def rootDirectory: File = File(Configuration.homeDirectory, rootPath)
-  def byYearDirectory: File = File(rootDirectory, byYearDirectoryName)
-  def uploadDirectory: File = File(rootDirectory, uploadDirectoryName)
+  def archive: File = File(Configuration.homeDirectory, rootPath)
+  def uploadDirectory: File = File(archive, UploadDirectory.directoryName)
 
 object Configuration:
   private def homeDirectory: File = Option(System.getenv("HOME"))
@@ -22,15 +19,15 @@ object Configuration:
     .getOrElse(throw IllegalArgumentException(s"no HOME environment variable"))
 
   private def default: Configuration = Configuration(
-    rootPath = "Pictures",
-    byYearDirectoryName = "originals",
-    uploadDirectoryName = "Upload",
+    rootPath = "Pictures/originals",
     zoneId = ZoneId.of("America/New_York")
   )
 
   private val configurationFileName: String = "org.podval.tools.photo.toml"
 
   private def configurationFile: File = File(File(homeDirectory, ".config"), configurationFileName)
+
+  private val retiredKeys: Seq[String] = Seq("byYearDirectoryName", "uploadDirectoryName")
 
   def read: Configuration =
     if !configurationFile.exists() then write(default)
@@ -48,9 +45,8 @@ object Configuration:
     val table: TomlTable =
       if text.isBlank then TomlTable.create()
       else JToml.jToml.readFromString(text)
+    rejectRetired(table)
     val rootPath: String = requiredString(table, "rootPath")
-    val byYearDirectoryName: String = requiredString(table, "byYearDirectoryName")
-    val uploadDirectoryName: String = requiredString(table, "uploadDirectoryName")
     val zone: String = requiredString(table, "zoneId")
     val zoneId: ZoneId =
       try ZoneId.of(zone)
@@ -58,18 +54,20 @@ object Configuration:
         throw IllegalArgumentException(s"zoneId '$zone' is not a zone", exception)
     Configuration(
       rootPath = rootPath,
-      byYearDirectoryName = byYearDirectoryName,
-      uploadDirectoryName = uploadDirectoryName,
       zoneId = zoneId
     )
 
   private[photo] def encode(configuration: Configuration): String =
     val table: TomlTable = TomlTable.create()
     table.put("rootPath", configuration.rootPath)
-    table.put("byYearDirectoryName", configuration.byYearDirectoryName)
-    table.put("uploadDirectoryName", configuration.uploadDirectoryName)
     table.put("zoneId", configuration.zoneId.toString)
     JToml.jToml.writeToString(table)
+
+  private def rejectRetired(table: TomlTable): Unit =
+    val present: Seq[String] = retiredKeys.filter(key => Option(table.get(key)).isDefined)
+    if present.nonEmpty then
+      val keys: String = present.mkString(" and ")
+      throw IllegalArgumentException(s"$keys must not be set; rootPath must be the archive")
 
   private def requiredString(table: TomlTable, key: String): String =
     Option(table.get(key)) match

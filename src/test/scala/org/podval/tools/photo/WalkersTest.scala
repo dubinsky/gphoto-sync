@@ -13,12 +13,24 @@ class WalkersTest extends AnyFlatSpec, Matchers:
       JFiles.createFile(directory.resolve("03.toml"))
       Files.listDirectories(directory.toFile).map(_.getName) shouldBe Seq(month.getFileName.toString)
 
+  it should "allow AGENTS.md and a dotfile beside a numeric child" in :
+    withTemp: directory =>
+      val month: Path = JFiles.createDirectory(directory.resolve("03"))
+      JFiles.createFile(directory.resolve("AGENTS.md"))
+      JFiles.createFile(directory.resolve(".keep"))
+      Files.listDirectories(directory.toFile).map(_.getName) shouldBe Seq(month.getFileName.toString)
+
   it should "reject any other stray file" in :
     withTemp: directory =>
       JFiles.createDirectory(directory.resolve("03"))
       JFiles.createFile(directory.resolve("03.toml"))
       JFiles.createFile(directory.resolve("readme.txt"))
       an [IllegalArgumentException] should be thrownBy Files.listDirectories(directory.toFile)
+
+  "Files.listFiles" should "reject a dot-directory in a picture directory" in :
+    withTemp: directory =>
+      JFiles.createDirectory(directory.resolve(".secret"))
+      an [IllegalArgumentException] should be thrownBy Files.listFiles(directory.toFile)
 
   "Pictures.group" should "skip a non-digit .toml and keep a digit sidecar" in :
     withTemp: directory =>

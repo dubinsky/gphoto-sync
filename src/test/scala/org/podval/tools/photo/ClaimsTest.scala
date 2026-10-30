@@ -499,8 +499,8 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
 
   private def rootFor(originals: File): Root =
     val home: File = File(System.getProperty("user.home"))
-    val rootPath: String = home.toPath.relativize(originals.getParentFile.toPath).toString
-    Root(Configuration(rootPath, originals.getName, "Upload", zone))
+    val rootPath: String = home.toPath.relativize(originals.toPath).toString
+    Root(Configuration(rootPath, zone))
 
   private def withOriginals(body: File => Unit): Unit =
     val originals: File = JFiles.createTempDirectory("claims").toFile

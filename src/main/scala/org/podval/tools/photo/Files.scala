@@ -30,10 +30,15 @@ object Files:
   
   def mkDirs(file: File): Unit = file.mkdirs()
 
+  // Not stray: album .toml files, the exact name AGENTS.md, and dotfiles.
+  // allowedBesideDirectories is that rule. Any other file fails lsd.
+  private def allowedBesideDirectories(file: File): Boolean =
+    val name: String = file.getName
+    name.endsWith(".toml") || name == "AGENTS.md" || name.startsWith(".")
+
   def listDirectories(directory: File): Seq[File] =
     val (directories: Seq[File], files: Seq[File]) = list(directory)
-    // Album .toml files are not stray, so lsd leaves them in place.
-    val stray: Seq[File] = files.filterNot(_.getName.endsWith(".toml"))
+    val stray: Seq[File] = files.filterNot(allowedBesideDirectories)
     require(stray.isEmpty, stray)
     directories.sortBy(_.getName)
 

@@ -12,6 +12,8 @@ final class Day private(override val parent: Month, val number: Int) extends Ite
   def date: LocalDate = LocalDate.of(parent.parent.number, parent.number, number)
 
 object Day extends NumberedMaker[Month, Day]:
+  override def kind: String = "day"
+
   override def apply(month: Month, number: Int): Day = new Day(month, number)
   
   override def toString(number: Int) = f"$number%02d"

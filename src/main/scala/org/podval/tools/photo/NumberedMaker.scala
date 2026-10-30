@@ -4,13 +4,21 @@ trait NumberedMaker[
   Parent <: Directory,
   What <: ItemDirectory
 ]:
-  final def lsd(parent: Parent): Seq[Directory] = Files.listDirectories(parent.directory).map: file =>
-    val name: String = file.getName
-    require(name == toString(name.toInt))
-    apply(parent, name.toInt)
+  def kind: String
+
+  final def lsd(parent: Parent): Seq[Directory] =
+    Files.listDirectories(parent.directory).flatMap: file =>
+      val name: String = file.getName
+      if name.startsWith(".") then None
+      else
+        val number: Int = name.toInt
+        require(name == toString(number))
+        Some(apply(parent, number))
 
   final def apply(parent: Parent, name: String): What =
-    apply(parent, name.toInt)
+    if name.startsWith(".") then
+      throw IllegalArgumentException(s"'$name' is not a $kind")
+    else apply(parent, name.toInt)
 
   def apply(parent: Parent, number: Int): What
 
