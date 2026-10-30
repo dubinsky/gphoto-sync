@@ -86,10 +86,8 @@ object Requests:
   private[photo] def requireId(id: String): Unit =
     if !id.matches("r[1-9][0-9]*") then throw IllegalArgumentException("request id is not valid")
 
-  private def parse(text: String): Seq[Row] = rowsOf(TextLines.dataLines(text))
-
-  private def rowsOf(lines: Seq[String]): Seq[Row] =
-    lines.filter(_.nonEmpty).foldLeft(Seq.empty[Row]): (rows, line) =>
+  private def parse(text: String): Seq[Row] =
+    TextLines.dataLines(text).filter(_.nonEmpty).foldLeft(Seq.empty[Row]): (rows, line) =>
       val row: Row = parseRow(line)
       if rows.exists(_.id == row.id) then throw IllegalArgumentException("duplicate request id")
       rows :+ row
