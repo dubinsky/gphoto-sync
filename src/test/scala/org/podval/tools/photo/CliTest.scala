@@ -491,8 +491,8 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("serve")) shouldBe Cli.ServeFront
     Cli.parse(List("shell"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
     Cli.parse(List("shell", "--help"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
-    Cli.parse(List("serve"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
-    Cli.parse(List("serve", "--help"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
+    Cli.parse(List("serve"), Cli.Front.Shell) shouldBe Cli.Usage("unknown command 'serve'")
+    Cli.parse(List("serve", "--help"), Cli.Front.Shell) shouldBe Cli.Usage("unknown command 'serve'")
     Cli.parse(List("shell"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
     Cli.parse(List("shell", "--help"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
     Cli.parse(List("serve"), Cli.Front.Serve) shouldBe Cli.Usage("already running")

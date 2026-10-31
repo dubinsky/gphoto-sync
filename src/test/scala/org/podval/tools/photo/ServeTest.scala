@@ -227,6 +227,21 @@ class ServeTest extends AnyFlatSpec, Matchers:
         pwdRoot
       )
 
+  it should "escape a backspace so the echoed id round-trips" in :
+    prepared: (_, session) =>
+      val (code, out, err) = run(session, Seq("""{"id":"a\b","argv":["pwd"]}"""))
+      code shouldBe 0
+      err shouldBe ""
+      val line: String = responses(out).head
+      line shouldBe """{"id":"a\b","ok":true,"text":"/\n","value":null}"""
+      line should not include ("\b")
+      Serve.read(line) match
+        case Left(problem) =>
+          problem.message shouldBe "malformed request"
+          problem.id shouldBe Some("a\b")
+        case Right(other) =>
+          fail(other.toString)
+
   it should "let an unexpected exception leave serve" in :
     prepared: (_, session) =>
       val out: ByteArrayOutputStream = new ByteArrayOutputStream
@@ -246,9 +261,9 @@ class ServeTest extends AnyFlatSpec, Matchers:
       "ok" -> Json.Bool(true),
       "no" -> Json.Bool(false),
       "z" -> Json.Null,
-      "s" -> Json.Str("a\"b\\c\n\t\r"),
+      "s" -> Json.Str("a\"b\\c\n\t\r\b\f\u0001"),
       "a" -> Json.Arr(Seq(Json.Long(1), Json.Str("x")))
-    ))) shouldBe """{"n":0,"neg":-2,"ok":true,"no":false,"z":null,"s":"a\"b\\c\n\t\r","a":[1,"x"]}"""
+    ))) shouldBe """{"n":0,"neg":-2,"ok":true,"no":false,"z":null,"s":"a\"b\\c\n\t\r\b\f\u0001","a":[1,"x"]}"""
 
   private def withId(id: String, line: String): String =
     """{"id":"""" + id + "\"," + line.drop(1)

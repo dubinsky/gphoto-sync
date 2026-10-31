@@ -2,7 +2,6 @@ package org.podval.tools.photo
 
 import scala.annotation.tailrec
 
-// NDJSON for the serve front. The Json enum stays in Result.scala; this object only reads requests and writes responses.
 private[photo] object Serve:
   private[photo] final case class Request(id: Option[String], argv: List[String])
   private[photo] final case class Problem(id: Option[String], message: String)
@@ -15,38 +14,13 @@ private[photo] object Serve:
     if line.forall(_.isWhitespace) then Left(Problem(None, emptyRequest))
     else
       val left: String = skip(line)
-      if left.startsWith("{") then parseTop(left.drop(1), Nil)
-      else Left(Problem(None, malformed))
-
-  @tailrec
-  private def parseTop(rest: String, acc: List[(String, Node)]): Either[Problem, Request] =
-    val left: String = skip(rest)
-    if left.startsWith("}") && acc.isEmpty then finish(Nil, left.drop(1))
-    else parseKey(left) match
-      case Left(_) =>
-        Left(Problem(idOf(acc), malformed))
-      case Right((key, afterKey)) =>
-        val afterColon: String = skip(afterKey)
-        if !afterColon.startsWith(":") then Left(Problem(idOf(acc), malformed))
-        else parseValue(afterColon.drop(1)) match
-          case Left(_) =>
-            Left(Problem(idOf(acc), malformed))
-          case Right((value, afterValue)) =>
-            val more: String = skip(afterValue)
-            val next: List[(String, Node)] = (key, value) :: acc
-            if more.startsWith("}") then finish(next.reverse, more.drop(1))
-            else if more.startsWith(",") then parseTop(more.drop(1), next)
-            else Left(Problem(idOf(next), malformed))
-
-  private def finish(fields: List[(String, Node)], rest: String): Either[Problem, Request] =
-    val id: Option[String] = idOf(fields)
-    if skip(rest).nonEmpty then Left(Problem(id, malformed))
-    else interpret(Node.Obj(fields), id)
-
-  private def idOf(fields: List[(String, Node)]): Option[String] =
-    fields.filter(_._1 == "id") match
-      case (_, Node.Str(value)) :: Nil => Some(value)
-      case _ => None
+      if !left.startsWith("{") then Left(Problem(None, malformed))
+      else fields(left.drop(1), Seen(), take = true, allowEmpty = true) match
+        case Walk.Failed(seen) =>
+          Left(Problem(echoed(seen), malformed))
+        case Walk.Done(seen, rest) =>
+          if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
+          else request(seen)
 
   private[photo] def render(
     id: Option[String],
@@ -77,88 +51,185 @@ private[photo] object Serve:
       ch match
         case '\\' => acc.append("\\\\")
         case '"' => acc.append("\\\"")
+        case '\b' => acc.append("\\b")
+        case '\f' => acc.append("\\f")
         case '\n' => acc.append("\\n")
         case '\r' => acc.append("\\r")
         case '\t' => acc.append("\\t")
-        case other => acc.append(other)
+        case other if other < ' ' =>
+          acc.append("\\u00")
+          acc.append(hexDigit(other.toInt / 16))
+          acc.append(hexDigit(other.toInt % 16))
+        case other =>
+          acc.append(other)
     "\"" + body.toString + "\""
 
-  private enum Node:
-    case Null
-    case Bool(value: Boolean)
-    case Num
-    case Str(value: String)
-    case Arr(values: List[Node])
-    case Obj(fields: List[(String, Node)])
+  private def hexDigit(n: Int): Char =
+    if n < 10 then ('0' + n).toChar else ('a' + (n - 10)).toChar
 
-  private def interpret(node: Node, id: Option[String]): Either[Problem, Request] = node match
-    case Node.Obj(fields) =>
-      val argvFields: List[(String, Node)] = fields.filter(_._1 == "argv")
-      val idCount: Int = fields.count(_._1 == "id")
-      val other: Boolean = fields.exists(field => field._1 != "id" && field._1 != "argv")
-      val idShapeOk: Boolean = idCount == 0 || id.isDefined
-      if other || !idShapeOk || argvFields.length != 1 then Left(Problem(id, malformed))
-      else argvFields.head._2 match
-        case Node.Arr(values) =>
-          strings(values) match
-            case Some(argv) => Right(Request(id, argv))
-            case None => Left(Problem(id, malformed))
-        case _ =>
-          Left(Problem(id, malformed))
-    case _ =>
-      Left(Problem(None, malformed))
+  // Only a string id and a string argv are kept. Every other JSON value is skipped or rejected.
+  private final case class Seen(
+    id: Option[String] = None,
+    ids: Int = 0,
+    argv: Option[List[String]] = None,
+    argvs: Int = 0,
+    other: Boolean = false
+  )
 
-  private def strings(values: List[Node]): Option[List[String]] =
-    @tailrec
-    def loop(rest: List[Node], acc: List[String]): Option[List[String]] = rest match
-      case Nil => Some(acc.reverse)
-      case Node.Str(value) :: tail => loop(tail, value :: acc)
-      case _ => None
-    loop(values, Nil)
+  private enum Walk:
+    case Done(seen: Seen, rest: String)
+    case Failed(seen: Seen)
 
-  private def skip(rest: String): String =
-    rest.dropWhile(ch => ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r')
+  private enum ArrayRead:
+    case Strings(values: List[String], rest: String)
+    case Mixed(rest: String)
+    case Bad
 
-  private def parseValue(rest: String): Either[String, (Node, String)] =
+  private def echoed(seen: Seen): Option[String] =
+    if seen.ids == 1 then seen.id else None
+
+  private def request(seen: Seen): Either[Problem, Request] =
+    val id: Option[String] = echoed(seen)
+    val idOk: Boolean = seen.ids == 0 || id.isDefined
+    if seen.other || !idOk || seen.argvs != 1 then Left(Problem(id, malformed))
+    else seen.argv match
+      case Some(argv) => Right(Request(id, argv))
+      case None => Left(Problem(id, malformed))
+
+  // allowEmpty is true only before the first field, so a trailing comma is not an empty object.
+  @tailrec
+  private def fields(rest: String, seen: Seen, take: Boolean, allowEmpty: Boolean): Walk =
     val left: String = skip(rest)
-    if left.isEmpty then Left(malformed)
-    else if left.startsWith("{") then parseObject(left.drop(1))
-    else if left.startsWith("[") then parseArray(left.drop(1))
-    else if left.startsWith("\"") then parseString(left.drop(1), "").map((text, more) => (Node.Str(text), more))
-    else if left.startsWith("true") then Right((Node.Bool(true), left.drop(4)))
-    else if left.startsWith("false") then Right((Node.Bool(false), left.drop(5)))
-    else if left.startsWith("null") then Right((Node.Null, left.drop(4)))
+    if allowEmpty && left.startsWith("}") then Walk.Done(seen, left.drop(1))
+    else parseKey(left) match
+      case None =>
+        Walk.Failed(seen)
+      case Some((key, afterKey)) =>
+        val afterColon: String = skip(afterKey)
+        if !afterColon.startsWith(":") then Walk.Failed(seen)
+        else accept(key, afterColon.drop(1), seen, take) match
+          case None =>
+            Walk.Failed(seen)
+          case Some((next, afterValue)) =>
+            val more: String = skip(afterValue)
+            if more.startsWith("}") then Walk.Done(next, more.drop(1))
+            else if more.startsWith(",") then fields(more.drop(1), next, take, allowEmpty = false)
+            else Walk.Failed(next)
+
+  private def accept(key: String, rest: String, seen: Seen, take: Boolean): Option[(Seen, String)] =
+    if !take then skipValue(rest).map(more => (seen, more))
+    else key match
+      case "id" => takeId(rest, seen)
+      case "argv" => takeArgv(rest, seen)
+      case _ => skipValue(rest).map(more => (seen.copy(other = true), more))
+
+  private def takeId(rest: String, seen: Seen): Option[(Seen, String)] =
+    val left: String = skip(rest)
+    if left.startsWith("\"") then
+      parseString(left.drop(1), "") match
+        case Left(_) => None
+        case Right((text, more)) => Some((seen.copy(id = Some(text), ids = seen.ids + 1), more))
+    else skipValue(left).map(more => (seen.copy(ids = seen.ids + 1), more))
+
+  private def takeArgv(rest: String, seen: Seen): Option[(Seen, String)] =
+    val left: String = skip(rest)
+    if !left.startsWith("[") then skipValue(left).map(more => (seen.copy(argvs = seen.argvs + 1), more))
+    else elements(left.drop(1), Nil, mixed = false, allowEmpty = true) match
+      case ArrayRead.Bad => None
+      case ArrayRead.Strings(values, more) =>
+        Some((seen.copy(argv = Some(values), argvs = seen.argvs + 1), more))
+      case ArrayRead.Mixed(more) =>
+        Some((seen.copy(argvs = seen.argvs + 1), more))
+
+  private def skipValue(rest: String): Option[String] =
+    val left: String = skip(rest)
+    if left.isEmpty then None
+    else if left.startsWith("{") then
+      fields(left.drop(1), Seen(), take = false, allowEmpty = true) match
+        case Walk.Done(_, more) => Some(more)
+        case Walk.Failed(_) => None
+    else if left.startsWith("[") then skipArray(left.drop(1))
+    else if left.startsWith("\"") then
+      parseString(left.drop(1), "") match
+        case Right((_, more)) => Some(more)
+        case Left(_) => None
+    else if left.startsWith("true") then Some(left.drop(4))
+    else if left.startsWith("false") then Some(left.drop(5))
+    else if left.startsWith("null") then Some(left.drop(4))
     else if left.startsWith("-") || left.head.isDigit then parseNumber(left)
-    else Left(malformed)
+    else None
 
-  private def parseNumber(rest: String): Either[String, (Node, String)] =
+  private def skipArray(rest: String): Option[String] =
+    elements(rest, Nil, mixed = false, allowEmpty = true) match
+      case ArrayRead.Bad => None
+      case ArrayRead.Strings(_, more) => Some(more)
+      case ArrayRead.Mixed(more) => Some(more)
+
+  @tailrec
+  private def elements(
+    rest: String,
+    acc: List[String],
+    mixed: Boolean,
+    allowEmpty: Boolean
+  ): ArrayRead =
+    val left: String = skip(rest)
+    if allowEmpty && left.startsWith("]") then
+      if mixed then ArrayRead.Mixed(left.drop(1)) else ArrayRead.Strings(acc.reverse, left.drop(1))
+    else element(left) match
+      case None =>
+        ArrayRead.Bad
+      case Some((text, after)) =>
+        val nextMixed: Boolean = mixed || text.isEmpty
+        val next: List[String] = text match
+          case Some(value) if !nextMixed => value :: acc
+          case _ => Nil
+        val more: String = skip(after)
+        if more.startsWith("]") then
+          if nextMixed then ArrayRead.Mixed(more.drop(1)) else ArrayRead.Strings(next.reverse, more.drop(1))
+        else if more.startsWith(",") then elements(more.drop(1), next, nextMixed, allowEmpty = false)
+        else ArrayRead.Bad
+
+  private def element(rest: String): Option[(Option[String], String)] =
+    val left: String = skip(rest)
+    if left.startsWith("\"") then
+      parseString(left.drop(1), "") match
+        case Right((text, more)) => Some((Some(text), more))
+        case Left(_) => None
+    else skipValue(left).map(more => (None, more))
+
+  private def parseKey(rest: String): Option[(String, String)] =
+    val left: String = skip(rest)
+    if !left.startsWith("\"") then None
+    else parseString(left.drop(1), "") match
+      case Right((text, more)) => Some((text, more))
+      case Left(_) => None
+
+  private def parseNumber(rest: String): Option[String] =
     val body: String = if rest.startsWith("-") then rest.drop(1) else rest
-    integer(body).flatMap: afterInt =>
-      fraction(afterInt).flatMap: afterFrac =>
-        exponent(afterFrac).map(afterExp => (Node.Num, afterExp))
+    integer(body).flatMap(fraction).flatMap(exponent)
 
-  private def integer(rest: String): Either[String, String] =
-    if rest.isEmpty || !rest.head.isDigit then Left(malformed)
+  private def integer(rest: String): Option[String] =
+    if rest.isEmpty || !rest.head.isDigit then None
     else if rest.head == '0' then
-      if rest.drop(1).headOption.exists(_.isDigit) then Left(malformed)
-      else Right(rest.drop(1))
+      if rest.drop(1).headOption.exists(_.isDigit) then None
+      else Some(rest.drop(1))
     else digits(rest)
 
-  private def fraction(rest: String): Either[String, String] =
-    if !rest.startsWith(".") then Right(rest)
+  private def fraction(rest: String): Option[String] =
+    if !rest.startsWith(".") then Some(rest)
     else digits(rest.drop(1))
 
-  private def exponent(rest: String): Either[String, String] =
-    if !rest.startsWith("e") && !rest.startsWith("E") then Right(rest)
+  private def exponent(rest: String): Option[String] =
+    if !rest.startsWith("e") && !rest.startsWith("E") then Some(rest)
     else
       val afterMark: String = rest.drop(1)
       val afterSign: String =
         if afterMark.startsWith("+") || afterMark.startsWith("-") then afterMark.drop(1) else afterMark
       digits(afterSign)
 
-  private def digits(rest: String): Either[String, String] =
+  private def digits(rest: String): Option[String] =
     val (taken, more) = rest.span(_.isDigit)
-    if taken.isEmpty then Left(malformed) else Right(more)
+    if taken.isEmpty then None else Some(more)
 
   @tailrec
   private def parseString(rest: String, acc: String): Either[String, (String, String)] =
@@ -185,44 +256,5 @@ private[photo] object Serve:
     case 'b' => Some("\b")
     case _ => None
 
-  private def parseObject(rest: String): Either[String, (Node, String)] =
-    val left: String = skip(rest)
-    if left.startsWith("}") then Right((Node.Obj(Nil), left.drop(1)))
-    else parseFields(left, Nil)
-
-  @tailrec
-  private def parseFields(rest: String, acc: List[(String, Node)]): Either[String, (Node, String)] =
-    parseKey(rest) match
-      case Left(message) => Left(message)
-      case Right((key, afterKey)) =>
-        val afterColon: String = skip(afterKey)
-        if !afterColon.startsWith(":") then Left(malformed)
-        else parseValue(afterColon.drop(1)) match
-          case Left(message) => Left(message)
-          case Right((value, afterValue)) =>
-            val more: String = skip(afterValue)
-            val next: List[(String, Node)] = (key, value) :: acc
-            if more.startsWith("}") then Right((Node.Obj(next.reverse), more.drop(1)))
-            else if more.startsWith(",") then parseFields(more.drop(1), next)
-            else Left(malformed)
-
-  private def parseKey(rest: String): Either[String, (String, String)] =
-    val left: String = skip(rest)
-    if left.startsWith("\"") then parseString(left.drop(1), "")
-    else Left(malformed)
-
-  private def parseArray(rest: String): Either[String, (Node, String)] =
-    val left: String = skip(rest)
-    if left.startsWith("]") then Right((Node.Arr(Nil), left.drop(1)))
-    else parseElements(left, Nil)
-
-  @tailrec
-  private def parseElements(rest: String, acc: List[Node]): Either[String, (Node, String)] =
-    parseValue(rest) match
-      case Left(message) => Left(message)
-      case Right((value, after)) =>
-        val more: String = skip(after)
-        val next: List[Node] = value :: acc
-        if more.startsWith("]") then Right((Node.Arr(next.reverse), more.drop(1)))
-        else if more.startsWith(",") then parseElements(more.drop(1), next)
-        else Left(malformed)
+  private def skip(rest: String): String =
+    rest.dropWhile(ch => ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r')

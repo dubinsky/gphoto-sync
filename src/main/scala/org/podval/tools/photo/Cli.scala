@@ -281,7 +281,7 @@ object Cli:
               Usage(s"extra argument '$extra'")
     case "serve" :: rest =>
       front match
-        case Front.Shell | Front.Serve =>
+        case Front.Serve =>
           Usage("already running")
         case Front.OneShot =>
           rest match
@@ -289,12 +289,17 @@ object Cli:
               ServeFront
             case extra :: _ =>
               Usage(s"extra argument '$extra'")
+        case Front.Shell =>
+          lookup("serve", rest, front)
     case "agent" :: rest =>
       parseAgent(rest, front)
     case name :: rest =>
-      registry.find(_.name == name) match
-        case None => Usage(s"unknown command '$name'")
-        case Some(command) => parseCommand(command, rest, front)
+      lookup(name, rest, front)
+
+  private def lookup(name: String, rest: List[String], front: Front): Outcome =
+    registry.find(_.name == name) match
+      case None => Usage(s"unknown command '$name'")
+      case Some(command) => parseCommand(command, rest, front)
 
   private[photo] def toOperation(parsed: Parsed): Operation = parsed match
     case Lsd(directory, long) =>
