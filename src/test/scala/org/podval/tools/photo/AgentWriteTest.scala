@@ -125,6 +125,58 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
+  it should "strip a slash-date leftover and reject a name Album.read would misread" in :
+    withArchive: archive =>
+      mkdir(archive, "2010/07/19")
+      writeCatalog(
+        archive,
+        "album\talbTo20\t1\t2010/07/19 to-20",
+        "item\talbTo20\tpic.jpg\t2010-07-19\tkeyTo20\t-",
+        "album\talbWord\t1\t2010/07/19 album",
+        "item\talbWord\tpic.jpg\t2010-07-19\tkeyWord\t-",
+        "album\talbMonthWord\t1\t2010/07/19 July",
+        "item\talbMonthWord\tpic.jpg\t2010-07-19\tkeyMonthWord\t-",
+        "album\talbDayPicnic\t1\t2010/07/19 19 Picnic",
+        "item\talbDayPicnic\tpic.jpg\t2010-07-19\tkeyDayPicnic\t-"
+      )
+      val session: Session = sessionFor(archive)
+      val to20: String = usage(session, "agent", "album-file", "2010/07/19 to-20")
+      to20 shouldBe "leftover is not a name"
+      noIds(to20, "albTo20", "keyTo20")
+      val word: String = usage(session, "agent", "album-file", "2010/07/19 album")
+      word shouldBe "leftover is not a name"
+      noIds(word, "albWord", "keyWord")
+      File(archive, "2010/07/19/to-20.toml").exists shouldBe false
+      File(archive, "2010/07/19/album.toml").exists shouldBe false
+      partials(archive) shouldBe Seq.empty[String]
+      val (_, julyResult) = exec(session, "agent", "album-file", "--no-request", "2010/07/19 July")
+      julyResult match
+        case Result.Ok(text, value) =>
+          noIds(text, "albMonthWord", "keyMonthWord")
+          field(value, "path") shouldBe Json.Str("2010/07/19/album.toml")
+          field(value, "pathTitle") shouldBe Json.Str("2010/07/19")
+        case other =>
+          fail(other.toString)
+      val july: Album = Album.read(archive, File(archive, "2010/07/19/album.toml"))
+      val julyParsed: Title.Parsed = Title.parse(july.title).getOrElse(fail(july.title))
+      july.span.map(Title.renderSpan) shouldBe Some("2010/07/19")
+      julyParsed.span.map(Title.renderSpan) shouldBe Some("2010/07/19")
+      julyParsed.name.isEmpty shouldBe true
+      val (_, picnicResult) = exec(session, "agent", "album-file", "--no-request", "2010/07/19 19 Picnic")
+      picnicResult match
+        case Result.Ok(text, value) =>
+          noIds(text, "albDayPicnic", "keyDayPicnic")
+          field(value, "path") shouldBe Json.Str("2010/07/19/Picnic.toml")
+          field(value, "pathTitle") shouldBe Json.Str("2010/07/19/Picnic")
+        case other =>
+          fail(other.toString)
+      val picnic: Album = Album.read(archive, File(archive, "2010/07/19/Picnic.toml"))
+      val picnicParsed: Title.Parsed = Title.parse(picnic.title).getOrElse(fail(picnic.title))
+      picnic.span.map(Title.renderSpan) shouldBe Some("2010/07/19")
+      picnicParsed.span.map(Title.renderSpan) shouldBe Some("2010/07/19")
+      picnicParsed.name shouldBe Some("Picnic")
+      partials(archive) shouldBe Seq.empty[String]
+
   it should "use all for a month inside the cap and per-day lines when a pictured day has no match" in :
     withArchive: archive =>
       touch(File(archive, "2010/07/01"), "2412.jpg")

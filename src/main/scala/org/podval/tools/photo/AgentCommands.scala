@@ -703,9 +703,12 @@ private[photo] object AgentCommands:
         // A slash date plus more words is not a root file. A name inside that token stays.
         tokens.headOption.flatMap(token => Title.parse(token).filter(_.span.isDefined)) match
           case Some(lead) =>
+            // The slash token is already out. Strip an item year, an item day, and one month from the name only.
             val tail: String = tokens.drop(1).mkString(" ")
-            val name: String = lead.name.fold(tail)(label => if tail.isEmpty then label else s"$label $tail")
+            val raw: String = lead.name.fold(tail)(label => if tail.isEmpty then label else s"$label $tail")
+            val name: String = leftoverName(raw, album)
             if name.headOption.exists(_.isDigit) then throw IllegalArgumentException("leftover starts with a digit")
+            if name.nonEmpty && !Title.legalName(name) then throw IllegalArgumentException("leftover is not a name")
             (parsedDays(album, Title.Parsed(lead.span, Option.when(name.nonEmpty)(name))), false)
           case None =>
             val name: String = leftoverName(working, album)
