@@ -86,7 +86,8 @@ object Pictures:
 
   private val droppedPrefixes: Seq[String] = Seq("MVIMG_", "PXL_", "IMG_", "VID_", "MVI_")
 
-  private def dropOnePrefix(stem: String): String =
+  // One list. Match calls this; albums.md's longest prefix is the same find.
+  private[photo] def dropOnePrefix(stem: String): String =
     droppedPrefixes
       .find(prefix => stem.take(prefix.length).equalsIgnoreCase(prefix))
       .fold(stem)(prefix => stem.drop(prefix.length))

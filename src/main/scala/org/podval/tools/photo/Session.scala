@@ -6,11 +6,20 @@ import scala.annotation.tailrec
 enum PathStyle:
   case OneShot, Cursor
 
+// The bot replaces catalog.txt as a whole file, so size and mtime are the generation.
+// A failed parse is not stored. Requests and results are not cached.
+private[photo] final case class CatalogCache(
+  size: Long,
+  mtimeMillis: Long,
+  albums: Seq[Catalog.Album]
+)
+
 final case class Session(
   root: Root,
   style: PathStyle,
   cursor: Directory,
-  private[photo] val index: DirectoryIndex = DirectoryIndex.empty
+  private[photo] val index: DirectoryIndex = DirectoryIndex.empty,
+  private[photo] val catalogCache: Option[CatalogCache] = None
 ):
   def prompt: String =
     val shown: String = Session.display(cursor)
@@ -58,6 +67,19 @@ final case class Session(
 
   private[photo] def dropAll: Session =
     if index.isEmpty then this else copy(index = DirectoryIndex.empty)
+
+  // Stat first. A hit does not read. Catalog.read throws before the cache is stored.
+  private[photo] def loadCatalog: (Session, Seq[Catalog.Album]) =
+    val file: File = File(File(root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    if !file.isFile then throw IllegalArgumentException("catalog is absent")
+    val size: Long = file.length
+    val mtime: Long = file.lastModified
+    catalogCache match
+      case Some(cache) if cache.size == size && cache.mtimeMillis == mtime =>
+        (this, cache.albums)
+      case _ =>
+        val albums: Seq[Catalog.Album] = Catalog.read(file)
+        (copy(catalogCache = Some(CatalogCache(size, mtime, albums))), albums)
 
   private def parentOf(path: Path): Directory = path match
     case _: Root =>

@@ -36,12 +36,12 @@ class ShellTest extends AnyFlatSpec, Matchers:
     Cli.splitLine("") shouldBe Right(Nil)
     Cli.splitLine(" \t ") shouldBe Right(Nil)
 
-  "the shell help" should "list help, cd, pwd, and exit, and not shell" in :
+  "the shell help" should "list help, agent, cd, pwd, and exit, and not shell" in :
     Cli.parse(List("--help"), Cli.Front.Shell) match
       case Cli.Help(text) =>
         text.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
           "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync",
-          "login", "status", "logout", "help", "cd", "pwd", "exit"
+          "login", "status", "logout", "help", "agent", "cd", "pwd", "exit"
         )
       case other => fail(other.toString)
 
@@ -215,7 +215,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
       out should include ("pwd  print the cursor; only available in the shell and in serve")
       out should include ("exit  leave the session; only available in the shell and in serve")
       out.linesIterator.exists(_.startsWith("shell")) shouldBe false
-      out.linesIterator.exists(_.startsWith("agent")) shouldBe false
+      out.linesIterator.exists(_.startsWith("agent")) shouldBe true
       out.linesIterator.exists(_.startsWith("serve")) shouldBe false
       out should endWith ("/\n")
       err should include ("> ")

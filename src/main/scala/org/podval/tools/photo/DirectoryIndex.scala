@@ -28,7 +28,10 @@ private[photo] final case class DirEntry(
   fingerprint: Vector[FileStamp],
   grouped: Seq[(String, Set[String])],
   albums: Seq[Album.Loaded],
-  listing: Option[Seq[ListedPicture]]
+  listing: Option[Seq[ListedPicture]],
+  // None means this fill did not parse sidecars. agent stems stores Some so a warm hit
+  // does not list the day again. Listing stays separate so EXIF is not the sidecar path.
+  sidecars: Option[Map[String, Metadata]] = None
 )
 
 // In-memory for the life of the session. One-shot never reads or fills it.

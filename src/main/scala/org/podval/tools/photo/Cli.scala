@@ -44,6 +44,11 @@ object Cli:
   private[photo] final case class CdArgs(path: Option[String]) extends Parsed
   private[photo] case object PwdArgs extends Parsed
   private[photo] case object ExitArgs extends Parsed
+  private[photo] final case class AgentStemsArgs(day: String) extends Parsed
+  private[photo] case object AgentCatalogArgs extends Parsed
+  private[photo] final case class AgentItemsArgs(id: Option[String], album: String) extends Parsed
+  private[photo] final case class AgentMatchArgs(id: Option[String], album: String) extends Parsed
+  private[photo] final case class AgentIncludeArgs(span: Option[String], paths: Seq[String]) extends Parsed
 
   private[photo] final case class Run(parsed: Parsed) extends Outcome
   private[photo] case object ShellFront extends Outcome
@@ -197,6 +202,8 @@ object Cli:
               ShellFront
             case extra :: _ =>
               Usage(s"extra argument '$extra'")
+    case "agent" :: rest =>
+      parseAgent(rest, front)
     case name :: rest =>
       registry.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -242,6 +249,16 @@ object Cli:
       Pwd
     case ExitArgs =>
       Exit
+    case AgentStemsArgs(day) =>
+      AgentStems(day)
+    case AgentCatalogArgs =>
+      AgentCatalog
+    case AgentItemsArgs(id, album) =>
+      AgentItems(id, album)
+    case AgentMatchArgs(id, album) =>
+      AgentMatch(id, album)
+    case AgentIncludeArgs(span, paths) =>
+      AgentInclude(span, paths)
 
   private def finish(command: Command, values: Values, positionals: List[String], front: Front): Outcome =
     if command.name == "help" then helpText(positionals, front)
@@ -254,6 +271,8 @@ object Cli:
   private def helpText(positionals: List[String], front: Front): Outcome = positionals match
     case Nil =>
       Help(topHelp(front))
+    case name :: Nil if name == "agent" =>
+      Help(agentHelp)
     case name :: Nil =>
       registry.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -360,6 +379,9 @@ object Cli:
     (expected, args) match
       case (Nil, Nil) => None
       case (Nil, extra :: _) => Some(s"extra argument '$extra'")
+      // Rest has no "too many". A flag after a positional is still an extra argument.
+      case (Rest(_) :: _, rest) =>
+        rest.find(_.startsWith("-")).map(token => s"extra argument '$token'")
       case (Required(name) :: _, Nil) => Some(s"missing $name")
       case (Optional(_) :: _, Nil) => None
       case (_ :: restExpected, _ :: restArgs) => checkPositionals(restExpected, restArgs)
@@ -372,18 +394,35 @@ object Cli:
       "manipulates photo archive",
       ""
     )
-    val listed: List[Command] = front match
+    val sessionCommands: List[Command] = front match
       case Front.OneShot =>
-        commands ++ List(helpCommand)
+        Nil
       case Front.Shell =>
-        commands ++ List(helpCommand, cdCommand, pwdCommand, exitCommand)
-    val lines: List[String] = listed.map(command => s"${command.name}  ${command.help}")
-    val body: List[String] = front match
-      case Front.OneShot =>
-        lines :+ shellLine
-      case Front.Shell =>
-        lines
-    (header ++ body).mkString("\n")
+        List(cdCommand, pwdCommand, exitCommand)
+    val shellLines: List[String] = front match
+      case Front.OneShot => List(shellLine)
+      case Front.Shell => Nil
+    val lines: List[String] =
+      (commands ++ List(helpCommand)).map(lineOf) ++
+        shellLines ++
+        List(agentLine) ++
+        sessionCommands.map(lineOf)
+    (header ++ lines).mkString("\n")
+
+  private def lineOf(command: Command): String = s"${command.name}  ${command.help}"
+
+  private def parseAgent(args: List[String], front: Front): Outcome = args match
+    case Nil =>
+      Usage("missing agent command")
+    case ("--help" | "-h") :: _ =>
+      Help(agentHelp)
+    case name :: rest =>
+      agentCommands.find(_.name == name) match
+        case None => Usage(s"unknown command '$name'")
+        case Some(command) => parseCommand(command, rest, front)
+
+  private def agentHelp: String =
+    (List(agentLine, "") ++ agentCommands.map(lineOf)).mkString("\n")
 
   private def commandHelp(command: Command): String =
     val positionals: String =
@@ -405,6 +444,7 @@ object Cli:
   private def describePositional(positional: Positional): String = positional match
     case Required(name) => s"$name  required"
     case Optional(name) => s"$name  optional"
+    case Rest(name) => s"$name  rest"
 
   private def describeFlag(flag: Flag): String =
     val names: String = flag.alias match
@@ -418,6 +458,7 @@ object Cli:
   private sealed trait Positional
   private final case class Required(name: String) extends Positional
   private final case class Optional(name: String) extends Positional
+  private final case class Rest(name: String) extends Positional
 
   private sealed trait FlagKind
   private case object BooleanKind extends FlagKind
@@ -584,6 +625,46 @@ object Cli:
     )
   )
 
+  private val albumIdFlag: Flag = Flag("id", None, TextKind, "catalog album id")
+
+  private val agentCommands: List[Command] = List(
+    Command(
+      name = "stems",
+      help = "list one day's grouped stems",
+      positionals = List(Required("day")),
+      flags = Nil,
+      build = (_, args) => AgentStemsArgs(args.head)
+    ),
+    Command(
+      name = "catalog",
+      help = "list catalog albums",
+      positionals = Nil,
+      flags = Nil,
+      build = (_, _) => AgentCatalogArgs
+    ),
+    Command(
+      name = "items",
+      help = "list catalog items for one album",
+      positionals = List(Required("album")),
+      flags = List(albumIdFlag),
+      build = (values, args) => AgentItemsArgs(values.texts.get("id"), args.head)
+    ),
+    Command(
+      name = "match",
+      help = "match catalog items to local stems",
+      positionals = List(Required("album")),
+      flags = List(albumIdFlag),
+      build = (values, args) => AgentMatchArgs(values.texts.get("id"), args.head)
+    ),
+    Command(
+      name = "include",
+      help = "compress include lines",
+      positionals = List(Rest("year/month/day/stem")),
+      flags = List(Flag("span", None, TextKind, "title span; absent means a curated album")),
+      build = (values, args) => AgentIncludeArgs(values.texts.get("span"), args)
+    )
+  )
+
   private val helpCommand: Command = Command(
     name = "help",
     help = "print command help",
@@ -620,6 +701,8 @@ object Cli:
     commands ++ List(helpCommand, cdCommand, pwdCommand, exitCommand)
 
   private val shellLine: String = "shell  start a session"
+
+  private val agentLine: String = "agent  query the catalog and the archive"
 
   private def cursorOnly(session: Session, name: String): Option[Result] = session.style match
     case PathStyle.OneShot =>

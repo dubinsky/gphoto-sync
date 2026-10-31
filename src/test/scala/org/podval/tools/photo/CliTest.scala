@@ -113,6 +113,20 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("status")) shouldBe Cli.Run(Cli.StatusArgs)
     Cli.parse(List("logout")) shouldBe Cli.Run(Cli.LogoutArgs)
 
+    Cli.parse(List("agent", "stems", "2010/07/19")) shouldBe Cli.Run(Cli.AgentStemsArgs("2010/07/19"))
+    Cli.parse(List("agent", "catalog")) shouldBe Cli.Run(Cli.AgentCatalogArgs)
+    Cli.parse(List("agent", "items", "--id", "a1", "2010/07")) shouldBe
+      Cli.Run(Cli.AgentItemsArgs(Some("a1"), "2010/07"))
+    Cli.parse(List("agent", "items", "2010/07")) shouldBe Cli.Run(Cli.AgentItemsArgs(None, "2010/07"))
+    Cli.parse(List("agent", "match", "--id", "a1", "2010/07")) shouldBe
+      Cli.Run(Cli.AgentMatchArgs(Some("a1"), "2010/07"))
+    Cli.parse(List("agent", "match", "2010/07")) shouldBe Cli.Run(Cli.AgentMatchArgs(None, "2010/07"))
+    Cli.parse(List(
+      "agent", "include", "--span", "2010/07", "2010/07/19/2412", "2010/07/20/2413"
+    )) shouldBe Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
+    Cli.parse(List("agent", "include", "2010/07/19/2412")) shouldBe
+      Cli.Run(Cli.AgentIncludeArgs(None, Seq("2010/07/19/2412")))
+
   it should "print help and not an operation" in :
     val top: String = helpOf("--help")
     top shouldBe
@@ -130,7 +144,8 @@ class CliTest extends AnyFlatSpec, Matchers:
         |status  show Google Photos login status
         |logout  log out of Google Photos
         |help  print command help
-        |shell  start a session""".stripMargin
+        |shell  start a session
+        |agent  query the catalog and the archive""".stripMargin
     helpOf("-h") shouldBe top
     helpOf("--help", "ls") shouldBe top
 
@@ -282,8 +297,39 @@ class CliTest extends AnyFlatSpec, Matchers:
     top.linesIterator.exists(_.startsWith("cd")) shouldBe false
     top.linesIterator.exists(_.startsWith("pwd")) shouldBe false
     top.linesIterator.exists(_.startsWith("exit")) shouldBe false
-    top.linesIterator.exists(_.startsWith("agent")) shouldBe false
+    top.linesIterator.exists(_.startsWith("agent")) shouldBe true
     top.linesIterator.exists(_.startsWith("serve")) shouldBe false
+    top.linesIterator.exists(_.startsWith("album-file")) shouldBe false
+
+    val agent: String = helpOf("agent", "--help")
+    agent shouldBe
+      """agent  query the catalog and the archive
+        |
+        |stems  list one day's grouped stems
+        |catalog  list catalog albums
+        |items  list catalog items for one album
+        |match  match catalog items to local stems
+        |include  compress include lines""".stripMargin
+    helpOf("agent", "-h") shouldBe agent
+    helpOf("help", "agent") shouldBe agent
+    agent should not include ("album-file")
+    agent should not include ("request")
+    helpOf("agent", "include", "--help") shouldBe
+      """include  compress include lines
+        |
+        |Positionals:
+        |year/month/day/stem  rest
+        |
+        |Flags:
+        |--span  text  title span; absent means a curated album""".stripMargin
+    helpOf("agent", "items", "--help") shouldBe
+      """items  list catalog items for one album
+        |
+        |Positionals:
+        |album  required
+        |
+        |Flags:
+        |--id  text  catalog album id""".stripMargin
 
   it should "reject usage errors" in :
     val errors: List[(List[String], String)] = List(
@@ -334,7 +380,18 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("pwd", "x") -> "extra argument 'x'",
       List("exit", "now") -> "extra argument 'now'",
       List("shell", "pwd") -> "extra argument 'pwd'",
-      List("shell", "--help") -> "extra argument '--help'"
+      List("shell", "--help") -> "extra argument '--help'",
+      List("agent") -> "missing agent command",
+      List("agent", "--id", "x", "items", "2010/07") -> "unknown command '--id'",
+      List("agent", "items", "2010/07", "--id", "a1") -> "extra argument '--id'",
+      List("agent", "match", "2010/07", "--id", "a1") -> "extra argument '--id'",
+      List("agent", "include", "2010/07/19/2412", "--span", "2010/07") -> "extra argument '--span'",
+      List("agent", "stems", "2010/07/19", "--long") -> "extra argument '--long'",
+      List("agent", "stems") -> "missing day",
+      List("agent", "items") -> "missing album",
+      List("agent", "match") -> "missing album",
+      List("agent", "catalog", "June") -> "extra argument 'June'",
+      List("agent", "nope") -> "unknown command 'nope'"
     )
     errors.foreach: (args, message) =>
       withClue(args):

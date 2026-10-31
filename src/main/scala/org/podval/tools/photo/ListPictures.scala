@@ -52,7 +52,10 @@ final case class ListPictures(
         val albums: Seq[Album.Loaded] = cached.map(_.albums).getOrElse(
           Archive.dayAlbums(day.root.configuration.archive, day.directory)
         )
-        session.remember(day.directory, DirEntry(fingerprint, grouped, albums, Some(listed)))
+        session.remember(
+          day.directory,
+          DirEntry(fingerprint, grouped, albums, Some(listed), cached.flatMap(_.sidecars))
+        )
 
   private def toListed(picture: Picture): ListedPicture =
     val orderedNames: Vector[String] = picture.extensions.map(_.name).toVector

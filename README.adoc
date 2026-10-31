@@ -25,8 +25,9 @@ The old sibling `Upload` is gone.
 `AGENTS.md` may sit in the archive root.
 Any other non-toml file next to child directories is stray.
 `.gphoto-sync/` is the agent's workspace.
-This program does not read it.
 There is no config key for it.
+The agent queries read `catalog.txt` in that directory.
+This program does not create that file.
 
 The title uses `/` on both sides of a range.
 `-` means only "through".
@@ -169,6 +170,17 @@ A remove line is `remove`, the album title, and the stem in quotes.
 
 `photo login`, `photo status`, and `photo logout` manage the Google Photos token.
 
+`photo agent` queries the catalog and one day of the archive.
+It does not print album ids or item keys.
+`photo agent stems <day>` lists that day's grouped stems.
+Extensions are sorted and joined with `+`.
+The metadata comes from sidecar TOML, not from EXIF.
+`photo agent catalog` lists every catalog album, sorted by title, without the album id.
+`photo agent items [--id <id>] <album>` lists that album's item and unset rows.
+The album is an exact catalog title.
+`photo agent match [--id <id>] <album>` matches those items to local stems and writes nothing.
+`photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines and writes nothing.
+
 == OAuth and config
 
 The Desktop client JSON is `~/.config/org.podval.tools.photo.client.json`.
@@ -281,7 +293,7 @@ after writing `requests.tsv` (e.g. `curl -X POST …`).
 - fix day and date-range albums: split, merge, month...
 
 - CLI get pictures from a memory card
-- CLI commands for the needs of the local agent - MCP?
+- MCP over the agent query commands
 - CLI setup and agents bootstrap (including configuring webhook)
 - CLI webapp
 - CLI packaging/publishing
