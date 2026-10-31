@@ -92,15 +92,18 @@ private[photo] object AgentCommands:
       case error: (IllegalArgumentException | IllegalStateException) =>
         (session, Result.Usage(Operation.messageOf(error)))
 
+  // Day's own require accepts 1..31. The civil date rejects February 31 and a non-leap February 29.
+  // A bad segment is NumberFormatException or a failed year, month, or day require. Both are not a day.
   def parseDay(session: Session, text: String): Day =
     try session.parse(text) match
-      case day: Day => day
-      case _ => throw IllegalArgumentException("not a day")
-    catch
-      case _: NoSuchElementException =>
+      case day: Day =>
+        day.date
+        day
+      case _ =>
         throw IllegalArgumentException("not a day")
-      case error: IllegalArgumentException =>
-        throw error
+    catch
+      case _: (NoSuchElementException | DateTimeException | IllegalArgumentException) =>
+        throw IllegalArgumentException("not a day")
 
   def select(albums: Seq[Catalog.Album], title: String, id: Option[String]): Catalog.Album =
     id match

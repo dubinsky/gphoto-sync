@@ -220,6 +220,11 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       exec(again, "agent", "stems", "2010/08")._2 shouldBe Result.Usage("not a day")
       exec(again, "agent", "stems", ".upload")._2 shouldBe Result.Usage("not a day")
       exec(again, "agent", "stems", "2010/08/12/2412")._2 shouldBe Result.Usage("not a day")
+      exec(again, "agent", "stems", "2010/02/31")._2 shouldBe Result.Usage("not a day")
+      exec(again, "agent", "stems", "2010/02/29")._2 shouldBe Result.Usage("not a day")
+      exec(again, "agent", "stems", "foo")._2 shouldBe Result.Usage("not a day")
+      exec(again, "agent", "stems", "2010/13")._2 shouldBe Result.Usage("not a day")
+      exec(again, "agent", "stems", "2010/01/32")._2 shouldBe Result.Usage("not a day")
       File(archive, ".gphoto-sync").exists shouldBe false
 
   "agent match" should "join catalog filenames to local stems and write nothing" in :
