@@ -692,20 +692,29 @@ private[photo] object AgentCommands:
       (next, if stems.isEmpty then soFar else soFar.updated(date, stems))
 
   private def place(album: Catalog.Album): (Title.Parsed, Boolean) =
-    val working: String = collapseSpaces(album.title)
+    val working: String = album.title.split(' ').filter(_.nonEmpty).mkString(" ")
     Title.parse(working) match
       case Some(parsed) if singleMonth(parsed) =>
         (parsed, true)
       case Some(parsed) =>
         (parsedDays(album, parsed), false)
       case None =>
-        val name: String = leftoverName(working, album)
-        if name.headOption.exists(_.isDigit) then throw IllegalArgumentException("leftover starts with a digit")
-        val parsed: Title.Parsed =
-          if hasYearOrMonth(working) then datedTitle(album, name)
-          else if name.isEmpty then throw IllegalArgumentException("curated album has no name")
-          else Title.Parsed(None, Some(name))
-        (parsed, false)
+        val tokens: Seq[String] = tokenize(working)
+        // A slash date plus more words is not a root file. A name inside that token stays.
+        tokens.headOption.flatMap(token => Title.parse(token).filter(_.span.isDefined)) match
+          case Some(lead) =>
+            val tail: String = tokens.drop(1).mkString(" ")
+            val name: String = lead.name.fold(tail)(label => if tail.isEmpty then label else s"$label $tail")
+            if name.headOption.exists(_.isDigit) then throw IllegalArgumentException("leftover starts with a digit")
+            (parsedDays(album, Title.Parsed(lead.span, Option.when(name.nonEmpty)(name))), false)
+          case None =>
+            val name: String = leftoverName(working, album)
+            if name.headOption.exists(_.isDigit) then throw IllegalArgumentException("leftover starts with a digit")
+            val parsed: Title.Parsed =
+              if hasYearOrMonth(working) then datedTitle(album, name)
+              else if name.isEmpty then throw IllegalArgumentException("curated album has no name")
+              else Title.Parsed(None, Some(name))
+            (parsed, false)
 
   private def singleMonth(parsed: Title.Parsed): Boolean =
     parsed.span.exists: span =>
@@ -734,7 +743,7 @@ private[photo] object AgentCommands:
     val dates: Seq[LocalDate] = album.items.flatMap(_.date)
     val years: Set[Int] = dates.map(_.getYear).toSet
     val days: Set[Int] = dates.map(_.getDayOfMonth).toSet
-    val tokens: Seq[String] = dropLeadingDate(tokenize(working))
+    val tokens: Seq[String] = tokenize(working)
       .filterNot(token => isItemYear(token, years))
       .filterNot(token => isItemDay(token, days))
     val months: Seq[String] = tokens.filter(isMonth)
@@ -747,16 +756,9 @@ private[photo] object AgentCommands:
   private def tokenize(working: String): Seq[String] =
     working.split(' ').toSeq.filter(_.nonEmpty).flatMap(splitMonthHyphen)
 
-  private def dropLeadingDate(tokens: Seq[String]): Seq[String] =
-    if tokens.headOption.exists(head => Title.parse(head).exists(_.span.isDefined)) then tokens.drop(1)
-    else tokens
-
   private def splitMonthHyphen(token: String): Seq[String] =
     val parts: Seq[String] = token.split('-').toSeq.filter(_.nonEmpty)
     if parts.lengthIs > 1 && parts.forall(isMonth) then parts else Seq(token)
-
-  private def collapseSpaces(text: String): String =
-    text.split(' ').filter(_.nonEmpty).mkString(" ")
 
   private def isFourDigit(token: String): Boolean =
     token.length == 4 && token.forall(_.isDigit)

@@ -100,19 +100,27 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     withArchive: archive =>
       mkdir(archive, "2010/07/19")
       mkdir(archive, "2010/07")
+      mkdir(archive, "2010/08/01")
       writeCatalog(
         archive,
         "album\talbDay\t1\t2010/07/19",
         "item\talbDay\tpic.jpg\t2010-07-19\tkeyDay\t-",
         "album\talbName\t1\t2010/07/19/Purim",
         "item\talbName\tpic.jpg\t2010-07-19\tkeyName\t-",
-        "album\talbPic\t0\t2010/07/19 Picnic",
+        "album\talbPic\t1\t2010/07/19 Picnic",
+        "item\talbPic\tpic.jpg\t2010-07-19\tkeyPic\t-",
+        "album\talbExtra\t1\t2010/07/19/Purim Extra",
+        "item\talbExtra\tpic.jpg\t2010-07-19\tkeyExtra\t-",
+        "album\talbShore\t0\t2010/08/01 Shore",
         "album\talbSpan\t0\t2010/07-08"
       )
       val session: Session = sessionFor(archive)
       place(session, "2010/07/19", "2010/07/19/album.toml", "2010/07/19")
       place(session, "2010/07/19/Purim", "2010/07/19/Purim.toml", "2010/07/19/Purim")
-      place(session, "2010/07/19 Picnic", "Picnic.toml", "Picnic")
+      place(session, "2010/07/19 Picnic", "2010/07/19/Picnic.toml", "2010/07/19/Picnic")
+      place(session, "2010/07/19/Purim Extra", "2010/07/19/Purim Extra.toml", "2010/07/19/Purim Extra")
+      place(session, "2010/08/01 Shore", "2010/08/01/Shore.toml", "2010/08/01/Shore")
+      File(archive, "Picnic.toml").exists shouldBe false
       place(session, "2010/07-08", "2010/07/to-08.toml", "2010/07-08")
       requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
