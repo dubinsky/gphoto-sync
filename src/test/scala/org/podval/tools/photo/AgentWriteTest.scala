@@ -96,6 +96,27 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       partials(archive) shouldBe Seq.empty[String]
       requests(archive).exists shouldBe false
 
+  it should "keep a parsed slash date as a day file and a parsed name" in :
+    withArchive: archive =>
+      mkdir(archive, "2010/07/19")
+      mkdir(archive, "2010/07")
+      writeCatalog(
+        archive,
+        "album\talbDay\t1\t2010/07/19",
+        "item\talbDay\tpic.jpg\t2010-07-19\tkeyDay\t-",
+        "album\talbName\t1\t2010/07/19/Purim",
+        "item\talbName\tpic.jpg\t2010-07-19\tkeyName\t-",
+        "album\talbPic\t0\t2010/07/19 Picnic",
+        "album\talbSpan\t0\t2010/07-08"
+      )
+      val session: Session = sessionFor(archive)
+      place(session, "2010/07/19", "2010/07/19/album.toml", "2010/07/19")
+      place(session, "2010/07/19/Purim", "2010/07/19/Purim.toml", "2010/07/19/Purim")
+      place(session, "2010/07/19 Picnic", "Picnic.toml", "Picnic")
+      place(session, "2010/07-08", "2010/07/to-08.toml", "2010/07-08")
+      requests(archive).exists shouldBe false
+      partials(archive) shouldBe Seq.empty[String]
+
   it should "use all for a month inside the cap and per-day lines when a pictured day has no match" in :
     withArchive: archive =>
       touch(File(archive, "2010/07/01"), "2412.jpg")
@@ -133,6 +154,23 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       august.include.map(Include.render) shouldBe Seq("2010/08/01 2412")
       august.include.map(Include.render).foreach(line => line.startsWith("all") shouldBe false)
       requests(archive).exists shouldBe false
+
+  it should "refuse a matched day outside a month title" in :
+    withArchive: archive =>
+      mkdir(archive, "2010/07")
+      touch(File(archive, "2010/08/02"), "2412.jpg")
+      writeCatalog(
+        archive,
+        "album\talbJul\t1\t2010/07",
+        "item\talbJul\t2412.jpg\t2010-08-02\tkeyOut\t-"
+      )
+      val session: Session = sessionFor(archive)
+      val message: String = usage(session, "agent", "album-file", "2010/07")
+      message shouldBe "matched day outside the span"
+      noIds(message, "albJul", "keyOut")
+      File(archive, "2010/07/album.toml").exists shouldBe false
+      requests(archive).exists shouldBe false
+      partials(archive) shouldBe Seq.empty[String]
 
   it should "reject an include that does not expand to the matched set" in :
     val day: LocalDate = LocalDate.of(2010, 7, 1)
@@ -191,6 +229,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       File(archive, "2010/09/album.toml").isFile shouldBe true
+      Album.read(archive, File(archive, "2010/09/album.toml")).include.isEmpty shouldBe true
       File(archive, "Gamma.toml").exists shouldBe false
       File(archive, "Epsilon.toml").exists shouldBe false
       requests(archive).exists shouldBe false
@@ -261,12 +300,45 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       read.googleAlbumId shouldBe "gid-keep"
       read.publishedTitle shouldBe "Published Keep"
       read.googleTitle shouldBe ""
-      read.include.map(Include.render) shouldBe Seq("all")
+      read.include.isEmpty shouldBe true
       val text: String = JFiles.readString(dest.toPath)
       text should not include ("9999")
       text should not include ("Old Title")
       text shouldBe Album.renderFile(read)
       partials(archive) shouldBe Seq.empty[String]
+
+  it should "replace an owner album without a google album id" in :
+    withArchive: archive =>
+      val dest: File = File(archive, "Friends.toml")
+      JFiles.writeString(
+        dest.toPath,
+        """external = true
+          |google-album-id = "gid-own"
+          |published-title = "Published Own"
+          |google-title = "Old"
+          |""".stripMargin
+      )
+      writeCatalog(
+        archive,
+        "album\talbOwn\t0\tFriends ",
+        "owner\talbOwn\tAda"
+      )
+      val (_, result) = exec(sessionFor(archive), "agent", "album-file", "--replace", "Friends ")
+      result match
+        case Result.Ok(text, _) =>
+          text should include ("rename no")
+          noIds(text, "albOwn")
+        case other =>
+          fail(other.toString)
+      val read: Album = Album.read(archive, dest)
+      read.owner shouldBe Some("Ada")
+      read.googleTitle shouldBe "Friends "
+      read.googleAlbumId shouldBe ""
+      read.publishedTitle shouldBe ""
+      read.external shouldBe true
+      val text: String = JFiles.readString(dest.toPath)
+      text should not include ("gid-own")
+      text shouldBe Album.renderFile(read)
 
   it should "leave a file Album.read rejects in place" in :
     withArchive: archive =>
@@ -345,9 +417,6 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         case Result.Ok(text, value) =>
           text shouldBe
             """external = true
-              |include = [
-              |  "all",
-              |]
               |rename yes
               |""".stripMargin
           noIds(text, "alb07")
@@ -516,6 +585,8 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 24:00")
       reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19")
       reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 00:60")
+      reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-02-31 09:05")
+      reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-13-01 09:05")
       reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keyDot", "--current", ".")
       reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keyDots", "--current", "..")
       reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keySlash", "--current", "a/b.jpg")
@@ -643,13 +714,16 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
   it should "print a result note unchanged" in :
     withArchive: archive =>
       val (_, absent) = exec(sessionFor(archive), "agent", "results")
-      absent shouldBe Result.Ok("", Json.Arr(Seq.empty))
+      absent shouldBe Result.Ok("no results\n", Json.Arr(Seq.empty))
       File(archive, ".gphoto-sync").exists shouldBe false
       val (_, quiet) = exec(sessionFor(archive), "agent", "requests")
-      quiet shouldBe Result.Ok("", Json.Arr(Seq.empty))
+      quiet shouldBe Result.Ok("no requests\n", Json.Arr(Seq.empty))
       File(archive, ".gphoto-sync").exists shouldBe false
       val dot: File = File(archive, ".gphoto-sync")
       dot.mkdirs()
+      JFiles.writeString(File(dot, "requests.tsv").toPath, "# gphoto-requests 2\n")
+      val (_, emptyRows) = exec(sessionFor(archive), "agent", "requests")
+      emptyRows shouldBe Result.Ok("", Json.Arr(Seq.empty))
       JFiles.writeString(
         File(dot, "results.tsv").toPath,
         "# gphoto-results 2\nr1\trename-album\tdone\thello \nr2\tmove-item\tfailed\t\n"

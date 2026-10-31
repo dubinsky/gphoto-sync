@@ -120,14 +120,7 @@ private[photo] final class AgentInclude(spanText: Option[String], paths: Seq[Str
           throw IllegalArgumentException("claimed day outside the span")
       val claimed: Set[(LocalDate, String)] = claimedPairs.toSet
       val days: Seq[LocalDate] = span.fold(claimedPairs.map(_._1).distinct)(AgentCommands.eachDay)
-      val (loaded, universe) = days.foldLeft((session, Map.empty[LocalDate, Set[String]])): (acc, date) =>
-        val (current, soFar) = acc
-        val day: Day = AgentCommands.civilDay(current.root, date)
-        if !day.directory.isDirectory then (current, soFar)
-        else
-          val (next, grouped, _) = AgentCommands.loadGrouped(current, day)
-          val stems: Set[String] = grouped.map(_._1).toSet
-          (next, if stems.isEmpty then soFar else soFar.updated(date, stems))
+      val (loaded, universe) = AgentCommands.scanDays(session, days)
       val entries: Seq[Include.Entry] = Include.compress(span, claimed, universe)
       val value: Json = Json.Obj(Seq(
         "rendered" -> Json.Arr(entries.map(entry => Json.Str(Include.render(entry)))),
@@ -409,24 +402,29 @@ private[photo] object AgentCommands:
     if !dest.getParentFile.isDirectory then throw IllegalArgumentException("no such directory")
     val relative: String = Album.relative(archive, dest)
     if dest.isFile && !replace then throw IllegalArgumentException(s"file exists: $relative")
+    // checkGoogle rejects an owner together with a google album id.
     val (keptId, keptPublished) =
       if replace && dest.isFile then
         val old: Album = Album.read(archive, dest)
-        (old.googleAlbumId, old.publishedTitle)
+        if album.owner.isDefined then ("", "") else (old.googleAlbumId, old.publishedTitle)
       else
         ("", "")
     val (matched, hits, _) = gather(session, album)
     val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
+    // Album.read rejects an include day outside the span. Fail before any partial.
+    parsed.span.foreach: span =>
+      if claimed.exists(pair => !span.contains(pair._1)) then
+        throw IllegalArgumentException("matched day outside the span")
     val days: Seq[LocalDate] = parsed.span match
       case Some(span) => eachDay(span)
       case None => album.items.flatMap(_.date).distinct.sorted
     val (scanned, universe) = scanDays(matched, days)
     val monthPassed: Boolean =
       monthFile && monthAllowsAll(parsed.span.get, claimed, universe)
-    // An empty day compares equal, so compress returns all. Zero matches omit include.
+    // Zero matches omit include. all would claim pictures added later.
     val include: Seq[Include.Entry] =
-      if monthPassed then Seq(Include.Entry.All(Seq.empty))
-      else if claimed.isEmpty then Seq.empty
+      if claimed.isEmpty then Seq.empty
+      else if monthPassed then Seq(Include.Entry.All(Seq.empty))
       else if monthFile then Include.compress(None, claimed, universe)
       else Include.compress(parsed.span, claimed, universe)
     requireInclude(monthPassed, parsed.span, include, claimed, universe)
@@ -488,10 +486,12 @@ private[photo] object AgentCommands:
     claimed: Set[(LocalDate, String)],
     universe: Map[LocalDate, Set[String]]
   ): Unit =
-    val got: Set[(LocalDate, String)] = expanded(span, include, universe)
+    val got: Set[(LocalDate, String)] =
+      include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
+        acc ++ Include.expand(span, entry, universe)
     val ok: Boolean =
       if monthPassed then
-        val local: Set[(LocalDate, String)] = pairsOf(span.get, universe)
+        val local: Set[(LocalDate, String)] = Include.pairsIn(span.get, universe)
         got.equals(local) && monthAllowsAll(span.get, claimed, universe)
       else
         got.equals(claimed)
@@ -576,31 +576,36 @@ private[photo] object AgentCommands:
   def listRequests(session: Session): (Session, Result) =
     catching(session):
       val file: File = requestsFile(session)
-      val rows: Seq[Requests.Row] = Requests.read(file)
-      if rows.isEmpty then (session, Result.Ok("", Json.Arr(Seq.empty)))
+      if !file.isFile then (session, Result.Ok("no requests\n", Json.Arr(Seq.empty)))
       else
-        val (loaded, albums) =
-          if rows.exists(_.action == Requests.Action.MoveItem) then session.loadCatalog
-          else (session, Seq.empty)
-        catching(loaded):
-          val lines: Seq[String] = rows.map(row => requestText(row, albums))
-          (loaded, Result.Ok(textOf(lines), Json.Arr(rows.map(requestValue))))
+        val rows: Seq[Requests.Row] = Requests.read(file)
+        if rows.isEmpty then (session, Result.Ok("", Json.Arr(Seq.empty)))
+        else
+          val (loaded, albums) =
+            if rows.exists(_.action == Requests.Action.MoveItem) then session.loadCatalog
+            else (session, Seq.empty)
+          catching(loaded):
+            val lines: Seq[String] = rows.map(row => requestText(row, albums))
+            (loaded, Result.Ok(textOf(lines), Json.Arr(rows.map(requestValue))))
 
   def listResults(session: Session): (Session, Result) =
     catching(session):
-      val rows: Seq[Results.Row] = Results.read(resultsFile(session))
-      val lines: Seq[String] = rows.map: row =>
-        val note: String = if row.note.isEmpty then "" else s" ${row.note}"
-        s"${row.id} ${row.action.wire} ${row.status.wire}$note"
-      val value: Json = Json.Arr(rows.map: row =>
-        Json.Obj(Seq(
-          "id" -> Json.Str(row.id),
-          "action" -> Json.Str(row.action.wire),
-          "status" -> Json.Str(row.status.wire),
-          "note" -> Json.Str(row.note)
-        ))
-      )
-      (session, Result.Ok(textOf(lines), value))
+      val file: File = resultsFile(session)
+      if !file.isFile then (session, Result.Ok("no results\n", Json.Arr(Seq.empty)))
+      else
+        val rows: Seq[Results.Row] = Results.read(file)
+        val lines: Seq[String] = rows.map: row =>
+          val note: String = if row.note.isEmpty then "" else s" ${row.note}"
+          s"${row.id} ${row.action.wire} ${row.status.wire}$note"
+        val value: Json = Json.Arr(rows.map: row =>
+          Json.Obj(Seq(
+            "id" -> Json.Str(row.id),
+            "action" -> Json.Str(row.action.wire),
+            "status" -> Json.Str(row.status.wire),
+            "note" -> Json.Str(row.note)
+          ))
+        )
+        (session, Result.Ok(textOf(lines), value))
 
   def requestsFile(session: Session): File =
     File(File(session.root.configuration.archive, ".gphoto-sync"), "requests.tsv")
@@ -676,7 +681,7 @@ private[photo] object AgentCommands:
     finally
       channel.close()
 
-  private def scanDays(
+  private[photo] def scanDays(
     session: Session,
     days: Seq[LocalDate]
   ): (Session, Map[LocalDate, Set[String]]) =
@@ -688,9 +693,11 @@ private[photo] object AgentCommands:
 
   private def place(album: Catalog.Album): (Title.Parsed, Boolean) =
     val working: String = collapseSpaces(album.title)
-    monthTitle(working) match
-      case Some(parsed) =>
+    Title.parse(working) match
+      case Some(parsed) if singleMonth(parsed) =>
         (parsed, true)
+      case Some(parsed) =>
+        (parsedDays(album, parsed), false)
       case None =>
         val name: String = leftoverName(working, album)
         if name.headOption.exists(_.isDigit) then throw IllegalArgumentException("leftover starts with a digit")
@@ -700,13 +707,18 @@ private[photo] object AgentCommands:
           else Title.Parsed(None, Some(name))
         (parsed, false)
 
-  private def monthTitle(working: String): Option[Title.Parsed] =
-    Title.parse(working).filter: parsed =>
-      parsed.span.exists: span =>
-        val oneMonth: Boolean = YearMonth.from(span.start).equals(YearMonth.from(span.end))
-        span.grain match
-          case Title.Grain.Month => oneMonth
-          case Title.Grain.Day => false
+  private def singleMonth(parsed: Title.Parsed): Boolean =
+    parsed.span.exists: span =>
+      val oneMonth: Boolean = YearMonth.from(span.start).equals(YearMonth.from(span.end))
+      span.grain match
+        case Title.Grain.Month => oneMonth
+        case Title.Grain.Day => false
+
+  // Item days when the catalog has them. Otherwise keep the span Title.parse already accepted.
+  private def parsedDays(album: Catalog.Album, parsed: Title.Parsed): Title.Parsed =
+    val dates: Seq[LocalDate] = album.items.flatMap(_.date)
+    if dates.isEmpty then parsed
+    else Title.Parsed(Some(Title.Span(dates.min, dates.max, Title.Grain.Day)), parsed.name)
 
   private def datedTitle(album: Catalog.Album, name: String): Title.Parsed =
     val dates: Seq[LocalDate] = album.items.flatMap(_.date)
@@ -722,7 +734,7 @@ private[photo] object AgentCommands:
     val dates: Seq[LocalDate] = album.items.flatMap(_.date)
     val years: Set[Int] = dates.map(_.getYear).toSet
     val days: Set[Int] = dates.map(_.getDayOfMonth).toSet
-    val tokens: Seq[String] = tokenize(working)
+    val tokens: Seq[String] = dropLeadingDate(tokenize(working))
       .filterNot(token => isItemYear(token, years))
       .filterNot(token => isItemDay(token, days))
     val months: Seq[String] = tokens.filter(isMonth)
@@ -733,23 +745,18 @@ private[photo] object AgentCommands:
     kept.mkString(" ")
 
   private def tokenize(working: String): Seq[String] =
-    collapseSpaces(working).split(' ').toSeq.filter(_.nonEmpty).flatMap(splitMonthHyphen)
+    working.split(' ').toSeq.filter(_.nonEmpty).flatMap(splitMonthHyphen)
+
+  private def dropLeadingDate(tokens: Seq[String]): Seq[String] =
+    if tokens.headOption.exists(head => Title.parse(head).exists(_.span.isDefined)) then tokens.drop(1)
+    else tokens
 
   private def splitMonthHyphen(token: String): Seq[String] =
     val parts: Seq[String] = token.split('-').toSeq.filter(_.nonEmpty)
     if parts.lengthIs > 1 && parts.forall(isMonth) then parts else Seq(token)
 
   private def collapseSpaces(text: String): String =
-    val trimmed: String = text.dropWhile(_ == ' ').reverse.dropWhile(_ == ' ').reverse
-    val buffer: StringBuilder = new StringBuilder
-    val _: Boolean = trimmed.foldLeft(false): (inSpace, ch) =>
-      if ch == ' ' then
-        if !inSpace then buffer.append(' ')
-        true
-      else
-        buffer.append(ch)
-        false
-    buffer.toString
+    text.split(' ').filter(_.nonEmpty).mkString(" ")
 
   private def isFourDigit(token: String): Boolean =
     token.length == 4 && token.forall(_.isDigit)
@@ -774,23 +781,11 @@ private[photo] object AgentCommands:
     claimed: Set[(LocalDate, String)],
     universe: Map[LocalDate, Set[String]]
   ): Boolean =
-    val local: Set[(LocalDate, String)] = pairsOf(span, universe)
+    val local: Set[(LocalDate, String)] = Include.pairsIn(span, universe)
     val missing: Int = local.count(pair => !claimed.contains(pair))
     val cap: Int = math.max(5, (local.size * 2) / 100)
     val every: Boolean = universe.keys.forall(day => span.contains(day) && claimed.exists(_._1.equals(day)))
-    every && missing <= cap && claimed.subsetOf(local)
-
-  private def pairsOf(span: Title.Span, universe: Map[LocalDate, Set[String]]): Set[(LocalDate, String)] =
-    universe.foldLeft(Set.empty[(LocalDate, String)]): (acc, pair) =>
-      if span.contains(pair._1) then acc ++ pair._2.map(stem => pair._1 -> stem) else acc
-
-  private def expanded(
-    span: Option[Title.Span],
-    include: Seq[Include.Entry],
-    universe: Map[LocalDate, Set[String]]
-  ): Set[(LocalDate, String)] =
-    include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
-      acc ++ Include.expand(span, entry, universe)
+    local.nonEmpty && every && missing <= cap && claimed.subsetOf(local)
 
   private def uniqueItem(albums: Seq[Catalog.Album], key: String): Catalog.Item =
     albums.flatMap(album => album.items.filter(_.key == key)) match
@@ -806,11 +801,17 @@ private[photo] object AgentCommands:
 
   private def requireDate(text: String): Unit =
     val ok: Boolean = text match
-      case datePattern(_, _, _, hour, minute) =>
-        hour.toInt <= 23 && minute.toInt <= 59
+      case datePattern(year, month, day, hour, minute) =>
+        hour.toInt <= 23 && minute.toInt <= 59 && civilDate(year.toInt, month.toInt, day.toInt)
       case _ =>
         false
     if !ok then throw IllegalArgumentException("date is not valid")
+
+  private def civilDate(year: Int, month: Int, day: Int): Boolean =
+    try
+      LocalDate.of(year, month, day)
+      true
+    catch case _: DateTimeException => false
 
   private val datePattern = """(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})""".r
 

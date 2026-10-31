@@ -174,7 +174,7 @@ object Include:
     claimed.foldLeft(universe): (acc, pair) =>
       acc.updated(pair._1, acc.getOrElse(pair._1, Set.empty) + pair._2)
 
-  private def pairsIn(span: Title.Span, universe: Map[LocalDate, Set[String]]): Set[(LocalDate, String)] =
+  private[photo] def pairsIn(span: Title.Span, universe: Map[LocalDate, Set[String]]): Set[(LocalDate, String)] =
     universe.foldLeft(Set.empty[(LocalDate, String)]): (acc, pair) =>
       if span.contains(pair._1) then acc ++ pair._2.map(pair._1 -> _) else acc
 

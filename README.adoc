@@ -184,7 +184,9 @@ The album is an exact catalog title.
 `photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] [--no-request] <album>` writes one
 external album file.
 `--dry-run` prints that file and writes nothing.
-`--replace` overwrites an existing file and keeps its Google id and published title.
+`--replace` overwrites an existing file.
+When the album has no owner, it keeps the Google id and published title.
+`--google-title` stores that exact string and does not append `rename-album`.
 A rename row is appended when the catalog title differs from the path title, unless `--no-request` is set or the album
 has an owner.
 `photo agent request <action>` checks the catalog and appends one request row.
