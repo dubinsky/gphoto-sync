@@ -148,7 +148,11 @@ private[photo] object Serve:
       fields(left.drop(1), Seen(), take = false, allowEmpty = true) match
         case Walk.Done(_, more) => Some(more)
         case Walk.Failed(_) => None
-    else if left.startsWith("[") then skipArray(left.drop(1))
+    else if left.startsWith("[") then
+      elements(left.drop(1), Nil, mixed = false, allowEmpty = true) match
+        case ArrayRead.Bad => None
+        case ArrayRead.Strings(_, more) => Some(more)
+        case ArrayRead.Mixed(more) => Some(more)
     else if left.startsWith("\"") then
       parseString(left.drop(1), "") match
         case Right((_, more)) => Some(more)
@@ -158,12 +162,6 @@ private[photo] object Serve:
     else if left.startsWith("null") then Some(left.drop(4))
     else if left.startsWith("-") || left.head.isDigit then parseNumber(left)
     else None
-
-  private def skipArray(rest: String): Option[String] =
-    elements(rest, Nil, mixed = false, allowEmpty = true) match
-      case ArrayRead.Bad => None
-      case ArrayRead.Strings(_, more) => Some(more)
-      case ArrayRead.Mixed(more) => Some(more)
 
   @tailrec
   private def elements(
