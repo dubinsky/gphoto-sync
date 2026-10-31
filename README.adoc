@@ -170,7 +170,8 @@ A remove line is `remove`, the album title, and the stem in quotes.
 
 `photo login`, `photo status`, and `photo logout` manage the Google Photos token.
 
-`photo agent` queries the catalog and one day of the archive.
+`photo agent` reads the catalog and the archive.
+It writes an album file or appends a request row only when that command says to.
 It does not print album ids or item keys.
 `photo agent stems <day>` lists that day's grouped stems.
 Extensions are sorted and joined with `+`.
@@ -180,6 +181,15 @@ The metadata comes from sidecar TOML, not from EXIF.
 The album is an exact catalog title.
 `photo agent match [--id <id>] <album>` matches those items to local stems and writes nothing.
 `photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines and writes nothing.
+`photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] [--no-request] <album>` writes one
+external album file.
+`--dry-run` prints that file and writes nothing.
+`--replace` overwrites an existing file and keeps its Google id and published title.
+A rename row is appended when the catalog title differs from the path title, unless `--no-request` is set or the album
+has an owner.
+`photo agent request <action>` checks the catalog and appends one request row.
+`photo agent requests` lists those rows without album ids or item keys.
+`photo agent results` lists result rows and prints each note unchanged.
 
 == OAuth and config
 

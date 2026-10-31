@@ -1,7 +1,12 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.time.{DateTimeException, LocalDate}
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files as JFiles, StandardCopyOption, StandardOpenOption}
+import java.time.{DateTimeException, LocalDate, YearMonth}
+import java.util.UUID
 
 private[photo] final class AgentStems(dayText: String) extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -58,6 +63,52 @@ private[photo] final class AgentMatch(id: Option[String], title: String) extends
         else if album.error.exists(_.nameFailures > 0) || album.unsets.nonEmpty then
           AgentCommands.skipped(loaded, album, "unread names")
         else AgentCommands.matchItems(loaded, album)
+
+private[photo] final class AgentAlbumFile(
+  id: Option[String],
+  dryRun: Boolean,
+  replace: Boolean,
+  googleTitle: Option[String],
+  noRequest: Boolean,
+  title: String
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        val album: Catalog.Album = AgentCommands.select(albums, title, id)
+        if album.autoAdd then AgentCommands.skipped(loaded, album, "auto-add")
+        else if album.error.exists(_.nameFailures > 0) || album.unsets.nonEmpty then
+          AgentCommands.skipped(loaded, album, "unread names")
+        else AgentCommands.writeAlbum(loaded, album, dryRun, replace, googleTitle, noRequest)
+
+private[photo] final class AgentRequest(
+  action: Requests.Action,
+  album: Option[String],
+  item: Option[String],
+  current: Option[String],
+  updated: Option[String],
+  id: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      id.foreach(Requests.requireId)
+      val fields: (String, String, String, String) =
+        AgentCommands.requestFields(action, album, item, current, updated)
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.acceptRequest(albums, action, fields._1, fields._2, fields._3, fields._4)
+        val file: File = AgentCommands.requestsFile(loaded)
+        val row: Requests.Row = Requests.append(file, action, fields._1, fields._2, fields._3, fields._4, id)
+        (loaded, Result.Ok(s"appended ${row.id} ${row.action.wire}\n", AgentCommands.requestValue(row)))
+
+private[photo] object AgentRequests extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.listRequests(session)
+
+private[photo] object AgentResults extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.listResults(session)
 
 private[photo] final class AgentInclude(spanText: Option[String], paths: Seq[String]) extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -158,7 +209,24 @@ private[photo] object AgentCommands:
     (session, Result.Ok(s"skipped $reason\n", matchValue(album, Seq.empty, Seq.empty)))
 
   def matchItems(session: Session, album: Catalog.Album): (Session, Result) =
-    val (loaded, hits, misses) = album.items.foldLeft(
+    val (loaded, hits, misses) = gather(session, album)
+    val rows: Seq[String] =
+      Seq(s"matched ${hits.length} of ${album.items.length}") ++
+        hits.map(hit => s"${Title.dayText(hit._1)} ${hit._2} ${hit._3}") ++
+        misses.map(miss => s"unmatched ${miss._1.fold("-")(Title.dayText)} ${miss._2}")
+    val value: Json = matchValue(
+      album,
+      hits.map(hit => hit._1 -> hit._3),
+      misses.map(miss => miss._3)
+    )
+    (loaded, Result.Ok(textOf(rows), value))
+
+  // Same lookup as agent match. Album-file does not keep a second copy.
+  def gather(
+    session: Session,
+    album: Catalog.Album
+  ): (Session, Seq[(LocalDate, String, String)], Seq[(Option[LocalDate], String, String)]) =
+    album.items.foldLeft(
       (session, Seq.empty[(LocalDate, String, String)], Seq.empty[(Option[LocalDate], String, String)])
     ): (acc, item) =>
       val (current, matched, unmatched) = acc
@@ -174,16 +242,6 @@ private[photo] object AgentCommands:
               (next, matched :+ (date, item.filename, local), unmatched)
             case None =>
               (next, matched, unmatched :+ (Some(date), item.filename, item.key))
-    val rows: Seq[String] =
-      Seq(s"matched ${hits.length} of ${album.items.length}") ++
-        hits.map(hit => s"${Title.dayText(hit._1)} ${hit._2} ${hit._3}") ++
-        misses.map(miss => s"unmatched ${miss._1.fold("-")(Title.dayText)} ${miss._2}")
-    val value: Json = matchValue(
-      album,
-      hits.map(hit => hit._1 -> hit._3),
-      misses.map(miss => miss._3)
-    )
-    (loaded, Result.Ok(textOf(rows), value))
 
   def parseSpan(text: String): Title.Span =
     Title.parse(text) match
@@ -330,3 +388,432 @@ private[photo] object AgentCommands:
       ),
       "unmatched" -> Json.Arr(misses.map(Json.Str.apply))
     ))
+
+  def writeAlbum(
+    session: Session,
+    album: Catalog.Album,
+    dryRun: Boolean,
+    replace: Boolean,
+    googleFlag: Option[String],
+    noRequest: Boolean
+  ): (Session, Result) =
+    album.owner.foreach: _ =>
+      googleFlag.foreach: flag =>
+        if flag != album.title then
+          throw IllegalArgumentException(
+            s"google-title does not match ${Album.quote(album.title)} ${Album.quote(flag)}"
+          )
+    val archive: File = session.root.configuration.archive
+    val (parsed, monthFile) = place(album)
+    val dest: File = Title.file(archive, parsed)
+    if !dest.getParentFile.isDirectory then throw IllegalArgumentException("no such directory")
+    val relative: String = Album.relative(archive, dest)
+    if dest.isFile && !replace then throw IllegalArgumentException(s"file exists: $relative")
+    val (keptId, keptPublished) =
+      if replace && dest.isFile then
+        val old: Album = Album.read(archive, dest)
+        (old.googleAlbumId, old.publishedTitle)
+      else
+        ("", "")
+    val (matched, hits, _) = gather(session, album)
+    val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
+    val days: Seq[LocalDate] = parsed.span match
+      case Some(span) => eachDay(span)
+      case None => album.items.flatMap(_.date).distinct.sorted
+    val (scanned, universe) = scanDays(matched, days)
+    val monthPassed: Boolean =
+      monthFile && monthAllowsAll(parsed.span.get, claimed, universe)
+    // An empty day compares equal, so compress returns all. Zero matches omit include.
+    val include: Seq[Include.Entry] =
+      if monthPassed then Seq(Include.Entry.All(Seq.empty))
+      else if claimed.isEmpty then Seq.empty
+      else if monthFile then Include.compress(None, claimed, universe)
+      else Include.compress(parsed.span, claimed, universe)
+    requireInclude(monthPassed, parsed.span, include, claimed, universe)
+    val (googleTitle, owner) = album.owner match
+      case Some(label) =>
+        (googleFlag.getOrElse(album.title), Some(label))
+      case None =>
+        (googleFlag.getOrElse(""), None)
+    val pathTitle: String = parsed.title
+    val willRename: Boolean = album.owner.isEmpty && googleFlag.isEmpty && album.title != pathTitle
+    val written: Album = Album(
+      title = pathTitle,
+      span = parsed.span,
+      include = include,
+      external = true,
+      googleAlbumId = keptId,
+      publishedTitle = keptPublished,
+      googleTitle = googleTitle,
+      owner = owner
+    )
+    val renameWord: String = if willRename then "yes" else "no"
+    val value: Json = albumValueOf(album.id, relative, pathTitle, album.title, willRename, None)
+    if dryRun then
+      (scanned, Result.Ok(Album.renderFile(written) + s"rename $renameWord\n", value))
+    else
+      commitFile(archive, dest, Album.renderFile(written))
+      val dropped: Session = scanned.drop(dest.getParentFile)
+      val summary: String =
+        s"""wrote $relative
+           |path-title $pathTitle
+           |catalog-title ${Album.quote(album.title)}
+           |rename $renameWord
+           |""".stripMargin
+      if !willRename || noRequest then (dropped, Result.Ok(summary, value))
+      else
+        try
+          val row: Requests.Row = Requests.append(
+            requestsFile(dropped),
+            Requests.Action.RenameAlbum,
+            album.id,
+            "",
+            album.title,
+            pathTitle
+          )
+          val appended: String = summary + s"appended ${row.id} rename-album\n"
+          (dropped, Result.Ok(appended, albumValueOf(album.id, relative, pathTitle, album.title, true, Some(row.id))))
+        catch
+          case error: Exception =>
+            (
+              dropped,
+              Result.Failed(summary + "append failed\n", value, Operation.messageOf(error))
+            )
+
+  // Called before the partial is created. A bad include throws and nothing is written.
+  def requireInclude(
+    monthPassed: Boolean,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
+  ): Unit =
+    val got: Set[(LocalDate, String)] = expanded(span, include, universe)
+    val ok: Boolean =
+      if monthPassed then
+        val local: Set[(LocalDate, String)] = pairsOf(span.get, universe)
+        got.equals(local) && monthAllowsAll(span.get, claimed, universe)
+      else
+        got.equals(claimed)
+    if !ok then throw IllegalArgumentException("include does not match")
+
+  def requestFields(
+    action: Requests.Action,
+    album: Option[String],
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String]
+  ): (String, String, String, String) =
+    def text(value: Option[String], name: String): String =
+      value.getOrElse(throw IllegalArgumentException(s"missing $name"))
+    action match
+      case Requests.Action.RenameAlbum =>
+        (text(album, "album"), "", text(current, "current"), text(updated, "new"))
+      case Requests.Action.MoveItem =>
+        (text(album, "album"), text(item, "item"), text(current, "current"), text(updated, "new"))
+      case Requests.Action.SetDescription =>
+        ("", text(item, "item"), text(current, "current"), updated.getOrElse(""))
+      case Requests.Action.SetDate =>
+        ("", text(item, "item"), text(current, "current"), text(updated, "new"))
+      case Requests.Action.DownloadItem | Requests.Action.DeleteItem =>
+        (text(album, "album"), text(item, "item"), text(current, "current"), "")
+
+  def acceptRequest(
+    albums: Seq[Catalog.Album],
+    action: Requests.Action,
+    albumId: String,
+    itemKey: String,
+    current: String,
+    updated: String
+  ): Unit = action match
+    case Requests.Action.RenameAlbum =>
+      val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+      if album.owner.isDefined then throw IllegalArgumentException("album has an owner")
+      requireCurrent(album.title, current)
+      if updated.isEmpty then throw IllegalArgumentException("new title is empty")
+      if updated == current then throw IllegalArgumentException("new title is unchanged")
+    case Requests.Action.MoveItem =>
+      val source: Catalog.Album = albums.find(_.id == albumId).getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+      if !albums.exists(_.id == updated) then throw IllegalArgumentException("no such destination")
+      val item: Catalog.Item = source.items.find(_.key == itemKey).getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
+      requireCurrent(item.filename, current)
+      if updated == albumId then throw IllegalArgumentException("destination is the source album")
+    case Requests.Action.SetDescription =>
+      val item: Catalog.Item = uniqueItem(albums, itemKey)
+      requireCurrent(item.filename, current)
+    case Requests.Action.SetDate =>
+      val item: Catalog.Item = uniqueItem(albums, itemKey)
+      requireCurrent(item.filename, current)
+      requireDate(updated)
+    case Requests.Action.DownloadItem =>
+      val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+      val item: Catalog.Item = album.items.find(_.key == itemKey).getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
+      requireCurrent(item.filename, current)
+      if updated.nonEmpty then throw IllegalArgumentException("new is not empty")
+      requireFilename(item.filename)
+    case Requests.Action.DeleteItem =>
+      val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+      val item: Catalog.Item = album.items.find(_.key == itemKey).getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
+      requireCurrent(item.filename, current)
+      if updated.nonEmpty then throw IllegalArgumentException("new is not empty")
+      if album.owner.isDefined then throw IllegalArgumentException("album has an owner")
+      if item.uploader.isDefined then throw IllegalArgumentException("item has an uploader")
+
+  def listRequests(session: Session): (Session, Result) =
+    catching(session):
+      val file: File = requestsFile(session)
+      val rows: Seq[Requests.Row] = Requests.read(file)
+      if rows.isEmpty then (session, Result.Ok("", Json.Arr(Seq.empty)))
+      else
+        val (loaded, albums) =
+          if rows.exists(_.action == Requests.Action.MoveItem) then session.loadCatalog
+          else (session, Seq.empty)
+        catching(loaded):
+          val lines: Seq[String] = rows.map(row => requestText(row, albums))
+          (loaded, Result.Ok(textOf(lines), Json.Arr(rows.map(requestValue))))
+
+  def listResults(session: Session): (Session, Result) =
+    catching(session):
+      val rows: Seq[Results.Row] = Results.read(resultsFile(session))
+      val lines: Seq[String] = rows.map: row =>
+        val note: String = if row.note.isEmpty then "" else s" ${row.note}"
+        s"${row.id} ${row.action.wire} ${row.status.wire}$note"
+      val value: Json = Json.Arr(rows.map: row =>
+        Json.Obj(Seq(
+          "id" -> Json.Str(row.id),
+          "action" -> Json.Str(row.action.wire),
+          "status" -> Json.Str(row.status.wire),
+          "note" -> Json.Str(row.note)
+        ))
+      )
+      (session, Result.Ok(textOf(lines), value))
+
+  def requestsFile(session: Session): File =
+    File(File(session.root.configuration.archive, ".gphoto-sync"), "requests.tsv")
+
+  def resultsFile(session: Session): File =
+    File(File(session.root.configuration.archive, ".gphoto-sync"), "results.tsv")
+
+  def requestValue(row: Requests.Row): Json =
+    Json.Obj(Seq(
+      "id" -> Json.Str(row.id),
+      "action" -> Json.Str(row.action.wire),
+      "albumId" -> Json.Str(row.albumId),
+      "itemKey" -> Json.Str(row.itemKey),
+      "current" -> Json.Str(row.current),
+      "new" -> Json.Str(row.`new`)
+    ))
+
+  private def requestText(row: Requests.Row, albums: Seq[Catalog.Album]): String = row.action match
+    case Requests.Action.RenameAlbum =>
+      s"${row.id} rename-album ${Album.quote(row.current)} ${Album.quote(row.`new`)}"
+    case Requests.Action.MoveItem =>
+      val dest: String = albums.find(_.id == row.`new`).fold("destination unknown")(album => Album.quote(album.title))
+      s"${row.id} move-item ${Album.quote(row.current)} $dest"
+    case Requests.Action.SetDescription | Requests.Action.SetDate =>
+      s"${row.id} ${row.action.wire} ${Album.quote(row.current)} ${Album.quote(row.`new`)}"
+    case Requests.Action.DownloadItem | Requests.Action.DeleteItem =>
+      s"${row.id} ${row.action.wire} ${Album.quote(row.current)}"
+
+  private def albumValueOf(
+    albumId: String,
+    path: String,
+    pathTitle: String,
+    catalogTitle: String,
+    rename: Boolean,
+    requestId: Option[String]
+  ): Json =
+    Json.Obj(Seq(
+      "albumId" -> Json.Str(albumId),
+      "path" -> Json.Str(path),
+      "pathTitle" -> Json.Str(pathTitle),
+      "catalogTitle" -> Json.Str(catalogTitle),
+      "rename" -> Json.Bool(rename),
+      "requestId" -> requestId.fold(Json.Null)(Json.Str.apply)
+    ))
+
+  private def commitFile(archive: File, dest: File, text: String): Unit =
+    val dot: File = File(archive, ".gphoto-sync")
+    dot.mkdirs()
+    val partial: File = File(dot, s"album-write-${UUID.randomUUID()}.partial")
+    var renamed: Boolean = false
+    try
+      writeForced(partial, text)
+      JFiles.move(
+        partial.toPath,
+        dest.toPath,
+        StandardCopyOption.ATOMIC_MOVE,
+        StandardCopyOption.REPLACE_EXISTING
+      )
+      renamed = true
+    finally
+      if !renamed then JFiles.deleteIfExists(partial.toPath)
+
+  private def writeForced(file: File, text: String): Unit =
+    val channel: FileChannel = FileChannel.open(
+      file.toPath,
+      StandardOpenOption.CREATE_NEW,
+      StandardOpenOption.WRITE
+    )
+    try
+      val bytes: ByteBuffer = ByteBuffer.wrap(text.getBytes(StandardCharsets.UTF_8))
+      while bytes.hasRemaining do channel.write(bytes)
+      channel.force(true)
+    finally
+      channel.close()
+
+  private def scanDays(
+    session: Session,
+    days: Seq[LocalDate]
+  ): (Session, Map[LocalDate, Set[String]]) =
+    days.foldLeft((session, Map.empty[LocalDate, Set[String]])): (acc, date) =>
+      val (current, soFar) = acc
+      val (next, grouped, _) = loadGrouped(current, civilDay(current.root, date))
+      val stems: Set[String] = grouped.map(_._1).toSet
+      (next, if stems.isEmpty then soFar else soFar.updated(date, stems))
+
+  private def place(album: Catalog.Album): (Title.Parsed, Boolean) =
+    val working: String = collapseSpaces(album.title)
+    monthTitle(working) match
+      case Some(parsed) =>
+        (parsed, true)
+      case None =>
+        val name: String = leftoverName(working, album)
+        if name.headOption.exists(_.isDigit) then throw IllegalArgumentException("leftover starts with a digit")
+        val parsed: Title.Parsed =
+          if hasYearOrMonth(working) then datedTitle(album, name)
+          else if name.isEmpty then throw IllegalArgumentException("curated album has no name")
+          else Title.Parsed(None, Some(name))
+        (parsed, false)
+
+  private def monthTitle(working: String): Option[Title.Parsed] =
+    Title.parse(working).filter: parsed =>
+      parsed.span.exists: span =>
+        val oneMonth: Boolean = YearMonth.from(span.start).equals(YearMonth.from(span.end))
+        span.grain match
+          case Title.Grain.Month => oneMonth
+          case Title.Grain.Day => false
+
+  private def datedTitle(album: Catalog.Album, name: String): Title.Parsed =
+    val dates: Seq[LocalDate] = album.items.flatMap(_.date)
+    if dates.isEmpty then throw IllegalArgumentException("no such directory")
+    val span: Title.Span = Title.Span(dates.min, dates.max, Title.Grain.Day)
+    Title.Parsed(Some(span), Option.when(name.nonEmpty)(name))
+
+  private def hasYearOrMonth(working: String): Boolean =
+    val tokens: Seq[String] = tokenize(working)
+    tokens.exists(isFourDigit) || tokens.exists(isMonth)
+
+  private def leftoverName(working: String, album: Catalog.Album): String =
+    val dates: Seq[LocalDate] = album.items.flatMap(_.date)
+    val years: Set[Int] = dates.map(_.getYear).toSet
+    val days: Set[Int] = dates.map(_.getDayOfMonth).toSet
+    val tokens: Seq[String] = tokenize(working)
+      .filterNot(token => isItemYear(token, years))
+      .filterNot(token => isItemDay(token, days))
+    val months: Seq[String] = tokens.filter(isMonth)
+    val kept: Seq[String] =
+      if months.sizeIs == 1 && tokens.exists(token => !isMonth(token)) then tokens.filterNot(isMonth)
+      else if months.sizeIs == 1 then Seq.empty
+      else tokens
+    kept.mkString(" ")
+
+  private def tokenize(working: String): Seq[String] =
+    collapseSpaces(working).split(' ').toSeq.filter(_.nonEmpty).flatMap(splitMonthHyphen)
+
+  private def splitMonthHyphen(token: String): Seq[String] =
+    val parts: Seq[String] = token.split('-').toSeq.filter(_.nonEmpty)
+    if parts.lengthIs > 1 && parts.forall(isMonth) then parts else Seq(token)
+
+  private def collapseSpaces(text: String): String =
+    val trimmed: String = text.dropWhile(_ == ' ').reverse.dropWhile(_ == ' ').reverse
+    val buffer: StringBuilder = new StringBuilder
+    val _: Boolean = trimmed.foldLeft(false): (inSpace, ch) =>
+      if ch == ' ' then
+        if !inSpace then buffer.append(' ')
+        true
+      else
+        buffer.append(ch)
+        false
+    buffer.toString
+
+  private def isFourDigit(token: String): Boolean =
+    token.length == 4 && token.forall(_.isDigit)
+
+  private def isItemYear(token: String, years: Set[Int]): Boolean =
+    isFourDigit(token) && years.contains(token.toInt)
+
+  private def isItemDay(token: String, days: Set[Int]): Boolean =
+    token.nonEmpty && token.length < 4 && token.forall(_.isDigit) && days.contains(token.toInt)
+
+  private val monthWords: Set[String] = Set(
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec"
+  )
+
+  private def isMonth(token: String): Boolean =
+    monthWords.contains(token.toLowerCase(java.util.Locale.ROOT))
+
+  private def monthAllowsAll(
+    span: Title.Span,
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
+  ): Boolean =
+    val local: Set[(LocalDate, String)] = pairsOf(span, universe)
+    val missing: Int = local.count(pair => !claimed.contains(pair))
+    val cap: Int = math.max(5, (local.size * 2) / 100)
+    val every: Boolean = universe.keys.forall(day => span.contains(day) && claimed.exists(_._1.equals(day)))
+    every && missing <= cap && claimed.subsetOf(local)
+
+  private def pairsOf(span: Title.Span, universe: Map[LocalDate, Set[String]]): Set[(LocalDate, String)] =
+    universe.foldLeft(Set.empty[(LocalDate, String)]): (acc, pair) =>
+      if span.contains(pair._1) then acc ++ pair._2.map(stem => pair._1 -> stem) else acc
+
+  private def expanded(
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    universe: Map[LocalDate, Set[String]]
+  ): Set[(LocalDate, String)] =
+    include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
+      acc ++ Include.expand(span, entry, universe)
+
+  private def uniqueItem(albums: Seq[Catalog.Album], key: String): Catalog.Item =
+    albums.flatMap(album => album.items.filter(_.key == key)) match
+      case Seq(item) => item
+      case Seq() => throw IllegalArgumentException("no such item")
+      case _ => throw IllegalArgumentException("item key is not unique")
+
+  private def requireCurrent(actual: String, supplied: String): Unit =
+    if actual != supplied then
+      throw IllegalArgumentException(
+        s"current does not match ${Album.quote(actual)} ${Album.quote(supplied)}"
+      )
+
+  private def requireDate(text: String): Unit =
+    val ok: Boolean = text match
+      case datePattern(_, _, _, hour, minute) =>
+        hour.toInt <= 23 && minute.toInt <= 59
+      case _ =>
+        false
+    if !ok then throw IllegalArgumentException("date is not valid")
+
+  private val datePattern = """(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})""".r
+
+  private def requireFilename(name: String): Unit =
+    if name == "." || name == ".." || name.contains('/') then
+      throw IllegalArgumentException("filename is not valid")

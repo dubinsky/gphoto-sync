@@ -126,6 +126,44 @@ class CliTest extends AnyFlatSpec, Matchers:
     )) shouldBe Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
     Cli.parse(List("agent", "include", "2010/07/19/2412")) shouldBe
       Cli.Run(Cli.AgentIncludeArgs(None, Seq("2010/07/19/2412")))
+    Cli.parse(List(
+      "agent", "album-file", "--id", "a1", "--dry-run", "--replace",
+      "--google-title", "Exact", "--no-request", "2010/07"
+    )) shouldBe Cli.Run(Cli.AgentAlbumFileArgs(
+      Some("a1"), dryRun = true, replace = true, Some("Exact"), noRequest = true, "2010/07"
+    ))
+    Cli.parse(List(
+      "agent", "request", "rename-album", "--album", "a1", "--current", "Old", "--new", "New", "--id", "r1"
+    )) shouldBe Cli.Run(Cli.AgentRequestArgs("rename-album", Some("a1"), None, Some("Old"), Some("New"), Some("r1")))
+    Cli.parse(List(
+      "agent", "request", "move-item", "--album", "a1", "--item", "k1",
+      "--current", "a.jpg", "--new", "a2", "--id", "r1"
+    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
+      "move-item", Some("a1"), Some("k1"), Some("a.jpg"), Some("a2"), Some("r1")
+    ))
+    Cli.parse(List(
+      "agent", "request", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello", "--id", "r1"
+    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
+      "set-description", None, Some("k1"), Some("a.jpg"), Some("Hello"), Some("r1")
+    ))
+    Cli.parse(List(
+      "agent", "request", "set-date", "--item", "k1", "--current", "a.jpg",
+      "--new", "2010-07-19 00:00", "--id", "r1"
+    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
+      "set-date", None, Some("k1"), Some("a.jpg"), Some("2010-07-19 00:00"), Some("r1")
+    ))
+    Cli.parse(List(
+      "agent", "request", "download-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
+    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
+      "download-item", Some("a1"), Some("k1"), Some("a.jpg"), None, Some("r1")
+    ))
+    Cli.parse(List(
+      "agent", "request", "delete-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
+    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
+      "delete-item", Some("a1"), Some("k1"), Some("a.jpg"), None, Some("r1")
+    ))
+    Cli.parse(List("agent", "requests")) shouldBe Cli.Run(Cli.AgentRequestsArgs)
+    Cli.parse(List("agent", "results")) shouldBe Cli.Run(Cli.AgentResultsArgs)
 
   it should "print help and not an operation" in :
     val top: String = helpOf("--help")
@@ -309,11 +347,40 @@ class CliTest extends AnyFlatSpec, Matchers:
         |catalog  list catalog albums
         |items  list catalog items for one album
         |match  match catalog items to local stems
-        |include  compress include lines""".stripMargin
+        |include  compress include lines
+        |album-file  write an album file
+        |request  append one request row
+        |requests  list request rows
+        |results  list result rows""".stripMargin
     helpOf("agent", "-h") shouldBe agent
     helpOf("help", "agent") shouldBe agent
-    agent should not include ("album-file")
-    agent should not include ("request")
+    agent should not include ("rename-album")
+    agent should not include ("move-item")
+    agent should not include ("set-description")
+    agent should not include ("set-date")
+    agent should not include ("download-item")
+    agent should not include ("delete-item")
+    helpOf("agent", "request", "--help") shouldBe
+      """request  append one request row
+        |
+        |rename-album  rename an owned album
+        |move-item  move an item to another album
+        |set-description  set an item description
+        |set-date  set an item date
+        |download-item  download an item
+        |delete-item  delete an item""".stripMargin
+    helpOf("agent", "request", "rename-album", "--help") shouldBe
+      """rename-album  rename an owned album
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--album  text  album id
+        |--current  text  current title
+        |--new  text  new title
+        |--id  text  request id""".stripMargin
+    helpOf("agent", "album-file", "--help") should include ("--id  text  catalog album id")
     helpOf("agent", "include", "--help") shouldBe
       """include  compress include lines
         |
@@ -391,7 +458,12 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "items") -> "missing album",
       List("agent", "match") -> "missing album",
       List("agent", "catalog", "June") -> "extra argument 'June'",
-      List("agent", "nope") -> "unknown command 'nope'"
+      List("agent", "nope") -> "unknown command 'nope'",
+      List("agent", "album-file", "2010/07", "--replace") -> "extra argument '--replace'",
+      List("agent", "request") -> "missing request action",
+      List("agent", "request", "--album", "a1", "rename-album") -> "unknown command '--album'",
+      List("agent", "requests", "x") -> "extra argument 'x'",
+      List("agent", "results", "x") -> "extra argument 'x'"
     )
     errors.foreach: (args, message) =>
       withClue(args):

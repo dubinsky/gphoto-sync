@@ -49,6 +49,24 @@ object Cli:
   private[photo] final case class AgentItemsArgs(id: Option[String], album: String) extends Parsed
   private[photo] final case class AgentMatchArgs(id: Option[String], album: String) extends Parsed
   private[photo] final case class AgentIncludeArgs(span: Option[String], paths: Seq[String]) extends Parsed
+  private[photo] final case class AgentAlbumFileArgs(
+    id: Option[String],
+    dryRun: Boolean,
+    replace: Boolean,
+    googleTitle: Option[String],
+    noRequest: Boolean,
+    album: String
+  ) extends Parsed
+  private[photo] final case class AgentRequestArgs(
+    action: String,
+    album: Option[String],
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String],
+    id: Option[String]
+  ) extends Parsed
+  private[photo] case object AgentRequestsArgs extends Parsed
+  private[photo] case object AgentResultsArgs extends Parsed
 
   private[photo] final case class Run(parsed: Parsed) extends Outcome
   private[photo] case object ShellFront extends Outcome
@@ -259,6 +277,14 @@ object Cli:
       AgentMatch(id, album)
     case AgentIncludeArgs(span, paths) =>
       AgentInclude(span, paths)
+    case AgentAlbumFileArgs(id, dryRun, replace, googleTitle, noRequest, album) =>
+      AgentAlbumFile(id, dryRun, replace, googleTitle, noRequest, album)
+    case AgentRequestArgs(action, album, item, current, updated, id) =>
+      AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
+    case AgentRequestsArgs =>
+      AgentRequests
+    case AgentResultsArgs =>
+      AgentResults
 
   private def finish(command: Command, values: Values, positionals: List[String], front: Front): Outcome =
     if command.name == "help" then helpText(positionals, front)
@@ -416,13 +442,30 @@ object Cli:
       Usage("missing agent command")
     case ("--help" | "-h") :: _ =>
       Help(agentHelp)
+    case "request" :: rest =>
+      parseRequest(rest, front)
     case name :: rest =>
       agentCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
         case Some(command) => parseCommand(command, rest, front)
 
+  private def parseRequest(args: List[String], front: Front): Outcome = args match
+    case Nil =>
+      Usage("missing request action")
+    case ("--help" | "-h") :: _ =>
+      Help(requestHelp)
+    case name :: rest =>
+      requestCommands.find(_.name == name) match
+        case None => Usage(s"unknown command '$name'")
+        case Some(command) => parseCommand(command, rest, front)
+
   private def agentHelp: String =
-    (List(agentLine, "") ++ agentCommands.map(lineOf)).mkString("\n")
+    val lines: List[String] = agentCommands.flatMap: command =>
+      if command.name == "album-file" then List(lineOf(command), requestLine) else List(lineOf(command))
+    (List(agentLine, "") ++ lines).mkString("\n")
+
+  private def requestHelp: String =
+    (List(requestLine, "") ++ requestCommands.map(lineOf)).mkString("\n")
 
   private def commandHelp(command: Command): String =
     val positionals: String =
@@ -662,6 +705,162 @@ object Cli:
       positionals = List(Rest("year/month/day/stem")),
       flags = List(Flag("span", None, TextKind, "title span; absent means a curated album")),
       build = (values, args) => AgentIncludeArgs(values.texts.get("span"), args)
+    ),
+    Command(
+      name = "album-file",
+      help = "write an album file",
+      positionals = List(Required("album")),
+      flags = List(
+        albumIdFlag,
+        Flag("dry-run", None, BooleanKind, "print the album file and write nothing"),
+        Flag("replace", None, BooleanKind, "overwrite an existing album file"),
+        Flag("google-title", None, TextKind, "exact google-title"),
+        Flag("no-request", None, BooleanKind, "do not append rename-album")
+      ),
+      build = (values, args) => AgentAlbumFileArgs(
+        id = values.texts.get("id"),
+        dryRun = bool(values, "dry-run"),
+        replace = bool(values, "replace"),
+        googleTitle = values.texts.get("google-title"),
+        noRequest = bool(values, "no-request"),
+        album = args.head
+      )
+    ),
+    Command(
+      name = "requests",
+      help = "list request rows",
+      positionals = Nil,
+      flags = Nil,
+      build = (_, _) => AgentRequestsArgs
+    ),
+    Command(
+      name = "results",
+      help = "list result rows",
+      positionals = Nil,
+      flags = Nil,
+      build = (_, _) => AgentResultsArgs
+    )
+  )
+
+  private val requestIdFlag: Flag = Flag("id", None, TextKind, "request id")
+
+  private def requestCommand(
+    name: String,
+    help: String,
+    flags: List[Flag],
+    build: Values => AgentRequestArgs
+  ): Command =
+    Command(name, help, Nil, flags, (values, _) => build(values))
+
+  private val requestCommands: List[Command] = List(
+    requestCommand(
+      "rename-album",
+      "rename an owned album",
+      List(
+        Flag("album", None, TextKind, "album id"),
+        Flag("current", None, TextKind, "current title"),
+        Flag("new", None, TextKind, "new title"),
+        requestIdFlag
+      ),
+      values => AgentRequestArgs(
+        "rename-album",
+        values.texts.get("album"),
+        None,
+        values.texts.get("current"),
+        values.texts.get("new"),
+        values.texts.get("id")
+      )
+    ),
+    requestCommand(
+      "move-item",
+      "move an item to another album",
+      List(
+        Flag("album", None, TextKind, "album id"),
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        Flag("new", None, TextKind, "destination album id"),
+        requestIdFlag
+      ),
+      values => AgentRequestArgs(
+        "move-item",
+        values.texts.get("album"),
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("new"),
+        values.texts.get("id")
+      )
+    ),
+    requestCommand(
+      "set-description",
+      "set an item description",
+      List(
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        Flag("new", None, TextKind, "new description"),
+        requestIdFlag
+      ),
+      values => AgentRequestArgs(
+        "set-description",
+        None,
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("new"),
+        values.texts.get("id")
+      )
+    ),
+    requestCommand(
+      "set-date",
+      "set an item date",
+      List(
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        Flag("new", None, TextKind, "new local date"),
+        requestIdFlag
+      ),
+      values => AgentRequestArgs(
+        "set-date",
+        None,
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("new"),
+        values.texts.get("id")
+      )
+    ),
+    requestCommand(
+      "download-item",
+      "download an item",
+      List(
+        Flag("album", None, TextKind, "album id"),
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        requestIdFlag
+      ),
+      values => AgentRequestArgs(
+        "download-item",
+        values.texts.get("album"),
+        values.texts.get("item"),
+        values.texts.get("current"),
+        None,
+        values.texts.get("id")
+      )
+    ),
+    requestCommand(
+      "delete-item",
+      "delete an item",
+      List(
+        Flag("album", None, TextKind, "album id"),
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        requestIdFlag
+      ),
+      values => AgentRequestArgs(
+        "delete-item",
+        values.texts.get("album"),
+        values.texts.get("item"),
+        values.texts.get("current"),
+        None,
+        values.texts.get("id")
+      )
     )
   )
 
@@ -703,6 +902,8 @@ object Cli:
   private val shellLine: String = "shell  start a session"
 
   private val agentLine: String = "agent  query the catalog and the archive"
+
+  private val requestLine: String = "request  append one request row"
 
   private def cursorOnly(session: Session, name: String): Option[Result] = session.style match
     case PathStyle.OneShot =>
