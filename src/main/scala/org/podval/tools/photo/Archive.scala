@@ -23,7 +23,6 @@ object Archive:
   private val pictureExtensions: Set[String] = (Extension.normal ++ Extension.raw).map(_.name)
 
   def scan(originals: File): Scan =
-    // One-shot stays a cold walk, so WRONG NAME and lazy PictureAudit stay what the tests lock.
     DirectoryIndex.cursor.filter(session => sameArchive(session, originals)) match
       case Some(_) => scanIndexed(originals)
       case None => scanCold(originals)

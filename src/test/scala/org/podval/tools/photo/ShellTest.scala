@@ -3,10 +3,12 @@ package org.podval.tools.photo
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import scala.annotation.targetName
+import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, File}
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files as JFiles
 import java.time.ZoneId
+import javax.imageio.ImageIO
 
 class ShellTest extends AnyFlatSpec, Matchers:
   @targetName("outcomeCanEqual")
@@ -256,7 +258,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
 
   private def touch(directory: File, name: String): Unit =
     directory.mkdirs() shouldBe true
-    File(directory, name).createNewFile() shouldBe true
+    ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", File(directory, name)) shouldBe true
 
   private def withArchive(body: File => Unit): Unit =
     val archive: File = JFiles.createTempDirectory("shell").toFile

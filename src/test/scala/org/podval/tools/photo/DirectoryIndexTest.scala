@@ -1,5 +1,6 @@
 package org.podval.tools.photo
 
+import com.drew.imaging.ImageProcessingException
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import scala.annotation.targetName
@@ -88,6 +89,44 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       narrowText shouldBe ""
       again shouldBe ""
       again shouldBe cold(root, "ls", "--name-contains", "07", july)
+
+  it should "not store a listing when the extractor rejects the file" in :
+    withArchive: archive =>
+      val relative: String = "2010/08/13"
+      val directory: File = File(archive, relative)
+      directory.mkdirs()
+      File(directory, "1000.jpg").createNewFile() shouldBe true
+      val root: Root = rootFor(archive)
+      val cursor: Session = Session(root, PathStyle.Cursor, root)
+
+      cold(root, "ls", relative) shouldBe s"/$relative/1000 jpg\n"
+      intercept[ImageProcessingException]:
+        run(Session(root), "ls", "--long", relative)
+
+      intercept[ImageProcessingException]:
+        shell(cursor, Seq(s"ls $relative", "exit"))
+      cursor.index.get(directory).flatMap(_.listing) shouldBe None
+
+      intercept[ImageProcessingException]:
+        shell(cursor, Seq(s"ls --long $relative", "exit"))
+
+  it should "keep a filtered ls of a misnamed sidecar in the shell" in :
+    withArchive: archive =>
+      val day: String = "2010/07/21"
+      jpeg(File(archive, day), "VID_1.jpg")
+      write(archive, s"$day/VID_1.toml", "source = \"camera\"\n")
+      val root: Root = rootFor(archive)
+      val cursor: Session = Session(root, PathStyle.Cursor, root)
+      val (code, _, _, texts) = shellTexts(cursor, Seq(
+        s"ls --name-contains zz $day",
+        "pwd",
+        "exit"
+      ))
+      code shouldBe 0
+      texts should have size 2
+      texts.head should include ("WRONG NAME")
+      texts.head shouldBe cold(root, "ls", "--name-contains", "zz", day)
+      texts(1) shouldBe "/\n"
 
   it should "not fill on cd or on a one-shot ls" in :
     withArchive: archive =>

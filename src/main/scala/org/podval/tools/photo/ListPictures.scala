@@ -33,8 +33,6 @@ final case class ListPictures(
     case pictures: Pictures => pictures.lsd(NameMode.Leave).foreach(ls(_, propertyAndValue))
     case directory: Directory => directory.lsd.foreach(forEachPicture(_, propertyAndValue))
 
-  // A hit re-renders this invocation's flags and does not construct Extension.
-  // A miss is today's cold ls, including enact, then a complete row for every grouped picture.
   private def listDay(
     session: Session,
     day: Day,
@@ -60,51 +58,47 @@ final case class ListPictures(
     val orderedNames: Vector[String] = picture.extensions.map(_.name).toVector
     val byName: Map[String, Extension] = picture.extensions.iterator.map(ext => ext.name -> ext).toMap
     val ordered: Vector[Extension] = orderedNames.map(byName)
-    val present: Boolean = ordered.forall(ext => picture.file(ext.name).isFile)
-    val readMetadataTimes: Vector[(ListedExtension, Boolean)] =
-      if present then ordered.map: ext =>
-        val (fromMetadata, readable) = safeFromMetadata(ext)
-        (ListedExtension(ext.name, fromMetadata, ext.current), readable)
-      else ordered.map(ext => (listedFromSource(picture, ext), false))
-    val reads: Vector[ListedExtension] = readMetadataTimes.map(_._1)
-    // PictureAudit reads the corrected path. A misnamed or unreadable file uses the instants already read.
-    val audit: PictureAudit.Result =
-      if present && readMetadataTimes.forall(_._2) then PictureAudit(picture)
-      else PictureAudit.assessed(picture, reads.map(_.fromMetadata).toSet, reads.map(_.current))
+    val metadata: Metadata = readSidecar(picture)
+    val timestampFromName: Option[(Instant, String)] =
+      Dates.fromFileName(picture.name, picture.zone, metadata.date.orElse(picture.parent.day.map(_.date)))
+    val reads: Vector[ListedExtension] = ordered.map(ext => listedExtension(picture, ext))
+    val audit: PictureAudit.Result = PictureAudit.assessed(
+      picture,
+      reads.map(_.fromMetadata).toSet,
+      reads.map(_.current),
+      timestampFromName.map(_._1),
+      Dates.FromMetadata.timestamp(metadata, picture.zone)
+    )
     ListedPicture(
       stem = picture.name,
       textPath = picture.toString,
       hasMetadata = picture.hasMetadata,
       hasNormal = picture.normal.isDefined,
       extensionNames = orderedNames,
-      metadata = readMetadata(picture),
-      timestampFromName = picture.timestampFromName,
+      metadata = metadata,
+      timestampFromName = timestampFromName,
       audit = audit,
       extensions = reads
     )
 
-  // An empty or non-image file has no metadata timestamp. One-shot ls --long still throws; the shell stores None.
-  private def safeFromMetadata(extension: Extension): (Option[Instant], Boolean) =
-    try (extension.fromMetadata, true)
-    catch
-      case _: com.drew.imaging.ImageProcessingException => (None, false)
-      case _: java.io.IOException => (None, false)
-
-  // Leave does not rename, so a misnamed sidecar is not at the corrected path yet.
-  private def readMetadata(picture: Picture): Metadata =
+  // Leave does not create the corrected path. Read that file only when it is already there.
+  private def readSidecar(picture: Picture): Metadata =
     if !picture.hasMetadata then Metadata.default
-    else if picture.metadataFile.isFile then picture.metadata
-    else sourceFile(picture, Metadata.extension).map(Metadata.read).getOrElse(Metadata.default)
+    else
+      val corrected: File = picture.metadataFile
+      if corrected.isFile then Metadata.read(corrected)
+      else sourceFile(picture, Metadata.extension).filter(_.isFile).fold(Metadata.default)(Metadata.read)
 
-  // Leave does not rename, so Extension.current's corrected path is not on disk yet.
-  private def listedFromSource(picture: Picture, extension: Extension): ListedExtension =
-    val source: File = sourceFile(picture, extension.name).getOrElse(picture.file(extension.name))
-    val fromMetadata: Option[Instant] =
-      try extension.descriptor.dater.get(source, picture.zone)
-      catch
-        case _: com.drew.imaging.ImageProcessingException => None
-        case _: java.io.IOException => None
-    ListedExtension(extension.name, fromMetadata, Dates.FromFile.instant(source, picture.zone))
+  private def listedExtension(picture: Picture, extension: Extension): ListedExtension =
+    val corrected: File = picture.file(extension.name)
+    if corrected.isFile then ListedExtension(extension.name, extension.fromMetadata, extension.current)
+    else
+      val source: File = sourceFile(picture, extension.name).getOrElse(corrected)
+      ListedExtension(
+        extension.name,
+        extension.descriptor.dater.get(source, picture.zone),
+        Dates.FromFile.instant(source, picture.zone)
+      )
 
   private def sourceFile(picture: Picture, extension: String): Option[File] =
     Pictures.plan(Files.listFiles(picture.parent.directory))

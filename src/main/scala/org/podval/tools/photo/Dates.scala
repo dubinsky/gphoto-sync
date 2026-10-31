@@ -177,10 +177,12 @@ object Dates:
       .orElse(shortDate.flatMap(date => NameShort.get(clock, zone, date).map(_ -> "short")))
 
   object FromMetadata extends Dater(isZoned = false):
-    def get(picture: Picture): Option[Instant] = Option.when(picture.hasMetadata)(picture.metadata)
-      .flatMap(_.timestamp)
-      .map(LocalDateTime.parse)
-      .map(toInstant(picture.zone))
+    def get(picture: Picture): Option[Instant] =
+      Option.when(picture.hasMetadata)(picture.metadata).flatMap(timestamp(_, picture.zone))
+
+    // Same parse as get, from a sidecar already read. Does not open a file.
+    private[photo] def timestamp(metadata: org.podval.tools.photo.Metadata, zone: ZoneId): Option[Instant] =
+      metadata.timestamp.map(LocalDateTime.parse).map(toInstant(zone))
 
   object FromFile extends Dater(isZoned = true):
     def get(picture: Picture, extension: String): Instant =

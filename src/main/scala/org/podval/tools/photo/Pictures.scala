@@ -67,7 +67,6 @@ object Pictures:
     enact(planned, names)
     stems(planned)
 
-  // Silent fill for the index. Leave's WRONG NAME stays on group, which still enacts.
   private[photo] def grouped(files: Seq[File]): Seq[(String, Set[String])] =
     stems(plan(files))
 
