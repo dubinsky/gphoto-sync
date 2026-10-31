@@ -193,6 +193,16 @@ has an owner.
 `photo agent requests` lists those rows without album ids or item keys.
 `photo agent results` lists result rows and prints each note unchanged.
 
+`photo serve` reads one JSON object per line from standard input and writes one JSON response per line.
+There is no TCP port.
+The request has `argv`, an array of strings, and an optional string `id` that the response echoes.
+Flags precede positionals in `argv`.
+`text` is the human output.
+`value` is the command's JSON value, or `null`.
+A failure puts the usage line in `error` and does not write a second line to stderr.
+`cd` changes the cursor for the next line.
+`exit` writes a response and then the process exits.
+
 == OAuth and config
 
 The Desktop client JSON is `~/.config/org.podval.tools.photo.client.json`.

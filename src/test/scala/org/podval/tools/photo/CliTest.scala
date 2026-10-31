@@ -183,6 +183,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |logout  log out of Google Photos
         |help  print command help
         |shell  start a session
+        |serve  answer one JSON command per line
         |agent  query the catalog and the archive""".stripMargin
     helpOf("-h") shouldBe top
     helpOf("--help", "ls") shouldBe top
@@ -336,7 +337,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     top.linesIterator.exists(_.startsWith("pwd")) shouldBe false
     top.linesIterator.exists(_.startsWith("exit")) shouldBe false
     top.linesIterator.exists(_.startsWith("agent")) shouldBe true
-    top.linesIterator.exists(_.startsWith("serve")) shouldBe false
+    top.linesIterator.exists(_.startsWith("serve")) shouldBe true
     top.linesIterator.exists(_.startsWith("album-file")) shouldBe false
 
     val agent: String = helpOf("agent", "--help")
@@ -448,6 +449,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("exit", "now") -> "extra argument 'now'",
       List("shell", "pwd") -> "extra argument 'pwd'",
       List("shell", "--help") -> "extra argument '--help'",
+      List("serve", "pwd") -> "extra argument 'pwd'",
+      List("serve", "--help") -> "extra argument '--help'",
       List("agent") -> "missing agent command",
       List("agent", "--id", "x", "items", "2010/07") -> "unknown command '--id'",
       List("agent", "items", "2010/07", "--id", "a1") -> "extra argument '--id'",
@@ -485,8 +488,15 @@ class CliTest extends AnyFlatSpec, Matchers:
     run("pwd") shouldBe Result.Usage("pwd is only available in the shell and in serve")
     run("exit") shouldBe Result.Usage("exit is only available in the shell and in serve")
     Cli.parse(List("shell")) shouldBe Cli.ShellFront
+    Cli.parse(List("serve")) shouldBe Cli.ServeFront
     Cli.parse(List("shell"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
     Cli.parse(List("shell", "--help"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
+    Cli.parse(List("serve"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
+    Cli.parse(List("serve", "--help"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
+    Cli.parse(List("shell"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
+    Cli.parse(List("shell", "--help"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
+    Cli.parse(List("serve"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
+    Cli.parse(List("serve", "--help"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
 
   "usageLine" should "prefix the program name" in :
     Cli.usageLine("missing command") shouldBe "Photo Archive Tool: missing command"

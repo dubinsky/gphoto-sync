@@ -70,9 +70,10 @@ object Cli:
 
   private[photo] final case class Run(parsed: Parsed) extends Outcome
   private[photo] case object ShellFront extends Outcome
+  private[photo] case object ServeFront extends Outcome
 
   private[photo] enum Front:
-    case OneShot, Shell
+    case OneShot, Shell, Serve
 
   def main(args: Array[String]): Unit =
     parse(args.toList) match
@@ -83,6 +84,9 @@ object Cli:
         sys.exit(1)
       case ShellFront =>
         val code: Int = shell(Session.open(PathStyle.Cursor), stdinLines)
+        if code != 0 then sys.exit(code)
+      case ServeFront =>
+        val code: Int = serve(Session.open(PathStyle.Cursor), stdinLines)
         if code != 0 then sys.exit(code)
       case Run(parsed) =>
         try
@@ -127,6 +131,61 @@ object Cli:
         case Step.Continue(next) => loop(next)
     loop(session)
 
+  private[photo] def serve(
+    session: Session,
+    lines: Iterator[String],
+    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
+  ): Int =
+    @tailrec
+    def loop(current: Session): Int =
+      if !lines.hasNext then 0
+      else serveStep(current, lines.next(), run) match
+        case Step.Stop => 0
+        case Step.Continue(next) => loop(next)
+    loop(session)
+
+  private def serveStep(session: Session, line: String, run: (Session, Parsed) => (Session, Result)): Step =
+    def reply(
+      id: Option[String],
+      ok: Boolean,
+      text: Option[String],
+      error: Option[String],
+      value: Option[Json]
+    ): Unit =
+      println(Serve.render(id, ok, text, error, value))
+
+    def usage(id: Option[String], message: String): Step =
+      reply(id, ok = false, None, Some(usageLine(message)), None)
+      Step.Continue(session)
+
+    Serve.read(line) match
+      case Left(problem) =>
+        usage(problem.id, problem.message)
+      case Right(request) =>
+        parse(request.argv, Front.Serve) match
+          case Help(text) =>
+            // The shell prints help with println, so the human text ends with a newline.
+            reply(request.id, ok = true, Some(text + "\n"), None, Some(Json.Null))
+            Step.Continue(session)
+          case Usage(message) =>
+            usage(request.id, message)
+          case ShellFront | ServeFront =>
+            usage(request.id, "already running")
+          case Run(ExitArgs) =>
+            reply(request.id, ok = true, Some(""), None, Some(Json.Null))
+            Step.Stop
+          case Run(parsed) =>
+            val (returned, result) = run(session, parsed)
+            result match
+              case Result.Ok(text, value) =>
+                reply(request.id, ok = true, Some(text), None, Some(value))
+                Step.Continue(returned)
+              case Result.Failed(text, value, message) =>
+                reply(request.id, ok = false, Some(text), Some(usageLine(message)), Some(value))
+                Step.Continue(returned)
+              case Result.Usage(message) =>
+                usage(request.id, message)
+
   private def step(session: Session, line: String, run: (Session, Parsed) => (Session, Result)): Step =
     splitLine(line) match
       case Left(message) =>
@@ -142,7 +201,7 @@ object Cli:
           case Usage(message) =>
             Console.err.println(usageLine(message))
             Step.Continue(session)
-          case ShellFront =>
+          case ShellFront | ServeFront =>
             Console.err.println(usageLine("already running"))
             Step.Continue(session)
           case Run(ExitArgs) =>
@@ -212,12 +271,22 @@ object Cli:
       Help(topHelp(front))
     case "shell" :: rest =>
       front match
-        case Front.Shell =>
+        case Front.Shell | Front.Serve =>
           Usage("already running")
         case Front.OneShot =>
           rest match
             case Nil =>
               ShellFront
+            case extra :: _ =>
+              Usage(s"extra argument '$extra'")
+    case "serve" :: rest =>
+      front match
+        case Front.Shell | Front.Serve =>
+          Usage("already running")
+        case Front.OneShot =>
+          rest match
+            case Nil =>
+              ServeFront
             case extra :: _ =>
               Usage(s"extra argument '$extra'")
     case "agent" :: rest =>
@@ -423,14 +492,16 @@ object Cli:
     val sessionCommands: List[Command] = front match
       case Front.OneShot =>
         Nil
-      case Front.Shell =>
+      case Front.Shell | Front.Serve =>
         List(cdCommand, pwdCommand, exitCommand)
-    val shellLines: List[String] = front match
-      case Front.OneShot => List(shellLine)
-      case Front.Shell => Nil
+    val frontLines: List[String] = front match
+      case Front.OneShot =>
+        List(shellLine, serveLine)
+      case Front.Shell | Front.Serve =>
+        Nil
     val lines: List[String] =
       (commands ++ List(helpCommand)).map(lineOf) ++
-        shellLines ++
+        frontLines ++
         List(agentLine) ++
         sessionCommands.map(lineOf)
     (header ++ lines).mkString("\n")
@@ -900,6 +971,8 @@ object Cli:
     commands ++ List(helpCommand, cdCommand, pwdCommand, exitCommand)
 
   private val shellLine: String = "shell  start a session"
+
+  private val serveLine: String = "serve  answer one JSON command per line"
 
   private val agentLine: String = "agent  query the catalog and the archive"
 
