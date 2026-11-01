@@ -99,14 +99,10 @@ object Pictures:
       if extension != lower && Extension.all.exists(_.name == lower) then lower else extension
     (stemFixed, extensionFixed)
 
-  private val stillExtensions: Set[String] = Set(Extension.JPG.name, Extension.GIF.name)
+  private val videoExtensions: Set[String] = Extension.video.map(_.name)
 
-  private val videoExtensions: Set[String] = Set(
-    Extension.MP4.name,
-    Extension.MOV.name,
-    Extension.AVI.name,
-    Extension.TGP.name
-  )
+  private val stillExtensions: Set[String] =
+    (Extension.normal -- Extension.video).map(_.name)
 
   private val normalExtensions: Set[String] = Extension.normal.map(_.name)
 

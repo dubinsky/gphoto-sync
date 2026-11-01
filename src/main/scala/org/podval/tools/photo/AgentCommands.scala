@@ -312,8 +312,6 @@ private[photo] object AgentCommands:
   ): Map[String, Metadata] =
     grouped.map(row => row._1 -> sidecar(planned, directory, row._1)).toMap
 
-  private val videoExtensions: Set[String] = Set("mp4", "mov", "avi", "3gp")
-
   private def resolve(
     grouped: Map[String, Set[String]],
     stem: String,
@@ -335,7 +333,7 @@ private[photo] object AgentCommands:
       if useV then v else stem
 
   private def isVideo(extension: String): Boolean =
-    videoExtensions.contains(extension.toLowerCase(java.util.Locale.ROOT))
+    Extension.video.exists(_.name == extension.toLowerCase(java.util.Locale.ROOT))
 
   def civilDay(root: Root, date: LocalDate): Day =
     root.year(date.getYear).month(date.getMonthValue).day(date.getDayOfMonth)

@@ -29,6 +29,7 @@ object Publish:
 
   private val uploadable: Seq[String] = Seq(
     Extension.JPG.name,
+    Extension.JPEG.name,
     Extension.MOV.name,
     Extension.MP4.name,
     Extension.AVI.name,
@@ -466,7 +467,7 @@ object Publish:
     if picture.bytes.getPath != picture.source.getPath && picture.bytes.isFile then picture.bytes.delete()
 
   private def mime(ext: String): String = ext match
-    case Extension.JPG.name => "image/jpeg"
+    case Extension.JPG.name | Extension.JPEG.name => "image/jpeg"
     case Extension.MOV.name => "video/quicktime"
     case Extension.MP4.name => "video/mp4"
     case Extension.AVI.name => "video/x-msvideo"

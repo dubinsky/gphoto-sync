@@ -18,7 +18,7 @@ The name is not a 4-digit year, not `album`, and not `to-…`.
 `rootPath` in the config file is the archive.
 On this machine that is `Pictures/originals`.
 The inbox is the child `.upload`.
-Publish uploads JPEG and video.
+Publish uploads `jpg`, `jpeg`, and video other than `m4v`.
 RAW stays local.
 The old sibling `Upload` is gone.
 `lsd` skips a child whose name starts with `.` at year, month, and day, then puts `.upload` back on the archive root.
@@ -138,7 +138,7 @@ When a video shares a repaired stem with a still, the video's stem gains a trail
 It does not overwrite a file that is already there.
 A stem that does not start with a digit is not renamed.
 It rewrites `JPG` to `jpg`, `CR2` to `cr2`, and `Mp4` to `mp4`.
-It does not rename `JPEG`.
+It lowercases `JPEG` to `jpeg` and does not produce `jpg`.
 `--raw` makes a JPEG from RAW with dcraw when no normal image exists and `bad-raw` is not set.
 `--timestamps` sets file mtimes from the assessed instant.
 `--days` moves a picture into the assessed day folder, rewriting curated include paths before any file moves.
@@ -153,7 +153,7 @@ Each picture line ends with `albums=` and every claiming title, in Scala string 
 `2009/03/10/2412 albums=2009/03/10/Party,Best` is a picture in both albums.
 An empty claim and an excluded-only claim both print `albums=-`.
 
-`photo publish [path]` uploads JPEG and video into albums and files existing media ids.
+`photo publish [path]` uploads `jpg`, `jpeg`, and video other than `m4v` into albums and files existing media ids.
 A year or the archive root requires `--recursive`.
 `--dry-run` prints the local plan and does not call Google.
 A picture is added to every non-external album that lists it.

@@ -29,11 +29,12 @@ import java.time.temporal.ChronoUnit
 
 // TODO for 'cr2, metadata-extractor provides millisecond precision...
 
-// Note: metadata-extractor *still* does not support 'cr3' files!
-// see ttps://github.com/drewnoakes/metadata-extractor/issues/374
-
-// metadata-extractor does not support 'mov';
-// dcraw on *some* mov files errors out with "Cannot decode".
+// metadata-extractor 2.22.0 reads CR3 (Cr3MetadataReader) and MOV (QuickTimeMetadataReader).
+// HeifReader reads heic, heif, and avif, and ImageMetadataReader already calls it.
+// This program still dates cr3 with dcraw, and mov, mp4, and m4v with ffprobe.
+// Dates.MetadataExtractor is the dater for the stills and the TIFF raw suffixes.
+// RWL is the Leica suffix; that TIFF arm reads it when the bytes are TIFF. RW2 stays on the same row.
+// Do not add a second reader for them.
 object Dates:
   def equal(left: Instant, right: Instant): Boolean =
     Math.abs(left.toEpochMilli - right.toEpochMilli) == 0

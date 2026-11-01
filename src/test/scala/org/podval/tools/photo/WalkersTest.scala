@@ -213,6 +213,28 @@ class WalkersTest extends AnyFlatSpec, Matchers:
       still.getName shouldBe "1.gif"
       File(directory.toFile, "1v.mp4").isFile shouldBe true
 
+  it should "add v to m4v beside jpg and to mp4 beside jpeg" in :
+    withTemp: directory =>
+      val still: File = touch(directory, "1.jpg")
+      val video: File = touch(directory, "1.m4v")
+      Pictures.group(Seq(still, video), NameMode.Apply) shouldBe Seq(
+        "1" -> Set("jpg"),
+        "1v" -> Set("m4v")
+      )
+      still.getName shouldBe "1.jpg"
+      File(directory.toFile, "1v.m4v").isFile shouldBe true
+
+    withTemp: directory =>
+      val still: File = touch(directory, "1.jpeg")
+      val video: File = touch(directory, "1.mp4")
+      Pictures.group(Seq(still, video), NameMode.Apply) shouldBe Seq(
+        "1" -> Set("jpeg"),
+        "1v" -> Set("mp4")
+      )
+      still.getName shouldBe "1.jpeg"
+      still.exists shouldBe true
+      File(directory.toFile, "1v.mp4").isFile shouldBe true
+
   it should "omit two videos that would share a v stem" in :
     withTemp: directory =>
       val still: File = touch(directory, "20191220_141955.jpg")

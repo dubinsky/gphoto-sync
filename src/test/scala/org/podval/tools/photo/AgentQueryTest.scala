@@ -283,6 +283,26 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       File(day, "123v.mp4").isFile shouldBe true
       Option(File(archive, ".gphoto-sync").list()).get.toSet shouldBe Set("catalog.txt")
 
+  "agent match" should "join an m4v name to the v stem" in :
+    withArchive: archive =>
+      val day: File = File(archive, "2010/07/19")
+      touch(day, "123.jpg")
+      touch(day, "123v.m4v")
+      writeCatalog(
+        archive,
+        "album\tm1\t1\tTrip",
+        "item\tm1\t123.m4v\t2010-07-19\tk3\t-"
+      )
+      val (_, result) = exec(Session(rootFor(archive)), "agent", "match", "Trip")
+      result shouldBe Result.Ok(
+        """matched 1 of 1
+          |2010/07/19 123.m4v 123v
+          |""".stripMargin,
+        matchValue("m1", Seq("2010/07/19" -> "123v"), Seq.empty)
+      )
+      File(day, "123v.m4v").isFile shouldBe true
+      File(day, "123.m4v").exists shouldBe false
+
   "agent include" should "compress against every day in the span and write nothing" in :
     withArchive: archive =>
       val day: File = File(archive, "2010/07/19")

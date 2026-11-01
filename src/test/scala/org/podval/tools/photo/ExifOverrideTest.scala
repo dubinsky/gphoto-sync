@@ -10,7 +10,23 @@ class ExifOverrideTest extends AnyFlatSpec, Matchers:
   private val orientation: String = "Rotate 90 CW"
   private val exiftool: String = "/usr/bin/vendor_perl/exiftool"
 
-  "ExifOverride" should "build a JPEG argv for a timestamp only" in :
+  "ExifOverride" should "build a JPEG argv for a jpeg suffix timestamp" in :
+    val file: File = File("/tmp/gphoto-sync-exif-override/photo.jpeg")
+    ExifOverride(file, "jpeg", Metadata(timestamp = Some(stamp))) match
+      case Right((copy, Some(argv))) =>
+        argv.head shouldBe exiftool
+        has(argv, "-o")
+        has(argv, copy.getPath)
+        has(argv, s"-DateTimeOriginal=$stamp")
+        has(argv, file.getPath)
+        argv.exists(_.startsWith("-Orientation")) shouldBe false
+        argv.exists(_.startsWith("-CreateDate")) shouldBe false
+        copy.getName.endsWith(".jpg") shouldBe true
+        copy.getName.endsWith(".jpeg") shouldBe false
+        copy.getPath should not be file.getPath
+      case other => fail(s"expected a JPEG temp copy, got $other")
+
+  it should "build a JPEG argv for a timestamp only" in :
     val prepared: (File, Seq[String]) = jpeg(Metadata(timestamp = Some(stamp)))
     val copy: File = prepared._1
     val argv: Seq[String] = prepared._2

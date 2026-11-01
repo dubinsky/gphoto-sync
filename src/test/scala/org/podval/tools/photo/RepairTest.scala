@@ -50,13 +50,12 @@ class RepairTest extends AnyFlatSpec, Matchers:
       val picture: File = File(originals, "2009/03/10/1000.JPEG")
       picture.getParentFile.mkdirs()
       picture.createNewFile()
-      Pictures.repaired("1000", "JPEG") shouldBe ("1000", "JPEG")
-      val thrown: IllegalArgumentException = intercept[IllegalArgumentException]:
-        run(root, "2009/03/10", names = true)
-      picture.exists shouldBe true
+      Pictures.repaired("1000", "JPEG") shouldBe ("1000", "jpeg")
+      run(root, "2009/03/10", names = true)
+      picture.exists shouldBe false
+      File(originals, "2009/03/10/1000.jpeg").isFile shouldBe true
       File(originals, "2009/03/10/1000.jpg").exists shouldBe false
-      thrown.getMessage should include ("illegal extension JPEG")
-      thrown.getMessage should not include ("illegal extension jpeg")
+      File(originals, "2009/03/10/1000.JPEG").exists shouldBe false
 
   it should "not rename on a dry run" in :
     withOriginals: originals =>

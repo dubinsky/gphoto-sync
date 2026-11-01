@@ -23,7 +23,7 @@ object ExifOverride:
     val hasOverride: Boolean = metadata.timestamp.isDefined || metadata.orientation.isDefined
     if !hasOverride then Right((source, None))
     else extension match
-      case Extension.JPG.name =>
+      case Extension.JPG.name | Extension.JPEG.name =>
         val copy: File = tempJpeg(tempDirectory)
         Right((copy, Some(argv(source, copy, metadata))))
       case name if videos.contains(name) =>
