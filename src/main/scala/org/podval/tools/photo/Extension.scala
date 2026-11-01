@@ -38,6 +38,12 @@ object Extension:
   object TIF extends Descriptor("tif", Dates.MetadataExtractor)
   object THM extends Descriptor("thm", Dates.MetadataExtractor)
 
+  object HEIC extends Descriptor("heic", Dates.MetadataExtractor)
+  object HEIF extends Descriptor("heif", Dates.MetadataExtractor)
+  object AVIF extends Descriptor("avif", Dates.MetadataExtractor)
+  object PNG extends Descriptor("png", Dates.MetadataExtractor)
+  object WEBP extends Descriptor("webp", Dates.MetadataExtractor)
+
   object MOV extends Descriptor("mov", Dates.FFProbeZoned)
   object MP4 extends Descriptor("mp4", Dates.FFProbeZoned)
   object M4V extends Descriptor("m4v", Dates.FFProbeZoned)
@@ -57,6 +63,14 @@ object Extension:
     Extension.JPEG,
     Extension.GIF
   ) ++ video
+
+  val image: Set[Descriptor] = Set(
+    Extension.HEIC,
+    Extension.HEIF,
+    Extension.AVIF,
+    Extension.PNG,
+    Extension.WEBP
+  )
 
   val raw: Set[Descriptor] = Set(
     Extension.CRW,
@@ -80,6 +94,7 @@ object Extension:
 
   val all: Set[Descriptor] = (
     normal ++
+    image ++
     raw ++
     thumbnail ++
     aux

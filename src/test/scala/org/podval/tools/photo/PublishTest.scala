@@ -389,6 +389,30 @@ class PublishTest extends AnyFlatSpec, Matchers:
       expectOk(thrown, out)
       fake.uploads should have size 1
 
+  it should "upload a jpg beside heic and not a heic-only picture" in :
+    withOriginals: originals =>
+      val jpg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      writeBytes(originals, "2009/03/10/2412.heic", Array[Byte](2))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads.map(_.getPath).toSeq shouldBe Seq(jpg.getPath)
+      out should not include ("too many normal extensions")
+      out should include ("uploaded=1")
+
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/1006.heic", Array[Byte](1))
+      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      out should not include ("too many normal extensions")
+      out should not include ("no images")
+      out should not include ("no albums")
+      out should include ("uploaded=0")
+
   it should "not upload a gif or a raw file" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/1000.jpg", Array[Byte](1))

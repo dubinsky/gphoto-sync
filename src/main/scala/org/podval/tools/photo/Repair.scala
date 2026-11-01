@@ -62,7 +62,7 @@ object Repair:
 
   private def repairRaw(picture: Picture, dryRun: Boolean, generate: Picture => Unit): Unit =
     val suppressed: Boolean = picture.metadata.`bad-raw`.contains(true)
-    if picture.normal.isEmpty && !suppressed then
+    if picture.raw.isDefined && picture.normal.isEmpty && !suppressed then
       act(dryRun, s"$picture: generating '${RawConverter.extension}' from raw file")(generate(picture))
 
   private def repairTimestamps(

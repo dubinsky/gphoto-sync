@@ -384,6 +384,45 @@ class WalkersTest extends AnyFlatSpec, Matchers:
       out should include (s"$gif: NOT RENAMED; 1 would have two normal files")
       out should include (s"$raw: NOT RENAMED; 1 is not one normal picture")
 
+  it should "keep a lone heic and a jpg beside heic as one picture" in :
+    withDay("1006.heic"): (day, heic) =>
+      val out: String = capture:
+        val pictures: Seq[Picture] = day.lsd(NameMode.Leave)
+        pictures.map(_.name) shouldBe Seq("1006")
+        pictures.head.image.map(_.name) shouldBe Some("heic")
+        pictures.head.normal shouldBe None
+        pictures.head.raw shouldBe None
+      out should not include ("has no picture file")
+      out should not include ("no images")
+      heic.getName shouldBe "1006.heic"
+
+    withDay("2412.jpg"): (day, jpg) =>
+      val heic: File = touch(jpg.getParentFile.toPath, "2412.heic")
+      val out: String = capture:
+        val pictures: Seq[Picture] = day.lsd(NameMode.Leave)
+        pictures.map(_.name) shouldBe Seq("2412")
+        pictures.head.extensions.map(_.name) shouldBe Set("jpg", "heic")
+        pictures.head.normal.map(_.name) shouldBe Some("jpg")
+        pictures.head.image.map(_.name) shouldBe Some("heic")
+      out should not include ("too many normal extensions")
+      jpg.getName shouldBe "2412.jpg"
+      heic.getName shouldBe "2412.heic"
+
+  it should "reject two image extensions on one stem" in :
+    withDay("2412.heic"): (day, heic) =>
+      touch(heic.getParentFile.toPath, "2412.png")
+      val thrown: IllegalArgumentException = intercept[IllegalArgumentException](day.lsd(NameMode.Leave))
+      thrown.getMessage should include ("too many image extensions")
+
+  it should "not give m4v a v suffix beside heic" in :
+    withTemp: directory =>
+      val heic: File = touch(directory, "1.heic")
+      val video: File = touch(directory, "1.m4v")
+      Pictures.group(Seq(heic, video), NameMode.Apply) shouldBe Seq("1" -> Set("heic", "m4v"))
+      heic.getName shouldBe "1.heic"
+      video.getName shouldBe "1.m4v"
+      File(directory.toFile, "1v.m4v").exists shouldBe false
+
   it should "omit a lone toml thm or tif and keep a lone raw" in :
     withDay("1002.cr2"): (day, raw) =>
       val dir: Path = raw.getParentFile.toPath

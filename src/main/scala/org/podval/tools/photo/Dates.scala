@@ -32,7 +32,7 @@ import java.time.temporal.ChronoUnit
 // metadata-extractor 2.22.0 reads CR3 (Cr3MetadataReader) and MOV (QuickTimeMetadataReader).
 // HeifReader reads heic, heif, and avif, and ImageMetadataReader already calls it.
 // This program still dates cr3 with dcraw, and mov, mp4, and m4v with ffprobe.
-// Dates.MetadataExtractor is the dater for the stills and the TIFF raw suffixes.
+// Dates.MetadataExtractor is the dater for the stills, heic, heif, avif, png, webp, and the TIFF raw suffixes.
 // RWL is the Leica suffix; that TIFF arm reads it when the bytes are TIFF. RW2 stays on the same row.
 // Do not add a second reader for them.
 object Dates:

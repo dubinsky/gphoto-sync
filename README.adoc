@@ -20,6 +20,7 @@ On this machine that is `Pictures/originals`.
 The inbox is the child `.upload`.
 Publish uploads `jpg`, `jpeg`, and video other than `m4v`.
 RAW stays local.
+`heic`, `heif`, `avif`, `png`, and `webp` stay local and are not uploaded.
 The old sibling `Upload` is gone.
 `lsd` skips a child whose name starts with `.` at year, month, and day, then puts `.upload` back on the archive root.
 `AGENTS.md` may sit in the archive root.

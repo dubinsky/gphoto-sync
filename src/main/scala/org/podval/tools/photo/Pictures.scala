@@ -40,6 +40,7 @@ trait Pictures extends Directory:
       hasMetadata = extensions.contains(Metadata.extension),
       normal      = noMoreThanOne(Extension.normal   , "normal"   ),
       raw         = noMoreThanOne(Extension.raw      , "raw"      ),
+      image       = noMoreThanOne(Extension.image    , "image"    ),
       thumbnail   = noMoreThanOne(Extension.thumbnail, "thumbnail"),
       aux         = noMoreThanOne(Extension.aux      , "aux"      )
     )
@@ -107,6 +108,8 @@ object Pictures:
   private val normalExtensions: Set[String] = Extension.normal.map(_.name)
 
   private val rawExtensions: Set[String] = Extension.raw.map(_.name)
+
+  private val imageExtensions: Set[String] = Extension.image.map(_.name)
 
   private val orphanExtensions: Set[String] = Set(Metadata.extension, Extension.THM.name, Extension.TIF.name)
 
@@ -187,7 +190,9 @@ object Pictures:
   private def markNoPicture(stem: String, rows: Seq[Planned]): Seq[Planned] =
     val returned: Seq[Planned] = rows.filterNot(_.omitted)
     val pictured: Boolean = returned.exists: row =>
-      normalExtensions.contains(row.extension) || rawExtensions.contains(row.extension)
+      normalExtensions.contains(row.extension) ||
+        rawExtensions.contains(row.extension) ||
+        imageExtensions.contains(row.extension)
     if pictured then rows
     else rows.map: row =>
       if row.omitted || !orphanExtensions.contains(row.extension) then row

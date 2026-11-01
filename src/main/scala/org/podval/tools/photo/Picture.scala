@@ -9,15 +9,16 @@ final class Picture(
   val hasMetadata: Boolean,
   val normal: Option[Extension.Descriptor],
   val raw: Option[Extension.Descriptor],
+  val image: Option[Extension.Descriptor],
   thumbnail: Option[Extension.Descriptor],
   aux: Option[Extension.Descriptor]
 ) extends Item:
-  require(normal.isDefined || raw.isDefined, s"no images for $this")
+  require(normal.isDefined || raw.isDefined || image.isDefined, s"no images for $this")
 
   def zone: ZoneId = root.configuration.zoneId
 
   // Note: image files only, not the metadata
-  val extensions: Set[Extension] = Set(normal, raw, thumbnail, aux).flatten.map(Extension(this, _))
+  val extensions: Set[Extension] = Set(normal, raw, image, thumbnail, aux).flatten.map(Extension(this, _))
 
   def file(extension: String): File = File(parent.directory, s"$name.$extension")
 

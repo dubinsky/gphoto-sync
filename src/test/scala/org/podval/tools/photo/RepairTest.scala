@@ -116,6 +116,48 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.exists shouldBe true
       File(originals, "2009/03/10/2412.jpg").exists shouldBe false
 
+  "repair --raw" should "not generate from an image-only picture" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val heic: File = File(originals, "2009/03/10/1006.heic")
+      heic.getParentFile.mkdirs()
+      heic.createNewFile()
+      var generated: Boolean = false
+      run(root, "2009/03/10", raw = true, generate = _ => generated = true)
+      generated shouldBe false
+      heic.exists shouldBe true
+      File(originals, "2009/03/10/1006.jpg").exists shouldBe false
+
+  it should "still generate from raw when no normal image exists" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val nef: File = File(originals, "2009/03/10/1007.nef")
+      nef.getParentFile.mkdirs()
+      nef.createNewFile()
+      var generated: Boolean = false
+      run(root, "2009/03/10", raw = true, generate = picture =>
+        picture.raw.map(_.name) shouldBe Some("nef")
+        generated = true
+      )
+      generated shouldBe true
+
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val heic: File = File(originals, "2009/03/10/1008.heic")
+      val nef: File = File(originals, "2009/03/10/1008.nef")
+      heic.getParentFile.mkdirs()
+      heic.createNewFile()
+      nef.createNewFile()
+      var generated: Boolean = false
+      run(root, "2009/03/10", raw = true, generate = picture =>
+        picture.raw.map(_.name) shouldBe Some("nef")
+        picture.image.map(_.name) shouldBe Some("heic")
+        picture.normal shouldBe None
+        generated = true
+      )
+      generated shouldBe true
+      File(originals, "2009/03/10/1008.jpg").exists shouldBe false
+
   "repair --raw --dry-run" should "not call the generator" in :
     withOriginals: originals =>
       val root: Root = rootFor(originals)

@@ -20,7 +20,7 @@ object Archive:
   final case class Scan(albums: Seq[Album.Loaded], pictures: Seq[Picture]):
     def ++(that: Scan): Scan = Scan(albums ++ that.albums, pictures ++ that.pictures)
 
-  private val pictureExtensions: Set[String] = (Extension.normal ++ Extension.raw).map(_.name)
+  private val pictureExtensions: Set[String] = (Extension.normal ++ Extension.raw ++ Extension.image).map(_.name)
 
   def scan(originals: File): Scan =
     DirectoryIndex.cursor.filter(session => sameArchive(session, originals)) match
