@@ -347,34 +347,13 @@ Cron is out of scope.
 
 == TODO
 
-1. Right now, if I want some modification done to Google Photos,
-I tell you - and you do it (and update catalog.txt as needed), right?
-Protocol files requests/results are not used at all, right?
-Soon we'll start moving functionality into Scala code of `gphoto-sync`.
-Will those files be used then? How?
-
-2. Let's flesh out catalog.txt refresh functionality and synchronization with the local archive.
-
-For any refresh - full or partial - we need an operation to read the list of albums from Google Photos, with the items count.
-
-If we are doing full refresh, we are going to read each of the albums; if we are doing incremental refresh, we are going to re-read only the new albums and the albums with changed item count (as compared to the item count they reported previously, not the previous actual item count I think - I hope catalog.txt does record that).
-
-So, we need an operation to read one album's items.
-
-We need to be able to record the results of the incremental refresh in catalog.txt: 1) that an album is new, so that when we eventually download its items we create corresponding local archive album file; 2) that the album changed, so that when we eventually download its items we adjust the local file; 3) that the album deleted - unless in such cases we delete the local album file immediately. This may necessitate changes to the format of catalog.txt.
-
-While we are at it: we need operations to make local album files consistent with the state of affairs in Google Photos: 1) create/delete/modify local album files so they are in 1:1 correspondence with the Google Photos albums. Albums created and populated locally using gphoto-sync should not be wiped out or modified - unless they were previously created in Google Photos by gphoto-sync, their items uploaded to Google Photos, and then deleted/modified via Google Photos UI; so, there should be a way to mark albums created oh the local side as "pending" (in their album files or in catalog.txt) - and an operation to create them on Google Photos vis gphoto-sync.
-
-There should also be operations to download and move into appropriate places items that are missing locally.
-
-What exactly all those operations are, which of them are user-facing commands, which are agent commands, and which are purely internal, what is the overall approach and design: I want you to think deep on this and make recommendations.
-
 - download missing pictures from albums (including default dates?
   outside of albums?)
 
 
 - fix day and date-range albums: split, merge, month...
 
+- drop requests/result?
 
 One note with those three parts would be the clean shape. Folding them in the archive now, and moving them into gphoto-sync later, does that restructure twice.
 
