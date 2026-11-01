@@ -318,7 +318,7 @@ object Cli:
     (expected, args) match
       case (Nil, rest) =>
         rest
-      case (Rest(_, path) :: _, rest) =>
+      case (Rest(_, path, _) :: _, rest) =>
         if path then rest.map(token => rootForm(session, token)) else rest
       case (_, Nil) =>
         Nil
@@ -634,7 +634,7 @@ object Cli:
       case (Nil, Nil) => None
       case (Nil, extra :: _) => Some(s"extra argument '$extra'")
       // Rest has no "too many". A flag after a positional is still an extra argument.
-      case (Rest(_, _) :: _, rest) =>
+      case (Rest(_, _, _) :: _, rest) =>
         rest.find(_.startsWith("-")).map(token => s"extra argument '$token'")
       case (Required(name, _) :: _, Nil) => Some(s"missing $name")
       case (Optional(_, _) :: _, Nil) => None
@@ -717,7 +717,7 @@ object Cli:
   private def describePositional(positional: Positional): String = positional match
     case Required(name, _) => s"$name  required"
     case Optional(name, _) => s"$name  optional"
-    case Rest(name, _) => s"$name  rest"
+    case Rest(name, _, _) => s"$name  rest"
 
   private def describeFlag(flag: Flag): String =
     val names: String = flag.alias match
@@ -732,7 +732,8 @@ object Cli:
     def path: Boolean
   private final case class Required(name: String, path: Boolean = false) extends Positional
   private final case class Optional(name: String, path: Boolean = false) extends Positional
-  private final case class Rest(name: String, path: Boolean = false) extends Positional
+  // schemaName is the JSON key when name is not an identifier. Help still prints name.
+  private final case class Rest(name: String, path: Boolean = false, schemaName: Option[String] = None) extends Positional
 
   private sealed trait FlagKind
   private case object BooleanKind extends FlagKind
@@ -933,7 +934,7 @@ object Cli:
     Command(
       name = "include",
       help = "compress include lines",
-      positionals = List(Rest("year/month/day/stem")),
+      positionals = List(Rest("year/month/day/stem", schemaName = Some("paths"))),
       flags = List(Flag("span", None, TextKind, "title span; absent means a curated album")),
       build = (values, args) => AgentIncludeArgs(values.texts.get("span"), args)
     ),
@@ -972,6 +973,152 @@ object Cli:
       build = (_, _) => AgentResultsArgs
     )
   )
+
+  // Order is agentCommands order. Membership is this set.
+  private val mcpToolNames: Set[String] = Set(
+    "stems", "catalog", "items", "match", "include", "requests", "results"
+  )
+
+  private val mcpDoNotEcho: String =
+    "Do not echo album ids, item keys, or google-media-item-id in chat."
+
+  private val mcpAmbiguousId: String =
+    "Pass id when catalog reports ambiguous: true."
+
+  private val mcpIdentifier: String = "^[A-Za-z_][A-Za-z0-9_-]*$"
+
+  private[photo] enum McpParam:
+    case BoolFlag(name: String)
+    case TextFlag(name: String)
+    case StringPos(name: String)
+    case RestPos(name: String)
+
+  private[photo] final case class McpTool(
+    name: String,
+    description: String,
+    params: List[McpParam],
+    required: List[String]
+  ):
+    def inputSchema: Json = mcpSchema(params, required)
+
+  private[photo] def mcpTools: List[McpTool] =
+    agentCommands.flatMap: command =>
+      if mcpToolNames.contains(command.name) then Some(mcpTool(command)) else None
+
+  private[photo] def mcpArgv(tool: McpTool, arguments: Json): Either[String, List[String]] =
+    arguments match
+      case Json.Obj(fields) =>
+        readMcpFields(tool.params, fields).map: values =>
+          List("agent", tool.name) ++ mcpTokens(tool.params, values)
+      case _ =>
+        Left("arguments must be an object")
+
+  private def mcpTool(command: Command): McpTool =
+    val params: List[McpParam] = command.flags.map(mcpFlag) ++ command.positionals.map(mcpPositional)
+    val required: List[String] = command.positionals.collect:
+      case Required(name, _) => mcpIdent(name)
+    McpTool(command.name, mcpDescription(command), params, required)
+
+  private def mcpDescription(command: Command): String =
+    val base: String = s"${command.help} (photo agent ${command.name}). $mcpDoNotEcho"
+    if command.name == "items" || command.name == "match" then s"$base $mcpAmbiguousId" else base
+
+  private def mcpFlag(flag: Flag): McpParam =
+    val name: String = mcpIdent(flag.name)
+    flag.kind match
+      case BooleanKind => McpParam.BoolFlag(name)
+      case TextKind => McpParam.TextFlag(name)
+
+  private def mcpPositional(positional: Positional): McpParam = positional match
+    case Required(name, _) =>
+      McpParam.StringPos(mcpIdent(name))
+    case Optional(name, _) =>
+      McpParam.StringPos(mcpIdent(name))
+    case Rest(_, _, Some(schemaName)) =>
+      McpParam.RestPos(mcpIdent(schemaName))
+    case Rest(name, _, None) =>
+      McpParam.RestPos(mcpIdent(name))
+
+  private def mcpParamName(param: McpParam): String = param match
+    case McpParam.BoolFlag(name) => name
+    case McpParam.TextFlag(name) => name
+    case McpParam.StringPos(name) => name
+    case McpParam.RestPos(name) => name
+
+  private def mcpIdent(name: String): String =
+    require(name.matches(mcpIdentifier), s"MCP property '$name' is not an identifier")
+    name
+
+  private def mcpSchema(params: List[McpParam], required: List[String]): Json =
+    Json.Obj(Seq(
+      "type" -> Json.Str("object"),
+      "additionalProperties" -> Json.Bool(false),
+      "properties" -> Json.Obj(params.map(param => mcpParamName(param) -> mcpProperty(param))),
+      "required" -> Json.Arr(required.map(Json.Str(_)))
+    ))
+
+  private def mcpProperty(param: McpParam): Json = param match
+    case McpParam.BoolFlag(_) =>
+      Json.Obj(Seq("type" -> Json.Str("boolean")))
+    case McpParam.TextFlag(_) =>
+      Json.Obj(Seq("type" -> Json.Str("string")))
+    case McpParam.StringPos(_) =>
+      Json.Obj(Seq("type" -> Json.Str("string")))
+    case McpParam.RestPos(_) =>
+      Json.Obj(Seq(
+        "type" -> Json.Str("array"),
+        "items" -> Json.Obj(Seq("type" -> Json.Str("string")))
+      ))
+
+  private def readMcpFields(
+    params: List[McpParam],
+    fields: Seq[(String, Json)]
+  ): Either[String, Map[String, Json]] =
+    fields.foldLeft[Either[String, Map[String, Json]]](Right(Map.empty)):
+      case (Left(message), _) =>
+        Left(message)
+      case (Right(acc), (key, raw)) =>
+        params.find(param => mcpParamName(param) == key) match
+          case None =>
+            Left(s"unexpected argument '$key'")
+          case Some(param) if !mcpAccepts(param, raw) =>
+            Left(s"argument '$key' has the wrong type")
+          case Some(_) =>
+            Right(acc.updated(key, raw))
+
+  private def mcpAccepts(param: McpParam, raw: Json): Boolean = (param, raw) match
+    case (McpParam.BoolFlag(_), Json.Bool(_)) => true
+    case (McpParam.TextFlag(_), Json.Str(_)) => true
+    case (McpParam.StringPos(_), Json.Str(_)) => true
+    case (McpParam.RestPos(_), Json.Arr(items)) =>
+      items.forall:
+        case Json.Str(_) => true
+        case _ => false
+    case _ =>
+      false
+
+  private def mcpTokens(params: List[McpParam], values: Map[String, Json]): List[String] =
+    params.flatMap: param =>
+      values.get(mcpParamName(param)) match
+        case None =>
+          Nil
+        case Some(raw) =>
+          mcpToken(param, raw)
+
+  private def mcpToken(param: McpParam, raw: Json): List[String] = (param, raw) match
+    case (McpParam.BoolFlag(name), Json.Bool(true)) =>
+      List(s"--$name")
+    case (McpParam.BoolFlag(_), Json.Bool(false)) =>
+      Nil
+    case (McpParam.TextFlag(name), Json.Str(text)) =>
+      List(s"--$name", text)
+    case (McpParam.StringPos(_), Json.Str(text)) =>
+      List(text)
+    case (McpParam.RestPos(_), Json.Arr(items)) =>
+      items.collect { case Json.Str(text) => text }.toList
+    case _ =>
+      // readMcpFields already rejected a mismatched JSON type.
+      throw IllegalStateException(s"argument '${mcpParamName(param)}' has the wrong type")
 
   private val requestIdFlag: Flag = Flag("id", None, TextKind, "request id")
 

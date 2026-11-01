@@ -16,6 +16,9 @@ class CliTest extends AnyFlatSpec, Matchers:
   @targetName("resultCanEqual")
   private given [A <: Result, B <: Result] => CanEqual[A, B] = CanEqual.derived
 
+  @targetName("jsonCanEqual")
+  private given [A <: Json, B <: Json] => CanEqual[A, B] = CanEqual.derived
+
   "parse" should "accept every subcommand" in :
     Cli.parse(List("lsd", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = false))
     Cli.parse(List("lsd", "--long", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = true))
@@ -547,6 +550,193 @@ class CliTest extends AnyFlatSpec, Matchers:
 
     an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("nope")
     an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("source=a=b")
+
+  "mcpTools" should "derive the seven query commands and reject everything else" in :
+    val tools: List[Cli.McpTool] = Cli.mcpTools
+    tools.map(_.name) shouldBe List(
+      "stems", "catalog", "items", "match", "include", "requests", "results"
+    )
+    List(
+      "album-file",
+      "request",
+      "rename-album", "move-item", "set-description", "set-date", "download-item", "delete-item",
+      "repair", "publish", "sync", "set-metadata",
+      "login", "status", "logout",
+      "ls", "lsd", "albums",
+      "help", "cd", "pwd", "exit",
+      "serve", "shell", "mcp"
+    ).foreach: name =>
+      withClue(name):
+        tools.exists(_.name == name) shouldBe false
+
+    val echo: String = "Do not echo album ids, item keys, or google-media-item-id in chat."
+    val passId: String = "Pass id when catalog reports ambiguous: true."
+    def described(help: String, name: String, ambiguous: Boolean): String =
+      val base: String = s"$help (photo agent $name). $echo"
+      if ambiguous then s"$base $passId" else base
+    val descriptions: Map[String, String] = Map(
+      "stems" -> described("list one day's grouped stems", "stems", ambiguous = false),
+      "catalog" -> described("list catalog albums", "catalog", ambiguous = false),
+      "items" -> described("list catalog items for one album", "items", ambiguous = true),
+      "match" -> described("match catalog items to local stems", "match", ambiguous = true),
+      "include" -> described("compress include lines", "include", ambiguous = false),
+      "requests" -> described("list request rows", "requests", ambiguous = false),
+      "results" -> described("list result rows", "results", ambiguous = false)
+    )
+    val properties: Map[String, Seq[(String, Json)]] = Map(
+      "stems" -> Seq("day" -> mcpStringSchema),
+      "catalog" -> Seq.empty,
+      "items" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
+      "match" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
+      "include" -> Seq("span" -> mcpStringSchema, "paths" -> mcpPathsSchema),
+      "requests" -> Seq.empty,
+      "results" -> Seq.empty
+    )
+    val required: Map[String, Seq[String]] = Map(
+      "stems" -> Seq("day"),
+      "catalog" -> Seq.empty,
+      "items" -> Seq("album"),
+      "match" -> Seq("album"),
+      "include" -> Seq.empty,
+      "requests" -> Seq.empty,
+      "results" -> Seq.empty
+    )
+    tools.foreach: tool =>
+      tool.description shouldBe descriptions(tool.name)
+      val schema: Json = tool.inputSchema
+      schema match
+        case Json.Obj(fields) =>
+          fields.map(_._1).toSet shouldBe Set("type", "additionalProperties", "properties", "required")
+        case other =>
+          fail(other.toString)
+      jsonField(schema, "type") shouldBe Json.Str("object")
+      jsonField(schema, "additionalProperties") shouldBe Json.Bool(false)
+      mcpProperties(tool) shouldBe properties(tool.name)
+      mcpRequired(tool) shouldBe required(tool.name)
+      (mcpProperties(tool).map(_._1) ++ mcpRequired(tool)).foreach: name =>
+        name.matches("^[A-Za-z_][A-Za-z0-9_-]*$") shouldBe true
+
+    val stems: List[String] = mcpArgv("stems", Json.Obj(Seq("day" -> Json.Str("2010/07/19"))))
+    stems shouldBe List("agent", "stems", "2010/07/19")
+    Cli.parse(stems, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentStemsArgs("2010/07/19"))
+
+    val catalog: List[String] = mcpArgv("catalog", Json.Obj(Nil))
+    catalog shouldBe List("agent", "catalog")
+    Cli.parse(catalog, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentCatalogArgs)
+
+    val items: List[String] = mcpArgv("items", Json.Obj(Seq(
+      "album" -> Json.Str("2010/07"),
+      "id" -> Json.Str("a1")
+    )))
+    items shouldBe List("agent", "items", "--id", "a1", "2010/07")
+    Cli.parse(items, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentItemsArgs(Some("a1"), "2010/07"))
+    val itemsTitle: List[String] = mcpArgv("items", Json.Obj(Seq("album" -> Json.Str("2010/07"))))
+    Cli.parse(itemsTitle, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentItemsArgs(None, "2010/07"))
+
+    val matched: List[String] = mcpArgv("match", Json.Obj(Seq(
+      "album" -> Json.Str("2010/07"),
+      "id" -> Json.Str("a1")
+    )))
+    matched shouldBe List("agent", "match", "--id", "a1", "2010/07")
+    Cli.parse(matched, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMatchArgs(Some("a1"), "2010/07"))
+
+    val include: List[String] = mcpArgv("include", Json.Obj(Seq(
+      "paths" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"), Json.Str("2010/07/20/2413"))),
+      "span" -> Json.Str("2010/07")
+    )))
+    include shouldBe List("agent", "include", "--span", "2010/07", "2010/07/19/2412", "2010/07/20/2413")
+    Cli.parse(include, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
+    val includeEmpty: List[String] = mcpArgv("include", Json.Obj(Seq(
+      "span" -> Json.Str("2010/07"),
+      "paths" -> Json.Arr(Nil)
+    )))
+    includeEmpty shouldBe List("agent", "include", "--span", "2010/07")
+    Cli.parse(mcpArgv("include", Json.Obj(Nil)), Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AgentIncludeArgs(None, Seq.empty))
+
+    Cli.parse(mcpArgv("requests", Json.Obj(Nil)), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentRequestsArgs)
+    Cli.parse(mcpArgv("results", Json.Obj(Nil)), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentResultsArgs)
+
+    Cli.mcpArgv(mcpTool("stems"), Json.Obj(Seq("day" -> Json.Long(2010)))) shouldBe
+      Left("argument 'day' has the wrong type")
+    Cli.mcpArgv(mcpTool("stems"), Json.Obj(Seq("day" -> Json.Null))) shouldBe
+      Left("argument 'day' has the wrong type")
+    Cli.mcpArgv(mcpTool("include"), Json.Obj(Seq("paths" -> Json.Str("2010/07/19/2412")))) shouldBe
+      Left("argument 'paths' has the wrong type")
+    Cli.mcpArgv(mcpTool("include"), Json.Obj(Seq(
+      "paths" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"), Json.Long(1)))
+    ))) shouldBe Left("argument 'paths' has the wrong type")
+    Cli.mcpArgv(mcpTool("catalog"), Json.Obj(Seq("dry-run" -> Json.Bool(true)))) shouldBe
+      Left("unexpected argument 'dry-run'")
+    Cli.mcpArgv(mcpTool("items"), Json.Obj(Seq(
+      "album" -> Json.Str("2010/07"),
+      "replace" -> Json.Bool(true)
+    ))) shouldBe Left("unexpected argument 'replace'")
+    Cli.mcpArgv(mcpTool("stems"), Json.Null) shouldBe Left("arguments must be an object")
+
+    // None of the seven tools have a boolean flag. BoolFlag is what BooleanKind derives.
+    val boolTool: Cli.McpTool = Cli.McpTool(
+      name = "probe",
+      description = "probe",
+      params = List(Cli.McpParam.BoolFlag("dry-run"), Cli.McpParam.StringPos("album")),
+      required = List("album")
+    )
+    mcpProperties(boolTool) shouldBe Seq(
+      "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+      "album" -> mcpStringSchema
+    )
+    mcpRequired(boolTool) shouldBe Seq("album")
+    Cli.mcpArgv(boolTool, Json.Obj(Seq("dry-run" -> Json.Str("true"), "album" -> Json.Str("Trip")))) shouldBe
+      Left("argument 'dry-run' has the wrong type")
+    Cli.mcpArgv(boolTool, Json.Obj(Seq(
+      "album" -> Json.Str("Trip"),
+      "dry-run" -> Json.Bool(true)
+    ))) shouldBe Right(List("agent", "probe", "--dry-run", "Trip"))
+    Cli.mcpArgv(boolTool, Json.Obj(Seq("dry-run" -> Json.Bool(false), "album" -> Json.Str("Trip")))) shouldBe
+      Right(List("agent", "probe", "Trip"))
+
+    val helpArgv: List[String] = mcpArgv("stems", Json.Obj(Seq("day" -> Json.Str("--help"))))
+    helpArgv shouldBe List("agent", "stems", "--help")
+    val help: Cli.Outcome = Cli.parse(helpArgv, Cli.Front.Serve)
+    help shouldBe a [Cli.Help]
+    help should not be a [Cli.Run]
+    help should not be a [Cli.Usage]
+
+  private val mcpStringSchema: Json = Json.Obj(Seq("type" -> Json.Str("string")))
+
+  private val mcpPathsSchema: Json = Json.Obj(Seq(
+    "type" -> Json.Str("array"),
+    "items" -> Json.Obj(Seq("type" -> Json.Str("string")))
+  ))
+
+  private def mcpTool(name: String): Cli.McpTool =
+    Cli.mcpTools.find(_.name == name).getOrElse(fail(name))
+
+  private def mcpArgv(name: String, arguments: Json): List[String] =
+    Cli.mcpArgv(mcpTool(name), arguments) match
+      case Right(argv) => argv
+      case Left(message) => fail(message)
+
+  private def mcpProperties(tool: Cli.McpTool): Seq[(String, Json)] =
+    jsonField(tool.inputSchema, "properties") match
+      case Json.Obj(fields) => fields
+      case other => fail(other.toString)
+
+  private def mcpRequired(tool: Cli.McpTool): Seq[String] =
+    jsonField(tool.inputSchema, "required") match
+      case Json.Arr(values) =>
+        values.map:
+          case Json.Str(name) => name
+          case other => fail(other.toString)
+      case other =>
+        fail(other.toString)
+
+  private def jsonField(value: Json, name: String): Json = value match
+    case Json.Obj(fields) =>
+      fields.find(_._1 == name).map(_._2).getOrElse(fail(s"missing $name"))
+    case other =>
+      fail(other.toString)
 
   private def helpOf(args: String*): String = Cli.parse(args.toList) match
     case Cli.Help(text) => text
