@@ -618,27 +618,15 @@ private[photo] object Serve:
       case Reply.Done(called) =>
         Right(called)
 
-  // EOF before a request leaves the daemon up. The probe must not send argv.
+  // ensure already waited. exchangeOrWait would wait again when the socket is missing and the lock is held.
   private[photo] def probe(runtime: File, archive: String, waitMs: Long = acceptWaitMs): Either[String, Unit] =
-    openChannel(File(runtime, socketName)) match
-      case None =>
+    exchange(runtime, Nil, archive, stop = false, waitMs = waitMs, readBody = dropValue, noSend = true) match
+      case Reply.Absent =>
         Left(if lockHeld(runtime) then busyMessage(runtime) else "serve is not running")
-      case Some(channel) =>
-        try
-          readLine(channel, Some(waitMs)) match
-            case Line.TimedOut | Line.Eof =>
-              Left(busyMessage(runtime))
-            case Line.Got(text) =>
-              readResponse(text) match
-                case Left(_) =>
-                  Left(malformed)
-                case Right(accept) if accept.archive != archive =>
-                  Left(mismatchMessage(accept.archive, archive))
-                case Right(_) =>
-                  Right(())
-        catch case _: IOException =>
-          Left("serve closed the connection")
-        finally channel.close()
+      case Reply.Failed(message) =>
+        Left(message)
+      case Reply.Done(_) =>
+        Right(())
 
   private def dropValue(body: String): Either[Problem, Called] =
     readResponse(body).map(response => Called(response, Json.Null))
@@ -711,13 +699,14 @@ private[photo] object Serve:
     stop: Boolean,
     waitMs: Long,
     readBody: String => Either[Problem, Called],
-    id: Option[String] = None
+    id: Option[String] = None,
+    noSend: Boolean = false
   ): Reply =
     openChannel(File(runtime, socketName)) match
       case None =>
         Reply.Absent
       case Some(channel) =>
-        try talk(channel, runtime, argv, archive, stop, waitMs, readBody, id)
+        try talk(channel, runtime, argv, archive, stop, waitMs, readBody, id, noSend)
         catch case _: IOException => Reply.Failed("serve closed the connection")
         finally channel.close()
 
@@ -729,7 +718,8 @@ private[photo] object Serve:
     stop: Boolean,
     waitMs: Long,
     readBody: String => Either[Problem, Called],
-    id: Option[String] = None
+    id: Option[String] = None,
+    noSend: Boolean = false
   ): Reply =
     readLine(channel, Some(waitMs)) match
       case Line.TimedOut | Line.Eof =>
@@ -740,6 +730,9 @@ private[photo] object Serve:
             Reply.Failed(malformed)
           case Right(accept) if !stop && accept.archive != archive =>
             Reply.Failed(mismatchMessage(accept.archive, archive))
+          // EOF before a request leaves the daemon up. The probe must not send argv.
+          case Right(accept) if noSend =>
+            Reply.Done(Called(accept, Json.Null))
           case Right(_) =>
             writeLine(channel, renderRequest(id, argv))
             readLine(channel, None) match
