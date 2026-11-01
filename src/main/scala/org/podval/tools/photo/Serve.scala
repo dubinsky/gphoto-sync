@@ -40,7 +40,7 @@ private[photo] object Serve:
     case Failed(message: String)
     case Done(called: Called)
 
-  private val acceptWaitMs: Long = 5000
+  private[photo] val acceptWaitMs: Long = 5000
   private val socketName: String = "serve.sock"
   private val lockName: String = "serve.lock"
   private val directoryMode: String = "rwx------"
@@ -607,15 +607,38 @@ private[photo] object Serve:
     runtime: File,
     argv: List[String],
     archive: String,
-    waitMs: Long = acceptWaitMs
+    waitMs: Long = acceptWaitMs,
+    id: Option[String] = None
   ): Either[String, Called] =
-    exchangeOrWait(runtime, argv, archive, stop = false, waitMs, readValued) match
+    exchangeOrWait(runtime, argv, archive, stop = false, waitMs, readValued, id) match
       case Reply.Absent =>
         Left("serve is not running")
       case Reply.Failed(message) =>
         Left(message)
       case Reply.Done(called) =>
         Right(called)
+
+  // EOF before a request leaves the daemon up. The probe must not send argv.
+  private[photo] def probe(runtime: File, archive: String, waitMs: Long = acceptWaitMs): Either[String, Unit] =
+    openChannel(File(runtime, socketName)) match
+      case None =>
+        Left(if lockHeld(runtime) then busyMessage(runtime) else "serve is not running")
+      case Some(channel) =>
+        try
+          readLine(channel, Some(waitMs)) match
+            case Line.TimedOut | Line.Eof =>
+              Left(busyMessage(runtime))
+            case Line.Got(text) =>
+              readResponse(text) match
+                case Left(_) =>
+                  Left(malformed)
+                case Right(accept) if accept.archive != archive =>
+                  Left(mismatchMessage(accept.archive, archive))
+                case Right(_) =>
+                  Right(())
+        catch case _: IOException =>
+          Left("serve closed the connection")
+        finally channel.close()
 
   private def dropValue(body: String): Either[Problem, Called] =
     readResponse(body).map(response => Called(response, Json.Null))
@@ -667,9 +690,10 @@ private[photo] object Serve:
     archive: String,
     stop: Boolean,
     waitMs: Long,
-    readBody: String => Either[Problem, Called]
+    readBody: String => Either[Problem, Called],
+    id: Option[String] = None
   ): Reply =
-    def once(): Reply = exchange(runtime, argv, archive, stop, waitMs, readBody)
+    def once(): Reply = exchange(runtime, argv, archive, stop, waitMs, readBody, id)
     once() match
       case Reply.Absent if lockHeld(runtime) =>
         if waitUntilConnect(runtime, waitMs) then
@@ -686,13 +710,14 @@ private[photo] object Serve:
     archive: String,
     stop: Boolean,
     waitMs: Long,
-    readBody: String => Either[Problem, Called]
+    readBody: String => Either[Problem, Called],
+    id: Option[String] = None
   ): Reply =
     openChannel(File(runtime, socketName)) match
       case None =>
         Reply.Absent
       case Some(channel) =>
-        try talk(channel, runtime, argv, archive, stop, waitMs, readBody)
+        try talk(channel, runtime, argv, archive, stop, waitMs, readBody, id)
         catch case _: IOException => Reply.Failed("serve closed the connection")
         finally channel.close()
 
@@ -703,7 +728,8 @@ private[photo] object Serve:
     archive: String,
     stop: Boolean,
     waitMs: Long,
-    readBody: String => Either[Problem, Called]
+    readBody: String => Either[Problem, Called],
+    id: Option[String] = None
   ): Reply =
     readLine(channel, Some(waitMs)) match
       case Line.TimedOut | Line.Eof =>
@@ -715,7 +741,7 @@ private[photo] object Serve:
           case Right(accept) if !stop && accept.archive != archive =>
             Reply.Failed(mismatchMessage(accept.archive, archive))
           case Right(_) =>
-            writeLine(channel, renderRequest(None, argv))
+            writeLine(channel, renderRequest(id, argv))
             readLine(channel, None) match
               case Line.Got(body) =>
                 readBody(body) match

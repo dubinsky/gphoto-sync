@@ -187,6 +187,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |help  print command help
         |shell  start a session
         |serve  listen on the per-user Unix socket
+        |mcp  expose agent queries on MCP stdio
         |agent  query the catalog and the archive""".stripMargin
     helpOf("-h") shouldBe top
     helpOf("--help", "ls") shouldBe top
@@ -505,6 +506,13 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("serve", "stop"), Cli.Front.Serve) shouldBe Cli.ServeStop
     Cli.parse(List("serve", "stop", "now"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
     Cli.parse(List("serve", "stop"), Cli.Front.Shell) shouldBe Cli.Usage("unknown command 'serve'")
+    Cli.parse(List("mcp")) shouldBe Cli.McpFront
+    Cli.parse(List("mcp", "--help")) shouldBe Cli.Usage("extra argument '--help'")
+    Cli.parse(List("mcp", "extra")) shouldBe Cli.Usage("extra argument 'extra'")
+    Cli.parse(List("mcp"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
+    Cli.parse(List("mcp", "--help"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
+    Cli.parse(List("mcp"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
+    Cli.parse(List("mcp", "--help"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
 
   "usageLine" should "prefix the program name" in :
     Cli.usageLine("missing command") shouldBe "Photo Archive Tool: missing command"

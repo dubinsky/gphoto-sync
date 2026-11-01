@@ -73,6 +73,7 @@ object Cli:
   private[photo] case object ShellFront extends Outcome
   private[photo] case object ServeFront extends Outcome
   private[photo] case object ServeStop extends Outcome
+  private[photo] case object McpFront extends Outcome
 
   private[photo] enum Front:
     case OneShot, Shell, Serve
@@ -121,6 +122,14 @@ object Cli:
             if !response.ok then
               response.error.foreach(System.err.println)
               sys.exit(1)
+      case McpFront =>
+        val session: Session =
+          try Session.open(PathStyle.OneShot)
+          catch case error: IllegalArgumentException =>
+            System.err.println(usageLine(Operation.messageOf(error)))
+            sys.exit(1)
+        val code: Int = Mcp.run(Serve.runtimeDirectory(), session, System.in, System.out)
+        if code != 0 then sys.exit(code)
       case Run(parsed) =>
         try
           val session: Session = Session.start
@@ -210,7 +219,7 @@ object Cli:
             (Step.Continue(parked(session)), reply(request.id, ok = true, Some(text + "\n"), None, Some(Json.Null)))
           case Usage(message) =>
             usage(request.id, message)
-          case ShellFront | ServeFront =>
+          case ShellFront | ServeFront | McpFront =>
             usage(request.id, "already running")
           case ServeStop =>
             (Step.Stop, reply(request.id, ok = true, None, None, None))
@@ -251,7 +260,7 @@ object Cli:
           case Usage(message) =>
             Console.err.println(usageLine(message))
             Step.Continue(session)
-          case ShellFront | ServeFront | ServeStop =>
+          case ShellFront | ServeFront | ServeStop | McpFront =>
             Console.err.println(usageLine("already running"))
             Step.Continue(session)
           case Run(ExitArgs) =>
@@ -445,6 +454,16 @@ object Cli:
               Usage(s"extra argument '$extra'")
         case Front.Shell =>
           lookup("serve", rest, front)
+    case "mcp" :: rest =>
+      front match
+        case Front.Shell | Front.Serve =>
+          Usage("already running")
+        case Front.OneShot =>
+          rest match
+            case Nil =>
+              McpFront
+            case extra :: _ =>
+              Usage(s"extra argument '$extra'")
     case "agent" :: rest =>
       parseAgent(rest, front)
     case name :: rest =>
@@ -655,7 +674,7 @@ object Cli:
         Nil
     val frontLines: List[String] = front match
       case Front.OneShot =>
-        List(shellLine, serveLine)
+        List(shellLine, serveLine, mcpLine)
       case Front.Shell | Front.Serve =>
         Nil
     val lines: List[String] =
@@ -1279,6 +1298,8 @@ object Cli:
   private val shellLine: String = "shell  start a session"
 
   private val serveLine: String = "serve  listen on the per-user Unix socket"
+
+  private val mcpLine: String = "mcp  expose agent queries on MCP stdio"
 
   private val agentLine: String = "agent  query the catalog and the archive"
 

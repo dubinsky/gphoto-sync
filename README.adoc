@@ -227,6 +227,35 @@ It runs in this process when the lock is free.
 It does not start `photo serve`.
 A mismatch names both paths and does not run in this process.
 
+`photo mcp` speaks MCP on standard input and output.
+It is a client of `photo serve`, the same way `photo shell` is.
+It starts a detached `photo serve` when the socket is down, and it does not stop that process on exit.
+It does not run a command in this process when the socket is down.
+A mismatch names both paths, says to run `photo serve stop`, and does not run the command in this process.
+Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent requests`, and
+`agent results`.
+`cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
+Album files, request rows, repair, publish, and sync are not tools.
+Tool JSON may contain album ids and item keys.
+Chat should not.
+The user adds the server.
+This program does not write the Grok config.
+
+[source,toml]
+----
+[mcp_servers.photo]
+command = "photo"
+args = [ "mcp" ]
+enabled = true
+----
+
+`command` is whatever executable already runs `photo serve`.
+The Gradle main class is `org.podval.tools.photo.Cli`.
+If that executable is `java`, the args start with `mcp` after the class name.
+Grok's default startup timeout of 30 seconds covers `Serve.ensure` plus the 5 second accept-line probe.
+A catalog or item listing can exceed Grok's 20_000 byte inline cap.
+Raising `[mcp] max_output_bytes` is a user config change, not a default this program sets, and a truncated result is incomplete.
+
 == OAuth and config
 
 The Desktop client JSON is `~/.config/org.podval.tools.photo.client.json`.
@@ -331,7 +360,6 @@ Cron is out of scope.
 - fix day and date-range albums: split, merge, month...
 
 - CLI get pictures from a memory card
-- MCP over the agent query commands
 - CLI webapp
 - CLI packaging/publishing
 
