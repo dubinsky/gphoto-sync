@@ -111,21 +111,16 @@ object Cli:
             val code: Int = Serve.listen(Session.open(PathStyle.Serve), runtime)
             if code != 0 then sys.exit(code)
       case ServeStop =>
-        try
-          val archive: String = Serve.archiveOf(Session.open(PathStyle.OneShot))
-          executeStop(Serve.runtimeDirectory(), archive) match
-            case Left(message) =>
-              System.err.println(usageLine(message))
-              sys.exit(1)
-            case Right(response) =>
-              println(response.archive)
-              if !response.ok then
-                response.error.foreach(System.err.println)
-                sys.exit(1)
-        catch
-          case error: (IllegalArgumentException | IllegalStateException) =>
-            System.err.println(usageLine(Operation.messageOf(error)))
+        // Stop does not read the archive. A config error must not block it.
+        executeStop(Serve.runtimeDirectory()) match
+          case Left(message) =>
+            System.err.println(usageLine(message))
             sys.exit(1)
+          case Right(response) =>
+            println(response.archive)
+            if !response.ok then
+              response.error.foreach(System.err.println)
+              sys.exit(1)
       case Run(parsed) =>
         try
           val session: Session = Session.start
@@ -360,17 +355,16 @@ object Cli:
 
   private[photo] def executeStop(
     runtime: Either[String, File],
-    archive: String,
     waitMs: Long = 5000
   ): Either[String, Serve.Response] =
     runtime match
-      case Left(_) =>
-        Left("serve is not running")
-      case Right(dir) =>
-        Serve.client(dir, List("serve", "stop"), archive, stop = true, waitMs = waitMs) match
+      case Right(dir) if dir.isDirectory =>
+        Serve.client(dir, List("serve", "stop"), "", stop = true, waitMs = waitMs) match
           case Serve.Attempt.Done(response) => Right(response)
           case Serve.Attempt.Absent => Left("serve is not running")
           case Serve.Attempt.Failed(message) => Left(message)
+      case _ =>
+        Left("serve is not running")
 
   // Inside quotes only \\ and \" are escapes. Any other backslash stays in the token.
   private[photo] def splitLine(line: String): Either[String, List[String]] =

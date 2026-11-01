@@ -7,13 +7,7 @@ import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, File}
 import java.net.{StandardProtocolFamily, UnixDomainSocketAddress}
 import java.nio.ByteBuffer
-import java.nio.channels.{
-  FileChannel,
-  FileLock,
-  OverlappingFileLockException,
-  ServerSocketChannel,
-  SocketChannel
-}
+import java.nio.channels.{FileChannel, FileLock, ServerSocketChannel, SocketChannel}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles, StandardOpenOption}
 import java.nio.file.attribute.{BasicFileAttributes, PosixFilePermissions}
@@ -320,6 +314,9 @@ class ServeTest extends AnyFlatSpec, Matchers:
       "s" -> Json.Str("a\"b\\c\n\t\r\b\f\u0001"),
       "a" -> Json.Arr(Seq(Json.Long(1), Json.Str("x")))
     ))) shouldBe """{"n":0,"neg":-2,"ok":true,"no":false,"z":null,"s":"a\"b\\c\n\t\r\b\f\u0001","a":[1,"x"]}"""
+    val round: String = "a\fb\u0001"
+    val line: String = Serve.render(None, ok = true, Some(round), None, None, "/archive")
+    Serve.readResponse(line) shouldBe Right(Serve.Response(None, true, Some(round), None, "/archive"))
 
   "the socket" should "bind under the runtime directory and answer before the request" in :
     prepared: (_, session) =>
@@ -377,7 +374,9 @@ class ServeTest extends AnyFlatSpec, Matchers:
       try
         withServer(session, runtime): _ =>
           val socket: File = File(runtime, "serve.sock")
+          val lock: File = File(runtime, "serve.lock")
           val key: Object = JFiles.readAttributes(socket.toPath, classOf[BasicFileAttributes]).fileKey
+          Serve.disarmOwner()
           val err: ByteArrayOutputStream = new ByteArrayOutputStream
           val code: Int = Console.withErr(err)(Serve.listen(session, runtime))
           code shouldBe 0
@@ -386,7 +385,8 @@ class ServeTest extends AnyFlatSpec, Matchers:
             JFiles.readAttributes(socket.toPath, classOf[BasicFileAttributes]).fileKey,
             key
           ) shouldBe true
-          exclusiveLockSucceeds(runtime) shouldBe false
+          childLock(lock, socket) shouldBe "held\n"
+          JFiles.exists(socket.toPath) shouldBe true
           command(runtime, session, List("lsd", "2010")).ok shouldBe true
       finally deleteTree(runtime)
 
@@ -416,7 +416,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
             message should include (s"fuser ${File(runtime, "serve.lock").getAbsolutePath}")
           case other =>
             fail(other.toString)
-        lock.isValid shouldBe true
+        childLock(File(runtime, "serve.lock"), File(runtime, "serve.sock")) shouldBe "held\n"
         File(runtime, "serve.sock").exists shouldBe false
       finally
         lock.release()
@@ -475,9 +475,9 @@ class ServeTest extends AnyFlatSpec, Matchers:
         Cli.executeOneShot(oneShot, List("lsd", "2010"), lsdParsed, Right(runtime), waitMs = 200) shouldBe
           Result.Ok("/2010\n", Json.Null)
         File(runtime, "serve.sock").exists shouldBe true
+        Cli.executeStop(Right(runtime)) shouldBe Left("serve is not running")
       finally deleteTree(runtime)
-      Cli.executeStop(Left("XDG_RUNTIME_DIR is unset"), Serve.archiveOf(session)) shouldBe
-        Left("serve is not running")
+      Cli.executeStop(Left("XDG_RUNTIME_DIR is unset")) shouldBe Left("serve is not running")
 
   it should "use the socket when the archive matches" in :
     withPicture: (_, session) =>
@@ -528,7 +528,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
               message should include ("run photo serve stop")
             case other =>
               fail(other.toString)
-          Cli.executeStop(Right(runtime), Serve.archiveOf(client), waitMs = 2000) match
+          Cli.executeStop(Right(runtime), waitMs = 2000) match
             case Right(response) =>
               response.ok shouldBe true
               response.archive shouldBe Serve.archiveOf(session)
@@ -538,8 +538,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
           File(runtime, "serve.sock").exists shouldBe false
           Serve.client(runtime, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 200) shouldBe
             Serve.Attempt.Absent
-          Cli.executeStop(Right(runtime), Serve.archiveOf(session), waitMs = 200) shouldBe
-            Left("serve is not running")
+          Cli.executeStop(Right(runtime), waitMs = 200) shouldBe Left("serve is not running")
         finally running.finish()
       finally
         deleteTree(runtime)
@@ -759,21 +758,22 @@ class ServeTest extends AnyFlatSpec, Matchers:
       case Serve.Attempt.Done(response) => response
       case other => fail(other.toString)
 
-  private def exclusiveLockSucceeds(runtime: File): Boolean =
-    val channel: FileChannel = FileChannel.open(
-      File(runtime, "serve.lock").toPath,
-      StandardOpenOption.READ,
-      StandardOpenOption.WRITE
+  private def childLock(lock: File, socket: File): String =
+    val process: java.lang.ProcessBuilder = new java.lang.ProcessBuilder(
+      System.getProperty("java.home") + "/bin/java",
+      "-cp",
+      System.getProperty("java.class.path"),
+      "org.podval.tools.photo.LockProbe",
+      lock.getAbsolutePath,
+      socket.getAbsolutePath
     )
-    try
-      val lock: FileLock =
-        try channel.tryLock()
-        catch case _: OverlappingFileLockException => null
-      if lock == null then false
-      else
-        lock.release()
-        true
-    finally channel.close()
+    process.redirectErrorStream(true)
+    val proc: Process = process.start()
+    val finished: Boolean = proc.waitFor(10, TimeUnit.SECONDS)
+    val output: String = new String(proc.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
+    finished shouldBe true
+    proc.exitValue shouldBe 0
+    output
 
   private final class Running(
     val errBytes: ByteArrayOutputStream,
@@ -856,3 +856,26 @@ class ServeTest extends AnyFlatSpec, Matchers:
     thread.setDaemon(true)
     thread.start()
     Stall(server, thread)
+
+// A second JVM. tryLock in this process cannot see whether the kernel lock survived.
+object LockProbe:
+  def main(args: Array[String]): Unit =
+    val lockFile: File = File(args(0))
+    val socketFile: File = File(args(1))
+    val channel: FileChannel = FileChannel.open(
+      lockFile.toPath,
+      StandardOpenOption.READ,
+      StandardOpenOption.WRITE
+    )
+    val acquired: Boolean =
+      try
+        val lock: FileLock =
+          try channel.tryLock()
+          catch case _: java.nio.channels.OverlappingFileLockException => null
+        if lock == null then false
+        else
+          JFiles.deleteIfExists(socketFile.toPath)
+          lock.release()
+          true
+      finally channel.close()
+    println(if acquired then "acquired" else "held")

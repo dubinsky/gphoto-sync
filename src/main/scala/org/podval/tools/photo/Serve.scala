@@ -358,20 +358,31 @@ private[photo] object Serve:
       else if more.head == '"' then Right((acc + bare, more.drop(1)))
       else
         val escaped: String = more.drop(1)
-        if escaped.isEmpty then Left(malformed)
-        else escape(escaped.head) match
+        escape(escaped) match
           case None => Left(malformed)
-          case Some(decoded) => parseString(escaped.drop(1), acc + bare + decoded)
+          case Some((decoded, restOf)) => parseString(restOf, acc + bare + decoded)
 
-  private def escape(ch: Char): Option[String] = ch match
-    case '\\' => Some("\\")
-    case '"' => Some("\"")
-    case '/' => Some("/")
-    case 'n' => Some("\n")
-    case 't' => Some("\t")
-    case 'r' => Some("\r")
-    case 'b' => Some("\b")
-    case _ => None
+  // quote emits \f and \u00XX. A response the shell reads has to accept those.
+  private def escape(rest: String): Option[(String, String)] =
+    if rest.isEmpty then None
+    else rest.head match
+      case '\\' => Some(("\\", rest.drop(1)))
+      case '"' => Some(("\"", rest.drop(1)))
+      case '/' => Some(("/", rest.drop(1)))
+      case 'n' => Some(("\n", rest.drop(1)))
+      case 't' => Some(("\t", rest.drop(1)))
+      case 'r' => Some(("\r", rest.drop(1)))
+      case 'b' => Some(("\b", rest.drop(1)))
+      case 'f' => Some(("\f", rest.drop(1)))
+      case 'u' =>
+        val hex: String = rest.drop(1).take(4)
+        if hex.length == 4 && hex.forall(isHex) then
+          Some((Integer.parseInt(hex, 16).toChar.toString, rest.drop(5)))
+        else None
+      case _ => None
+
+  private def isHex(ch: Char): Boolean =
+    ch.isDigit || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 
   private def skip(rest: String): String =
     rest.dropWhile(ch => ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r')
@@ -402,38 +413,48 @@ private[photo] object Serve:
     prepare(runtime)
     val lockFile: File = File(runtime, lockName)
     val socketFile: File = File(runtime, socketName)
-    val channel: FileChannel = FileChannel.open(
-      lockFile.toPath,
-      StandardOpenOption.CREATE,
-      StandardOpenOption.READ,
-      StandardOpenOption.WRITE
-    )
-    tryExclusive(channel) match
-      case None =>
-        channel.close()
-        Console.err.println("already running")
-        0
-      case Some(lock) =>
-        var server: ServerSocketChannel = null
-        try
-          try
-            java.nio.file.Files.deleteIfExists(socketFile.toPath)
-            server = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
-            server.bind(UnixDomainSocketAddress.of(socketFile.toPath))
-            java.nio.file.Files.setPosixFilePermissions(
-              socketFile.toPath,
-              PosixFilePermissions.fromString(fileMode)
-            )
-          catch case error: IOException =>
-            Console.err.println(Option(error.getMessage).getOrElse("bind failed"))
-            return 1
-          Console.err.println(s"bound ${socketFile.getAbsolutePath}")
-          onBound(server)
-          acceptLoop(server, parked(session), socketFile)
-        finally
-          if server != null && server.isOpen then server.close()
-          lock.release()
+    if heldByThisJvm(lockFile) then
+      Console.err.println("already running")
+      0
+    else
+      val channel: FileChannel = FileChannel.open(
+        lockFile.toPath,
+        StandardOpenOption.CREATE,
+        StandardOpenOption.READ,
+        StandardOpenOption.WRITE
+      )
+      claim(channel) match
+        case LockClaim.SameJvm =>
+          pin(channel)
+          Console.err.println("already running")
+          0
+        case LockClaim.OtherJvm =>
           channel.close()
+          Console.err.println("already running")
+          0
+        case LockClaim.Owned(lock) =>
+          takeOwner(lockFile, channel)
+          var server: ServerSocketChannel = null
+          try
+            try
+              java.nio.file.Files.deleteIfExists(socketFile.toPath)
+              server = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
+              server.bind(UnixDomainSocketAddress.of(socketFile.toPath))
+              java.nio.file.Files.setPosixFilePermissions(
+                socketFile.toPath,
+                PosixFilePermissions.fromString(fileMode)
+              )
+            catch case error: IOException =>
+              Console.err.println(Option(error.getMessage).getOrElse("bind failed"))
+              return 1
+            Console.err.println(s"bound ${socketFile.getAbsolutePath}")
+            onBound(server)
+            acceptLoop(server, parked(session), socketFile)
+          finally
+            if server != null && server.isOpen then server.close()
+            lock.release()
+            dropOwner(channel)
+            channel.close()
 
   private[photo] def ensure(directory: File): Either[String, Unit] =
     ensure(directory, () => spawnServe(directory), acceptWaitMs)
@@ -458,29 +479,20 @@ private[photo] object Serve:
     stop: Boolean = false,
     waitMs: Long = acceptWaitMs
   ): Attempt =
-    def from(result: Exchange): Attempt = result match
-      case Exchange.Connected(response) => Attempt.Done(response)
-      case Exchange.Rejected(message) => Attempt.Failed(message)
-      case Exchange.Refused => Attempt.Absent
     exchange(runtime, argv, archive, stop, waitMs) match
-      case Exchange.Refused if lockHeld(runtime) =>
+      case Attempt.Absent if lockHeld(runtime) =>
         if waitUntilConnect(runtime, waitMs) then
-          from(exchange(runtime, argv, archive, stop, waitMs)) match
+          exchange(runtime, argv, archive, stop, waitMs) match
             case Attempt.Absent => Attempt.Failed(busyMessage(runtime))
             case other => other
         else Attempt.Failed(busyMessage(runtime))
-      case Exchange.Refused if stop =>
+      case Attempt.Absent if stop =>
         Attempt.Failed("serve is not running")
       case other =>
-        from(other)
+        other
 
   private def parked(session: Session): Session =
     session.copy(cursor = session.root, style = PathStyle.Serve)
-
-  private enum Exchange:
-    case Connected(response: Response)
-    case Rejected(message: String)
-    case Refused
 
   private enum Line:
     case Got(text: String)
@@ -526,13 +538,13 @@ private[photo] object Serve:
     archive: String,
     stop: Boolean,
     waitMs: Long
-  ): Exchange =
+  ): Attempt =
     openChannel(File(runtime, socketName)) match
       case None =>
-        Exchange.Refused
+        Attempt.Absent
       case Some(channel) =>
         try talk(channel, runtime, argv, archive, stop, waitMs)
-        catch case _: IOException => Exchange.Rejected("serve closed the connection")
+        catch case _: IOException => Attempt.Failed("serve closed the connection")
         finally channel.close()
 
   private def talk(
@@ -542,27 +554,27 @@ private[photo] object Serve:
     archive: String,
     stop: Boolean,
     waitMs: Long
-  ): Exchange =
+  ): Attempt =
     readLine(channel, Some(waitMs)) match
       case Line.TimedOut | Line.Eof =>
-        Exchange.Rejected(busyMessage(runtime))
+        Attempt.Failed(busyMessage(runtime))
       case Line.Got(text) =>
         readResponse(text) match
           case Left(_) =>
-            Exchange.Rejected(malformed)
+            Attempt.Failed(malformed)
           case Right(accept) if !stop && accept.archive != archive =>
-            Exchange.Rejected(mismatchMessage(accept.archive, archive))
+            Attempt.Failed(mismatchMessage(accept.archive, archive))
           case Right(_) =>
             writeLine(channel, renderRequest(None, argv))
             readLine(channel, None) match
               case Line.Got(body) =>
                 readResponse(body) match
-                  case Left(_) => Exchange.Rejected(malformed)
-                  case Right(response) => Exchange.Connected(response)
+                  case Left(_) => Attempt.Failed(malformed)
+                  case Right(response) => Attempt.Done(response)
               case Line.Eof =>
-                Exchange.Rejected("serve closed the connection")
+                Attempt.Failed("serve closed the connection")
               case Line.TimedOut =>
-                Exchange.Rejected(busyMessage(runtime))
+                Attempt.Failed(busyMessage(runtime))
 
   private def openChannel(socket: File): Option[SocketChannel] =
     val channel: SocketChannel =
@@ -597,24 +609,69 @@ private[photo] object Serve:
   // A missing lock file means no server has created it. Do not create one from a client.
   private def lockHeld(runtime: File): Boolean =
     val file: File = File(runtime, lockName)
-    if !file.isFile then false
+    if heldByThisJvm(file) then true
+    else if !file.isFile then false
     else
       val channel: FileChannel =
         try FileChannel.open(file.toPath, StandardOpenOption.READ, StandardOpenOption.WRITE)
         catch case _: IOException => return false
+      var closeChannel: Boolean = true
       try
         val lock: FileLock =
           try channel.tryLock(0L, Long.MaxValue, true)
-          catch case _: OverlappingFileLockException => return true
+          catch case _: OverlappingFileLockException =>
+            closeChannel = false
+            pin(channel)
+            return true
         if lock == null then true
         else
           lock.release()
           false
-      finally channel.close()
+      finally
+        if closeChannel then channel.close()
 
-  private def tryExclusive(channel: FileChannel): Option[FileLock] =
-    try Option(channel.tryLock())
-    catch case _: OverlappingFileLockException => None
+  // Closing any descriptor for this file drops every fcntl lock this process holds.
+  // A null tryLock is another process, so that channel is safe to close. Overlap is this JVM.
+  private enum LockClaim:
+    case Owned(lock: FileLock)
+    case SameJvm
+    case OtherJvm
+
+  private def claim(channel: FileChannel): LockClaim =
+    try
+      val lock: FileLock = channel.tryLock()
+      if lock == null then LockClaim.OtherJvm else LockClaim.Owned(lock)
+    catch case _: OverlappingFileLockException => LockClaim.SameJvm
+
+  private var ownerChannel: FileChannel = null
+  private var ownerPath: String = null
+  // Strong refs. A collected channel is closed, and that close releases the owner's lock.
+  private var pinned: List[FileChannel] = Nil
+
+  private def heldByThisJvm(lockFile: File): Boolean = synchronized {
+    ownerChannel != null && ownerChannel.isOpen && ownerPath == lockFile.getAbsolutePath
+  }
+
+  private def takeOwner(lockFile: File, channel: FileChannel): Unit = synchronized {
+    ownerChannel = channel
+    ownerPath = lockFile.getAbsolutePath
+  }
+
+  private def dropOwner(channel: FileChannel): Unit = synchronized {
+    if ownerChannel eq channel then
+      ownerChannel = null
+      ownerPath = null
+  }
+
+  private def pin(channel: FileChannel): Unit = synchronized {
+    pinned = channel :: pinned
+  }
+
+  // The note is not the lock. Tests drop it so the next open hits OverlappingFileLockException.
+  private[photo] def disarmOwner(): Unit = synchronized {
+    ownerChannel = null
+    ownerPath = null
+  }
 
   private def prepare(runtime: File): Unit =
     val path = runtime.toPath
