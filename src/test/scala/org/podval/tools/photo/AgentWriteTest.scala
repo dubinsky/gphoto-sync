@@ -800,6 +800,137 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
 
+  "agent quote-includes" should "requote include lines and skip a second run" in :
+    withArchive: archive =>
+      val best: String =
+        "# kept\n" +
+        "google-title=\"Exact\"\n" +
+        "include = [\n" +
+        "  \"2009/07/03 \\\"2009-07-03 13.02.37\\\"\",\n" +
+        "  \"2009/07/03 O'Brien\",\n" +
+        "]\n"
+      val party: String =
+        "include = [\n" +
+        "  \"2009/03/10 \\\"2009-03-10 13.02.37\\\"\",\n" +
+        "]\n"
+      val trip: String =
+        "include = [\n" +
+        "  \"2009/03/10 \\\"2009-03-10 13.02.37\\\"\",\n" +
+        "]\n"
+      val done: String =
+        "include = [\n" +
+        "  '2009/03/11 4217',\n" +
+        "]\n"
+      val empty: String = "include = []\n"
+      val plain: String = "external = true\n"
+      val sidecar: String = "not an album\n"
+      writeToml(archive, "Best.toml", best)
+      writeToml(archive, "Empty.toml", empty)
+      writeToml(archive, "Plain.toml", plain)
+      writeToml(archive, "2009/03/Done.toml", done)
+      writeToml(archive, "2009/03/Party.toml", party)
+      writeToml(archive, "2009/03/10/Trip.toml", trip)
+      writeToml(archive, "2009/03/10/2412.toml", sidecar)
+      val session: Session = sessionFor(archive)
+      val quoted: String =
+        """would rewrite Best.toml
+          |would rewrite 2009/03/Party.toml
+          |would rewrite 2009/03/10/Trip.toml
+          |""".stripMargin
+      val (_, dry) = exec(session, "agent", "quote-includes", "--dry-run")
+      dry shouldBe Result.Ok(quoted, Json.Null)
+      Files.read(File(archive, "Best.toml")) shouldBe best
+      Files.read(File(archive, "2009/03/Party.toml")) shouldBe party
+      Files.read(File(archive, "2009/03/10/Trip.toml")) shouldBe trip
+      val (_, month) = exec(session, "agent", "quote-includes", "--dry-run", "2009/03")
+      month shouldBe Result.Ok(
+        """would rewrite 2009/03/Party.toml
+          |would rewrite 2009/03/10/Trip.toml
+          |""".stripMargin,
+        Json.Null
+      )
+      val (_, day) = exec(session, "agent", "quote-includes", "--dry-run", "2009/03/10")
+      day shouldBe Result.Ok("would rewrite 2009/03/10/Trip.toml\n", Json.Null)
+      val (_, none) = exec(session, "agent", "quote-includes", "--dry-run", "2011")
+      none shouldBe Result.Ok("", Json.Null)
+      val (_, written) = exec(session, "agent", "quote-includes")
+      written shouldBe Result.Ok(
+        """rewrote Best.toml
+          |rewrote 2009/03/Party.toml
+          |rewrote 2009/03/10/Trip.toml
+          |""".stripMargin,
+        Json.Null
+      )
+      val bestNext: String =
+        "# kept\n" +
+        "google-title=\"Exact\"\n" +
+        "include = [\n" +
+        "  '2009/07/03 \"2009-07-03 13.02.37\"',\n" +
+        "  \"2009/07/03 O'Brien\",\n" +
+        "]\n"
+      Files.read(File(archive, "Best.toml")) shouldBe bestNext
+      Files.read(File(archive, "2009/03/Party.toml")) shouldBe
+        "include = [\n" +
+        "  '2009/03/10 \"2009-03-10 13.02.37\"',\n" +
+        "]\n"
+      Files.read(File(archive, "2009/03/10/Trip.toml")) shouldBe
+        "include = [\n" +
+        "  '2009/03/10 \"2009-03-10 13.02.37\"',\n" +
+        "]\n"
+      Files.read(File(archive, "Empty.toml")) shouldBe empty
+      Files.read(File(archive, "Plain.toml")) shouldBe plain
+      Files.read(File(archive, "2009/03/Done.toml")) shouldBe done
+      Files.read(File(archive, "2009/03/10/2412.toml")) shouldBe sidecar
+      File(archive, ".gphoto-sync/catalog.txt").exists shouldBe false
+      val (_, again) = exec(session, "agent", "quote-includes")
+      again shouldBe Result.Ok("", Json.Null)
+      Files.read(File(archive, "Best.toml")) shouldBe bestNext
+
+  it should "stop on an include span that does not close and keep earlier rewrites" in :
+    withArchive: archive =>
+      val best: String =
+        "include = [\n" +
+        "  \"2009/07/03 \\\"2009-07-03 13.02.37\\\"\",\n" +
+        "]\n"
+      val badBody: String =
+        "include = [\n" +
+        "  \"2009/03/02 2412\",\n" +
+        "  \"2009/03/03 2413\"]\n"
+      val later: String =
+        "include = [\n" +
+        "  \"2009/03/04 \\\"2009-03-04 13.02.37\\\"\",\n" +
+        "]\n"
+      writeToml(archive, "Best.toml", best)
+      writeToml(archive, "2009/03/Bad.toml", badBody)
+      writeToml(archive, "2009/03/Later.toml", later)
+      val session: Session = sessionFor(archive)
+      val bad: File = File(session.root.configuration.archive, "2009/03/Bad.toml")
+      val message: String = s"$bad: include array does not end on its own line"
+      usage(session, "agent", "quote-includes", "--dry-run") shouldBe message
+      Files.read(File(archive, "Best.toml")) shouldBe best
+      Files.read(bad) shouldBe badBody
+      Files.read(File(archive, "2009/03/Later.toml")) shouldBe later
+      usage(session, "agent", "quote-includes") shouldBe message
+      Files.read(File(archive, "Best.toml")) shouldBe
+        "include = [\n" +
+        "  '2009/07/03 \"2009-07-03 13.02.37\"',\n" +
+        "]\n"
+      Files.read(bad) shouldBe badBody
+      Files.read(File(archive, "2009/03/Later.toml")) shouldBe later
+
+  it should "fail a year toml through rejectToml before requoting" in :
+    withArchive: archive =>
+      val best: String =
+        "include = [\n" +
+        "  \"2009/07/03 \\\"2009-07-03 13.02.37\\\"\",\n" +
+        "]\n"
+      writeToml(archive, "Best.toml", best)
+      writeToml(archive, "2009/Stray.toml", "include = []\n")
+      val session: Session = sessionFor(archive)
+      val stray: File = File(session.root.configuration.archive, "2009/Stray.toml")
+      usage(session, "agent", "quote-includes") shouldBe s"$stray: album files do not live in a year directory"
+      Files.read(File(archive, "Best.toml")) shouldBe best
+
   it should "report a missing request flag before it reads the catalog" in :
     withArchive: archive =>
       val session: Session = sessionFor(archive)
@@ -894,6 +1025,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     directory.mkdirs()
     val file: File = File(directory, "catalog.txt")
     JFiles.writeString(file.toPath, (Seq("# gphoto-catalog 2") ++ lines).mkString("", "\n", "\n"))
+    file
+
+  private def writeToml(archive: File, path: String, content: String): File =
+    val file: File = File(archive, path)
+    file.getParentFile.mkdirs()
+    Files.write(content, file)
     file
 
   private def mkdir(archive: File, path: String): Unit =

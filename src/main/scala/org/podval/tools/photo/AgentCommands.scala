@@ -64,6 +64,41 @@ private[photo] final class AgentMatch(id: Option[String], title: String) extends
           AgentCommands.skipped(loaded, album, "unread names")
         else AgentCommands.matchItems(loaded, album)
 
+// Requotes include lines already on disk. Not a writer for new albums.
+private[photo] final class AgentQuoteIncludes(path: Option[String], dryRun: Boolean) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val parsed: Option[Path] = path.map(session.parse)
+      val root: Root = parsed.fold(session.root)(_.root)
+      val prefix: Option[String] = parsed.map(_.toString.stripPrefix("/")).filter(_.nonEmpty)
+      val archive: File = root.configuration.archive
+      val selected: Seq[Album.Loaded] = Archive.scan(archive).albums.filter: loaded =>
+        Album.albumMatches(loaded.album.startDir, loaded.album.title, prefix)
+      val verb: String = if dryRun then "would rewrite" else "rewrote"
+      val lines: Seq[String] = selected.foldLeft(Seq.empty[String]): (printed, loaded) =>
+        printed ++ quoteOne(archive, loaded, dryRun, verb)
+      (session, Result.Ok(AgentCommands.textOf(lines), Json.Null))
+
+  // An empty include stays, including `include = []`. Do not append one.
+  private def quoteOne(
+    archive: File,
+    loaded: Album.Loaded,
+    dryRun: Boolean,
+    verb: String
+  ): Seq[String] =
+    if loaded.album.include.isEmpty then Seq.empty
+    else
+      val file: File = loaded.file
+      val text: String = Files.read(file)
+      val (from, to) = Album.findInclude(file, text).getOrElse(
+        throw IllegalArgumentException(s"$file: include array does not end on its own line")
+      )
+      val next: String = Album.replaceIncludeSpan(text, from, to, loaded.album.include)
+      if next == text then Seq.empty
+      else
+        if !dryRun then Files.write(next, file)
+        Seq(s"$verb ${Album.relative(archive, file)}")
+
 private[photo] final class AgentAlbumFile(
   id: Option[String],
   dryRun: Boolean,

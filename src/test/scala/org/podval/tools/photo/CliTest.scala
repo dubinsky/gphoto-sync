@@ -126,6 +126,10 @@ class CliTest extends AnyFlatSpec, Matchers:
     )) shouldBe Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
     Cli.parse(List("agent", "include", "2010/07/19/2412")) shouldBe
       Cli.Run(Cli.AgentIncludeArgs(None, Seq("2010/07/19/2412")))
+    Cli.parse(List("agent", "quote-includes")) shouldBe
+      Cli.Run(Cli.AgentQuoteIncludesArgs(None, dryRun = false))
+    Cli.parse(List("agent", "quote-includes", "--dry-run", "2009/03")) shouldBe
+      Cli.Run(Cli.AgentQuoteIncludesArgs(Some("2009/03"), dryRun = true))
     Cli.parse(List(
       "agent", "album-file", "--id", "a1", "--dry-run", "--replace",
       "--google-title", "Exact", "--no-request", "2010/07"
@@ -349,6 +353,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |items  list catalog items for one album
         |match  match catalog items to local stems
         |include  compress include lines
+        |quote-includes  requote include lines
         |album-file  write an album file
         |request  append one request row
         |requests  list request rows
@@ -390,6 +395,14 @@ class CliTest extends AnyFlatSpec, Matchers:
         |
         |Flags:
         |--span  text  title span; absent means a curated album""".stripMargin
+    helpOf("agent", "quote-includes", "--help") shouldBe
+      """quote-includes  requote include lines
+        |
+        |Positionals:
+        |path  optional
+        |
+        |Flags:
+        |--dry-run  boolean  print the files that would change and write nothing""".stripMargin
     helpOf("agent", "items", "--help") shouldBe
       """items  list catalog items for one album
         |
@@ -463,6 +476,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "catalog", "June") -> "extra argument 'June'",
       List("agent", "nope") -> "unknown command 'nope'",
       List("agent", "album-file", "2010/07", "--replace") -> "extra argument '--replace'",
+      List("agent", "quote-includes", "2009", "--dry-run") -> "extra argument '--dry-run'",
       List("agent", "request") -> "missing request action",
       List("agent", "request", "--album", "a1", "rename-album") -> "unknown command '--album'",
       List("agent", "requests", "x") -> "extra argument 'x'",

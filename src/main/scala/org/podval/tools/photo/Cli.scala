@@ -50,6 +50,7 @@ object Cli:
   private[photo] final case class AgentItemsArgs(id: Option[String], album: String) extends Parsed
   private[photo] final case class AgentMatchArgs(id: Option[String], album: String) extends Parsed
   private[photo] final case class AgentIncludeArgs(span: Option[String], paths: Seq[String]) extends Parsed
+  private[photo] final case class AgentQuoteIncludesArgs(path: Option[String], dryRun: Boolean) extends Parsed
   private[photo] final case class AgentAlbumFileArgs(
     id: Option[String],
     dryRun: Boolean,
@@ -505,6 +506,8 @@ object Cli:
       AgentMatch(id, album)
     case AgentIncludeArgs(span, paths) =>
       AgentInclude(span, paths)
+    case AgentQuoteIncludesArgs(path, dryRun) =>
+      AgentQuoteIncludes(path, dryRun)
     case AgentAlbumFileArgs(id, dryRun, replace, googleTitle, noRequest, album) =>
       AgentAlbumFile(id, dryRun, replace, googleTitle, noRequest, album)
     case AgentRequestArgs(action, album, item, current, updated, id) =>
@@ -936,6 +939,13 @@ object Cli:
       positionals = List(Rest("year/month/day/stem")),
       flags = List(Flag("span", None, TextKind, "title span; absent means a curated album")),
       build = (values, args) => AgentIncludeArgs(values.texts.get("span"), args)
+    ),
+    Command(
+      name = "quote-includes",
+      help = "requote include lines",
+      positionals = List(Optional("path")),
+      flags = List(Flag("dry-run", None, BooleanKind, "print the files that would change and write nothing")),
+      build = (values, args) => AgentQuoteIncludesArgs(args.headOption, bool(values, "dry-run"))
     ),
     Command(
       name = "album-file",

@@ -163,6 +163,15 @@ object Album:
     if extension.contains("toml") then name
     else throw IllegalArgumentException(s"$file: not an album file")
 
+  // Splice only the include span. Callers leave an empty include untouched.
+  private[photo] def replaceIncludeSpan(
+    text: String,
+    from: Int,
+    to: Int,
+    include: Seq[Include.Entry]
+  ): String =
+    joinLines(replaceSpan(splitLines(text), from, to, blockLines(includeLines(include))))
+
   private def putInclude(file: File, include: Seq[Include.Entry]): Unit =
     val text: String = Files.read(file)
     val lines: Seq[TextLine] = splitLines(text)
@@ -349,6 +358,9 @@ object Album:
         before ++ added ++ after
       case None =>
         appendBlock(replaced, added)
+
+  private[photo] def findInclude(file: File, text: String): Option[(Int, Int)] =
+    findInclude(file, splitLines(text))
 
   private def findInclude(file: File, lines: Seq[TextLine]): Option[(Int, Int)] =
     val opens: Seq[Int] = lines.zipWithIndex.collect:

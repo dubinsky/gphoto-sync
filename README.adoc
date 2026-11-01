@@ -181,6 +181,8 @@ The metadata comes from sidecar TOML, not from EXIF.
 The album is an exact catalog title.
 `photo agent match [--id <id>] <album>` matches those items to local stems and writes nothing.
 `photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines and writes nothing.
+`photo agent quote-includes [--dry-run] [path]` rewrites include lines in existing album files and leaves every other
+line unchanged.
 `photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] [--no-request] <album>` writes one
 external album file.
 `--dry-run` prints that file and writes nothing.
