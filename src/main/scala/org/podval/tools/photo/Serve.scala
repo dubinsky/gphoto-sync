@@ -1,10 +1,43 @@
 package org.podval.tools.photo
 
 import scala.annotation.tailrec
+import java.io.{ByteArrayOutputStream, File, IOException}
+import java.net.{StandardProtocolFamily, UnixDomainSocketAddress}
+import java.nio.ByteBuffer
+import java.nio.channels.{
+  ClosedChannelException,
+  FileChannel,
+  FileLock,
+  OverlappingFileLockException,
+  Selector,
+  ServerSocketChannel,
+  SocketChannel
+}
+import java.nio.charset.StandardCharsets
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFilePermissions
 
 private[photo] object Serve:
   private[photo] final case class Request(id: Option[String], argv: List[String])
   private[photo] final case class Problem(id: Option[String], message: String)
+  private[photo] final case class Response(
+    id: Option[String],
+    ok: Boolean,
+    text: Option[String],
+    error: Option[String],
+    archive: String
+  )
+
+  private[photo] enum Attempt:
+    case Absent
+    case Failed(message: String)
+    case Done(response: Response)
+
+  private val acceptWaitMs: Long = 5000
+  private val socketName: String = "serve.sock"
+  private val lockName: String = "serve.lock"
+  private val directoryMode: String = "rwx------"
+  private val fileMode: String = "rw-------"
 
   private val malformed: String = "malformed request"
   private val emptyRequest: String = "empty request"
@@ -15,26 +48,45 @@ private[photo] object Serve:
     else
       val left: String = skip(line)
       if !left.startsWith("{") then Left(Problem(None, malformed))
-      else fields(left.drop(1), Seen(), take = true, allowEmpty = true) match
+      else fields(left.drop(1), Seen(), Take.Request, allowEmpty = true) match
         case Walk.Failed(seen) =>
           Left(Problem(echoed(seen), malformed))
         case Walk.Done(seen, rest) =>
           if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
           else request(seen)
 
+  private[photo] def readResponse(line: String): Either[Problem, Response] =
+    if line.forall(_.isWhitespace) then Left(Problem(None, malformed))
+    else
+      val left: String = skip(line)
+      if !left.startsWith("{") then Left(Problem(None, malformed))
+      else fields(left.drop(1), Seen(), Take.Response, allowEmpty = true) match
+        case Walk.Failed(seen) =>
+          Left(Problem(echoed(seen), malformed))
+        case Walk.Done(seen, rest) =>
+          if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
+          else responseOf(seen)
+
   private[photo] def render(
     id: Option[String],
     ok: Boolean,
     text: Option[String],
     error: Option[String],
-    value: Option[Json]
+    value: Option[Json],
+    archive: String
   ): String =
     val fields: Seq[(String, Json)] =
       id.toSeq.map(text => "id" -> Json.Str(text)) ++
-        Seq("ok" -> Json.Bool(ok)) ++
+        Seq("ok" -> Json.Bool(ok), "archive" -> Json.Str(archive)) ++
         text.toSeq.map(text => "text" -> Json.Str(text)) ++
         error.toSeq.map(text => "error" -> Json.Str(text)) ++
         value.toSeq.map(json => "value" -> json)
+    write(Json.Obj(fields))
+
+  private[photo] def renderRequest(id: Option[String], argv: List[String]): String =
+    val fields: Seq[(String, Json)] =
+      Seq("argv" -> Json.Arr(argv.map(text => Json.Str(text)))) ++
+        id.toSeq.map(text => "id" -> Json.Str(text))
     write(Json.Obj(fields))
 
   private[photo] def write(json: Json): String = json match
@@ -73,8 +125,20 @@ private[photo] object Serve:
     ids: Int = 0,
     argv: Option[List[String]] = None,
     argvs: Int = 0,
+    ok: Option[Boolean] = None,
+    oks: Int = 0,
+    archive: Option[String] = None,
+    archives: Int = 0,
+    text: Option[String] = None,
+    texts: Int = 0,
+    error: Option[String] = None,
+    errors: Int = 0,
+    values: Int = 0,
     other: Boolean = false
   )
+
+  private enum Take:
+    case Request, Response, Skip
 
   private enum Walk:
     case Done(seen: Seen, rest: String)
@@ -96,9 +160,22 @@ private[photo] object Serve:
       case Some(argv) => Right(Request(id, argv))
       case None => Left(Problem(id, malformed))
 
+  private def responseOf(seen: Seen): Either[Problem, Response] =
+    val id: Option[String] = echoed(seen)
+    val idOk: Boolean = seen.ids == 0 || id.isDefined
+    val textOk: Boolean = seen.texts == 0 || seen.text.isDefined
+    val errorOk: Boolean = seen.errors == 0 || seen.error.isDefined
+    if seen.other || !idOk || !textOk || !errorOk || seen.oks != 1 || seen.archives != 1 || seen.values > 1 then
+      Left(Problem(id, malformed))
+    else (seen.ok, seen.archive) match
+      case (Some(ok), Some(archive)) =>
+        Right(Response(id, ok, seen.text, seen.error, archive))
+      case _ =>
+        Left(Problem(id, malformed))
+
   // allowEmpty is true only before the first field, so a trailing comma is not an empty object.
   @tailrec
-  private def fields(rest: String, seen: Seen, take: Boolean, allowEmpty: Boolean): Walk =
+  private def fields(rest: String, seen: Seen, take: Take, allowEmpty: Boolean): Walk =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("}") then Walk.Done(seen, left.drop(1))
     else parseKey(left) match
@@ -116,12 +193,54 @@ private[photo] object Serve:
             else if more.startsWith(",") then fields(more.drop(1), next, take, allowEmpty = false)
             else Walk.Failed(next)
 
-  private def accept(key: String, rest: String, seen: Seen, take: Boolean): Option[(Seen, String)] =
-    if !take then skipValue(rest).map(more => (seen, more))
-    else key match
-      case "id" => takeId(rest, seen)
-      case "argv" => takeArgv(rest, seen)
-      case _ => skipValue(rest).map(more => (seen.copy(other = true), more))
+  private def accept(key: String, rest: String, seen: Seen, take: Take): Option[(Seen, String)] =
+    take match
+      case Take.Skip =>
+        skipValue(rest).map(more => (seen, more))
+      case Take.Request =>
+        key match
+          case "id" => takeId(rest, seen)
+          case "argv" => takeArgv(rest, seen)
+          case _ => skipValue(rest).map(more => (seen.copy(other = true), more))
+      case Take.Response =>
+        key match
+          case "id" => takeId(rest, seen)
+          case "ok" => takeOk(rest, seen)
+          case "archive" => takeArchive(rest, seen)
+          case "text" => takeOptionalString(rest, seen, error = false)
+          case "error" => takeOptionalString(rest, seen, error = true)
+          case "value" => skipValue(rest).map(more => (seen.copy(values = seen.values + 1), more))
+          case _ => skipValue(rest).map(more => (seen.copy(other = true), more))
+
+  private def takeOk(rest: String, seen: Seen): Option[(Seen, String)] =
+    val left: String = skip(rest)
+    if left.startsWith("true") then Some((seen.copy(ok = Some(true), oks = seen.oks + 1), left.drop(4)))
+    else if left.startsWith("false") then Some((seen.copy(ok = Some(false), oks = seen.oks + 1), left.drop(5)))
+    else skipValue(left).map(more => (seen.copy(oks = seen.oks + 1), more))
+
+  private def takeArchive(rest: String, seen: Seen): Option[(Seen, String)] =
+    val left: String = skip(rest)
+    if left.startsWith("\"") then
+      parseString(left.drop(1), "") match
+        case Left(_) => None
+        case Right((text, more)) =>
+          Some((seen.copy(archive = Some(text), archives = seen.archives + 1), more))
+    else skipValue(left).map(more => (seen.copy(archives = seen.archives + 1), more))
+
+  private def takeOptionalString(rest: String, seen: Seen, error: Boolean): Option[(Seen, String)] =
+    val left: String = skip(rest)
+    if left.startsWith("\"") then
+      parseString(left.drop(1), "") match
+        case Left(_) => None
+        case Right((text, more)) =>
+          val next: Seen =
+            if error then seen.copy(error = Some(text), errors = seen.errors + 1)
+            else seen.copy(text = Some(text), texts = seen.texts + 1)
+          Some((next, more))
+    else
+      skipValue(left).map: more =>
+        val next: Seen = if error then seen.copy(errors = seen.errors + 1) else seen.copy(texts = seen.texts + 1)
+        (next, more)
 
   private def takeId(rest: String, seen: Seen): Option[(Seen, String)] =
     val left: String = skip(rest)
@@ -145,7 +264,7 @@ private[photo] object Serve:
     val left: String = skip(rest)
     if left.isEmpty then None
     else if left.startsWith("{") then
-      fields(left.drop(1), Seen(), take = false, allowEmpty = true) match
+      fields(left.drop(1), Seen(), Take.Skip, allowEmpty = true) match
         case Walk.Done(_, more) => Some(more)
         case Walk.Failed(_) => None
     else if left.startsWith("[") then
@@ -256,3 +375,362 @@ private[photo] object Serve:
 
   private def skip(rest: String): String =
     rest.dropWhile(ch => ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r')
+
+  private[photo] def archiveOf(session: Session): String =
+    DirectoryIndex.key(session.root.configuration.archive)
+
+  private[photo] def toResult(response: Response): Result =
+    def plain(error: String): String = error.stripPrefix("Photo Archive Tool: ")
+    if response.ok then Result.Ok(response.text.getOrElse(""), Json.Null)
+    else response.text match
+      case Some(text) =>
+        Result.Failed(text, Json.Null, plain(response.error.getOrElse("failed")))
+      case None =>
+        Result.Usage(plain(response.error.getOrElse("failed")))
+
+  private[photo] def runtimeDirectory(): Either[String, File] =
+    Option(System.getenv("XDG_RUNTIME_DIR")).map(_.trim).filter(_.nonEmpty) match
+      case None => Left("XDG_RUNTIME_DIR is unset")
+      case Some(dir) => Right(File(File(dir), "org.podval.tools.photo"))
+
+  // Tests pass a temp directory. Production passes $XDG_RUNTIME_DIR/org.podval.tools.photo.
+  private[photo] def listen(
+    session: Session,
+    runtime: File,
+    onBound: ServerSocketChannel => Unit = _ => ()
+  ): Int =
+    prepare(runtime)
+    val lockFile: File = File(runtime, lockName)
+    val socketFile: File = File(runtime, socketName)
+    val channel: FileChannel = FileChannel.open(
+      lockFile.toPath,
+      StandardOpenOption.CREATE,
+      StandardOpenOption.READ,
+      StandardOpenOption.WRITE
+    )
+    tryExclusive(channel) match
+      case None =>
+        channel.close()
+        Console.err.println("already running")
+        0
+      case Some(lock) =>
+        var server: ServerSocketChannel = null
+        try
+          try
+            java.nio.file.Files.deleteIfExists(socketFile.toPath)
+            server = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
+            server.bind(UnixDomainSocketAddress.of(socketFile.toPath))
+            java.nio.file.Files.setPosixFilePermissions(
+              socketFile.toPath,
+              PosixFilePermissions.fromString(fileMode)
+            )
+          catch case error: IOException =>
+            Console.err.println(Option(error.getMessage).getOrElse("bind failed"))
+            return 1
+          Console.err.println(s"bound ${socketFile.getAbsolutePath}")
+          onBound(server)
+          acceptLoop(server, parked(session), socketFile)
+        finally
+          if server != null && server.isOpen then server.close()
+          lock.release()
+          channel.close()
+
+  private[photo] def ensure(directory: File): Either[String, Unit] =
+    ensure(directory, () => spawnServe(directory), acceptWaitMs)
+
+  private[photo] def ensure(
+    directory: File,
+    spawn: () => Either[String, Unit],
+    waitMs: Long
+  ): Either[String, Unit] =
+    if canConnect(directory) then Right(())
+    else if lockHeld(directory) then
+      if waitUntilConnect(directory, waitMs) then Right(()) else Left(busyMessage(directory))
+    else spawn() match
+      case Left(message) => Left(message)
+      case Right(_) =>
+        if waitUntilConnect(directory, waitMs) then Right(()) else Left("serve did not start")
+
+  private[photo] def client(
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    stop: Boolean = false,
+    waitMs: Long = acceptWaitMs
+  ): Attempt =
+    def from(result: Exchange): Attempt = result match
+      case Exchange.Connected(response) => Attempt.Done(response)
+      case Exchange.Rejected(message) => Attempt.Failed(message)
+      case Exchange.Refused => Attempt.Absent
+    exchange(runtime, argv, archive, stop, waitMs) match
+      case Exchange.Refused if lockHeld(runtime) =>
+        if waitUntilConnect(runtime, waitMs) then
+          from(exchange(runtime, argv, archive, stop, waitMs)) match
+            case Attempt.Absent => Attempt.Failed(busyMessage(runtime))
+            case other => other
+        else Attempt.Failed(busyMessage(runtime))
+      case Exchange.Refused if stop =>
+        Attempt.Failed("serve is not running")
+      case other =>
+        from(other)
+
+  private def parked(session: Session): Session =
+    session.copy(cursor = session.root, style = PathStyle.Serve)
+
+  private enum Exchange:
+    case Connected(response: Response)
+    case Rejected(message: String)
+    case Refused
+
+  private enum Line:
+    case Got(text: String)
+    case Eof
+    case TimedOut
+
+  @tailrec
+  private def acceptLoop(server: ServerSocketChannel, session: Session, socketFile: File): Int =
+    if !server.isOpen then 0
+    else
+      val accepted: Option[SocketChannel] =
+        try Option(server.accept())
+        catch case _: ClosedChannelException => None
+      accepted match
+        case None =>
+          0
+        case Some(conn) =>
+          val step: Cli.Step =
+            try handle(conn, session)
+            catch case _: IOException => Cli.Step.Continue(session)
+            finally conn.close()
+          step match
+            case Cli.Step.Stop =>
+              Console.err.println("stopping")
+              java.nio.file.Files.deleteIfExists(socketFile.toPath)
+              0
+            case Cli.Step.Continue(next) =>
+              acceptLoop(server, next, socketFile)
+
+  private def handle(conn: SocketChannel, session: Session): Cli.Step =
+    writeLine(conn, render(None, ok = true, None, None, None, archiveOf(session)))
+    readLine(conn, None) match
+      case Line.Got(text) =>
+        val (step, response) = Cli.serveResponse(session, text)
+        writeLine(conn, response)
+        step
+      case Line.Eof | Line.TimedOut =>
+        Cli.Step.Continue(session)
+
+  private def exchange(
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    stop: Boolean,
+    waitMs: Long
+  ): Exchange =
+    openChannel(File(runtime, socketName)) match
+      case None =>
+        Exchange.Refused
+      case Some(channel) =>
+        try talk(channel, runtime, argv, archive, stop, waitMs)
+        catch case _: IOException => Exchange.Rejected("serve closed the connection")
+        finally channel.close()
+
+  private def talk(
+    channel: SocketChannel,
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    stop: Boolean,
+    waitMs: Long
+  ): Exchange =
+    readLine(channel, Some(waitMs)) match
+      case Line.TimedOut | Line.Eof =>
+        Exchange.Rejected(busyMessage(runtime))
+      case Line.Got(text) =>
+        readResponse(text) match
+          case Left(_) =>
+            Exchange.Rejected(malformed)
+          case Right(accept) if !stop && accept.archive != archive =>
+            Exchange.Rejected(mismatchMessage(accept.archive, archive))
+          case Right(_) =>
+            writeLine(channel, renderRequest(None, argv))
+            readLine(channel, None) match
+              case Line.Got(body) =>
+                readResponse(body) match
+                  case Left(_) => Exchange.Rejected(malformed)
+                  case Right(response) => Exchange.Connected(response)
+              case Line.Eof =>
+                Exchange.Rejected("serve closed the connection")
+              case Line.TimedOut =>
+                Exchange.Rejected(busyMessage(runtime))
+
+  private def openChannel(socket: File): Option[SocketChannel] =
+    val channel: SocketChannel =
+      try SocketChannel.open(StandardProtocolFamily.UNIX)
+      catch case _: IOException => return None
+    try
+      channel.connect(UnixDomainSocketAddress.of(socket.toPath))
+      Some(channel)
+    catch case _: IOException =>
+      channel.close()
+      None
+
+  private def canConnect(runtime: File): Boolean =
+    val socket: File = File(runtime, socketName)
+    if !socket.exists then false
+    else openChannel(socket) match
+      case None => false
+      case Some(channel) =>
+        channel.close()
+        true
+
+  private def waitUntilConnect(runtime: File, waitMs: Long): Boolean =
+    val deadline: Long = System.nanoTime() + waitMs * 1000000L
+    def loop(): Boolean =
+      if canConnect(runtime) then true
+      else if System.nanoTime() >= deadline then false
+      else
+        Thread.sleep(50)
+        loop()
+    loop()
+
+  // A missing lock file means no server has created it. Do not create one from a client.
+  private def lockHeld(runtime: File): Boolean =
+    val file: File = File(runtime, lockName)
+    if !file.isFile then false
+    else
+      val channel: FileChannel =
+        try FileChannel.open(file.toPath, StandardOpenOption.READ, StandardOpenOption.WRITE)
+        catch case _: IOException => return false
+      try
+        val lock: FileLock =
+          try channel.tryLock(0L, Long.MaxValue, true)
+          catch case _: OverlappingFileLockException => return true
+        if lock == null then true
+        else
+          lock.release()
+          false
+      finally channel.close()
+
+  private def tryExclusive(channel: FileChannel): Option[FileLock] =
+    try Option(channel.tryLock())
+    catch case _: OverlappingFileLockException => None
+
+  private def prepare(runtime: File): Unit =
+    val path = runtime.toPath
+    java.nio.file.Files.createDirectories(path)
+    java.nio.file.Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(directoryMode))
+
+  private def busyMessage(runtime: File): String =
+    val lock: String = File(runtime, lockName).getAbsolutePath
+    s"a command is in progress; photo serve stop runs only between commands; the JVM holding $lock is that process (fuser $lock)"
+
+  private def mismatchMessage(server: String, local: String): String =
+    s"serve archive is $server; this archive is $local; run photo serve stop"
+
+  // The child recomputes the directory as $XDG_RUNTIME_DIR/org.podval.tools.photo.
+  private def spawnServe(runtime: File): Either[String, Unit] =
+    if !setsidOnPath then Left("setsid is missing")
+    else
+      val parent: File = runtime.getParentFile
+      if parent == null then Left("runtime directory has no parent")
+      else
+        val javaHome: String = System.getProperty("java.home")
+        val classPath: String = System.getProperty("java.class.path")
+        val process: java.lang.ProcessBuilder = new java.lang.ProcessBuilder(
+          "setsid",
+          javaHome + "/bin/java",
+          "-cp",
+          classPath,
+          "org.podval.tools.photo.Cli",
+          "serve"
+        )
+        process.environment().put("XDG_RUNTIME_DIR", parent.getAbsolutePath)
+        process.redirectInput(java.lang.ProcessBuilder.Redirect.from(new File("/dev/null")))
+        process.redirectOutput(java.lang.ProcessBuilder.Redirect.DISCARD)
+        process.redirectError(java.lang.ProcessBuilder.Redirect.appendTo(serveLog()))
+        try
+          process.start()
+          Right(())
+        catch case error: IOException =>
+          Left(Option(error.getMessage).getOrElse("setsid is missing"))
+
+  private def setsidOnPath: Boolean =
+    val path: String = Option(System.getenv("PATH")).getOrElse("")
+    path.split(File.pathSeparator).exists(dir => File(dir, "setsid").canExecute)
+
+  private def serveLog(): File =
+    val base: File = Option(System.getenv("XDG_STATE_HOME")).map(_.trim).filter(_.nonEmpty) match
+      case Some(dir) => File(dir)
+      case None => File(File(System.getProperty("user.home"), ".local"), "state")
+    val dir: File = File(base, "org.podval.tools.photo")
+    java.nio.file.Files.createDirectories(dir.toPath)
+    java.nio.file.Files.setPosixFilePermissions(dir.toPath, PosixFilePermissions.fromString(directoryMode))
+    val file: File = File(dir, "serve.log")
+    val perms = PosixFilePermissions.fromString(fileMode)
+    if !java.nio.file.Files.exists(file.toPath) then
+      java.nio.file.Files.createFile(file.toPath, PosixFilePermissions.asFileAttribute(perms))
+    else java.nio.file.Files.setPosixFilePermissions(file.toPath, perms)
+    file
+
+  private def writeLine(channel: SocketChannel, text: String): Unit =
+    val buf: ByteBuffer = ByteBuffer.wrap((text + "\n").getBytes(StandardCharsets.UTF_8))
+    while buf.hasRemaining do channel.write(buf)
+
+  private def readLine(channel: SocketChannel, timeoutMs: Option[Long]): Line =
+    timeoutMs match
+      case None => readBlocking(channel)
+      case Some(ms) => readTimed(channel, ms)
+
+  private def readBlocking(channel: SocketChannel): Line =
+    val raw: ByteArrayOutputStream = new ByteArrayOutputStream
+    val chunk: ByteBuffer = ByteBuffer.allocate(1024)
+    var done: Boolean = false
+    var eof: Boolean = false
+    while !done && !eof do
+      chunk.clear()
+      val n: Int = channel.read(chunk)
+      if n < 0 then eof = true
+      else done = takeBytes(chunk, raw)
+    if !done && raw.size == 0 then Line.Eof else Line.Got(raw.toString(StandardCharsets.UTF_8))
+
+  private def readTimed(channel: SocketChannel, timeoutMs: Long): Line =
+    val wasBlocking: Boolean = channel.isBlocking
+    channel.configureBlocking(false)
+    val selector: Selector = Selector.open()
+    try
+      channel.register(selector, java.nio.channels.SelectionKey.OP_READ)
+      val raw: ByteArrayOutputStream = new ByteArrayOutputStream
+      val chunk: ByteBuffer = ByteBuffer.allocate(1024)
+      val deadline: Long = System.nanoTime() + timeoutMs * 1000000L
+      var done: Boolean = false
+      var eof: Boolean = false
+      var timedOut: Boolean = false
+      while !done && !eof && !timedOut do
+        chunk.clear()
+        val n: Int = channel.read(chunk)
+        if n > 0 then done = takeBytes(chunk, raw)
+        else if n < 0 then eof = true
+        else
+          val remaining: Long = deadline - System.nanoTime()
+          if remaining <= 0 then timedOut = true
+          else
+            val selected: Int = selector.select(Math.max(remaining / 1000000L, 1L))
+            // A key left in the selected set makes the next select return immediately.
+            selector.selectedKeys().clear()
+            if selected == 0 && System.nanoTime() >= deadline then timedOut = true
+      if timedOut && !done then Line.TimedOut
+      else if !done && raw.size == 0 then Line.Eof
+      else Line.Got(raw.toString(StandardCharsets.UTF_8))
+    finally
+      selector.close()
+      if channel.isOpen && wasBlocking then channel.configureBlocking(true)
+
+  // Returns true once a newline has been stored out of the chunk.
+  private def takeBytes(chunk: ByteBuffer, raw: ByteArrayOutputStream): Boolean =
+    chunk.flip()
+    var done: Boolean = false
+    while chunk.hasRemaining && !done do
+      val b: Int = chunk.get().toInt & 0xff
+      if b == '\n' then done = true else raw.write(b)
+    done

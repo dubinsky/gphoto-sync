@@ -192,15 +192,39 @@ has an owner.
 `photo agent requests` lists those rows without album ids or item keys.
 `photo agent results` lists result rows and prints each note unchanged.
 
-`photo serve` reads one JSON object per line from standard input and writes one JSON response per line.
+`photo serve` listens on one Unix socket for this user.
 There is no TCP port.
+The socket is `$XDG_RUNTIME_DIR/org.podval.tools.photo/serve.sock`.
+The directory is mode `0700` and the socket is mode `0600`.
+`serve.lock` in that directory is an exclusive lock held until the process exits.
+A second `photo serve` prints `already running` and exits 0.
+It does not unlink the socket.
+A stale socket whose lock is free is unlinked by the next `photo serve` after it takes the lock.
+The process ignores standard input.
+Each connection gets one accept line, then one command, then the connection closes.
 The request has `argv`, an array of strings, and an optional string `id` that the response echoes.
+Every response includes `archive`, the absolute path of the archive this process loaded.
+The accept line is that response before the request is read.
 Flags precede positionals in `argv`.
 `text` is the human output.
 `value` is the command's JSON value, or `null`.
 A failure puts the usage line in `error` and does not write a second line to stderr.
-`cd` changes the cursor for the next line.
-`exit` writes a response and then the process exits.
+`cd`, `pwd`, and `exit` are usage on the socket.
+`photo serve stop` asks that process to exit between commands.
+It does not preempt a command already running.
+
+`photo shell` keeps `cd`, `pwd`, and `exit` in the shell.
+It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
+Other commands go to the socket.
+Path arguments are archive-root paths.
+`agent include` paths are sent unchanged.
+A command is sent only when `archive` matches this process.
+A mismatch names both paths, says to run `photo serve stop`, and does not run the command in this process.
+
+A one-shot uses the socket when it is up and `archive` matches.
+It runs in this process when the lock is free.
+It does not start `photo serve`.
+A mismatch names both paths and does not run in this process.
 
 == OAuth and config
 

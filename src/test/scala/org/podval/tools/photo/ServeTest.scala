@@ -2,77 +2,104 @@ package org.podval.tools.photo
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import scala.annotation.targetName
+import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, File}
+import java.net.{StandardProtocolFamily, UnixDomainSocketAddress}
+import java.nio.ByteBuffer
+import java.nio.channels.{
+  FileChannel,
+  FileLock,
+  OverlappingFileLockException,
+  ServerSocketChannel,
+  SocketChannel
+}
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files as JFiles}
+import java.nio.file.{Files as JFiles, StandardOpenOption}
+import java.nio.file.attribute.{BasicFileAttributes, PosixFilePermissions}
 import java.time.ZoneId
+import java.util.concurrent.{ConcurrentLinkedQueue, CountDownLatch, TimeUnit}
+import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
+import javax.imageio.ImageIO
 
 class ServeTest extends AnyFlatSpec, Matchers:
-  private val pwdRoot: String = """{"ok":true,"text":"/\n","value":null}"""
-  private val pwd2010: String = """{"ok":true,"text":"2010\n","value":null}"""
-  private val emptyOk: String = """{"ok":true,"text":"","value":null}"""
-  private val malformed: String = """{"ok":false,"error":"Photo Archive Tool: malformed request"}"""
+  @targetName("resultCanEqual")
+  private given [A <: Result, B <: Result] => CanEqual[A, B] = CanEqual.derived
 
-  "serve" should "answer pwd and move the cursor from the archive root" in :
-    prepared: (archive, session) =>
+  @targetName("attemptCanEqual")
+  private given [A <: Serve.Attempt, B <: Serve.Attempt] => CanEqual[A, B] = CanEqual.derived
+
+  @targetName("responseCanEqual")
+  private given [A <: Serve.Response, B <: Serve.Response] => CanEqual[A, B] = CanEqual.derived
+
+  "a response" should "require archive and ignore value" in :
+    val accept: String = Serve.render(None, ok = true, None, None, None, "/archive")
+    accept shouldBe """{"ok":true,"archive":"/archive"}"""
+    Serve.readResponse(accept) shouldBe Right(Serve.Response(None, true, None, None, "/archive"))
+    val command: String = Serve.render(
+      Some("1"),
+      ok = true,
+      Some("/2010\n"),
+      None,
+      Some(Json.Null),
+      "/archive"
+    )
+    command shouldBe """{"id":"1","ok":true,"archive":"/archive","text":"/2010\n","value":null}"""
+    Serve.readResponse(command) shouldBe Right(Serve.Response(Some("1"), true, Some("/2010\n"), None, "/archive"))
+    Serve.readResponse("""{"ok":true,"archive":"/a","value":{"id":"a1","n":[1,true,null]}}""") shouldBe
+      Right(Serve.Response(None, true, None, None, "/a"))
+    Serve.readResponse("""{"ok":true}""") match
+      case Left(problem) => problem.message shouldBe "malformed request"
+      case Right(other) => fail(other.toString)
+    Serve.readResponse("""{"ok":true,"archive":"/a","nope":1}""") match
+      case Left(problem) => problem.message shouldBe "malformed request"
+      case Right(other) => fail(other.toString)
+    Serve.read("""{"argv":["lsd","2010"],"archive":"/tmp/a"}""") match
+      case Left(problem) => problem.message shouldBe "malformed request"
+      case Right(other) => fail(other.toString)
+
+  "serve" should "treat cd, pwd, and exit as usage and keep reading" in :
+    prepared: (_, session) =>
       val (code, out, err) = run(session, Seq(
-        """{"argv":["pwd"]}""",
         """{"argv":["cd","2010"]}""",
         """{"argv":["pwd"]}""",
-        """{"argv":["cd","/"]}""",
-        """{"argv":["pwd"]}""",
-        """{"argv":["cd","/2010"]}""",
-        """{"argv":["pwd"]}"""
+        """{"argv":["exit"]}""",
+        """{"argv":["lsd","2010"]}"""
       ))
       code shouldBe 0
       err shouldBe ""
-      responses(out) shouldBe List(pwdRoot, emptyOk, pwd2010, emptyOk, pwdRoot, emptyOk, pwd2010)
-      File(archive, ".gphoto-sync").exists shouldBe false
-
-  it should "keep the session on usage and replace it on failure" in :
-    prepared: (_, session) =>
-      val year: Directory = session.parse("2010") match
-        case directory: Directory => directory
-        case other => fail(other.toString)
-      val (code, out, err) = run(
-        session,
-        Seq(
-          """{"argv":["cd","2010"]}""",
-          """{"argv":["agent"]}""",
-          """{"argv":["pwd"]}""",
-          """{"argv":["ls","usage-move"]}""",
-          """{"argv":["pwd"]}""",
-          """{"argv":["cd","/"]}""",
-          """{"argv":["ls","move-fail"]}""",
-          """{"argv":["pwd"]}"""
-        ),
-        (current, parsed) => parsed match
-          case ls: Cli.Ls if ls.path == "usage-move" =>
-            (current.copy(cursor = current.root), Result.Usage("nope"))
-          case ls: Cli.Ls if ls.path == "move-fail" =>
-            (current.copy(cursor = year), Result.Failed("partial\n", Json.Null, "publish failed"))
-          case other =>
-            Cli.toOperation(other).execute(current)
-      )
-      code shouldBe 0
-      err shouldBe ""
       responses(out) shouldBe List(
-        emptyOk,
-        """{"ok":false,"error":"Photo Archive Tool: missing agent command"}""",
-        pwd2010,
-        """{"ok":false,"error":"Photo Archive Tool: nope"}""",
-        pwd2010,
-        emptyOk,
-        """{"ok":false,"text":"partial\n","error":"Photo Archive Tool: publish failed","value":null}""",
-        pwd2010
+        usage(session, "cd is only available in the shell"),
+        usage(session, "pwd is only available in the shell"),
+        usage(session, "exit is only available in the shell"),
+        lsdOk(session)
       )
 
-  it should "answer exit and not read the next line" in :
+  it should "reset the cursor after a command" in :
+    prepared: (_, session) =>
+      var cursors: List[String] = Nil
+      val (_, _, _) = run(
+        session,
+        Seq("""{"argv":["ls","2010"]}""", """{"argv":["lsd","2010"]}"""),
+        (current, parsed) =>
+          cursors = cursors :+ Session.display(current.cursor)
+          parsed match
+            case _: Cli.Ls =>
+              val year: Directory = current.parse("2010") match
+                case directory: Directory => directory
+                case other => fail(other.toString)
+              (current.copy(cursor = year), Result.Ok("moved\n", Json.Null))
+            case _ =>
+              (current, Result.Ok("next\n", Json.Null))
+      )
+      cursors shouldBe List("", "")
+
+  it should "stop on serve stop and not read the next line" in :
     prepared: (_, session) =>
       var reads: Int = 0
       val lines: Iterator[String] = Seq(
-        """{"id":"1","argv":["exit"]}""",
-        """{"argv":["pwd"]}"""
+        """{"id":"1","argv":["serve","stop"]}""",
+        """{"argv":["lsd","2010"]}"""
       ).iterator.map: line =>
         reads += 1
         line
@@ -80,14 +107,14 @@ class ServeTest extends AnyFlatSpec, Matchers:
       code shouldBe 0
       err shouldBe ""
       reads shouldBe 1
-      responses(out) shouldBe List("""{"id":"1","ok":true,"text":"","value":null}""")
+      responses(out) shouldBe List(rendered(session, ok = true, id = Some("1")))
 
   it should "return 0 on EOF without an exit" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq("""{"argv":["pwd"]}"""))
+      val (code, out, err) = run(session, Seq("""{"argv":["lsd","2010"]}"""))
       code shouldBe 0
       err shouldBe ""
-      responses(out) shouldBe List(pwdRoot)
+      responses(out) shouldBe List(lsdOk(session))
       val (emptyCode, emptyOut, emptyErr) = run(session, Seq.empty)
       emptyCode shouldBe 0
       emptyOut shouldBe ""
@@ -98,14 +125,14 @@ class ServeTest extends AnyFlatSpec, Matchers:
       val (code, out, err) = run(session, Seq(
         "",
         " \t ",
-        """{"argv":["pwd"]}"""
+        """{"argv":["lsd","2010"]}"""
       ))
       code shouldBe 0
       err shouldBe ""
       responses(out) shouldBe List(
-        """{"ok":false,"error":"Photo Archive Tool: empty request"}""",
-        """{"ok":false,"error":"Photo Archive Tool: empty request"}""",
-        pwdRoot
+        usage(session, "empty request"),
+        usage(session, "empty request"),
+        lsdOk(session)
       )
 
   it should "reject a malformed request and keep the session" in :
@@ -123,12 +150,13 @@ class ServeTest extends AnyFlatSpec, Matchers:
         """{"id":"s","argv":"pwd"}""",
         """{"id":"1","argv":["\q"]}""",
         """{"id":"t","argv":["pwd"]} true""",
-        """{"argv":["pwd"]}"""
+        """{"argv":["lsd","2010"]}"""
       ))
       code shouldBe 0
       err shouldBe ""
+      val malformed: String = usage(session, "malformed request")
       responses(out) shouldBe List(
-        emptyOk,
+        usage(session, "cd is only available in the shell"),
         malformed,
         withId("n", malformed),
         withId("num", malformed),
@@ -140,37 +168,41 @@ class ServeTest extends AnyFlatSpec, Matchers:
         withId("s", malformed),
         withId("1", malformed),
         withId("t", malformed),
-        pwd2010
+        lsdOk(session)
       )
 
   it should "omit a missing id and echo a string id" in :
     prepared: (_, session) =>
       val (code, out, err) = run(session, Seq(
-        """{"argv":["pwd"]}  """,
-        """{ "id" : "1" , "argv" : [ "pwd" ] }""",
-        """{"id":"a\/b\"c\\d\n\t\r","argv":["pwd"]}"""
+        """{"argv":["lsd","2010"]}  """,
+        """{ "id" : "1" , "argv" : [ "lsd", "2010" ] }""",
+        """{"id":"a\/b\"c\\d\n\t\r","argv":["lsd","2010"]}"""
       ))
       code shouldBe 0
       err shouldBe ""
       responses(out) shouldBe List(
-        pwdRoot,
-        """{"id":"1","ok":true,"text":"/\n","value":null}""",
-        """{"id":"a/b\"c\\d\n\t\r","ok":true,"text":"/\n","value":null}"""
+        lsdOk(session),
+        rendered(session, ok = true, text = Some("/2010\n"), value = Some(Json.Null), id = Some("1")),
+        rendered(
+          session,
+          ok = true,
+          text = Some("/2010\n"),
+          value = Some(Json.Null),
+          id = Some("a/b\"c\\d\n\t\r")
+        )
       )
 
   it should "reject a flag after the album positional" in :
     prepared: (_, session) =>
       val (code, out, err) = run(session, Seq(
-        """{"argv":["cd","2010"]}""",
         """{"argv":["agent","items","2010/07","--id","a1"]}""",
-        """{"argv":["pwd"]}"""
+        """{"argv":["lsd","2010"]}"""
       ))
       code shouldBe 0
       err shouldBe ""
       responses(out) shouldBe List(
-        emptyOk,
-        """{"ok":false,"error":"Photo Archive Tool: extra argument '--id'"}""",
-        pwd2010
+        usage(session, "extra argument '--id'"),
+        lsdOk(session)
       )
 
   it should "put an agent id in value and not in text" in :
@@ -183,8 +215,23 @@ class ServeTest extends AnyFlatSpec, Matchers:
       val (code, out, err) = run(session, Seq(
         """{"argv":["agent","items","--id","a1","2010/07"]}"""
       ))
-      val line: String =
-        """{"ok":true,"text":"one.jpg 2010-07-19 -\n","value":{"id":"a1","error":null,"items":[{"filename":"one.jpg","date":"2010-07-19","key":"k1","uploader":null}],"unsets":[]}}"""
+      val value: Json = Json.Obj(Seq(
+        "id" -> Json.Str("a1"),
+        "error" -> Json.Null,
+        "items" -> Json.Arr(Seq(Json.Obj(Seq(
+          "filename" -> Json.Str("one.jpg"),
+          "date" -> Json.Str("2010-07-19"),
+          "key" -> Json.Str("k1"),
+          "uploader" -> Json.Null
+        )))),
+        "unsets" -> Json.Arr(Seq.empty)
+      ))
+      val line: String = rendered(
+        session,
+        ok = true,
+        text = Some("one.jpg 2010-07-19 -\n"),
+        value = Some(value)
+      )
       val textField: String = """"text":"one.jpg 2010-07-19 -\n""""
       code shouldBe 0
       err shouldBe ""
@@ -200,15 +247,18 @@ class ServeTest extends AnyFlatSpec, Matchers:
         case other => fail(other.toString)
       help.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
         "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync",
-        "login", "status", "logout", "help", "agent", "cd", "pwd", "exit"
+        "login", "status", "logout", "help", "agent"
       )
       help should not include ("shell  start a session")
       help should not include ("serve  answer one JSON command per line")
+      help should not include ("cd  ")
       val (code, out, err) = run(session, Seq("""{"argv":["help"]}"""))
       code shouldBe 0
       err shouldBe ""
       out.count(_ == '\n') shouldBe 1
-      responses(out) shouldBe List(Serve.render(None, ok = true, Some(help + "\n"), None, Some(Json.Null)))
+      responses(out) shouldBe List(
+        rendered(session, ok = true, text = Some(help + "\n"), value = Some(Json.Null))
+      )
 
   it should "reject shell and serve inside serve" in :
     prepared: (_, session) =>
@@ -216,24 +266,30 @@ class ServeTest extends AnyFlatSpec, Matchers:
         """{"argv":["shell"]}""",
         """{"argv":["serve"]}""",
         """{"id":"s","argv":["shell","--help"]}""",
-        """{"argv":["pwd"]}"""
+        """{"argv":["lsd","2010"]}"""
       ))
       code shouldBe 0
       err shouldBe ""
       responses(out) shouldBe List(
-        """{"ok":false,"error":"Photo Archive Tool: already running"}""",
-        """{"ok":false,"error":"Photo Archive Tool: already running"}""",
-        """{"id":"s","ok":false,"error":"Photo Archive Tool: already running"}""",
-        pwdRoot
+        usage(session, "already running"),
+        usage(session, "already running"),
+        usage(session, "already running", id = Some("s")),
+        lsdOk(session)
       )
 
   it should "escape a backspace so the echoed id round-trips" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq("""{"id":"a\b","argv":["pwd"]}"""))
+      val (code, out, err) = run(session, Seq("""{"id":"a\b","argv":["lsd","2010"]}"""))
       code shouldBe 0
       err shouldBe ""
       val line: String = responses(out).head
-      line shouldBe """{"id":"a\b","ok":true,"text":"/\n","value":null}"""
+      line shouldBe rendered(
+        session,
+        ok = true,
+        text = Some("/2010\n"),
+        value = Some(Json.Null),
+        id = Some("a\b")
+      )
       line should not include ("\b")
       Serve.read(line) match
         case Left(problem) =>
@@ -249,7 +305,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
       val thrown: RuntimeException = the [RuntimeException] thrownBy
         Console.withOut(out):
           Console.withErr(err):
-            Cli.serve(session, Iterator("""{"argv":["pwd"]}"""), (_, _) => throw RuntimeException("boom"))
+            Cli.serve(session, Iterator("""{"argv":["lsd","2010"]}"""), (_, _) => throw RuntimeException("boom"))
       thrown.getMessage shouldBe "boom"
       text(out) shouldBe ""
       text(err) shouldBe ""
@@ -264,6 +320,331 @@ class ServeTest extends AnyFlatSpec, Matchers:
       "s" -> Json.Str("a\"b\\c\n\t\r\b\f\u0001"),
       "a" -> Json.Arr(Seq(Json.Long(1), Json.Str("x")))
     ))) shouldBe """{"n":0,"neg":-2,"ok":true,"no":false,"z":null,"s":"a\"b\\c\n\t\r\b\f\u0001","a":[1,"x"]}"""
+
+  "the socket" should "bind under the runtime directory and answer before the request" in :
+    prepared: (_, session) =>
+      val runtime: File = tempRuntime()
+      try
+        JFiles.setPosixFilePermissions(runtime.toPath, PosixFilePermissions.fromString("rwxr-xr-x"))
+        withServer(session, runtime): running =>
+          perms(runtime) shouldBe "rwx------"
+          perms(File(runtime, "serve.sock")) shouldBe "rw-------"
+          running.err should include (s"bound ${File(runtime, "serve.sock").getAbsolutePath}")
+          val channel: SocketChannel = connect(runtime)
+          try
+            Serve.readResponse(readSocket(channel)) shouldBe
+              Right(Serve.Response(None, true, None, None, Serve.archiveOf(session)))
+            writeSocket(channel, Serve.renderRequest(None, List("lsd", "2010")))
+            readSocket(channel) shouldBe lsdOk(session)
+          finally channel.close()
+      finally deleteTree(runtime)
+
+  it should "reuse a directory index across connections" in :
+    withPicture: (_, session) =>
+      val runtime: File = tempRuntime()
+      try
+        withServer(session, runtime): _ =>
+          val first: Long = Extension.constructed
+          val listed: Serve.Response = command(runtime, session, List("ls", "2010/07/19"))
+          listed.ok shouldBe true
+          listed.text.getOrElse("") should include ("2412")
+          val filled: Long = Extension.constructed
+          filled should be > first
+          command(runtime, session, List("ls", "2010/07/19"))
+          Extension.constructed shouldBe filled
+      finally deleteTree(runtime)
+
+  it should "replace a stale socket after the lock is free" in :
+    prepared: (_, session) =>
+      val runtime: File = tempRuntime()
+      try
+        val running: Running = start(session, runtime)
+        val socket: File = File(runtime, "serve.sock")
+        val key: Object = JFiles.readAttributes(socket.toPath, classOf[BasicFileAttributes]).fileKey
+        running.crash()
+        JFiles.exists(socket.toPath) shouldBe true
+        val again: Running = start(session, runtime)
+        try
+          val replaced: Object = JFiles.readAttributes(socket.toPath, classOf[BasicFileAttributes]).fileKey
+          java.util.Objects.equals(replaced, key) shouldBe false
+          command(runtime, session, List("lsd", "2010")).ok shouldBe true
+        finally again.finish()
+      finally deleteTree(runtime)
+
+  it should "refuse a second serve without unlinking" in :
+    prepared: (_, session) =>
+      val runtime: File = tempRuntime()
+      try
+        withServer(session, runtime): _ =>
+          val socket: File = File(runtime, "serve.sock")
+          val key: Object = JFiles.readAttributes(socket.toPath, classOf[BasicFileAttributes]).fileKey
+          val err: ByteArrayOutputStream = new ByteArrayOutputStream
+          val code: Int = Console.withErr(err)(Serve.listen(session, runtime))
+          code shouldBe 0
+          text(err) shouldBe "already running\n"
+          java.util.Objects.equals(
+            JFiles.readAttributes(socket.toPath, classOf[BasicFileAttributes]).fileKey,
+            key
+          ) shouldBe true
+          exclusiveLockSucceeds(runtime) shouldBe false
+          command(runtime, session, List("lsd", "2010")).ok shouldBe true
+      finally deleteTree(runtime)
+
+  it should "not run cold while the lock is held and the socket is quiet" in :
+    prepared: (_, session) =>
+      val runtime: File = tempRuntime()
+      val channel: FileChannel = FileChannel.open(
+        File(runtime, "serve.lock").toPath,
+        StandardOpenOption.CREATE,
+        StandardOpenOption.READ,
+        StandardOpenOption.WRITE
+      )
+      val lock: FileLock = channel.tryLock()
+      lock should not be null
+      try
+        val result: Result = Cli.executeOneShot(
+          session.copy(style = PathStyle.OneShot),
+          List("lsd", "2010"),
+          lsdParsed,
+          Right(runtime),
+          waitMs = 250
+        )
+        result match
+          case Result.Usage(message) =>
+            message should include ("a command is in progress")
+            message should include ("photo serve stop runs only between commands")
+            message should include (s"fuser ${File(runtime, "serve.lock").getAbsolutePath}")
+          case other =>
+            fail(other.toString)
+        lock.isValid shouldBe true
+        File(runtime, "serve.sock").exists shouldBe false
+      finally
+        lock.release()
+        channel.close()
+        deleteTree(runtime)
+
+  it should "time out the accept line and not the command response" in :
+    prepared: (_, session) =>
+      val runtime: File = tempRuntime()
+      try
+        val quiet: Stall = stall(runtime, delayMs = 800, respond = false, Serve.archiveOf(session))
+        try
+          val attempt: Serve.Attempt = Serve.client(
+            runtime,
+            List("lsd", "2010"),
+            Serve.archiveOf(session),
+            waitMs = 200
+          )
+          attempt match
+            case Serve.Attempt.Failed(message) =>
+              message should include ("a command is in progress")
+            case other =>
+              fail(other.toString)
+        finally quiet.close()
+        deleteTree(runtime)
+        val again: File = tempRuntime()
+        try
+          val slow: Stall = stall(again, delayMs = 800, respond = true, Serve.archiveOf(session))
+          try
+            Serve.client(again, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 200) match
+              case Serve.Attempt.Done(response) =>
+                response.ok shouldBe true
+                response.text shouldBe Some("late\n")
+              case other =>
+                fail(other.toString)
+          finally slow.close()
+        finally deleteTree(again)
+      finally deleteTree(runtime)
+
+  "a one-shot" should "run cold when the lock is free and not spawn" in :
+    prepared: (_, session) =>
+      val oneShot: Session = session.copy(style = PathStyle.OneShot)
+      Cli.executeOneShot(oneShot, List("lsd", "2010"), lsdParsed, Left("XDG_RUNTIME_DIR is unset")) shouldBe
+        Result.Ok("/2010\n", Json.Null)
+      val runtime: File = tempRuntime()
+      try
+        Cli.executeOneShot(oneShot, List("lsd", "2010"), lsdParsed, Right(runtime), waitMs = 200) shouldBe
+          Result.Ok("/2010\n", Json.Null)
+        File(runtime, "serve.sock").exists shouldBe false
+        File(runtime, "serve.lock").exists shouldBe false
+        val stale: ServerSocketChannel = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
+        try
+          stale.bind(UnixDomainSocketAddress.of(File(runtime, "serve.sock").toPath))
+        finally stale.close()
+        File(runtime, "serve.sock").exists shouldBe true
+        Cli.executeOneShot(oneShot, List("lsd", "2010"), lsdParsed, Right(runtime), waitMs = 200) shouldBe
+          Result.Ok("/2010\n", Json.Null)
+        File(runtime, "serve.sock").exists shouldBe true
+      finally deleteTree(runtime)
+      Cli.executeStop(Left("XDG_RUNTIME_DIR is unset"), Serve.archiveOf(session)) shouldBe
+        Left("serve is not running")
+
+  it should "use the socket when the archive matches" in :
+    withPicture: (_, session) =>
+      val runtime: File = tempRuntime()
+      try
+        withServer(session, runtime): _ =>
+          val oneShot: Session = session.copy(style = PathStyle.OneShot)
+          val before: Long = Extension.constructed
+          val parsed: Cli.Parsed = Cli.parse(List("ls", "2010/07/19")) match
+            case Cli.Run(value) => value
+            case other => fail(other.toString)
+          val result: Result = Cli.executeOneShot(
+            oneShot,
+            List("ls", "2010/07/19"),
+            parsed,
+            Right(runtime),
+            waitMs = 2000
+          )
+          result match
+            case Result.Ok(text, _) => text should include ("2412")
+            case other => fail(other.toString)
+          val filled: Long = Extension.constructed
+          filled should be > before
+          command(runtime, session, List("ls", "2010/07/19"))
+          Extension.constructed shouldBe filled
+      finally deleteTree(runtime)
+
+  it should "name both archives on a mismatch and still stop" in :
+    prepared: (_, session) =>
+      val other: File = JFiles.createTempDirectory("serve-other").toFile
+      File(other, "2010").mkdirs() shouldBe true
+      val client: Session = sessionFor(other, PathStyle.OneShot)
+      val runtime: File = tempRuntime()
+      try
+        val running: Running = start(session, runtime)
+        try
+          val result: Result = Cli.executeOneShot(
+            client,
+            List("lsd", "2010"),
+            lsdParsed,
+            Right(runtime),
+            waitMs = 2000
+          )
+          result match
+            case Result.Usage(message) =>
+              message should include (Serve.archiveOf(session))
+              message should include (Serve.archiveOf(client))
+              message should include ("run photo serve stop")
+            case other =>
+              fail(other.toString)
+          Cli.executeStop(Right(runtime), Serve.archiveOf(client), waitMs = 2000) match
+            case Right(response) =>
+              response.ok shouldBe true
+              response.archive shouldBe Serve.archiveOf(session)
+            case Left(message) =>
+              fail(message)
+          running.awaitExit()
+          File(runtime, "serve.sock").exists shouldBe false
+          Serve.client(runtime, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 200) shouldBe
+            Serve.Attempt.Absent
+          Cli.executeStop(Right(runtime), Serve.archiveOf(session), waitMs = 200) shouldBe
+            Left("serve is not running")
+        finally running.finish()
+      finally
+        deleteTree(runtime)
+        deleteTree(other)
+
+  "a shell" should "keep a mismatched command off the socket and leave serve running" in :
+    prepared: (_, session) =>
+      val other: File = JFiles.createTempDirectory("serve-shell").toFile
+      File(other, "2010").mkdirs() shouldBe true
+      val shellSession: Session = sessionFor(other, PathStyle.Cursor)
+      val runtime: File = tempRuntime()
+      try
+        withServer(session, runtime): _ =>
+          val (code, out, err) = shell(
+            shellSession,
+            Seq("lsd 2010", "pwd", "exit"),
+            Some((current, argv) => Cli.remoteResult(runtime, current, argv))
+          )
+          code shouldBe 0
+          out shouldBe "/\n"
+          err should include (Serve.archiveOf(session))
+          err should include (Serve.archiveOf(shellSession))
+          err should include ("run photo serve stop")
+          command(runtime, session, List("help")).ok shouldBe true
+      finally
+        deleteTree(runtime)
+        deleteTree(other)
+
+  "two ensures" should "let one bind and the other attach" in :
+    prepared: (_, session) =>
+      val runtime: File = tempRuntime()
+      val threads: ConcurrentLinkedQueue[Thread] = new ConcurrentLinkedQueue
+      try
+        val gate: CountDownLatch = new CountDownLatch(1)
+        val done: CountDownLatch = new CountDownLatch(2)
+        val results: ConcurrentLinkedQueue[Either[String, Unit]] = new ConcurrentLinkedQueue
+        val listens: AtomicInteger = new AtomicInteger
+        def spawn(): Either[String, Unit] =
+          listens.incrementAndGet()
+          val thread: Thread = new Thread(() =>
+            val err: ByteArrayOutputStream = new ByteArrayOutputStream
+            Console.withErr(err)(Serve.listen(session, runtime))
+            ()
+          )
+          thread.setDaemon(true)
+          threads.add(thread)
+          thread.start()
+          Right(())
+        def worker(): Unit =
+          gate.await()
+          results.add(Serve.ensure(runtime, () => spawn(), waitMs = 3000))
+          done.countDown()
+        val first: Thread = new Thread(() => worker())
+        val second: Thread = new Thread(() => worker())
+        first.setDaemon(true)
+        second.setDaemon(true)
+        first.start()
+        second.start()
+        gate.countDown()
+        done.await(10, TimeUnit.SECONDS) shouldBe true
+        val drained: List[Either[String, Unit]] = drain(results)
+        drained should have size 2
+        drained.foreach:
+          case Right(()) => ()
+          case Left(message) => fail(message)
+        listens.get should (be >= 1 and be <= 2)
+        command(runtime, session, List("lsd", "2010")).ok shouldBe true
+        val err: ByteArrayOutputStream = new ByteArrayOutputStream
+        val code: Int = Console.withErr(err)(Serve.listen(session, runtime))
+        code shouldBe 0
+        text(err) shouldBe "already running\n"
+        command(runtime, session, List("help")).ok shouldBe true
+      finally
+        Serve.client(runtime, List("serve", "stop"), Serve.archiveOf(session), stop = true, waitMs = 2000)
+        threads.forEach(thread => thread.join(5000))
+        deleteTree(runtime)
+
+  it should "report a spawn that never accepts" in :
+    val runtime: File = tempRuntime()
+    try
+      Serve.ensure(runtime, () => Right(()), waitMs = 200) shouldBe Left("serve did not start")
+    finally deleteTree(runtime)
+
+  private def drain[A](queue: ConcurrentLinkedQueue[A]): List[A] =
+    Iterator.continually(Option(queue.poll())).takeWhile(_.isDefined).flatten.toList
+
+  private def lsdParsed: Cli.Parsed = Cli.parse(List("lsd", "2010")) match
+    case Cli.Run(parsed) => parsed
+    case other => fail(other.toString)
+
+  private def rendered(
+    session: Session,
+    ok: Boolean,
+    text: Option[String] = None,
+    error: Option[String] = None,
+    value: Option[Json] = None,
+    id: Option[String] = None
+  ): String =
+    Serve.render(id, ok, text, error, value, Serve.archiveOf(session))
+
+  private def usage(session: Session, message: String, id: Option[String] = None): String =
+    rendered(session, ok = false, error = Some(s"Photo Archive Tool: $message"), id = id)
+
+  private def lsdOk(session: Session): String =
+    rendered(session, ok = true, text = Some("/2010\n"), value = Some(Json.Null))
 
   private def withId(id: String, line: String): String =
     """{"id":"""" + id + "\"," + line.drop(1)
@@ -296,14 +677,26 @@ class ServeTest extends AnyFlatSpec, Matchers:
         Cli.serve(session, lines, executeCommand)
     (code, text(out), text(err))
 
+  private def shell(
+    session: Session,
+    lines: Seq[String],
+    exchange: Option[(Session, List[String]) => Result]
+  ): (Int, String, String) =
+    val out: ByteArrayOutputStream = new ByteArrayOutputStream
+    val err: ByteArrayOutputStream = new ByteArrayOutputStream
+    val code: Int = Console.withOut(out):
+      Console.withErr(err):
+        Cli.shell(session, lines.iterator, exchange = exchange)
+    (code, text(out), text(err))
+
   private def text(bytes: ByteArrayOutputStream): String =
     new String(bytes.toByteArray, StandardCharsets.UTF_8)
 
-  private def sessionFor(archive: File): Session =
+  private def sessionFor(archive: File, style: PathStyle = PathStyle.Serve): Session =
     val home: File = File(System.getProperty("user.home"))
     val rootPath: String = home.toPath.relativize(archive.toPath).toString
     val root: Root = Root(Configuration(rootPath, ZoneId.of("America/New_York")))
-    Session(root, PathStyle.Cursor, root)
+    Session(root, style, root)
 
   private def writeCatalog(archive: File, lines: String*): Unit =
     val directory: File = File(archive, ".gphoto-sync")
@@ -318,6 +711,148 @@ class ServeTest extends AnyFlatSpec, Matchers:
       body(archive, sessionFor(archive))
     finally deleteTree(archive)
 
+  private def withPicture(body: (File, Session) => Unit): Unit =
+    val archive: File = JFiles.createTempDirectory("serve").toFile
+    try
+      jpeg(File(archive, "2010/07/19"), "2412.jpg")
+      body(archive, sessionFor(archive))
+    finally deleteTree(archive)
+
+  private def jpeg(directory: File, name: String): Unit =
+    directory.mkdirs() shouldBe true
+    ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", File(directory, name)) shouldBe true
+
+  private def tempRuntime(): File = JFiles.createTempDirectory("serve-rt").toFile
+
+  private def perms(file: File): String =
+    PosixFilePermissions.toString(JFiles.getPosixFilePermissions(file.toPath))
+
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))
     file.delete()
+
+  private def connect(runtime: File): SocketChannel =
+    val channel: SocketChannel = SocketChannel.open(StandardProtocolFamily.UNIX)
+    channel.connect(UnixDomainSocketAddress.of(File(runtime, "serve.sock").toPath))
+    channel
+
+  private def writeSocket(channel: SocketChannel, line: String): Unit =
+    val buf: ByteBuffer = ByteBuffer.wrap((line + "\n").getBytes(StandardCharsets.UTF_8))
+    while buf.hasRemaining do channel.write(buf)
+
+  private def readSocket(channel: SocketChannel): String =
+    val raw: ByteArrayOutputStream = new ByteArrayOutputStream
+    val chunk: ByteBuffer = ByteBuffer.allocate(1024)
+    var done: Boolean = false
+    while !done do
+      chunk.clear()
+      val n: Int = channel.read(chunk)
+      if n < 0 then fail("eof")
+      chunk.flip()
+      while chunk.hasRemaining && !done do
+        val b: Int = chunk.get().toInt & 0xff
+        if b == '\n' then done = true else raw.write(b)
+    raw.toString(StandardCharsets.UTF_8)
+
+  private def command(runtime: File, session: Session, argv: List[String]): Serve.Response =
+    Serve.client(runtime, argv, Serve.archiveOf(session), waitMs = 2000) match
+      case Serve.Attempt.Done(response) => response
+      case other => fail(other.toString)
+
+  private def exclusiveLockSucceeds(runtime: File): Boolean =
+    val channel: FileChannel = FileChannel.open(
+      File(runtime, "serve.lock").toPath,
+      StandardOpenOption.READ,
+      StandardOpenOption.WRITE
+    )
+    try
+      val lock: FileLock =
+        try channel.tryLock()
+        catch case _: OverlappingFileLockException => null
+      if lock == null then false
+      else
+        lock.release()
+        true
+    finally channel.close()
+
+  private final class Running(
+    val errBytes: ByteArrayOutputStream,
+    holder: AtomicReference[ServerSocketChannel],
+    stopped: CountDownLatch,
+    runtime: File,
+    session: Session
+  ):
+    def err: String = text(errBytes)
+
+    def crash(): Unit =
+      val server: ServerSocketChannel = holder.get
+      server should not be null
+      server.close()
+      awaitExit()
+
+    def awaitExit(): Unit =
+      stopped.await(5, TimeUnit.SECONDS) shouldBe true
+
+    def finish(): Unit =
+      if stopped.getCount > 0 then
+        Serve.client(runtime, List("serve", "stop"), Serve.archiveOf(session), stop = true, waitMs = 2000)
+        awaitExit()
+
+  private def start(session: Session, runtime: File): Running =
+    val started: CountDownLatch = new CountDownLatch(1)
+    val stopped: CountDownLatch = new CountDownLatch(1)
+    val errBytes: ByteArrayOutputStream = new ByteArrayOutputStream
+    val holder: AtomicReference[ServerSocketChannel] = new AtomicReference
+    val thread: Thread = new Thread(() =>
+      try
+        Console.withErr(errBytes):
+          Serve.listen(session, runtime, server =>
+            holder.set(server)
+            started.countDown()
+          )
+      finally
+        started.countDown()
+        stopped.countDown()
+      ()
+    )
+    thread.setDaemon(true)
+    thread.start()
+    started.await(5, TimeUnit.SECONDS) shouldBe true
+    holder.get should not be null
+    Running(errBytes, holder, stopped, runtime, session)
+
+  private def withServer(session: Session, runtime: File)(body: Running => Unit): Unit =
+    val running: Running = start(session, runtime)
+    try body(running)
+    finally running.finish()
+
+  private final class Stall(server: ServerSocketChannel, thread: Thread):
+    def close(): Unit =
+      server.close()
+      thread.join(5000)
+
+  private def stall(runtime: File, delayMs: Long, respond: Boolean, archive: String): Stall =
+    JFiles.createDirectories(runtime.toPath)
+    val server: ServerSocketChannel = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
+    server.bind(UnixDomainSocketAddress.of(File(runtime, "serve.sock").toPath))
+    val thread: Thread = new Thread(() =>
+      var conn: SocketChannel = null
+      try
+        conn = server.accept()
+        if respond then
+          writeSocket(conn, Serve.render(None, ok = true, None, None, None, archive))
+          readSocket(conn)
+        Thread.sleep(delayMs)
+        if respond then
+          writeSocket(
+            conn,
+            Serve.render(None, ok = true, Some("late\n"), None, Some(Json.Null), archive)
+          )
+      catch
+        case _: java.io.IOException => ()
+        case _: InterruptedException => ()
+      finally if conn != null then conn.close()
+    )
+    thread.setDaemon(true)
+    thread.start()
+    Stall(server, thread)

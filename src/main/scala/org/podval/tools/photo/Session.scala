@@ -4,7 +4,7 @@ import java.io.File
 import scala.annotation.tailrec
 
 enum PathStyle:
-  case OneShot, Cursor
+  case OneShot, Cursor, Serve
 
 // The bot replaces catalog.txt as a whole file, so size and mtime are the generation.
 // A failed parse is not stored. Requests and results are not cached.
@@ -30,7 +30,8 @@ final case class Session(
     if shown.isEmpty then "/\n" else s"$shown\n"
 
   def parse(path: String): Path = style match
-    case PathStyle.OneShot =>
+    // Serve keeps no shell cursor. Every argv path is an archive-root path, same as one-shot.
+    case PathStyle.OneShot | PathStyle.Serve =>
       root.parse(path)
     case PathStyle.Cursor =>
       // Leading '/' selects the archive root; Root.parse would drop it.

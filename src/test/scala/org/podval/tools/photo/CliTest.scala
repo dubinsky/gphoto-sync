@@ -183,7 +183,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |logout  log out of Google Photos
         |help  print command help
         |shell  start a session
-        |serve  answer one JSON command per line
+        |serve  listen on the per-user Unix socket
         |agent  query the catalog and the archive""".stripMargin
     helpOf("-h") shouldBe top
     helpOf("--help", "ls") shouldBe top
@@ -321,12 +321,12 @@ class CliTest extends AnyFlatSpec, Matchers:
         |
         |Flags:
         |none""".stripMargin
-    val where: String = "only available in the shell and in serve"
+    val where: String = "only available in the shell"
     helpOf("cd", "--help") should include (where)
     helpOf("pwd", "--help") should include (where)
     helpOf("exit", "--help") should include (where)
     helpOf("cd", "--help") shouldBe
-      """cd  change the cursor; only available in the shell and in serve
+      """cd  change the cursor; only available in the shell
         |
         |Positionals:
         |directory  optional
@@ -482,11 +482,11 @@ class CliTest extends AnyFlatSpec, Matchers:
         result
       case other => fail(other.toString)
 
-    run("cd") shouldBe Result.Usage("cd is only available in the shell and in serve")
-    run("cd", "2010") shouldBe Result.Usage("cd is only available in the shell and in serve")
-    run("cd", "/") shouldBe Result.Usage("cd is only available in the shell and in serve")
-    run("pwd") shouldBe Result.Usage("pwd is only available in the shell and in serve")
-    run("exit") shouldBe Result.Usage("exit is only available in the shell and in serve")
+    run("cd") shouldBe Result.Usage("cd is only available in the shell")
+    run("cd", "2010") shouldBe Result.Usage("cd is only available in the shell")
+    run("cd", "/") shouldBe Result.Usage("cd is only available in the shell")
+    run("pwd") shouldBe Result.Usage("pwd is only available in the shell")
+    run("exit") shouldBe Result.Usage("exit is only available in the shell")
     Cli.parse(List("shell")) shouldBe Cli.ShellFront
     Cli.parse(List("serve")) shouldBe Cli.ServeFront
     Cli.parse(List("shell"), Cli.Front.Shell) shouldBe Cli.Usage("already running")
@@ -497,6 +497,11 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("shell", "--help"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
     Cli.parse(List("serve"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
     Cli.parse(List("serve", "--help"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
+    Cli.parse(List("serve", "stop")) shouldBe Cli.ServeStop
+    Cli.parse(List("serve", "stop", "now")) shouldBe Cli.Usage("extra argument 'now'")
+    Cli.parse(List("serve", "stop"), Cli.Front.Serve) shouldBe Cli.ServeStop
+    Cli.parse(List("serve", "stop", "now"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
+    Cli.parse(List("serve", "stop"), Cli.Front.Shell) shouldBe Cli.Usage("unknown command 'serve'")
 
   "usageLine" should "prefix the program name" in :
     Cli.usageLine("missing command") shouldBe "Photo Archive Tool: missing command"

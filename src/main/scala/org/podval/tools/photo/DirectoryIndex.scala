@@ -81,8 +81,9 @@ private[photo] object DirectoryIndex:
     val frame: Frame = active.get
     if frame == null then None
     else frame.session.style match
-      case PathStyle.Cursor => Some(frame.session)
+      // One-shot stays cold. Serve fills the index. This frame is not the shell cursor.
       case PathStyle.OneShot => None
+      case PathStyle.Cursor | PathStyle.Serve => Some(frame.session)
 
   def now: Session = active.get.session
 

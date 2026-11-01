@@ -211,15 +211,48 @@ class ShellTest extends AnyFlatSpec, Matchers:
       val (code, out, err) = run(session, Seq("help", "help cd", "pwd", "exit"))
       code shouldBe 0
       out should startWith ("Photo Archive Tool 0.0.1")
-      out should include ("cd  change the cursor; only available in the shell and in serve")
-      out should include ("pwd  print the cursor; only available in the shell and in serve")
-      out should include ("exit  leave the session; only available in the shell and in serve")
+      out should include ("cd  change the cursor; only available in the shell")
+      out should include ("pwd  print the cursor; only available in the shell")
+      out should include ("exit  leave the session; only available in the shell")
       out.linesIterator.exists(_.startsWith("shell")) shouldBe false
       out.linesIterator.exists(_.startsWith("agent")) shouldBe true
       out.linesIterator.exists(_.startsWith("serve")) shouldBe false
       out should endWith ("/\n")
       err should include ("> ")
       out should not include ("> ")
+
+  it should "send archive-root paths and keep cd, pwd, and exit local" in :
+    prepared: (_, session) =>
+      var sent: List[List[String]] = Nil
+      val exchange = (_: Session, argv: List[String]) =>
+        sent = sent :+ argv
+        Result.Ok("", Json.Null)
+      val (code, out, _) = run(
+        session,
+        Seq(
+          "cd 2010",
+          "ls 07",
+          "ls --long 07",
+          "pwd",
+          "albums 07",
+          "publish",
+          "set-metadata uploader 07/19/2412",
+          "agent include 2009/03/10/2412",
+          "exit",
+          "ls 07"
+        ),
+        exchange = Some(exchange)
+      )
+      code shouldBe 0
+      sent shouldBe List(
+        List("ls", "2010/07"),
+        List("ls", "--long", "2010/07"),
+        List("albums", "2010/07"),
+        List("publish"),
+        List("set-metadata", "uploader", "2010/07/19/2412"),
+        List("agent", "include", "2009/03/10/2412")
+      )
+      out shouldBe "2010\n"
 
   private def execute(session: Session, args: String*): Result =
     Cli.parse(args.toList) match
@@ -232,13 +265,14 @@ class ShellTest extends AnyFlatSpec, Matchers:
     session: Session,
     lines: Seq[String],
     executeCommand: (Session, Cli.Parsed) => (Session, Result) = (current, parsed) =>
-      Cli.toOperation(parsed).execute(current)
+      Cli.toOperation(parsed).execute(current),
+    exchange: Option[(Session, List[String]) => Result] = None
   ): (Int, String, String) =
     val out: ByteArrayOutputStream = new ByteArrayOutputStream
     val err: ByteArrayOutputStream = new ByteArrayOutputStream
     val code: Int = Console.withOut(out):
       Console.withErr(err):
-        Cli.shell(session, lines.iterator, executeCommand)
+        Cli.shell(session, lines.iterator, executeCommand, exchange)
     (code, text(out), text(err))
 
   private def text(bytes: ByteArrayOutputStream): String =

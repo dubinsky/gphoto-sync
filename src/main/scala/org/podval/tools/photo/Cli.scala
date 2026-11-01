@@ -1,6 +1,7 @@
 package org.podval.tools.photo
 
 import scala.annotation.tailrec
+import java.io.File
 
 object Cli:
   private[photo] sealed trait Outcome
@@ -71,6 +72,7 @@ object Cli:
   private[photo] final case class Run(parsed: Parsed) extends Outcome
   private[photo] case object ShellFront extends Outcome
   private[photo] case object ServeFront extends Outcome
+  private[photo] case object ServeStop extends Outcome
 
   private[photo] enum Front:
     case OneShot, Shell, Serve
@@ -83,15 +85,51 @@ object Cli:
         System.err.println(usageLine(message))
         sys.exit(1)
       case ShellFront =>
-        val code: Int = shell(Session.open(PathStyle.Cursor), stdinLines)
-        if code != 0 then sys.exit(code)
+        val session: Session = Session.open(PathStyle.Cursor)
+        Serve.runtimeDirectory() match
+          case Left(message) =>
+            System.err.println(usageLine(message))
+            sys.exit(1)
+          case Right(runtime) =>
+            Serve.ensure(runtime) match
+              case Left(message) =>
+                System.err.println(usageLine(message))
+                sys.exit(1)
+              case Right(_) =>
+                val code: Int = shell(
+                  session,
+                  stdinLines,
+                  exchange = Some((current, argv) => remoteResult(runtime, current, argv))
+                )
+                if code != 0 then sys.exit(code)
       case ServeFront =>
-        val code: Int = serve(Session.open(PathStyle.Cursor), stdinLines)
-        if code != 0 then sys.exit(code)
+        Serve.runtimeDirectory() match
+          case Left(message) =>
+            System.err.println(usageLine(message))
+            sys.exit(1)
+          case Right(runtime) =>
+            val code: Int = Serve.listen(Session.open(PathStyle.Serve), runtime)
+            if code != 0 then sys.exit(code)
+      case ServeStop =>
+        try
+          val archive: String = Serve.archiveOf(Session.open(PathStyle.OneShot))
+          executeStop(Serve.runtimeDirectory(), archive) match
+            case Left(message) =>
+              System.err.println(usageLine(message))
+              sys.exit(1)
+            case Right(response) =>
+              println(response.archive)
+              if !response.ok then
+                response.error.foreach(System.err.println)
+                sys.exit(1)
+        catch
+          case error: (IllegalArgumentException | IllegalStateException) =>
+            System.err.println(usageLine(Operation.messageOf(error)))
+            sys.exit(1)
       case Run(parsed) =>
         try
           val session: Session = Session.start
-          val (_, result) = toOperation(parsed).execute(session)
+          val result: Result = executeOneShot(session, args.toList, parsed, Serve.runtimeDirectory())
           render(result)
         catch
           case error: (IllegalArgumentException | IllegalStateException) =>
@@ -112,21 +150,22 @@ object Cli:
       System.err.println(usageLine(message))
       sys.exit(1)
 
-  private enum Step:
+  private[photo] enum Step:
     case Continue(session: Session)
     case Stop
 
   private[photo] def shell(
     session: Session,
     lines: Iterator[String],
-    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
+    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session),
+    exchange: Option[(Session, List[String]) => Result] = None
   ): Int =
     @tailrec
     def loop(current: Session): Int =
       Console.err.print(current.prompt)
       Console.err.flush()
       if !lines.hasNext then 0
-      else step(current, lines.next(), run) match
+      else step(current, lines.next(), run, exchange) match
         case Step.Stop => 0
         case Step.Continue(next) => loop(next)
     loop(session)
@@ -139,24 +178,32 @@ object Cli:
     @tailrec
     def loop(current: Session): Int =
       if !lines.hasNext then 0
-      else serveStep(current, lines.next(), run) match
-        case Step.Stop => 0
-        case Step.Continue(next) => loop(next)
+      else
+        val (step, rendered) = serveResponse(current, lines.next(), run)
+        println(rendered)
+        step match
+          case Step.Stop => 0
+          case Step.Continue(next) => loop(next)
     loop(session)
 
-  private def serveStep(session: Session, line: String, run: (Session, Parsed) => (Session, Result)): Step =
+  // The socket writes this line on the connection. The line handler prints it.
+  private[photo] def serveResponse(
+    session: Session,
+    line: String,
+    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
+  ): (Step, String) =
+    val archive: String = Serve.archiveOf(session)
     def reply(
       id: Option[String],
       ok: Boolean,
       text: Option[String],
       error: Option[String],
       value: Option[Json]
-    ): Unit =
-      println(Serve.render(id, ok, text, error, value))
+    ): String =
+      Serve.render(id, ok, text, error, value, archive)
 
-    def usage(id: Option[String], message: String): Step =
-      reply(id, ok = false, None, Some(usageLine(message)), None)
-      Step.Continue(session)
+    def usage(id: Option[String], message: String): (Step, String) =
+      (Step.Continue(parked(session)), reply(id, ok = false, None, Some(usageLine(message)), None))
 
     Serve.read(line) match
       case Left(problem) =>
@@ -165,28 +212,36 @@ object Cli:
         parse(request.argv, Front.Serve) match
           case Help(text) =>
             // The shell prints help with println, so the human text ends with a newline.
-            reply(request.id, ok = true, Some(text + "\n"), None, Some(Json.Null))
-            Step.Continue(session)
+            (Step.Continue(parked(session)), reply(request.id, ok = true, Some(text + "\n"), None, Some(Json.Null)))
           case Usage(message) =>
             usage(request.id, message)
           case ShellFront | ServeFront =>
             usage(request.id, "already running")
-          case Run(ExitArgs) =>
-            reply(request.id, ok = true, Some(""), None, Some(Json.Null))
-            Step.Stop
+          case ServeStop =>
+            (Step.Stop, reply(request.id, ok = true, None, None, None))
           case Run(parsed) =>
             val (returned, result) = run(session, parsed)
             result match
               case Result.Ok(text, value) =>
-                reply(request.id, ok = true, Some(text), None, Some(value))
-                Step.Continue(returned)
+                (Step.Continue(parked(returned)), reply(request.id, ok = true, Some(text), None, Some(value)))
               case Result.Failed(text, value, message) =>
-                reply(request.id, ok = false, Some(text), Some(usageLine(message)), Some(value))
-                Step.Continue(returned)
+                (
+                  Step.Continue(parked(returned)),
+                  reply(request.id, ok = false, Some(text), Some(usageLine(message)), Some(value))
+                )
               case Result.Usage(message) =>
                 usage(request.id, message)
 
-  private def step(session: Session, line: String, run: (Session, Parsed) => (Session, Result)): Step =
+  // Serve parses from the archive root. The cursor field is unused, so put it back.
+  private def parked(session: Session): Session =
+    session.copy(cursor = session.root, style = PathStyle.Serve)
+
+  private def step(
+    session: Session,
+    line: String,
+    run: (Session, Parsed) => (Session, Result),
+    exchange: Option[(Session, List[String]) => Result]
+  ): Step =
     splitLine(line) match
       case Left(message) =>
         Console.err.println(usageLine(message))
@@ -201,24 +256,121 @@ object Cli:
           case Usage(message) =>
             Console.err.println(usageLine(message))
             Step.Continue(session)
-          case ShellFront | ServeFront =>
+          case ShellFront | ServeFront | ServeStop =>
             Console.err.println(usageLine("already running"))
             Step.Continue(session)
           case Run(ExitArgs) =>
             Step.Stop
+          case Run(parsed) if exchange.isDefined && !staysLocal(parsed) =>
+            remoteStep(session, args, exchange.get)
           case Run(parsed) =>
             val (returned, result) = run(session, parsed)
-            result match
-              case Result.Ok(text, _) =>
-                print(text)
-                Step.Continue(returned)
-              case Result.Failed(text, _, message) =>
-                print(text)
-                Console.err.println(usageLine(message))
-                Step.Continue(returned)
-              case Result.Usage(message) =>
-                Console.err.println(usageLine(message))
-                Step.Continue(session)
+            show(session, returned, result, keepReturned = true)
+
+  private def staysLocal(parsed: Parsed): Boolean = parsed match
+    case CdArgs(_) | PwdArgs | ExitArgs => true
+    case _ => false
+
+  private def remoteStep(
+    session: Session,
+    args: List[String],
+    exchange: (Session, List[String]) => Result
+  ): Step =
+    val argv: List[String] =
+      try rewritePaths(session, args)
+      catch case error: IllegalArgumentException =>
+        Console.err.println(usageLine(Operation.messageOf(error)))
+        return Step.Continue(session)
+    show(session, session, exchange(session, argv), keepReturned = false)
+
+  private def show(session: Session, returned: Session, result: Result, keepReturned: Boolean): Step =
+    result match
+      case Result.Ok(text, _) =>
+        print(text)
+        Step.Continue(if keepReturned then returned else session)
+      case Result.Failed(text, _, message) =>
+        print(text)
+        Console.err.println(usageLine(message))
+        Step.Continue(if keepReturned then returned else session)
+      case Result.Usage(message) =>
+        Console.err.println(usageLine(message))
+        Step.Continue(session)
+
+  // Path positionals are marked on the command. Flags stay as typed.
+  private def rewritePaths(session: Session, args: List[String]): List[String] =
+    locate(args) match
+      case None =>
+        args
+      case Some((command, commandArgs, prefix)) =>
+        readFlags(command, commandArgs, Values()) match
+          case Left(_) =>
+            args
+          case Right((_, positionals)) =>
+            val flags: List[String] = commandArgs.take(commandArgs.length - positionals.length)
+            prefix ++ flags ++ rewritePositionals(session, command.positionals, positionals)
+
+  private def locate(args: List[String]): Option[(Command, List[String], List[String])] = args match
+    case "agent" :: "request" :: name :: rest =>
+      requestCommands.find(_.name == name).map(command => (command, rest, List("agent", "request", name)))
+    case "agent" :: name :: rest =>
+      agentCommands.find(_.name == name).map(command => (command, rest, List("agent", name)))
+    case name :: rest =>
+      registry.find(_.name == name).map(command => (command, rest, List(name)))
+    case Nil =>
+      None
+
+  private def rewritePositionals(session: Session, expected: List[Positional], args: List[String]): List[String] =
+    (expected, args) match
+      case (Nil, rest) =>
+        rest
+      case (Rest(_, path) :: _, rest) =>
+        if path then rest.map(token => rootForm(session, token)) else rest
+      case (_, Nil) =>
+        Nil
+      case (positional :: moreExpected, token :: moreArgs) =>
+        val rewritten: String = if positional.path then rootForm(session, token) else token
+        rewritten :: rewritePositionals(session, moreExpected, moreArgs)
+
+  private def rootForm(session: Session, token: String): String =
+    val text: String = session.parse(token).toString.stripPrefix("/")
+    if text.isEmpty then "/" else text
+
+  private[photo] def remoteResult(runtime: File, session: Session, argv: List[String]): Result =
+    Serve.client(runtime, argv, Serve.archiveOf(session)) match
+      case Serve.Attempt.Absent => Result.Usage("serve is not running")
+      case Serve.Attempt.Failed(message) => Result.Usage(message)
+      case Serve.Attempt.Done(response) => Serve.toResult(response)
+
+  private[photo] def executeOneShot(
+    session: Session,
+    argv: List[String],
+    parsed: Parsed,
+    runtime: Either[String, File],
+    waitMs: Long = 5000
+  ): Result =
+    def cold: Result = toOperation(parsed).execute(session)._2
+    runtime match
+      case Left(_) =>
+        cold
+      case Right(dir) =>
+        Serve.client(dir, argv, Serve.archiveOf(session), waitMs = waitMs) match
+          case Serve.Attempt.Absent => cold
+          case Serve.Attempt.Failed(message) => Result.Usage(message)
+          case Serve.Attempt.Done(response) => Serve.toResult(response)
+
+  private[photo] def executeStop(
+    runtime: Either[String, File],
+    archive: String,
+    waitMs: Long = 5000
+  ): Either[String, Serve.Response] =
+    runtime match
+      case Left(_) =>
+        Left("serve is not running")
+      case Right(dir) =>
+        Serve.client(dir, List("serve", "stop"), archive, stop = true, waitMs = waitMs) match
+          case Serve.Attempt.Done(response) => Right(response)
+          case Serve.Attempt.Absent => Left("serve is not running")
+          case Serve.Attempt.Failed(message) => Left(message)
 
   // Inside quotes only \\ and \" are escapes. Any other backslash stays in the token.
   private[photo] def splitLine(line: String): Either[String, List[String]] =
@@ -282,11 +434,19 @@ object Cli:
     case "serve" :: rest =>
       front match
         case Front.Serve =>
-          Usage("already running")
+          rest match
+            case "stop" :: Nil =>
+              ServeStop
+            case _ =>
+              Usage("already running")
         case Front.OneShot =>
           rest match
             case Nil =>
               ServeFront
+            case "stop" :: Nil =>
+              ServeStop
+            case "stop" :: extra :: _ =>
+              Usage(s"extra argument '$extra'")
             case extra :: _ =>
               Usage(s"extra argument '$extra'")
         case Front.Shell =>
@@ -480,10 +640,10 @@ object Cli:
       case (Nil, Nil) => None
       case (Nil, extra :: _) => Some(s"extra argument '$extra'")
       // Rest has no "too many". A flag after a positional is still an extra argument.
-      case (Rest(_) :: _, rest) =>
+      case (Rest(_, _) :: _, rest) =>
         rest.find(_.startsWith("-")).map(token => s"extra argument '$token'")
-      case (Required(name) :: _, Nil) => Some(s"missing $name")
-      case (Optional(_) :: _, Nil) => None
+      case (Required(name, _) :: _, Nil) => Some(s"missing $name")
+      case (Optional(_, _) :: _, Nil) => None
       case (_ :: restExpected, _ :: restArgs) => checkPositionals(restExpected, restArgs)
 
   private def bool(values: Values, name: String): Boolean = values.bools.getOrElse(name, false)
@@ -495,10 +655,10 @@ object Cli:
       ""
     )
     val sessionCommands: List[Command] = front match
-      case Front.OneShot =>
-        Nil
-      case Front.Shell | Front.Serve =>
+      case Front.Shell =>
         List(cdCommand, pwdCommand, exitCommand)
+      case Front.OneShot | Front.Serve =>
+        Nil
     val frontLines: List[String] = front match
       case Front.OneShot =>
         List(shellLine, serveLine)
@@ -561,9 +721,9 @@ object Cli:
     ).mkString("\n")
 
   private def describePositional(positional: Positional): String = positional match
-    case Required(name) => s"$name  required"
-    case Optional(name) => s"$name  optional"
-    case Rest(name) => s"$name  rest"
+    case Required(name, _) => s"$name  required"
+    case Optional(name, _) => s"$name  optional"
+    case Rest(name, _) => s"$name  rest"
 
   private def describeFlag(flag: Flag): String =
     val names: String = flag.alias match
@@ -574,10 +734,11 @@ object Cli:
       case TextKind => "text"
     s"$names  $kind  ${flag.description}"
 
-  private sealed trait Positional
-  private final case class Required(name: String) extends Positional
-  private final case class Optional(name: String) extends Positional
-  private final case class Rest(name: String) extends Positional
+  private sealed trait Positional:
+    def path: Boolean
+  private final case class Required(name: String, path: Boolean = false) extends Positional
+  private final case class Optional(name: String, path: Boolean = false) extends Positional
+  private final case class Rest(name: String, path: Boolean = false) extends Positional
 
   private sealed trait FlagKind
   private case object BooleanKind extends FlagKind
@@ -638,14 +799,14 @@ object Cli:
     Command(
       name = "lsd",
       help = "list directories",
-      positionals = List(Required("directory")),
+      positionals = List(Required("directory", path = true)),
       flags = List(lsdLongFlag),
       build = (values, args) => Lsd(args.head, bool(values, "long"))
     ),
     Command(
       name = "ls",
       help = "list pictures",
-      positionals = List(Required("path")),
+      positionals = List(Required("path", path = true)),
       flags = lsFlags,
       build = (values, args) => Ls(
         path = args.head,
@@ -668,7 +829,7 @@ object Cli:
     Command(
       name = "repair",
       help = "repair picture names, raw files, timestamps, or day folders",
-      positionals = List(Required("path")),
+      positionals = List(Required("path", path = true)),
       flags = repairFlags,
       build = (values, args) => RepairArgs(
         path = args.head,
@@ -682,21 +843,21 @@ object Cli:
     Command(
       name = "set-metadata",
       help = "set metadata property",
-      positionals = List(Required("property"), Required("picture")),
+      positionals = List(Required("property"), Required("picture", path = true)),
       flags = Nil,
       build = (_, args) => SetMetadataArgs(args.head, args.drop(1).head)
     ),
     Command(
       name = "albums",
       help = "list album claims",
-      positionals = List(Optional("path")),
+      positionals = List(Optional("path", path = true)),
       flags = Nil,
       build = (_, args) => Albums(args.headOption)
     ),
     Command(
       name = "publish",
       help = "publish albums to Google Photos",
-      positionals = List(Optional("path")),
+      positionals = List(Optional("path", path = true)),
       flags = List(
         Flag("recursive", None, BooleanKind, "required for a year or the archive root"),
         Flag("dry-run", None, BooleanKind, "print the local plan and do not call Google")
@@ -710,7 +871,7 @@ object Cli:
     Command(
       name = "sync",
       help = "sync album removals into local except lists",
-      positionals = List(Optional("path")),
+      positionals = List(Optional("path", path = true)),
       flags = List(
         Flag("recursive", None, BooleanKind, "required for a year or the archive root"),
         Flag("dry-run", None, BooleanKind, "read Google, print except and remove lines, and do not write")
@@ -750,7 +911,7 @@ object Cli:
     Command(
       name = "stems",
       help = "list one day's grouped stems",
-      positionals = List(Required("day")),
+      positionals = List(Required("day", path = true)),
       flags = Nil,
       build = (_, args) => AgentStemsArgs(args.head)
     ),
@@ -950,7 +1111,7 @@ object Cli:
 
   private val cdCommand: Command = Command(
     name = "cd",
-    help = "change the cursor; only available in the shell and in serve",
+    help = "change the cursor; only available in the shell",
     positionals = List(Optional("directory")),
     flags = Nil,
     build = (_, args) => CdArgs(args.headOption)
@@ -958,7 +1119,7 @@ object Cli:
 
   private val pwdCommand: Command = Command(
     name = "pwd",
-    help = "print the cursor; only available in the shell and in serve",
+    help = "print the cursor; only available in the shell",
     positionals = Nil,
     flags = Nil,
     build = (_, _) => PwdArgs
@@ -966,7 +1127,7 @@ object Cli:
 
   private val exitCommand: Command = Command(
     name = "exit",
-    help = "leave the session; only available in the shell and in serve",
+    help = "leave the session; only available in the shell",
     positionals = Nil,
     flags = Nil,
     build = (_, _) => ExitArgs
@@ -977,17 +1138,17 @@ object Cli:
 
   private val shellLine: String = "shell  start a session"
 
-  private val serveLine: String = "serve  answer one JSON command per line"
+  private val serveLine: String = "serve  listen on the per-user Unix socket"
 
   private val agentLine: String = "agent  query the catalog and the archive"
 
   private val requestLine: String = "request  append one request row"
 
   private def cursorOnly(session: Session, name: String): Option[Result] = session.style match
-    case PathStyle.OneShot =>
-      Some(Result.Usage(s"$name is only available in the shell and in serve"))
     case PathStyle.Cursor =>
       None
+    case PathStyle.OneShot | PathStyle.Serve =>
+      Some(Result.Usage(s"$name is only available in the shell"))
 
   private final case class Cd(path: Option[String]) extends Operation:
     override def execute(session: Session): (Session, Result) =
