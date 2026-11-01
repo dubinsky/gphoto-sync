@@ -271,6 +271,9 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
         "]\n"
       )
       once("google-album-id=\"id\"\ninclude = ['2009/03/10 4217']\n")
+      once("google-album-id\t=\t\"id\"\ninclude = ['2009/03/10 4217']\n")
+      once("\"google-album-id\" = \"id\"\ninclude = ['2009/03/10 4217']\n")
+      once("'google-album-id' = 'id'\ninclude = ['2009/03/10 4217']\n")
 
   it should "reject a tab, CR, or LF in a google id and leave the file" in :
     withOriginals: originals =>
@@ -307,6 +310,55 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
         Album.storeRemovals(file, originals, Seq(LocalDate.of(2009, 3, 10) -> "2412"), Map.empty)
       caught.getMessage should include ("include array does not end on its own line")
+      Files.read(file) shouldBe body
+
+  it should "not append a second include when a quoted or tabbed key is not one span" in :
+    withOriginals: originals =>
+      def reject(body: String): Unit =
+        val file: File = write(originals, "Best.toml", body)
+        val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+          Album.storeRemovals(file, originals, Seq(LocalDate.of(2009, 3, 10) -> "2412"), Map.empty)
+        caught.getMessage should include ("include array does not end on its own line")
+        Files.read(file) shouldBe body
+
+      reject("\"include\" = [\"2009/03/10 2412\",\n\"2009/01/01 0000\"]\n")
+      reject("'include' = ['2009/03/10 2412',\n'2009/01/01 0000']\n")
+      reject("include\t=\t[\"2009/03/10 2412\",\n\"2009/01/01 0000\"]\n")
+
+  it should "rewrite one include line when the key is quoted or separated by tabs" in :
+    withOriginals: originals =>
+      def once(body: String): Unit =
+        val file: File = write(originals, "Best.toml", body)
+        Album.storeRemovals(file, originals, Seq(LocalDate.of(2009, 3, 10) -> "2412"), Map.empty)
+        val text: String = Files.read(file)
+        text shouldBe "include = []\n"
+        Album.read(originals, file).include.isEmpty shouldBe true
+
+      once("\"include\" = [\"2009/03/10 2412\"]\n")
+      once("'include' = ['2009/03/10 2412']\n")
+      once("include\t=\t[\"2009/03/10 2412\"]\n")
+
+  it should "not write when a comment bracket would close the include array" in :
+    withOriginals: originals =>
+      def reject(body: String): Unit =
+        val file: File = write(originals, "Best.toml", body)
+        Album.read(originals, file).include.map(Include.logical) shouldBe Seq("2009/03/10 2412")
+        val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+          Album.storeRemovals(file, originals, Seq(LocalDate.of(2009, 3, 10) -> "2412"), Map.empty)
+        caught.getMessage should include ("include array does not end on its own line")
+        Files.read(file) shouldBe body
+
+      reject("include = [\"2009/03/10 2412\", # every picture]\n]\n")
+      reject("include = [ # see section 3]\n  \"2009/03/10 2412\",\n]\n")
+
+  it should "not write when an escaped multiline delimiter is not a closer" in :
+    withOriginals: originals =>
+      val body: String = "google-album-id = \"\"\"x\\\"\"\"\\\ny\"\"\"\n"
+      val file: File = write(originals, "Best.toml", body)
+      Album.read(originals, file).googleAlbumId shouldBe "x\"\"\"y"
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Album.storeGoogle(file, "next", "Title")
+      caught.getMessage should include ("google-album-id is not a single line")
       Files.read(file) shouldBe body
 
   private def roundTrip(title: String, relative: String): Unit =

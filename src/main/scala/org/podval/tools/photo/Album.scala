@@ -65,7 +65,7 @@ object Album:
       owner = common.owner
     )
 
-  // Hand-written order. jtoml reads the file and does not write it.
+  // Hand-written order.
   def renderFile(album: Album): String =
     val lines: Seq[String] = Seq(
       Option.when(album.external)(Seq("external = true")).getOrElse(Seq.empty),
@@ -164,12 +164,15 @@ object Album:
     else throw IllegalArgumentException(s"$file: not an album file")
 
   private def putInclude(file: File, include: Seq[Include.Entry]): Unit =
-    val lines: Seq[TextLine] = splitLines(Files.read(file))
+    val text: String = Files.read(file)
+    val lines: Seq[TextLine] = splitLines(text)
     val block: Seq[TextLine] =
       if include.isEmpty then Seq(TextLine("include = []", ""))
       else blockLines(includeLines(include))
     val next: Seq[TextLine] = findInclude(file, lines) match
       case Some((from, to)) => replaceSpan(lines, from, to, block)
+      case None if includePresent(text) =>
+        throw IllegalArgumentException(s"$file: include array does not end on its own line")
       case None => appendBlock(lines, block)
     Files.write(joinLines(next), file)
 
@@ -275,6 +278,9 @@ object Album:
   private def hasKey(table: TomlTable, name: String): Boolean =
     table.keys(false).asScala.exists(key => keyName(key) == name)
 
+  private def includePresent(text: String): Boolean =
+    !text.isBlank && hasKey(JToml.jToml.readFromString(text), "include")
+
   private final case class TextLine(text: String, ending: String)
 
   private def splitLines(text: String): Seq[TextLine] =
@@ -361,25 +367,41 @@ object Album:
     else if value.startsWith("[") && arrayClosed(value) then index -> index
     else throw IllegalArgumentException(s"$file: include array does not end on its own line")
 
+  private def isTomlWs(ch: Char): Boolean = ch == ' ' || ch == '\t'
+
   private def singleAssignment(line: String, key: String): Boolean =
     assignmentRest(line.trim, key).exists(valueClosed)
 
-  // A multiline string that is not closed on this line is not an assignment.
   private def assignmentRest(trimmed: String, key: String): Option[String] =
-    if !trimmed.startsWith(key) then None
-    else
-      val after: String = trimmed.substring(key.length).dropWhile(_ == ' ')
-      if after.startsWith("=") then Some(after.substring(1).dropWhile(_ == ' ')) else None
+    keyRest(trimmed, key).flatMap: afterKey =>
+      val after: String = afterKey.dropWhile(isTomlWs)
+      if after.startsWith("=") then Some(after.substring(1).dropWhile(isTomlWs)) else None
 
+  // A bare key, or a basic or literal quoted key. Space and tab may surround '='.
+  private def keyRest(trimmed: String, key: String): Option[String] =
+    if trimmed.startsWith("\"") && !trimmed.startsWith("\"\"\"") then
+      takeBasic(trimmed.substring(1)).flatMap: (decoded, rest) =>
+        if decoded == key then Some(rest) else None
+    else if trimmed.startsWith("'") && !trimmed.startsWith("'''") then
+      takeLiteral(trimmed.substring(1)).flatMap: (decoded, rest) =>
+        if decoded == key then Some(rest) else None
+    else if trimmed.startsWith(key) then
+      val rest: String = trimmed.substring(key.length)
+      if rest.isEmpty || isTomlWs(rest.head) || rest.startsWith("=") then Some(rest) else None
+    else None
+
+  // An escaped delimiter does not finish a multiline string. A trailing '\' continues the line.
   private def valueClosed(value: String): Boolean =
-    if value.startsWith("\"\"\"") then value.substring(3).contains("\"\"\"")
-    else if value.startsWith("'''") then value.substring(3).contains("'''")
+    if value.startsWith("\"\"\"") then skipMlBasic(value.substring(3)).exists(tailAfterValue)
+    else if value.startsWith("'''") then skipMlLiteral(value.substring(3)).exists(tailAfterValue)
     else true
 
+  private def tailAfterValue(rest: String): Boolean =
+    val tail: String = rest.dropWhile(isTomlWs)
+    tail.isEmpty || tail.startsWith("#")
+
   private def arrayClosed(value: String): Boolean =
-    closedArray(value).exists: rest =>
-      val tail: String = rest.dropWhile(_ == ' ')
-      tail.isEmpty || tail.startsWith("#")
+    closedArray(value).exists(tailAfterValue)
 
   private def closedArray(value: String): Option[String] =
     if !value.startsWith("[") then None else scanValues(value.substring(1), 1)
@@ -388,30 +410,57 @@ object Album:
     if depth == 0 then Some(rest)
     else if rest.isEmpty then None
     else if rest.startsWith("\"\"\"") then
-      skipUntil(rest.substring(3), "\"\"\"").flatMap(next => scanValues(next, depth))
+      skipMlBasic(rest.substring(3)).flatMap(next => scanValues(next, depth))
     else if rest.startsWith("'''") then
-      skipUntil(rest.substring(3), "'''").flatMap(next => scanValues(next, depth))
+      skipMlLiteral(rest.substring(3)).flatMap(next => scanValues(next, depth))
     else if rest.startsWith("\"") then
       skipBasic(rest.substring(1)).flatMap(next => scanValues(next, depth))
     else if rest.startsWith("'") then
       skipLiteral(rest.substring(1)).flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("#") then None
     else rest.head match
       case '[' => scanValues(rest.substring(1), depth + 1)
       case ']' => scanValues(rest.substring(1), depth - 1)
       case _ => scanValues(rest.substring(1), depth)
 
-  private def skipUntil(rest: String, delim: String): Option[String] =
-    val at: Int = rest.indexOf(delim)
-    if at < 0 then None else Some(rest.substring(at + delim.length))
-
-  private def skipBasic(rest: String): Option[String] =
+  private def skipMlBasic(rest: String): Option[String] =
     if rest.isEmpty then None
     else if rest.startsWith("\\") then
-      if rest.length == 1 then None else skipBasic(rest.substring(2))
-    else if rest.startsWith("\"") then Some(rest.substring(1))
-    else skipBasic(rest.substring(1))
+      if rest.length == 1 then None else skipMlBasic(rest.substring(2))
+    else if rest.startsWith("\"\"\"") then Some(rest.substring(3))
+    else skipMlBasic(rest.substring(1))
 
-  private def skipLiteral(rest: String): Option[String] =
-    if rest.isEmpty then None
-    else if rest.startsWith("'") then Some(rest.substring(1))
-    else skipLiteral(rest.substring(1))
+  private def skipMlLiteral(rest: String): Option[String] =
+    val at: Int = rest.indexOf("'''")
+    if at < 0 then None else Some(rest.substring(at + 3))
+
+  private def skipBasic(rest: String): Option[String] = takeBasic(rest).map((_, after) => after)
+
+  private def takeBasic(rest: String): Option[(String, String)] =
+    def loop(rest: String, acc: String): Option[(String, String)] =
+      if rest.isEmpty then None
+      else if rest.startsWith("\\") then
+        if rest.length == 1 then None
+        else loop(rest.substring(2), acc + unescapeBasic(rest.substring(1, 2)))
+      else if rest.startsWith("\"") then Some((acc, rest.substring(1)))
+      else loop(rest.substring(1), acc + rest.substring(0, 1))
+    loop(rest, "")
+
+  private def unescapeBasic(ch: String): String = ch match
+    case "b" => "\b"
+    case "t" => "\t"
+    case "n" => "\n"
+    case "f" => "\f"
+    case "r" => "\r"
+    case "\"" => "\""
+    case "\\" => "\\"
+    case other => other
+
+  private def skipLiteral(rest: String): Option[String] = takeLiteral(rest).map((_, after) => after)
+
+  private def takeLiteral(rest: String): Option[(String, String)] =
+    def loop(rest: String, acc: String): Option[(String, String)] =
+      if rest.isEmpty then None
+      else if rest.startsWith("'") then Some((acc, rest.substring(1)))
+      else loop(rest.substring(1), acc + rest.substring(0, 1))
+    loop(rest, "")
