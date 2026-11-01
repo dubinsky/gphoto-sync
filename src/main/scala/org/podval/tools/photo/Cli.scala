@@ -1005,13 +1005,12 @@ object Cli:
     agentCommands.flatMap: command =>
       if mcpToolNames.contains(command.name) then Some(mcpTool(command)) else None
 
-  private[photo] def mcpArgv(tool: McpTool, arguments: Json): Either[String, List[String]] =
-    arguments match
-      case Json.Obj(fields) =>
-        readMcpFields(tool.params, fields).map: values =>
-          List("agent", tool.name) ++ mcpTokens(tool.params, values)
-      case _ =>
-        Left("arguments must be an object")
+  private[photo] def mcpArgv(
+    tool: McpTool,
+    arguments: Seq[(String, Json)]
+  ): Either[String, List[String]] =
+    readMcpFields(tool.params, arguments).map: values =>
+      List("agent", tool.name) ++ mcpTokens(tool.params, values)
 
   private def mcpTool(command: Command): McpTool =
     val params: List[McpParam] = command.flags.map(mcpFlag) ++ command.positionals.map(mcpPositional)

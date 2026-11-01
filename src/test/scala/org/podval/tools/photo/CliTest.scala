@@ -616,64 +616,63 @@ class CliTest extends AnyFlatSpec, Matchers:
       (mcpProperties(tool).map(_._1) ++ mcpRequired(tool)).foreach: name =>
         name.matches("^[A-Za-z_][A-Za-z0-9_-]*$") shouldBe true
 
-    val stems: List[String] = mcpArgv("stems", Json.Obj(Seq("day" -> Json.Str("2010/07/19"))))
+    val stems: List[String] = mcpArgv("stems", Seq("day" -> Json.Str("2010/07/19")))
     stems shouldBe List("agent", "stems", "2010/07/19")
     Cli.parse(stems, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentStemsArgs("2010/07/19"))
 
-    val catalog: List[String] = mcpArgv("catalog", Json.Obj(Nil))
+    val catalog: List[String] = mcpArgv("catalog", Seq.empty)
     catalog shouldBe List("agent", "catalog")
     Cli.parse(catalog, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentCatalogArgs)
 
-    val items: List[String] = mcpArgv("items", Json.Obj(Seq(
+    val items: List[String] = mcpArgv("items", Seq(
       "album" -> Json.Str("2010/07"),
       "id" -> Json.Str("a1")
-    )))
+    ))
     items shouldBe List("agent", "items", "--id", "a1", "2010/07")
     Cli.parse(items, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentItemsArgs(Some("a1"), "2010/07"))
-    val itemsTitle: List[String] = mcpArgv("items", Json.Obj(Seq("album" -> Json.Str("2010/07"))))
+    val itemsTitle: List[String] = mcpArgv("items", Seq("album" -> Json.Str("2010/07")))
     Cli.parse(itemsTitle, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentItemsArgs(None, "2010/07"))
 
-    val matched: List[String] = mcpArgv("match", Json.Obj(Seq(
+    val matched: List[String] = mcpArgv("match", Seq(
       "album" -> Json.Str("2010/07"),
       "id" -> Json.Str("a1")
-    )))
+    ))
     matched shouldBe List("agent", "match", "--id", "a1", "2010/07")
     Cli.parse(matched, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMatchArgs(Some("a1"), "2010/07"))
 
-    val include: List[String] = mcpArgv("include", Json.Obj(Seq(
+    val include: List[String] = mcpArgv("include", Seq(
       "paths" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"), Json.Str("2010/07/20/2413"))),
       "span" -> Json.Str("2010/07")
-    )))
+    ))
     include shouldBe List("agent", "include", "--span", "2010/07", "2010/07/19/2412", "2010/07/20/2413")
     Cli.parse(include, Cli.Front.Serve) shouldBe
       Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
-    val includeEmpty: List[String] = mcpArgv("include", Json.Obj(Seq(
+    val includeEmpty: List[String] = mcpArgv("include", Seq(
       "span" -> Json.Str("2010/07"),
       "paths" -> Json.Arr(Nil)
-    )))
+    ))
     includeEmpty shouldBe List("agent", "include", "--span", "2010/07")
-    Cli.parse(mcpArgv("include", Json.Obj(Nil)), Cli.Front.Serve) shouldBe
+    Cli.parse(mcpArgv("include", Seq.empty), Cli.Front.Serve) shouldBe
       Cli.Run(Cli.AgentIncludeArgs(None, Seq.empty))
 
-    Cli.parse(mcpArgv("requests", Json.Obj(Nil)), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentRequestsArgs)
-    Cli.parse(mcpArgv("results", Json.Obj(Nil)), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentResultsArgs)
+    Cli.parse(mcpArgv("requests", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentRequestsArgs)
+    Cli.parse(mcpArgv("results", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentResultsArgs)
 
-    Cli.mcpArgv(mcpTool("stems"), Json.Obj(Seq("day" -> Json.Long(2010)))) shouldBe
+    Cli.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Long(2010))) shouldBe
       Left("argument 'day' has the wrong type")
-    Cli.mcpArgv(mcpTool("stems"), Json.Obj(Seq("day" -> Json.Null))) shouldBe
+    Cli.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Null)) shouldBe
       Left("argument 'day' has the wrong type")
-    Cli.mcpArgv(mcpTool("include"), Json.Obj(Seq("paths" -> Json.Str("2010/07/19/2412")))) shouldBe
+    Cli.mcpArgv(mcpTool("include"), Seq("paths" -> Json.Str("2010/07/19/2412"))) shouldBe
       Left("argument 'paths' has the wrong type")
-    Cli.mcpArgv(mcpTool("include"), Json.Obj(Seq(
+    Cli.mcpArgv(mcpTool("include"), Seq(
       "paths" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"), Json.Long(1)))
-    ))) shouldBe Left("argument 'paths' has the wrong type")
-    Cli.mcpArgv(mcpTool("catalog"), Json.Obj(Seq("dry-run" -> Json.Bool(true)))) shouldBe
+    )) shouldBe Left("argument 'paths' has the wrong type")
+    Cli.mcpArgv(mcpTool("catalog"), Seq("dry-run" -> Json.Bool(true))) shouldBe
       Left("unexpected argument 'dry-run'")
-    Cli.mcpArgv(mcpTool("items"), Json.Obj(Seq(
+    Cli.mcpArgv(mcpTool("items"), Seq(
       "album" -> Json.Str("2010/07"),
       "replace" -> Json.Bool(true)
-    ))) shouldBe Left("unexpected argument 'replace'")
-    Cli.mcpArgv(mcpTool("stems"), Json.Null) shouldBe Left("arguments must be an object")
+    )) shouldBe Left("unexpected argument 'replace'")
 
     // None of the seven tools have a boolean flag. BoolFlag is what BooleanKind derives.
     val boolTool: Cli.McpTool = Cli.McpTool(
@@ -687,16 +686,16 @@ class CliTest extends AnyFlatSpec, Matchers:
       "album" -> mcpStringSchema
     )
     mcpRequired(boolTool) shouldBe Seq("album")
-    Cli.mcpArgv(boolTool, Json.Obj(Seq("dry-run" -> Json.Str("true"), "album" -> Json.Str("Trip")))) shouldBe
+    Cli.mcpArgv(boolTool, Seq("dry-run" -> Json.Str("true"), "album" -> Json.Str("Trip"))) shouldBe
       Left("argument 'dry-run' has the wrong type")
-    Cli.mcpArgv(boolTool, Json.Obj(Seq(
+    Cli.mcpArgv(boolTool, Seq(
       "album" -> Json.Str("Trip"),
       "dry-run" -> Json.Bool(true)
-    ))) shouldBe Right(List("agent", "probe", "--dry-run", "Trip"))
-    Cli.mcpArgv(boolTool, Json.Obj(Seq("dry-run" -> Json.Bool(false), "album" -> Json.Str("Trip")))) shouldBe
+    )) shouldBe Right(List("agent", "probe", "--dry-run", "Trip"))
+    Cli.mcpArgv(boolTool, Seq("dry-run" -> Json.Bool(false), "album" -> Json.Str("Trip"))) shouldBe
       Right(List("agent", "probe", "Trip"))
 
-    val helpArgv: List[String] = mcpArgv("stems", Json.Obj(Seq("day" -> Json.Str("--help"))))
+    val helpArgv: List[String] = mcpArgv("stems", Seq("day" -> Json.Str("--help")))
     helpArgv shouldBe List("agent", "stems", "--help")
     val help: Cli.Outcome = Cli.parse(helpArgv, Cli.Front.Serve)
     help shouldBe a [Cli.Help]
@@ -713,7 +712,7 @@ class CliTest extends AnyFlatSpec, Matchers:
   private def mcpTool(name: String): Cli.McpTool =
     Cli.mcpTools.find(_.name == name).getOrElse(fail(name))
 
-  private def mcpArgv(name: String, arguments: Json): List[String] =
+  private def mcpArgv(name: String, arguments: Seq[(String, Json)]): List[String] =
     Cli.mcpArgv(mcpTool(name), arguments) match
       case Right(argv) => argv
       case Left(message) => fail(message)
