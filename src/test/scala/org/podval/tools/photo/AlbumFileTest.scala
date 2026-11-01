@@ -167,6 +167,148 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
         (acc, entry) => acc ++ Include.expand(read.span, entry, universe)
       expanded.equals(claimed) shouldBe true
 
+  it should "write an include line as a literal string when it has no apostrophe" in :
+    withOriginals: originals =>
+      val parsed: Title.Parsed = Title.parse("2009/07/03/Party").getOrElse(fail("day"))
+      val album: Album = Album(
+        title = parsed.title,
+        span = parsed.span,
+        include = Seq(
+          Include.parse("2009/07/03 \"2009-07-03 13.02.37\""),
+          Include.parse("2009/07/03 4217")
+        ),
+        external = false,
+        googleAlbumId = "",
+        publishedTitle = "",
+        googleTitle = "",
+        owner = None
+      )
+      val file: File = Title.file(originals, parsed)
+      file.getParentFile.mkdirs()
+      Files.write(Album.renderFile(album), file)
+      val text: String = Files.read(file)
+      text shouldBe
+        "include = [\n" +
+        "  '2009/07/03 \"2009-07-03 13.02.37\"',\n" +
+        "  '2009/07/03 4217',\n" +
+        "]\n"
+      Album.read(originals, file).include.map(Include.logical) shouldBe Seq(
+        "2009/07/03 2009-07-03 13.02.37",
+        "2009/07/03 4217"
+      )
+
+  it should "write a basic string when the include line has an apostrophe" in :
+    withOriginals: originals =>
+      Include.needsQuote("O'Brien") shouldBe false
+      Include.needsQuote("O'Brien day") shouldBe true
+      val parsed: Title.Parsed = Title.parse("2009/03/10/Party").getOrElse(fail("day"))
+      val album: Album = Album(
+        title = parsed.title,
+        span = parsed.span,
+        include = Seq(
+          Include.parse("2009/03/10 O'Brien"),
+          Include.parse("2009/03/10 \"O'Brien day\"")
+        ),
+        external = false,
+        googleAlbumId = "",
+        publishedTitle = "",
+        googleTitle = "",
+        owner = None
+      )
+      val file: File = Title.file(originals, parsed)
+      file.getParentFile.mkdirs()
+      Files.write(Album.renderFile(album), file)
+      val text: String = Files.read(file)
+      text shouldBe
+        "include = [\n" +
+        "  \"2009/03/10 O'Brien\",\n" +
+        "  \"2009/03/10 \\\"O'Brien day\\\"\",\n" +
+        "]\n"
+      text should not include ("'2009/03/10 O'Brien'")
+      Album.read(originals, file).include.map(Include.logical) shouldBe Seq(
+        "2009/03/10 O'Brien",
+        "2009/03/10 O'Brien day"
+      )
+
+  it should "keep a comment and key order through include and google writes" in :
+    withOriginals: originals =>
+      val original: String =
+        "# curated\n" +
+        "published-title = \"The Best\"\n" +
+        "google-album-id = \"abc\"\n" +
+        "include = [\n" +
+        "  '2009/03/10 2412',\n" +
+        "]\n" +
+        "external = true\n"
+      val file: File = write(originals, "Best.toml", original)
+      Album.rewriteInclude(originals, "2009/03/10/2412", "2009/03/11/2412")
+      Album.storeGoogle(file, "abc2", "Renamed")
+      val text: String = Files.read(file)
+      text should include ("# curated")
+      text.indexOf("published-title") should be < text.indexOf("google-album-id")
+      text.indexOf("google-album-id") should be < text.indexOf("include")
+      text.indexOf("include") should be < text.indexOf("external")
+      text should include ("'2009/03/11 2412'")
+      text should not include ("2009/03/10")
+      text.linesIterator.count(line => line.trim.startsWith("google-album-id")) shouldBe 1
+
+  it should "replace one google-album-id line without adding a second key" in :
+    withOriginals: originals =>
+      def once(body: String): Unit =
+        val file: File = write(originals, "Best.toml", body)
+        Album.storeGoogle(file, "next", "Title")
+        val text: String = Files.read(file)
+        text.linesIterator.count(line => line.trim.startsWith("google-album-id")) shouldBe 1
+        text should include ("google-album-id = \"next\"")
+        text should not include ("google-album-id=\"id\"")
+        text should not include ("google-album-id = \"id\"")
+
+      once(
+        "# keep\n" +
+        "  google-album-id = \"id\"\n" +
+        "include = [\n" +
+        "  '2009/03/10 4217',\n" +
+        "]\n"
+      )
+      once("google-album-id=\"id\"\ninclude = ['2009/03/10 4217']\n")
+
+  it should "reject a tab, CR, or LF in a google id and leave the file" in :
+    withOriginals: originals =>
+      val body: String = "google-album-id = \"id\"\npublished-title = \"T\"\n"
+      val file: File = write(originals, "Best.toml", body)
+      def reject(id: String, title: String, needle: String): Unit =
+        val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+          Album.storeGoogle(file, id, title)
+        caught.getMessage should include (needle)
+        Files.read(file) shouldBe body
+
+      reject("a\nb", "T", "google-album-id")
+      reject("id", "a\nb", "published-title")
+      reject("a\tb", "T", "google-album-id")
+      reject("a\rb", "T", "google-album-id")
+
+  it should "not write when a google id is not one single line" in :
+    withOriginals: originals =>
+      val body: String =
+        "google-album-id = \"\"\"\n" +
+        "id\n" +
+        "\"\"\"\n" +
+        "include = ['2009/03/10 4217']\n"
+      val file: File = write(originals, "Best.toml", body)
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Album.storeGoogle(file, "next", "Title")
+      caught.getMessage should include ("google-album-id is not a single line")
+      Files.read(file) shouldBe body
+
+  it should "not write when the include array does not end on its own line" in :
+    withOriginals: originals =>
+      val body: String = "include = [\"2009/03/10 2412\",\n\"2009/01/01 0000\"]\n"
+      val file: File = write(originals, "Best.toml", body)
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Album.storeRemovals(file, originals, Seq(LocalDate.of(2009, 3, 10) -> "2412"), Map.empty)
+      caught.getMessage should include ("include array does not end on its own line")
+      Files.read(file) shouldBe body
+
   private def roundTrip(title: String, relative: String): Unit =
     val parsed: Title.Parsed = Title.parse(title).getOrElse(fail(title))
     parsed.title shouldBe title

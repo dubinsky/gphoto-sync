@@ -201,7 +201,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       val july: String = JFiles.readString(File(archive, "2010/07/album.toml").toPath)
-      july should include ("\"all\"")
+      july should include ("'all'")
       july should not include ("9999")
       Album.read(archive, File(archive, "2010/07/album.toml")).span.map(Title.renderSpan) shouldBe Some("2010/07")
       val (_, failed) = exec(session, "agent", "album-file", "--no-request", "2010/08")

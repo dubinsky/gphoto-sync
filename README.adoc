@@ -96,7 +96,6 @@ Hand-written keys, in order, are `external`, `google-title`, `owner`, `google-al
 `include`.
 Do not pass that file through jtoml.
 jtoml rewrites sort keys and drops comments.
-`storeGoogle` and a sync rewrite may still use jtoml.
 `google-title`, when set, is the Google Photos title, stored exactly, including spaces.
 Empty means that title is the path title.
 `owner`, when set, is the display name of someone else who owns the album.

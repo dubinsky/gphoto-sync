@@ -3,7 +3,6 @@ package org.podval.tools.photo
 import io.github.wasabithumb.jtoml.JToml
 import io.github.wasabithumb.jtoml.key.TomlKey
 import io.github.wasabithumb.jtoml.value.TomlValue
-import io.github.wasabithumb.jtoml.value.array.TomlArray
 import io.github.wasabithumb.jtoml.value.primitive.TomlPrimitive
 import io.github.wasabithumb.jtoml.value.table.TomlTable
 import scala.jdk.CollectionConverters.{IteratorHasAsScala, ListHasAsScala, SetHasAsScala}
@@ -66,7 +65,7 @@ object Album:
       owner = common.owner
     )
 
-  // Hand-written order. jtoml is only for storeGoogle and the sync rewrite.
+  // Hand-written order. jtoml reads the file and does not write it.
   def renderFile(album: Album): String =
     val lines: Seq[String] = Seq(
       Option.when(album.external)(Seq("external = true")).getOrElse(Seq.empty),
@@ -77,8 +76,7 @@ object Album:
         s"google-album-id = ${quote(album.googleAlbumId)}",
         s"published-title = ${quote(album.publishedTitle)}"
       ),
-      if album.include.isEmpty then Seq.empty
-      else Seq("include = [") ++ album.include.map(entry => s"  ${quote(Include.render(entry))},") ++ Seq("]")
+      if album.include.isEmpty then Seq.empty else includeLines(album.include)
     ).flatten
     if lines.isEmpty then "" else lines.mkString("", "\n", "\n")
 
@@ -103,15 +101,23 @@ object Album:
   def quote(text: String): String =
     "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-  // Same JToml table the reader accepted. Do not hand-write TOML.
+  private[photo] def quoteInclude(text: String): String =
+    if text.indexOf('\'') >= 0 then quote(text) else "'" + text + "'"
+
+  // Present keys are one single-line assignment each. The write splices the original text.
   def storeGoogle(file: File, googleAlbumId: String, publishedTitle: String): Unit =
+    rejectControl(file, "google-album-id", googleAlbumId)
+    rejectControl(file, "published-title", publishedTitle)
     val text: String = Files.read(file)
-    val table: TomlTable =
-      if text.isBlank then TomlTable.create()
-      else JToml.jToml.readFromString(text)
-    table.put("google-album-id", googleAlbumId)
-    table.put("published-title", publishedTitle)
-    Files.write(JToml.jToml.writeToString(table), file)
+    if text.isBlank then Files.write(blankGoogle(googleAlbumId, publishedTitle), file)
+    else
+      val table: TomlTable = JToml.jToml.readFromString(text)
+      val values: Map[String, String] = Map(
+        "google-album-id" -> googleAlbumId,
+        "published-title" -> publishedTitle
+      )
+      val present: Set[String] = values.keySet.filter(key => hasKey(table, key))
+      Files.write(joinLines(spliceGoogle(file, splitLines(text), values, present)), file)
 
   // Recompress each include entry that claims one of these stems. An empty album writes include = [].
   def storeRemovals(
@@ -158,12 +164,14 @@ object Album:
     else throw IllegalArgumentException(s"$file: not an album file")
 
   private def putInclude(file: File, include: Seq[Include.Entry]): Unit =
-    val text: String = Files.read(file)
-    val table: TomlTable =
-      if text.isBlank then TomlTable.create()
-      else JToml.jToml.readFromString(text)
-    table.put("include", tomlArray(include.map(Include.render)))
-    Files.write(JToml.jToml.writeToString(table), file)
+    val lines: Seq[TextLine] = splitLines(Files.read(file))
+    val block: Seq[TextLine] =
+      if include.isEmpty then Seq(TextLine("include = []", ""))
+      else blockLines(includeLines(include))
+    val next: Seq[TextLine] = findInclude(file, lines) match
+      case Some((from, to)) => replaceSpan(lines, from, to, block)
+      case None => appendBlock(lines, block)
+    Files.write(joinLines(next), file)
 
   private final case class Common(
     external: Boolean,
@@ -258,7 +266,152 @@ object Album:
   private def isNumber(name: String, length: Int): Boolean =
     name.length == length && name.forall(_.isDigit)
 
-  private def tomlArray(values: Seq[String]): TomlArray =
-    val array: TomlArray = TomlArray.create()
-    values.foreach(value => array.add(TomlPrimitive.of(value)))
-    array
+  private def includeLines(include: Seq[Include.Entry]): Seq[String] =
+    Seq("include = [") ++ include.map(entry => s"  ${quoteInclude(Include.render(entry))},") ++ Seq("]")
+
+  private def blankGoogle(id: String, title: String): String =
+    s"google-album-id = ${quote(id)}\npublished-title = ${quote(title)}\n"
+
+  private def hasKey(table: TomlTable, name: String): Boolean =
+    table.keys(false).asScala.exists(key => keyName(key) == name)
+
+  private final case class TextLine(text: String, ending: String)
+
+  private def splitLines(text: String): Seq[TextLine] =
+    def loop(rest: String): Seq[TextLine] =
+      if rest.isEmpty then Seq.empty
+      else
+        val (body, afterBody) = rest.span(ch => ch != '\n' && ch != '\r')
+        val (ending, after) =
+          if afterBody.startsWith("\r\n") then ("\r\n", afterBody.substring(2))
+          else if afterBody.startsWith("\n") then ("\n", afterBody.substring(1))
+          else if afterBody.startsWith("\r") then ("\r", afterBody.substring(1))
+          else ("", afterBody)
+        TextLine(body, ending) +: loop(after)
+    loop(text)
+
+  private def joinLines(lines: Seq[TextLine]): String =
+    lines.map(line => line.text + line.ending).mkString
+
+  private def blockLines(bodies: Seq[String]): Seq[TextLine] = bodies match
+    case Seq() => Seq.empty
+    case Seq(last) => Seq(TextLine(last, ""))
+    case head +: tail => TextLine(head, "\n") +: blockLines(tail)
+
+  private def appendBlock(lines: Seq[TextLine], block: Seq[TextLine]): Seq[TextLine] =
+    val base: Seq[TextLine] = lines match
+      case prefix :+ last if last.ending.isEmpty && last.text.nonEmpty =>
+        prefix :+ last.copy(ending = "\n")
+      case _ => lines
+    val ended: Seq[TextLine] = block match
+      case prefix :+ last if last.ending.isEmpty => prefix :+ last.copy(ending = "\n")
+      case _ => block
+    base ++ ended
+
+  private def replaceSpan(lines: Seq[TextLine], from: Int, to: Int, block: Seq[TextLine]): Seq[TextLine] =
+    val (before, rest) = lines.splitAt(from)
+    val (span, after) = rest.splitAt(to - from + 1)
+    val ending: String = span.lastOption.map(_.ending).getOrElse("")
+    val fitted: Seq[TextLine] = block match
+      case Seq() => Seq.empty
+      case prefix :+ last => prefix :+ last.copy(ending = ending)
+    before ++ fitted ++ after
+
+  private def spliceGoogle(
+    file: File,
+    lines: Seq[TextLine],
+    values: Map[String, String],
+    present: Set[String]
+  ): Seq[TextLine] =
+    val slots: Map[String, Int] = present.map: key =>
+      val found: Seq[Int] = lines.zipWithIndex.collect:
+        case (line, index) if singleAssignment(line.text, key) => index
+      if found.sizeIs != 1 then failGoogle(file, s"$key is not a single line")
+      key -> found.head
+    .toMap
+    val missing: Seq[String] = Seq("google-album-id", "published-title").filterNot(present.contains)
+    val includeAt: Option[Int] = lines.zipWithIndex.collectFirst:
+      case (line, index) if assignmentRest(line.text.trim, "include").isDefined => index
+    val replaced: Seq[TextLine] = lines.zipWithIndex.map: (line, index) =>
+      slots.collectFirst:
+        case (key, at) if at == index => line.copy(text = s"$key = ${quote(values(key))}")
+      .getOrElse(line)
+    val added: Seq[TextLine] = missing.map(key => TextLine(s"$key = ${quote(values(key))}", "\n"))
+    includeAt match
+      case Some(index) =>
+        val (before, after) = replaced.splitAt(index)
+        before ++ added ++ after
+      case None =>
+        appendBlock(replaced, added)
+
+  private def findInclude(file: File, lines: Seq[TextLine]): Option[(Int, Int)] =
+    val opens: Seq[Int] = lines.zipWithIndex.collect:
+      case (line, index) if assignmentRest(line.text.trim, "include").isDefined => index
+    opens match
+      case Seq() => None
+      case Seq(index) => Some(includeBounds(file, lines, index))
+      case _ => throw IllegalArgumentException(s"$file: include is not a single array")
+
+  private def includeBounds(file: File, lines: Seq[TextLine], index: Int): (Int, Int) =
+    val value: String = assignmentRest(lines(index).text.trim, "include").getOrElse("")
+    if value == "[" then
+      lines.zipWithIndex.drop(index + 1).collectFirst:
+        case (line, end) if line.text.trim == "]" => index -> end
+      .getOrElse(throw IllegalArgumentException(s"$file: include array does not end on its own line"))
+    else if value.startsWith("[") && arrayClosed(value) then index -> index
+    else throw IllegalArgumentException(s"$file: include array does not end on its own line")
+
+  private def singleAssignment(line: String, key: String): Boolean =
+    assignmentRest(line.trim, key).exists(valueClosed)
+
+  // A multiline string that is not closed on this line is not an assignment.
+  private def assignmentRest(trimmed: String, key: String): Option[String] =
+    if !trimmed.startsWith(key) then None
+    else
+      val after: String = trimmed.substring(key.length).dropWhile(_ == ' ')
+      if after.startsWith("=") then Some(after.substring(1).dropWhile(_ == ' ')) else None
+
+  private def valueClosed(value: String): Boolean =
+    if value.startsWith("\"\"\"") then value.substring(3).contains("\"\"\"")
+    else if value.startsWith("'''") then value.substring(3).contains("'''")
+    else true
+
+  private def arrayClosed(value: String): Boolean =
+    closedArray(value).exists: rest =>
+      val tail: String = rest.dropWhile(_ == ' ')
+      tail.isEmpty || tail.startsWith("#")
+
+  private def closedArray(value: String): Option[String] =
+    if !value.startsWith("[") then None else scanValues(value.substring(1), 1)
+
+  private def scanValues(rest: String, depth: Int): Option[String] =
+    if depth == 0 then Some(rest)
+    else if rest.isEmpty then None
+    else if rest.startsWith("\"\"\"") then
+      skipUntil(rest.substring(3), "\"\"\"").flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("'''") then
+      skipUntil(rest.substring(3), "'''").flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("\"") then
+      skipBasic(rest.substring(1)).flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("'") then
+      skipLiteral(rest.substring(1)).flatMap(next => scanValues(next, depth))
+    else rest.head match
+      case '[' => scanValues(rest.substring(1), depth + 1)
+      case ']' => scanValues(rest.substring(1), depth - 1)
+      case _ => scanValues(rest.substring(1), depth)
+
+  private def skipUntil(rest: String, delim: String): Option[String] =
+    val at: Int = rest.indexOf(delim)
+    if at < 0 then None else Some(rest.substring(at + delim.length))
+
+  private def skipBasic(rest: String): Option[String] =
+    if rest.isEmpty then None
+    else if rest.startsWith("\\") then
+      if rest.length == 1 then None else skipBasic(rest.substring(2))
+    else if rest.startsWith("\"") then Some(rest.substring(1))
+    else skipBasic(rest.substring(1))
+
+  private def skipLiteral(rest: String): Option[String] =
+    if rest.isEmpty then None
+    else if rest.startsWith("'") then Some(rest.substring(1))
+    else skipLiteral(rest.substring(1))
