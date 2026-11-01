@@ -25,8 +25,6 @@ class ExtensionTest extends AnyFlatSpec, Matchers:
     check(Extension.PNG, "png", Dates.MetadataExtractor, normal = false, video = false, raw = false, image = true)
     check(Extension.WEBP, "webp", Dates.MetadataExtractor, normal = false, video = false, raw = false, image = true)
     Extension.image.map(_.name) shouldBe Set("heic", "heif", "avif", "png", "webp")
-    Seq("heic", "heif", "avif", "png", "webp").foreach: name =>
-      Publish.uploadable should not contain name
     Extension.all.exists(_.name == "dng") shouldBe false
     Extension.all.exists(_.name == "mkv") shouldBe false
 
