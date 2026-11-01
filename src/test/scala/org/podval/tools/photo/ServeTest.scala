@@ -7,10 +7,10 @@ import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, File}
 import java.net.{StandardProtocolFamily, UnixDomainSocketAddress}
 import java.nio.ByteBuffer
-import java.nio.channels.{FileChannel, FileLock, ServerSocketChannel, SocketChannel}
+import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException, ServerSocketChannel, SocketChannel}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles, StandardOpenOption}
-import java.nio.file.attribute.{BasicFileAttributes, PosixFilePermissions}
+import java.nio.file.attribute.{BasicFileAttributes, FileTime, PosixFilePermissions}
 import java.time.ZoneId
 import java.util.concurrent.{ConcurrentLinkedQueue, CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
@@ -25,6 +25,13 @@ class ServeTest extends AnyFlatSpec, Matchers:
 
   @targetName("responseCanEqual")
   private given [A <: Serve.Response, B <: Serve.Response] => CanEqual[A, B] = CanEqual.derived
+
+  // strictEquality does not relate a sealed parent to its cases.
+  @targetName("jsonCanEqual")
+  private given [A <: Json, B <: Json] => CanEqual[A, B] = CanEqual.derived
+
+  @targetName("calledCanEqual")
+  private given [A <: Serve.Called, B <: Serve.Called] => CanEqual[A, B] = CanEqual.derived
 
   "a response" should "require archive and ignore value" in :
     val accept: String = Serve.render(None, ok = true, None, None, None, "/archive")
@@ -51,6 +58,40 @@ class ServeTest extends AnyFlatSpec, Matchers:
     Serve.read("""{"argv":["lsd","2010"],"archive":"/tmp/a"}""") match
       case Left(problem) => problem.message shouldBe "malformed request"
       case Right(other) => fail(other.toString)
+
+  it should "retain a nested value that readResponse drops" in :
+    val line: String = """{"ok":true,"archive":"/a","value":{"id":"a1","n":[1,true,null]}}"""
+    val response: Serve.Response = Serve.Response(None, true, None, None, "/a")
+    val value: Json = Json.Obj(Seq(
+      "id" -> Json.Str("a1"),
+      "n" -> Json.Arr(Seq(Json.Long(1), Json.Bool(true), Json.Null))
+    ))
+    Serve.readResponse(line) shouldBe Right(response)
+    Serve.readValued(line) shouldBe Right(Serve.Called(response, value))
+
+  it should "reject a fraction, an exponent, and a long outside range only when retaining" in :
+    val response: Serve.Response = Serve.Response(None, true, None, None, "/a")
+    def valued(token: String): String = s"""{"ok":true,"archive":"/a","value":$token}"""
+    List("1.5", "1e2", "9223372036854775808", "-9223372036854775809").foreach: token =>
+      Serve.readResponse(valued(token)) shouldBe Right(response)
+      Serve.readValued(valued(token)) match
+        case Left(problem) => problem.message shouldBe "malformed request"
+        case Right(other) => fail(other.toString)
+      wholeJson(token) match
+        case Left(_) => ()
+        case Right(json) => fail(json.toString)
+    val maxLine: String = valued("9223372036854775807")
+    val minLine: String = valued("-9223372036854775808")
+    Serve.readResponse(maxLine) shouldBe Right(response)
+    Serve.readResponse(minLine) shouldBe Right(response)
+    Serve.readValued(maxLine) shouldBe Right(Serve.Called(response, Json.Long(Long.MaxValue)))
+    Serve.readValued(minLine) shouldBe Right(Serve.Called(response, Json.Long(Long.MinValue)))
+    wholeJson("9223372036854775807") shouldBe Right(Json.Long(Long.MaxValue))
+    wholeJson("-9223372036854775808") shouldBe Right(Json.Long(Long.MinValue))
+    wholeJson("true trailing") match
+      case Left(_) => ()
+      case Right(json) => fail(json.toString)
+    wholeJson("  true \n") shouldBe Right(Json.Bool(true))
 
   "serve" should "treat cd, pwd, and exit as usage and keep reading" in :
     prepared: (_, session) =>
@@ -622,8 +663,144 @@ class ServeTest extends AnyFlatSpec, Matchers:
       Serve.ensure(runtime, () => Right(()), waitMs = 200) shouldBe Left("serve did not start")
     finally deleteTree(runtime)
 
+  "call" should "return the agent object and still drop it in toResult" in :
+    prepared: (archive, session) =>
+      writeCatalog(
+        archive,
+        "album\ta1\t1\t2010/07",
+        "item\ta1\tone.jpg\t2010-07-19\tk1\t-"
+      )
+      val runtime: File = tempRuntime()
+      try
+        withServer(session, runtime): _ =>
+          val value: Json = Json.Obj(Seq(
+            "id" -> Json.Str("a1"),
+            "error" -> Json.Null,
+            "items" -> Json.Arr(Seq(Json.Obj(Seq(
+              "filename" -> Json.Str("one.jpg"),
+              "date" -> Json.Str("2010-07-19"),
+              "key" -> Json.Str("k1"),
+              "uploader" -> Json.Null
+            )))),
+            "unsets" -> Json.Arr(Seq.empty)
+          ))
+          Serve.call(
+            runtime,
+            List("agent", "items", "--id", "a1", "2010/07"),
+            Serve.archiveOf(session),
+            waitMs = 2000
+          ) match
+            case Right(called) =>
+              called.value shouldBe value
+              called.response.text shouldBe Some("one.jpg 2010-07-19 -\n")
+              Serve.toResult(called.response) shouldBe Result.Ok("one.jpg 2010-07-19 -\n", Json.Null)
+            case Left(message) =>
+              fail(message)
+      finally deleteTree(runtime)
+
+  it should "name both archives, send no request, and still run on the server archive" in :
+    prepared: (_, session) =>
+      val other: File = JFiles.createTempDirectory("serve-other").toFile
+      File(other, "2010").mkdirs() shouldBe true
+      val client: Session = sessionFor(other)
+      val runtime: File = tempRuntime()
+      try
+        val bytes: AtomicInteger = new AtomicInteger
+        val eof: CountDownLatch = new CountDownLatch(1)
+        val quiet: Stall = stallBytes(runtime, Serve.archiveOf(session), bytes, eof)
+        try
+          val result: Either[String, Serve.Called] = Serve.call(
+            runtime,
+            List("lsd", "2010"),
+            Serve.archiveOf(client),
+            waitMs = 2000
+          )
+          eof.await(5, TimeUnit.SECONDS) shouldBe true
+          bytes.get shouldBe 0
+          result shouldBe Left(
+            s"serve archive is ${Serve.archiveOf(session)}; this archive is ${Serve.archiveOf(client)}; run photo serve stop"
+          )
+        finally quiet.close()
+        withServer(session, runtime): _ =>
+          Serve.call(runtime, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 2000) match
+            case Right(called) =>
+              called.response.ok shouldBe true
+              called.response.text shouldBe Some("/2010\n")
+            case Left(message) =>
+              fail(message)
+      finally
+        deleteTree(runtime)
+        deleteTree(other)
+
+  it should "report serve is not running only after the lock is free" in :
+    prepared: (_, session) =>
+      val runtime: File = tempRuntime()
+      try
+        withServer(session, runtime)(_ => ())
+        File(runtime, "serve.sock").exists shouldBe false
+        val lockFile: File = File(runtime, "serve.lock")
+        val channel: FileChannel = FileChannel.open(
+          lockFile.toPath,
+          StandardOpenOption.READ,
+          StandardOpenOption.WRITE
+        )
+        var closeChannel: Boolean = true
+        try
+          val lock: FileLock =
+            try channel.tryLock()
+            catch case _: OverlappingFileLockException =>
+              closeChannel = false
+              fail("lock still held")
+          lock should not be null
+          lock.release()
+        finally if closeChannel then channel.close()
+        Serve.call(runtime, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 200) shouldBe
+          Left("serve is not running")
+      finally deleteTree(runtime)
+
+  it should "stay busy when the socket is deleted under a live listen" in :
+    prepared: (archive, session) =>
+      writeCatalog(archive)
+      val sentinel: File = File(File(archive, ".gphoto-sync"), "catalog.txt")
+      val runtime: File = tempRuntime()
+      try
+        val running: Running = start(session, runtime)
+        try
+          val socket: File = File(runtime, "serve.sock")
+          JFiles.delete(socket.toPath)
+          socket.exists shouldBe false
+          val epoch: FileTime = FileTime.fromMillis(0)
+          JFiles.setAttribute(sentinel.toPath, "basic:lastAccessTime", epoch)
+          val before: FileTime =
+            JFiles.getAttribute(sentinel.toPath, "basic:lastAccessTime").asInstanceOf[FileTime]
+          val result: Either[String, Serve.Called] = Serve.call(
+            runtime,
+            List("agent", "catalog"),
+            Serve.archiveOf(session),
+            waitMs = 200
+          )
+          val lock: String = File(runtime, "serve.lock").getAbsolutePath
+          result shouldBe Left(
+            s"a command is in progress; photo serve stop runs only between commands; the JVM holding $lock is that process (fuser $lock)"
+          )
+          val after: FileTime =
+            JFiles.getAttribute(sentinel.toPath, "basic:lastAccessTime").asInstanceOf[FileTime]
+          after.toMillis shouldBe before.toMillis
+        finally running.crash()
+      finally deleteTree(runtime)
+
   private def drain[A](queue: ConcurrentLinkedQueue[A]): List[A] =
     Iterator.continually(Option(queue.poll())).takeWhile(_.isDefined).flatten.toList
+
+  // skip is private. A whole line fails when anything remains after that same whitespace.
+  private def wholeJson(line: String): Either[String, Json] =
+    Serve.readJson(line) match
+      case Left(message) => Left(message)
+      case Right((json, rest)) if rest.forall(isSkip) => Right(json)
+      case Right(_) => Left("suffix")
+
+  private def isSkip(ch: Char): Boolean =
+    ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
 
   private def lsdParsed: Cli.Parsed = Cli.parse(List("lsd", "2010")) match
     case Cli.Run(parsed) => parsed
@@ -852,6 +1029,33 @@ class ServeTest extends AnyFlatSpec, Matchers:
         case _: java.io.IOException => ()
         case _: InterruptedException => ()
       finally if conn != null then conn.close()
+    )
+    thread.setDaemon(true)
+    thread.start()
+    Stall(server, thread)
+
+  private def stallBytes(runtime: File, archive: String, bytes: AtomicInteger, eof: CountDownLatch): Stall =
+    JFiles.createDirectories(runtime.toPath)
+    val server: ServerSocketChannel = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
+    server.bind(UnixDomainSocketAddress.of(File(runtime, "serve.sock").toPath))
+    val thread: Thread = new Thread(() =>
+      var conn: SocketChannel = null
+      try
+        conn = server.accept()
+        writeSocket(conn, Serve.render(None, ok = true, None, None, None, archive))
+        val chunk: ByteBuffer = ByteBuffer.allocate(1024)
+        var done: Boolean = false
+        while !done do
+          chunk.clear()
+          val n: Int = conn.read(chunk)
+          if n < 0 then done = true
+          else bytes.addAndGet(n)
+      catch
+        case _: java.io.IOException => ()
+        case _: InterruptedException => ()
+      finally
+        if conn != null then conn.close()
+        eof.countDown()
     )
     thread.setDaemon(true)
     thread.start()
