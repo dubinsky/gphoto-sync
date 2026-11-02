@@ -193,13 +193,14 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     val message: String = Option(error.getMessage).getOrElse("read failed").replace(card.id, card.title)
     message.split('\n').headOption.filter(_.nonEmpty).getOrElse("read failed")
 
+  // Launch returns before Hyprland lists the window. One look misses it and the window stays on the focused monitor.
   // Create the output only after the window is found. A missing window logs and stays where it is.
   private def park(): Unit =
     val signature: String = System.getenv("HYPRLAND_INSTANCE_SIGNATURE")
     if signature == null || signature.isEmpty then ()
     else
       try
-        findWindow() match
+        findWindow(System.currentTimeMillis + 20000L) match
           case None =>
             System.err.println("refresh park: window missing")
           case Some(address) =>
@@ -276,7 +277,15 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         yield Monitor(name, x, y)
     .flatten
 
-  private def findWindow(): Option[String] =
+  private def findWindow(deadlineMs: Long): Option[String] =
+    findWindowNow() match
+      case found @ Some(_) => found
+      case None if System.currentTimeMillis >= deadlineMs => None
+      case None =>
+        Thread.sleep(300)
+        findWindow(deadlineMs)
+
+  private def findWindowNow(): Option[String] =
     topObjects(hypr("hyprctl", "clients", "-j")).collectFirst:
       case obj if jsonNumber(obj, "pid").exists(mainChrome) =>
         jsonString(obj, "address")

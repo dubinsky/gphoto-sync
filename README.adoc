@@ -414,14 +414,9 @@ Cron is out of scope.
 
 == TODO
 
-Park still looks for the Chrome window once and misses it, so the window stays on DP-1.
+- do not blink Chrome on Hyprland
 
-More request types than we already have are needed to brin Google Photos into sync with the local archive:
-
-- delete album
-- create album
-- upload item
-- anything else?
+- remove Google Photos API support?
 
 More operations are needed than what we already have to manipulate local archive:
 
@@ -443,11 +438,6 @@ Some compound operations on the local archive seem to make sense, especially for
 - dates: dater; date in TOML file rules
 
 - fix day and date-range albums: split, merge, month...
-
-- drop requests/result?
-
-The three notes stay three files in `notes/`.
-Only the request applier and its manifests are in `reader/`.
 
 - CLI get pictures from a memory card
 - CLI webapp
