@@ -181,7 +181,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       AriaRole.BUTTON,
       new Page.GetByRoleOptions().setName("Done").setExact(true)
     )
-    val editorOpen: Boolean = done.count() > 0 || asBool(page.evaluate(editorOpenScript, updated))
+    val editorOpen: Boolean = done.count() > 0
     if editorOpen && System.currentTimeMillis < deadline then
       Thread.sleep(300)
       awaitLive(albumId, updated, deadline)
@@ -212,13 +212,6 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       if (!match) return false;
       match.focus();
       return document.activeElement === match;
-    }"""
-
-  private val editorOpenScript: String =
-    """(wanted) => {
-      const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
-      const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
-      return fields.some((node) => valueOf(node) === wanted);
     }"""
 
   private def navigate(url: String): Unit =
