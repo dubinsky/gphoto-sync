@@ -367,50 +367,53 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       return document.activeElement === match;
     }"""
 
+  // Only Add a description. Another field is not this edit, so a miss types nothing.
   private val focusDescriptionScript: String =
     """() => {
       const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
       const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
-      const exact = fields.find((node) => {
+      const match = fields.find((node) => {
         const label = node.getAttribute('aria-label') || '';
         const placeholder = node.getAttribute('placeholder') || '';
         return label === 'Add a description' || placeholder === 'Add a description' || valueOf(node).trim() === 'Add a description';
       });
-      const loose = fields.find((node) => {
-        const label = node.getAttribute('aria-label') || '';
-        const placeholder = node.getAttribute('placeholder') || '';
-        if (/search/i.test(label + ' ' + placeholder)) return false;
-        return /description/i.test(label + ' ' + placeholder + ' ' + valueOf(node));
-      });
-      const match = exact || loose;
       if (!match) return false;
       match.focus();
-      return document.activeElement === match;
+      if (document.activeElement !== match) return false;
+      match.__gphotoDescription = true;
+      return true;
     }"""
 
-  // A fresh panel read. The string passed to insertText is not this check.
+  // Panel text outside the description control. That control's value is not this check.
   private val descriptionShownScript: String =
     """(text) => {
       const wanted = text == null ? '' : String(text);
-      const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
       const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
-      const described = fields.filter((node) => {
-        const label = node.getAttribute('aria-label') || '';
-        const placeholder = node.getAttribute('placeholder') || '';
-        if (/search/i.test(label + ' ' + placeholder)) return false;
-        const value = valueOf(node);
-        return label === 'Add a description' || placeholder === 'Add a description' || /description/i.test(label + ' ' + placeholder + ' ' + value);
-      });
+      const controls = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]')).filter((node) => node.__gphotoDescription);
       const panel = (document.body && document.body.innerText) || '';
       if (wanted === '') {
-        const cleared = described.some((node) => {
+        const cleared = controls.some((node) => {
           const value = valueOf(node).trim();
           return value === '' || value === 'Add a description';
         });
         return cleared && panel.includes('Add a description');
       }
-      if (panel.includes(wanted)) return true;
-      return described.some((node) => valueOf(node) === wanted);
+      if (!document.body) return false;
+      const lines = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (controls.some((control) => control.contains(node))) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      let current;
+      while ((current = walker.nextNode())) {
+        String(current.textContent || '').split('\n').forEach((part) => {
+          const trimmed = part.trim();
+          if (trimmed) lines.push(trimmed);
+        });
+      }
+      return lines.some((line) => line === wanted);
     }"""
 
   private def navigate(url: String): Unit =
@@ -850,6 +853,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     }"""
 
   // Same fDcn4b item read as readScript. The date fields are not this check.
+  // A timestamp on the first response stays. The second form needs the share auth key.
   private val itemDateScript: String =
     """async (key) => {
       const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
@@ -872,16 +876,35 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         } finally { clearTimeout(t); }
       }
       async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
-      let raw = await retry(() => rpc('fDcn4b', [key, 1, null, null, 1]));
-      let v = raw && JSON.parse(raw);
-      let r0 = v && v[0];
-      if (!r0 || !r0[2]) {
-        raw = await retry(() => rpc('fDcn4b', [key, null, null]));
-        v = raw && JSON.parse(raw);
-        r0 = v && v[0];
+      function shareAuth() {
+        const here = new URL(location.href);
+        const own = here.searchParams.get('key');
+        if (own) return own;
+        for (const a of document.querySelectorAll('a[href*="/share/"]')) {
+          const u = new URL(a.href, location.href);
+          if (!/\/share\/(AF1Qip[^/?#]+)/.test(u.pathname)) continue;
+          const found = u.searchParams.get('key');
+          if (found) return found;
+        }
+        return null;
       }
-      const ts = r0 && r0[3] != null ? r0[3] : null;
-      const tz = r0 && r0[4] != null ? r0[4] : 0;
+      let r0 = null;
+      try {
+        const raw = await retry(() => rpc('fDcn4b', [key, 1, null, null, 1]));
+        const v = raw && JSON.parse(raw);
+        r0 = v && v[0];
+      } catch (e) {}
+      let ts = r0 && r0[3] != null ? r0[3] : null;
+      let tz = r0 && r0[4] != null ? r0[4] : 0;
+      if (ts == null) {
+        const auth = shareAuth();
+        if (!auth) throw new Error('read failed');
+        const raw = await retry(() => rpc('fDcn4b', [key, null, auth]));
+        const v = raw && JSON.parse(raw);
+        r0 = v && v[0];
+        ts = r0 && r0[3] != null ? r0[3] : null;
+        tz = r0 && r0[4] != null ? r0[4] : 0;
+      }
       if (ts == null) throw new Error('read failed');
       return new Date(Number(ts) + Number(tz || 0)).toISOString().slice(0, 10);
     }"""

@@ -609,41 +609,24 @@ private[photo] object AgentCommands:
     current: String,
     text: String
   ): (Session, Result) =
-    val accepted: Either[(Session, Result), (Catalog.Album, Catalog.Item)] =
-      try Right(rereadItem(session, Requests.Action.SetDescription, key, current, text))
-      catch
-        case error: (IllegalArgumentException | IllegalStateException) =>
-          Left((session, Result.Usage(Operation.messageOf(error))))
-    accepted match
-      case Left(done) => done
-      case Right((album, item)) =>
-        var ui: PhotosAct = null
-        try
-          val launched: Either[(Session, Result), PhotosAct] =
-            try
-              // A notice would write status.txt and drop a crashed refresh's resume phase.
-              Right(Refresh.openAct(_ => ()))
-            catch
-              case error: Exception =>
-                Left(itemFailed(session, album, item, "set-description", DescriptionStep, "one-click", Operation.messageOf(error)))
-          launched match
-            case Left(done) => done
-            case Right(opened) =>
-              ui = opened
-              try
-                ui.setDescription(item, text)
-                itemOk(session, album, item, "set-description", "unchanged")
-              catch
-                case miss: Refresh.ActMiss =>
-                  val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
-                  val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("set-description failed")
-                  itemFailed(session, album, item, "set-description", DescriptionStep, recovery, detail)
-                case error: Exception =>
-                  itemFailed(session, album, item, "set-description", DescriptionStep, "one-click", Operation.messageOf(error))
-        finally
-          if ui != null then
-            try ui.close()
-            catch case _: Exception => ()
+    val (album, item) = rereadItem(session, Requests.Action.SetDescription, key, current, text)
+    var ui: PhotosAct = null
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      ui.setDescription(item, text)
+      itemOk(session, album, item, "set-description", "unchanged")
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("set-description failed")
+        itemFailed(session, album, item, "set-description", DescriptionStep, recovery, detail)
+      case error: Exception =>
+        itemFailed(session, album, item, "set-description", DescriptionStep, "one-click", Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
 
   private def heldDate(
     session: Session,
@@ -651,46 +634,29 @@ private[photo] object AgentCommands:
     current: String,
     local: String
   ): (Session, Result) =
-    val accepted: Either[(Session, Result), (Catalog.Album, Catalog.Item)] =
-      try Right(rereadItem(session, Requests.Action.SetDate, key, current, local))
-      catch
-        case error: (IllegalArgumentException | IllegalStateException) =>
-          Left((session, Result.Usage(Operation.messageOf(error))))
-    accepted match
-      case Left(done) => done
-      case Right((album, item)) =>
-        val day: LocalDate = LocalDate.parse(local.take(10))
-        var ui: PhotosAct = null
-        try
-          val launched: Either[(Session, Result), PhotosAct] =
-            try
-              // A notice would write status.txt and drop a crashed refresh's resume phase.
-              Right(Refresh.openAct(_ => ()))
-            catch
-              case error: Exception =>
-                Left(itemFailed(session, album, item, "set-date", DateStep, "one-click", Operation.messageOf(error)))
-          launched match
-            case Left(done) => done
-            case Right(opened) =>
-              ui = opened
-              try
-                ui.setDate(item, local)
-                publishDate(session, album, item, day) match
-                  case Left(detail) =>
-                    itemFailed(session, album, item, "set-date", DateStep, "refresh-only", detail)
-                  case Right(next) =>
-                    itemOk(next, album, item, "set-date", "updated")
-              catch
-                case miss: Refresh.ActMiss =>
-                  val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
-                  val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("set-date failed")
-                  itemFailed(session, album, item, "set-date", DateStep, recovery, detail)
-                case error: Exception =>
-                  itemFailed(session, album, item, "set-date", DateStep, "one-click", Operation.messageOf(error))
-        finally
-          if ui != null then
-            try ui.close()
-            catch case _: Exception => ()
+    val (album, item) = rereadItem(session, Requests.Action.SetDate, key, current, local)
+    val day: LocalDate = LocalDate.parse(local.take(10))
+    var ui: PhotosAct = null
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      ui.setDate(item, local)
+      publishDate(session, album, item, day) match
+        case Left(detail) =>
+          itemFailed(session, album, item, "set-date", DateStep, "refresh-only", detail)
+        case Right(next) =>
+          itemOk(next, album, item, "set-date", "updated")
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("set-date failed")
+        itemFailed(session, album, item, "set-date", DateStep, recovery, detail)
+      case error: Exception =>
+        itemFailed(session, album, item, "set-date", DateStep, "one-click", Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
 
   private def rereadItem(
     session: Session,
@@ -711,35 +677,39 @@ private[photo] object AgentCommands:
     item: Catalog.Item,
     day: LocalDate
   ): Either[String, Session] =
-    val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
-    val live: File = File(directory, "catalog.txt")
-    val partial: File = File(directory, "catalog.txt.partial")
-    val previous: File = File(directory, "catalog.txt.previous")
-    val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
-    val albums: Seq[Catalog.Album] = Catalog.read(live)
-    val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
-    val groups: Either[String, Seq[Seq[String]]] =
-      albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
-        case (Left(message), _) => Left(message)
-        case (Right(acc), next) =>
-          if next.id == album.id then
-            if !blocks.contains(album.id) then Left("missing album block")
-            else if !next.items.exists(_.key == item.key) then Left("no such item")
-            else
-              val revised: Catalog.Album = next.copy(items = next.items.map: found =>
-                if found.key == item.key then found.copy(date = Some(day)) else found
-              )
-              Right(acc :+ RefreshPlan.recordLines(revised))
-          else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
-    groups.flatMap: lines =>
-      try
-        Files.write(RefreshPlan.renderLines(lines), partial)
-        Right(())
-      catch case error: Exception =>
+    try
+      val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
+      val live: File = File(directory, "catalog.txt")
+      val partial: File = File(directory, "catalog.txt.partial")
+      val previous: File = File(directory, "catalog.txt.previous")
+      val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
+      val albums: Seq[Catalog.Album] = Catalog.read(live)
+      val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
+      val groups: Either[String, Seq[Seq[String]]] =
+        albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+          case (Left(message), _) => Left(message)
+          case (Right(acc), next) =>
+            if next.id == album.id then
+              if !blocks.contains(album.id) then Left("missing album block")
+              else if !next.items.exists(_.key == item.key) then Left("no such item")
+              else
+                val revised: Catalog.Album = next.copy(items = next.items.map: found =>
+                  if found.key == item.key then found.copy(date = Some(day)) else found
+                )
+                Right(acc :+ RefreshPlan.recordLines(revised))
+            else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
+      groups.flatMap: lines =>
+        try
+          Files.write(RefreshPlan.renderLines(lines), partial)
+          Right(())
+        catch case error: Exception =>
+          Left(Operation.messageOf(error))
+      .flatMap(_ => RefreshPlan.checkRetitle(partial))
+      .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+      .map(_ => session.copy(catalogCache = None))
+    catch
+      case error: Exception =>
         Left(Operation.messageOf(error))
-    .flatMap(_ => RefreshPlan.checkRetitle(partial))
-    .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-    .map(_ => session.copy(catalogCache = None))
 
   private def itemOk(
     session: Session,

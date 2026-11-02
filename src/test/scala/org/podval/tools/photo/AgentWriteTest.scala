@@ -1279,6 +1279,34 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
 
+  it should "stay refresh-only when the catalog read throws after confirm" in :
+    withArchive: archive =>
+      val catalog: String = writeDated(archive)
+      val live: File = File(archive, ".gphoto-sync/catalog.txt")
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDate = (_, _) =>
+            live.setReadable(false, false)
+          )
+        try
+          val (_, result) = exec(
+            session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+          )
+          result match
+            case Result.Failed(text, value, message) =>
+              message shouldBe Refresh.MutationFailed
+              text should include ("recovery refresh-only")
+              text should include ("catalog unchanged")
+              field(value, "recovery") shouldBe Json.Str("refresh-only")
+            case other =>
+              fail(other.toString)
+          live.setReadable(true, false)
+          JFiles.readString(live.toPath) shouldBe catalog
+          File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+          File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        finally
+          live.setReadable(true, false)
+
   it should "answer both edits from the calling process" in :
     withArchive: archive =>
       writePair(archive)
