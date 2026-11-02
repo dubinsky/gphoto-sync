@@ -29,6 +29,7 @@ Any other non-toml file next to child directories is stray.
 There is no config key for it.
 The agent queries read `catalog.txt` in that directory.
 `photo refresh` creates and replaces `catalog.txt`.
+`photo file` reads `.download/` in that directory.
 
 The title uses `/` on both sides of a range.
 `-` means only "through".
@@ -192,6 +193,26 @@ Day-folder pictures stay.
 The command runs in the calling process.
 It is not an MCP tool.
 
+`photo file` files a dated download from `.gphoto-sync/.download/` into that civil day folder.
+The layout is `YYYY/MM/DD/<catalog filename>`, or `undated` when the catalog date is `-`.
+Undated files stay staged.
+Nothing inside `.download/` is renamed.
+One leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix is stripped on the archive name, and a known extension is
+lowercased.
+When a video shares that repaired stem with a still already in the day folder, the video gains a trailing `v`.
+The command creates the day directory.
+It never overwrites an archive file.
+A collision, or a stem that is empty or does not start with a digit, stays staged and is reported.
+The same catalog date and filename in two albums is one staged file and one archive file.
+Items in no album are out of scope.
+Other people's downloadable items stay on `download-item`, which this command does not reimplement.
+It does not call Google.
+It prints `file <day> <staged-name> <archive-name>` or `keep <staged-path> <reason>`.
+A real run adds `wrote <day>/<archive-name>` for each file it files.
+`--dry-run` prints those actions and writes nothing.
+The command runs in the calling process.
+It is not an MCP tool.
+
 `photo login`, `photo status`, and `photo logout` manage the Google Photos token.
 
 `photo agent` reads the catalog and the archive.
@@ -234,13 +255,13 @@ Flags precede positionals in `argv`.
 `text` is the human output.
 `value` is the command's JSON value, or `null`.
 A failure puts the usage line in `error` and does not write a second line to stderr.
-`cd`, `pwd`, and `exit` are usage on the socket.
+`cd`, `pwd`, `exit`, `photo refresh`, `photo reconcile`, and `photo file` are usage on the socket.
 `photo serve stop` asks that process to exit between commands.
 It does not preempt a command already running.
 
 `photo shell` keeps `cd`, `pwd`, and `exit` in the shell.
 It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
-`photo refresh` and `photo reconcile` stay in the shell process.
+`photo refresh`, `photo reconcile`, and `photo file` stay in the shell process.
 Other commands go to the socket.
 Path arguments are archive-root paths.
 `agent include` paths are sent unchanged.
@@ -249,7 +270,7 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 
 A one-shot uses the socket when it is up and `archive` matches.
 It runs in this process when the lock is free.
-`photo refresh` and `photo reconcile` run in this process even when the socket is up.
+`photo refresh`, `photo reconcile`, and `photo file` run in this process even when the socket is up.
 A one-shot does not start `photo serve`.
 A mismatch names both paths and does not run in this process.
 
@@ -261,7 +282,7 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent requests`, and
 `agent results`.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
-Album files, request rows, repair, publish, sync, refresh, and reconcile are not tools.
+Album files, request rows, repair, publish, sync, refresh, reconcile, and file are not tools.
 Tool JSON may contain album ids and item keys.
 Chat should not.
 The user adds the server.
@@ -372,10 +393,6 @@ Publish does not upload or rename an external album, and it does not call `updat
 Cron is out of scope.
 
 == TODO
-
-- download missing pictures from albums (including default dates?
-  outside of albums?)
-
 
 - fix day and date-range albums: split, merge, month...
 

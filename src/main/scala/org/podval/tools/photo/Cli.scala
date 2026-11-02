@@ -37,6 +37,7 @@ object Cli:
     allowShrink: Boolean
   ) extends Parsed
   private[photo] final case class ReconcileArgs(dryRun: Boolean, delete: Boolean) extends Parsed
+  private[photo] final case class FileArgs(dryRun: Boolean) extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -291,15 +292,11 @@ object Cli:
     case CdArgs(_) | PwdArgs | ExitArgs => true
     case _ => false
 
-  private def callerCommand(parsed: Parsed): String = parsed match
-    case _: ReconcileArgs => "reconcile"
-    case _: RefreshArgs => "refresh"
-    case _ => "command"
-
-  // Every real arm is listed. Refresh and reconcile stay off the serve thread.
+  // Every real arm is listed. Refresh, reconcile, and file stay off the serve thread.
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
     case _: RefreshArgs => true
     case _: ReconcileArgs => true
+    case _: FileArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -322,6 +319,12 @@ object Cli:
     case _: AgentRequestArgs => false
     case AgentRequestsArgs => false
     case AgentResultsArgs => false
+
+  private def callerCommand(parsed: Parsed): String = parsed match
+    case _: RefreshArgs => "refresh"
+    case _: ReconcileArgs => "reconcile"
+    case _: FileArgs => "file"
+    case _ => "command"
 
   private def remoteStep(
     session: Session,
@@ -559,6 +562,8 @@ object Cli:
       Refresh(args)
     case args: ReconcileArgs =>
       Reconcile(args)
+    case FileArgs(dryRun) =>
+      FileDownloads(dryRun)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -990,6 +995,15 @@ object Cli:
         Flag("delete", None, BooleanKind, "remove a toml whose link id is gone")
       ),
       build = (values, _) => ReconcileArgs(bool(values, "dry-run"), bool(values, "delete"))
+    ),
+    Command(
+      name = "file",
+      help = "file staged downloads into civil day folders",
+      positionals = Nil,
+      flags = List(
+        Flag("dry-run", None, BooleanKind, "print the actions and write nothing")
+      ),
+      build = (values, _) => FileArgs(bool(values, "dry-run"))
     ),
     Command(
       name = "login",

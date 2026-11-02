@@ -310,7 +310,7 @@ Album renames are `rename-album` rows in `requests.tsv`.
 The date is that item's catalog date.
 When the date is `-`, the directory is `undated` instead of `YYYY/MM/DD`.
 The filename is copied unchanged, including a camera prefix and the extension's case.
-The local reader creates the day directory.
+The local reader creates the staging day directory.
 The program does not.
 When that file is already there, it keeps the file and does not overwrite it.
 A catalog filename that contains `/`, or is `.` or `..`, fails that row.
@@ -320,9 +320,11 @@ Files are grouped by the catalog day because the same camera name occurs on many
 They are not flat, and they are not grouped by album.
 Album titles are not unique, and some are not safe directory names.
 The same date and filename in two albums is one file here.
-Nothing in this directory is stripped or renamed.
-The program reads the catalog and writes request rows under `.gphoto-sync`.
-It does not read `.download` as archive pictures.
+Nothing in this directory is renamed.
+`photo file` reads `.download/` and files a dated download into the archive day folder, as `notes/albums.md` describes.
+The strip happens on the archive name.
+Undated files stay in `undated/`.
+The program does not read `.download` as archive pictures.
 `download-item` does not rewrite `catalog.txt`, and it does not change Google Photos.
 The archive inbox `.upload` is a different directory.
 

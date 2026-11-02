@@ -93,6 +93,7 @@ The match rate does not decide whether to write the file.
 Write the file from the pairs that match.
 A catalog item with no local file stays out of `include`.
 It is downloaded later into `~/Pictures/originals/.gphoto-sync/.download/`, as `notes/protocol.md` describes.
+`photo file` files a dated download from there.
 Zero local matches still get a file.
 `include` is then empty.
 
@@ -263,3 +264,32 @@ An external file that never linked is reported and kept.
 It still does not remove the toml.
 
 Classes are `create`, `update`, `gone`, `pending`, and `skipped`.
+
+## Filing
+
+`photo file` reads `<archive>/.gphoto-sync/.download/` only.
+There is no config key.
+The layout is the Download section of `notes/protocol.md`.
+A dated file is `YYYY/MM/DD/<catalog filename>`.
+When the catalog date is `-`, the directory is `undated`.
+Undated files stay there and are not filed.
+Nothing inside `.download/` is renamed.
+The strip happens on the archive name.
+
+The destination name drops one leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix, in either case, and
+lowercases a known extension.
+That is the same repair `repair --names` uses.
+A video gains a trailing `v` when that day folder already has a still of the repaired stem.
+The command passes that day's files and the staged file to the planner together.
+A stem that is empty or does not start with a digit stays staged.
+
+The destination is `<archive>/YYYY/MM/DD/<name>`.
+The command creates the day directory.
+It never overwrites an archive file.
+If the destination exists, or the repaired name would collide with a different picture, the staged file stays and the
+command reports it.
+The same catalog date and filename in two albums is one staged file and one archive file.
+Items in no album are out of scope.
+This command does not download and does not call Google.
+Other people's items that the Download control can fetch stay on `download-item`.
+`--dry-run` prints the actions and writes nothing.
