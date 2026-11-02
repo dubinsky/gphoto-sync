@@ -414,6 +414,34 @@ Cron is out of scope.
 
 == TODO
 
+Park still looks for the Chrome window once and misses it, so the window stays on DP-1.
+
+More request types than we already have are needed to brin Google Photos into sync with the local archive:
+
+- delete album
+- create album
+- upload item
+- anything else?
+
+More operations are needed than what we already have to manipulate local archive:
+
+- delete album
+- create album with date range and/or name (at least one must be present)
+- change album name
+- include/exclude an item in an album (potentially changing its date expression)
+- anything else?
+
+- `lsd` should be equivalent to `lsd .`
+- tab completion
+- more regular/orthogonal/Linux-like user commands
+
+Some compound operations on the local archive seem to make sense, especially for the - soon to become reality - webapp:
+
+- move an item from an album into a month album (creating it as needed)
+- reverse
+
+- dates: dater; date in TOML file rules
+
 - fix day and date-range albums: split, merge, month...
 
 - drop requests/result?
@@ -424,7 +452,4 @@ Only the request applier and its manifests are in `reader/`.
 - CLI get pictures from a memory card
 - CLI webapp
 - CLI packaging/publishing
-
-
-Alternative deployments: Grok Bot web hook.
 
