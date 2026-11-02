@@ -88,32 +88,22 @@ private[photo] final class AgentRename(
   id: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
-    val ready: Either[(Session, Result), (Session, Catalog.Album, String)] =
-      try
-        val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
-        val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
-        val wantedNew: String = updated.getOrElse(throw IllegalArgumentException("missing new"))
-        val (loaded, albums) = session.loadCatalog
-        try
-          val album: Catalog.Album = AgentCommands.select(albums, wantedTitle, id)
-          AgentCommands.acceptRequest(
-            albums,
-            Requests.Action.RenameAlbum,
-            album.id,
-            "",
-            wantedCurrent,
-            wantedNew
-          )
-          Right((loaded, album, wantedNew))
-        catch
-          case error: (IllegalArgumentException | IllegalStateException) =>
-            Left((loaded, Result.Usage(Operation.messageOf(error))))
-      catch
-        case error: (IllegalArgumentException | IllegalStateException) =>
-          Left((session, Result.Usage(Operation.messageOf(error))))
-    ready match
-      case Left(done) => done
-      case Right((loaded, album, wantedNew)) => AgentCommands.renameAlbum(loaded, album, wantedNew)
+    AgentCommands.catching(session):
+      val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val wantedNew: String = updated.getOrElse(throw IllegalArgumentException("missing new"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        val album: Catalog.Album = AgentCommands.select(albums, wantedTitle, id)
+        AgentCommands.acceptRequest(
+          albums,
+          Requests.Action.RenameAlbum,
+          album.id,
+          "",
+          wantedCurrent,
+          wantedNew
+        )
+        AgentCommands.renameAlbum(loaded, album, wantedNew)
 
 private[photo] final class AgentRequest(
   action: Requests.Action,
@@ -437,19 +427,13 @@ private[photo] object AgentCommands:
           case other =>
             (kept, other)
       case Refresh.Claim.Owned(channel, lock) =>
-        var ui: PhotosAct = null
-        try heldRename(session, album, updated, act => ui = act)
-        finally
-          if ui != null then
-            try ui.close()
-            catch case _: Exception => ()
-          Refresh.release(channel, lock)
+        try heldRename(session, album, updated)
+        finally Refresh.release(channel, lock)
 
   private def heldRename(
     session: Session,
     album: Catalog.Album,
-    updated: String,
-    opened: PhotosAct => Unit
+    updated: String
   ): (Session, Result) =
     val accepted: Either[(Session, Result), Catalog.Album] =
       try Right(reread(session, album, updated))
@@ -459,34 +443,35 @@ private[photo] object AgentCommands:
     accepted match
       case Left(done) => done
       case Right(fresh) =>
-        val launched: Either[(Session, Result), PhotosAct] =
-          try
-            // A notice would write status.txt and drop a crashed refresh's resume phase.
-            Right(Refresh.openAct(_ => ()))
-          catch
-            case error: Exception =>
-              Left(renameFailed(session, fresh, "one-click", collapsed(error)))
-        launched match
-          case Left(done) => done
-          case Right(ui) =>
-            opened(ui)
-            val renamed: Either[(Session, Result), Unit] =
+        var ui: PhotosAct = null
+        try
+          val launched: Either[(Session, Result), PhotosAct] =
+            try
+              // A notice would write status.txt and drop a crashed refresh's resume phase.
+              Right(Refresh.openAct(_ => ()))
+            catch
+              case error: Exception =>
+                Left(renameFailed(session, fresh, "one-click", Operation.messageOf(error)))
+          launched match
+            case Left(done) => done
+            case Right(opened) =>
+              ui = opened
               try
                 ui.renameAlbum(fresh, updated)
-                Right(())
+                publishTitle(session, fresh, updated) match
+                  case Left(detail) => renameFailed(session, fresh, "refresh-only", detail)
+                  case Right(next) => renameOk(next, fresh, updated)
               catch
                 case miss: Refresh.ActMiss =>
                   val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
                   val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("rename failed")
-                  Left(renameFailed(session, fresh, recovery, detail))
+                  renameFailed(session, fresh, recovery, detail)
                 case error: Exception =>
-                  Left(renameFailed(session, fresh, "one-click", collapsed(error)))
-            renamed match
-              case Left(done) => done
-              case Right(_) =>
-                publishTitle(session, fresh, updated) match
-                  case Left(detail) => renameFailed(session, fresh, "refresh-only", detail)
-                  case Right(next) => renameOk(next, fresh, updated)
+                  renameFailed(session, fresh, "one-click", Operation.messageOf(error))
+        finally
+          if ui != null then
+            try ui.close()
+            catch case _: Exception => ()
 
   private def reread(session: Session, album: Catalog.Album, updated: String): Catalog.Album =
     val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
@@ -519,7 +504,7 @@ private[photo] object AgentCommands:
         Files.write(RefreshPlan.renderLines(lines), partial)
         Right(())
       catch case error: Exception =>
-        Left(collapsed(error))
+        Left(Operation.messageOf(error))
     .flatMap(_ => RefreshPlan.checkRetitle(partial))
     .flatMap(_ => RefreshPlan.swap(live, partial, previous))
     .map(_ => session.copy(catalogCache = None))
@@ -560,8 +545,6 @@ private[photo] object AgentCommands:
       "itemKey" -> Json.Str("")
     ))
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
-
-  private def collapsed(error: Exception): String = collapsedText(Operation.messageOf(error))
 
   private def collapsedText(detail: String): String =
     val message: String = detail.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')

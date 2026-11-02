@@ -329,7 +329,7 @@ object RefreshPlan:
     swap(live, partial, previous, moveReplacing)
 
   // previous exists only between the two renames. A failed second rename puts the live file back.
-  private[photo] def swap(live: File, partial: File, previous: File, move: (File, File) => Unit): Either[String, Unit] =
+  private def swap(live: File, partial: File, previous: File, move: (File, File) => Unit): Either[String, Unit] =
     val hadLive: Boolean = live.isFile
     try
       if hadLive then move(live, previous)

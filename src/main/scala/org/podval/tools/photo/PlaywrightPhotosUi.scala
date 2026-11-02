@@ -106,10 +106,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     try
       // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
       page.setDefaultTimeout(20000)
-      try ensureSession()
-      catch
-        case error: IllegalStateException if Operation.messageOf(error) == "sign-in timed out" =>
-          throw Refresh.ActMiss("sign-in timed out", confirmed = false)
+      ensureSession()
       navigate(s"https://photos.google.com/album/${album.id}")
       clickMore()
       click(menuItem(awaitMenu(System.currentTimeMillis + 20000L)).first())
@@ -124,7 +121,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       case miss: Refresh.ActMiss =>
         throw miss
       case error: Exception =>
-        throw Refresh.ActMiss(collapsed(error), confirmed)
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
 
   private def clickMore(): Unit =
     val options: Locator = page.locator("[aria-label=\"More options\"]")
@@ -180,8 +177,13 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
 
   @tailrec
   private def awaitLive(updated: String, deadline: Long): Unit =
-    if asBool(page.evaluate(liveTitleScript, updated)) then ()
-    else if System.currentTimeMillis >= deadline then
+    val done: Locator = page.getByRole(
+      AriaRole.BUTTON,
+      new Page.GetByRoleOptions().setName("Done").setExact(true)
+    )
+    val editorOpen: Boolean = done.count() > 0 || asBool(page.evaluate(editorOpenScript, updated))
+    // The note names no album-page header. The field just written, and a body line, are not the live title.
+    if !editorOpen || System.currentTimeMillis >= deadline then
       throw Refresh.ActMiss("live title differs", confirmed = true)
     else
       Thread.sleep(300)
@@ -198,30 +200,21 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
   private def click(locator: Locator): Unit =
     locator.click(new Locator.ClickOptions().setTimeout(20000))
 
-  private def collapsed(error: Exception): String =
-    val message: String = Operation.messageOf(error).replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
-    if message.isEmpty then "rename failed" else message
-
   private val focusTitleScript: String =
     """(current) => {
       const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
       const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
       const match = fields.find((node) => valueOf(node) === current);
-      const placeholder = fields.find((node) =>
-        (node.getAttribute('placeholder') || '') === 'Add a title' || (node.innerText || '') === 'Add a title');
-      const target = match || placeholder;
-      if (!target) return false;
-      target.focus();
-      return document.activeElement === target;
+      if (!match) return false;
+      match.focus();
+      return document.activeElement === match;
     }"""
 
-  private val liveTitleScript: String =
+  private val editorOpenScript: String =
     """(wanted) => {
-      const lines = (document.body && document.body.innerText || '').split('\n');
-      if (lines.some((line) => line === wanted)) return true;
       const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
-      return fields.some((node) =>
-        (typeof node.value === 'string' ? node.value : (node.innerText || '')) === wanted);
+      const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
+      return fields.some((node) => valueOf(node) === wanted);
     }"""
 
   private def navigate(url: String): Unit =

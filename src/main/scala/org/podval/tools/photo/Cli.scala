@@ -342,7 +342,7 @@ object Cli:
     case _: RenameAlbumArgs => "rename-album"
     case _ => "command"
 
-  // Refresh, reconcile, and file stay off this branch. A later write adds its own arm.
+  // Refresh, reconcile, and file stay off this branch.
   private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
     case _: RenameAlbumArgs => true
     case _ => false
