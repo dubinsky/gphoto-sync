@@ -279,8 +279,7 @@ object Reconcile:
     val file: Album = row.album
     val google: Option[String] = storedGoogle(album, file)
     val published: Option[String] = storedPublished(album, file, google)
-    if google.exists(_.isEmpty) || published.exists(_.isEmpty) || (google.toSeq ++ published.toSeq).exists(badControl) then
-      Edit.Skip("title")
+    if (google.toSeq ++ published.toSeq).exists(badControl) then Edit.Skip("title")
     else
       val googleArg: Option[Option[String]] = google match
         case Some(text) if text != file.googleTitle => Some(Some(text))
@@ -379,7 +378,7 @@ object Reconcile:
   private def storedPublished(album: Catalog.Album, file: Album, google: Option[String]): Option[String] =
     if !client(file) || album.title.isEmpty then None
     else
-      val desired: String = google.filter(_.nonEmpty).getOrElse(file.title)
+      val desired: String = google.getOrElse(file.title)
       Option.when(desired.nonEmpty && file.publishedTitle != desired)(desired)
 
   // putInclude writes `include = []` for an empty list, so a missing key that is already empty is left alone.
