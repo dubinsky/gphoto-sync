@@ -340,6 +340,134 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       File(archive, ".gphoto-sync").exists shouldBe false
       File(day, "album.toml").exists shouldBe false
 
+  "agent drift" should "report a create and write nothing" in :
+    withArchive: archive =>
+      writeCatalog(archive, "album\tcid-notes\t0\tNotes")
+      val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
+      text shouldBe "create Notes\n"
+      text should not include ("wrote")
+      noIds(text, "cid-notes")
+      value shouldBe driftValue("create", "Notes", "Notes.toml", None, Some("cid-notes"))
+      File(archive, "Notes.toml").exists shouldBe false
+      File(archive, ".gphoto-sync/album-links.tsv").exists shouldBe false
+
+  it should "report an update and write nothing" in :
+    withArchive: archive =>
+      val toml: String =
+        """# keep
+          |external = true
+          |google-title = "Hawaii"
+          |owner = "Ada"
+          |""".stripMargin
+      writeRaw(archive, "Hawaii.toml", toml)
+      writeRaw(archive, ".gphoto-sync/album-links.tsv", "# gphoto-album-links 1\ncid-hawaii\tHawaii.toml\n")
+      writeCatalog(
+        archive,
+        "album\tcid-hawaii\t0\tHawaii Trip",
+        "owner\tcid-hawaii\tAda"
+      )
+      val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
+      text shouldBe "update Hawaii Trip\n"
+      noIds(text, "cid-hawaii")
+      value shouldBe driftValue("update", "Hawaii Trip", "Hawaii.toml", None, Some("cid-hawaii"))
+      JFiles.readString(File(archive, "Hawaii.toml").toPath) shouldBe toml
+
+  it should "report a gone link and write nothing" in :
+    withArchive: archive =>
+      writeRaw(
+        archive,
+        "Old.toml",
+        """external = true
+          |google-title = "Old Title"
+          |""".stripMargin
+      )
+      writeRaw(archive, ".gphoto-sync/album-links.tsv", "# gphoto-album-links 1\ncid-old\tOld.toml\n")
+      writeCatalog(archive)
+      val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
+      text shouldBe "gone Old Title\n"
+      noIds(text, "cid-old")
+      value shouldBe driftValue("gone", "Old Title", "Old.toml", None, Some("cid-old"))
+
+  it should "report a pending file and write nothing" in :
+    withArchive: archive =>
+      writeRaw(archive, "Pending.toml", "")
+      writeCatalog(archive)
+      val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
+      text shouldBe "pending Pending.toml\n"
+      value shouldBe driftValue("pending", "", "Pending.toml", None, None)
+
+  it should "report a skipped album and write nothing" in :
+    withArchive: archive =>
+      writeCatalog(
+        archive,
+        "album\tcid-travel\t0\tTravel",
+        "auto-add\tcid-travel"
+      )
+      val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
+      text shouldBe "skipped Travel auto-add\n"
+      noIds(text, "cid-travel")
+      value shouldBe driftValue("skipped", "Travel", "", Some("auto-add"), Some("cid-travel"))
+      File(archive, "Travel.toml").exists shouldBe false
+
+  "agent missing" should "list absent items, including another uploader, and not a prefix hit" in :
+    withArchive: archive =>
+      val day: File = File(archive, "2010/07/19")
+      touch(day, "2412.jpg")
+      touch(day, "123.jpg")
+      touch(day, "123v.mp4")
+      touch(day, "ghost.jpg")
+      touch(day, "5555.MP.jpg")
+      touch(day, "kept.jpg")
+      File(archive, "2010/07/20").mkdirs() shouldBe true
+      writeCatalog(
+        archive,
+        "album\taid-trip\t7\tTrip",
+        "item\taid-trip\t1000.jpg\t2010-07-19\tk-own\t-",
+        "item\taid-trip\t2000.jpg\t2010-07-19\tk-ada\tAda",
+        "item\taid-trip\tIMG_2412.JPG\t2010-07-19\tk-prefix\t-",
+        "item\taid-trip\t123.mp4\t2010-07-19\tk-video\t-",
+        "item\taid-trip\tghost.jpg\t-\tk-ghost\t-",
+        "item\taid-trip\t5555.MP.jpg\t2010-07-19\tk-mp\t-",
+        "item\taid-trip\t6666.PORTRAIT.jpg\t2010-07-19\tk-port\t-",
+        "album\taid-eps\t2\tEpsilon",
+        "error\taid-eps\t2\t2\t1",
+        "item\taid-eps\tkept.jpg\t2010-07-19\tk-kept\t-",
+        "unset\taid-eps\t2010-07-20\tk-unset\tCara",
+        "album\taid-box\t0\tInbox",
+        "auto-add\taid-box"
+      )
+      val beforeFiles: Map[String, String] = filesOf(archive)
+      val before: Long = Extension.constructed
+      val (loaded, result) = exec(Session(rootFor(archive)), "agent", "missing")
+      Extension.constructed shouldBe before
+      filesOf(archive) shouldBe beforeFiles
+      val text: String =
+        """missing Trip 2010-07-19 1000.jpg -
+          |missing Trip 2010-07-19 2000.jpg Ada
+          |missing Trip - ghost.jpg -
+          |missing Trip 2010-07-19 6666.PORTRAIT.jpg -
+          |""".stripMargin
+      result shouldBe Result.Ok(text, Json.Obj(Seq(
+        "missing" -> Json.Arr(Seq(
+          missingRow("Trip", "2010-07-19", "1000.jpg", "-", "k-own"),
+          missingRow("Trip", "2010-07-19", "2000.jpg", "Ada", "k-ada"),
+          missingRow("Trip", "-", "ghost.jpg", "-", "k-ghost"),
+          missingRow("Trip", "2010-07-19", "6666.PORTRAIT.jpg", "-", "k-port")
+        ))
+      )))
+      result match
+        case Result.Ok(shown, value) =>
+          noIds(
+            shown,
+            "aid-trip", "aid-eps", "aid-box",
+            "k-own", "k-ada", "k-prefix", "k-video", "k-ghost", "k-mp", "k-port", "k-kept", "k-unset"
+          )
+          value.toString should not include ("aid-")
+        case other =>
+          fail(other.toString)
+      loaded.cached(day).isDefined shouldBe true
+      loaded.cached(File(archive, "2010/07/20")).isEmpty shouldBe true
+
   private def emptyMatch(id: String): Json = matchValue(id, Seq.empty, Seq.empty)
 
   private def matchValue(id: String, matched: Seq[(String, String)], unmatched: Seq[String]): Json =
@@ -380,6 +508,56 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       fields.find(_._1 == name).map(_._2).getOrElse(fail(s"missing $name in $value"))
     case other =>
       fail(other.toString)
+
+  private def driftValue(
+    kind: String,
+    title: String,
+    path: String,
+    reason: Option[String],
+    id: Option[String]
+  ): Json =
+    Json.Obj(Seq(
+      "actions" -> Json.Arr(Seq(Json.Obj(Seq(
+        "class" -> Json.Str(kind),
+        "title" -> Json.Str(title),
+        "path" -> Json.Str(path),
+        "reason" -> reason.fold(Json.Null)(Json.Str.apply),
+        "id" -> id.fold(Json.Null)(Json.Str.apply)
+      ))))
+    ))
+
+  private def missingRow(title: String, date: String, filename: String, uploader: String, key: String): Json =
+    Json.Obj(Seq(
+      "title" -> Json.Str(title),
+      "date" -> Json.Str(date),
+      "filename" -> Json.Str(filename),
+      "uploader" -> Json.Str(uploader),
+      "key" -> Json.Str(key)
+    ))
+
+  private def execOk(archive: File, args: String*): (String, Json) =
+    exec(Session(rootFor(archive)), args*)._2 match
+      case Result.Ok(text, value) => (text, value)
+      case other => fail(other.toString)
+
+  private def unchanged(archive: File)(body: => (String, Json)): (String, Json) =
+    val before: Map[String, String] = filesOf(archive)
+    val result: (String, Json) = body
+    filesOf(archive) shouldBe before
+    result
+
+  private def filesOf(archive: File): Map[String, String] =
+    def walk(file: File): Seq[(String, String)] =
+      if file.isDirectory then
+        Option(file.listFiles).getOrElse(Array.empty[File]).toSeq.flatMap(walk)
+      else
+        Seq(archive.toPath.relativize(file.toPath).toString -> JFiles.readString(file.toPath))
+    walk(archive).toMap
+
+  private def writeRaw(archive: File, path: String, text: String): Unit =
+    val file: File = File(archive, path)
+    file.getParentFile.mkdirs()
+    JFiles.writeString(file.toPath, text)
 
   private def noIds(text: String, ids: String*): Unit =
     ids.foreach: id =>

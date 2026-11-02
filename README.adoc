@@ -238,6 +238,25 @@ has an owner.
 `photo agent request <action>` checks the catalog and appends one request row.
 `photo agent requests` lists those rows without album ids or item keys.
 `photo agent results` lists result rows and prints each note unchanged.
+`photo agent drift` reports create, update, gone, pending, and skipped.
+It uses the classes reconcile already computes and writes nothing.
+A line is the class, then the album title or the relative path.
+A skipped line adds a short reason.
+The line does not include a catalog id.
+JSON carries the catalog id when the row has one, and the relative path.
+`photo agent missing` lists every catalog item whose filename stem is absent from that civil day's folder.
+The lookup is the one `photo agent match` uses: an exact stem, then one leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or
+`MVI_` prefix when that same day's folder contains the remainder.
+A `.MP` or `.PORTRAIT` tail stays in the stem.
+Extension case is ignored.
+Stem case stays exact.
+The trailing `v` on a video that shares a stem with a still is the rule match already applies.
+Unset lines and auto-add albums are skipped.
+An item date of `-` is listed with that date and is not looked up in a folder.
+Other people's items are listed with the uploader.
+A line is the album title, the date, the filename, and the uploader.
+The line does not include a catalog id or an item key.
+JSON adds the item key.
 
 `photo serve` listens on one Unix socket for this user.
 There is no TCP port.
@@ -280,8 +299,8 @@ It is a client of `photo serve`, the same way `photo shell` is.
 It starts a detached `photo serve` when the socket is down, and it does not stop that process on exit.
 It does not run a command in this process when the socket is down.
 A mismatch names both paths, says to run `photo serve stop`, and does not run the command in this process.
-Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent requests`, and
-`agent results`.
+Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent requests`,
+`agent results`, `agent drift`, and `agent missing`.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
 Album files, request rows, repair, publish, sync, refresh, reconcile, and file are not tools.
 Tool JSON may contain album ids and item keys.

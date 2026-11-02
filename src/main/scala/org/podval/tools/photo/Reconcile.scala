@@ -31,13 +31,13 @@ object Reconcile:
     id: Option[String]
   )
 
-  private enum Touch:
+  private[photo] enum Touch:
     case CreateFile(dest: File, text: String)
     case EditTitles(file: File, googleTitle: Option[Option[String]], publishedTitle: Option[String])
     case EditInclude(file: File, include: Seq[Include.Entry])
     case RemoveFile(file: File)
 
-  private final case class Plan(actions: Seq[Action], links: Seq[AlbumLinks.Row], touches: Seq[Touch])
+  private[photo] final case class Plan(actions: Seq[Action], links: Seq[AlbumLinks.Row], touches: Seq[Touch])
 
   private final case class Placed(
     album: Catalog.Album,
@@ -73,14 +73,15 @@ object Reconcile:
       // One parent drop would leave the other directories warm.
       DirectoryIndex.dropAll()
 
-  private def line(action: Action): String = action.kind match
+  private[photo] def line(action: Action): String = action.kind match
     case Kind.Pending => s"pending ${action.path}"
     case Kind.Skipped => s"skipped ${action.label} ${action.reason}"
     case Kind.Gone => s"gone ${action.label}"
     case Kind.Create => s"create ${action.label}"
     case Kind.Update => s"update ${action.label}"
 
-  private def classify(
+  // Drift calls this and does not perform the plan.
+  private[photo] def classify(
     start: Session,
     archive: File,
     catalog: Seq[Catalog.Album],
@@ -469,6 +470,9 @@ object Reconcile:
 
   private def skipped(label: String, path: String, reason: String, id: Option[String]): Action =
     Action(Kind.Skipped, label, path, reason, id)
+
+  private[photo] def actionsValue(actions: Seq[Action]): Json =
+    Json.Obj(Seq("actions" -> Json.Arr(actions.map(actionJson))))
 
   private def jsonOf(plan: Plan): Json =
     Json.Obj(Seq(

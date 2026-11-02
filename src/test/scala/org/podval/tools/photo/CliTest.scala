@@ -167,6 +167,8 @@ class CliTest extends AnyFlatSpec, Matchers:
     ))
     Cli.parse(List("agent", "requests")) shouldBe Cli.Run(Cli.AgentRequestsArgs)
     Cli.parse(List("agent", "results")) shouldBe Cli.Run(Cli.AgentResultsArgs)
+    Cli.parse(List("agent", "drift")) shouldBe Cli.Run(Cli.AgentDriftArgs)
+    Cli.parse(List("agent", "missing")) shouldBe Cli.Run(Cli.AgentMissingArgs)
 
   it should "print help and not an operation" in :
     val top: String = helpOf("--help")
@@ -359,7 +361,9 @@ class CliTest extends AnyFlatSpec, Matchers:
         |album-file  write an album file
         |request  append one request row
         |requests  list request rows
-        |results  list result rows""".stripMargin
+        |results  list result rows
+        |drift  report create, update, gone, pending, and skipped
+        |missing  list catalog items absent from the day folder""".stripMargin
     helpOf("agent", "-h") shouldBe agent
     helpOf("help", "agent") shouldBe agent
     agent should not include ("rename-album")
@@ -562,10 +566,10 @@ class CliTest extends AnyFlatSpec, Matchers:
     an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("nope")
     an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("source=a=b")
 
-  "mcpTools" should "derive the seven query commands and reject everything else" in :
+  "mcpTools" should "derive the nine query commands and reject everything else" in :
     val tools: List[Cli.McpTool] = Cli.mcpTools
     tools.map(_.name) shouldBe List(
-      "stems", "catalog", "items", "match", "include", "requests", "results"
+      "stems", "catalog", "items", "match", "include", "requests", "results", "drift", "missing"
     )
     List(
       "album-file",
@@ -592,7 +596,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       "match" -> described("match catalog items to local stems", "match", ambiguous = true),
       "include" -> described("compress include lines", "include", ambiguous = false),
       "requests" -> described("list request rows", "requests", ambiguous = false),
-      "results" -> described("list result rows", "results", ambiguous = false)
+      "results" -> described("list result rows", "results", ambiguous = false),
+      "drift" -> described("report create, update, gone, pending, and skipped", "drift", ambiguous = false),
+      "missing" -> described("list catalog items absent from the day folder", "missing", ambiguous = false)
     )
     val properties: Map[String, Seq[(String, Json)]] = Map(
       "stems" -> Seq("day" -> mcpStringSchema),
@@ -601,7 +607,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       "match" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
       "include" -> Seq("span" -> mcpStringSchema, "paths" -> mcpPathsSchema),
       "requests" -> Seq.empty,
-      "results" -> Seq.empty
+      "results" -> Seq.empty,
+      "drift" -> Seq.empty,
+      "missing" -> Seq.empty
     )
     val required: Map[String, Seq[String]] = Map(
       "stems" -> Seq("day"),
@@ -610,7 +618,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       "match" -> Seq("album"),
       "include" -> Seq.empty,
       "requests" -> Seq.empty,
-      "results" -> Seq.empty
+      "results" -> Seq.empty,
+      "drift" -> Seq.empty,
+      "missing" -> Seq.empty
     )
     tools.foreach: tool =>
       tool.description shouldBe descriptions(tool.name)
@@ -668,6 +678,8 @@ class CliTest extends AnyFlatSpec, Matchers:
 
     Cli.parse(mcpArgv("requests", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentRequestsArgs)
     Cli.parse(mcpArgv("results", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentResultsArgs)
+    Cli.parse(mcpArgv("drift", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentDriftArgs)
+    Cli.parse(mcpArgv("missing", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMissingArgs)
 
     Cli.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Long(2010))) shouldBe
       Left("argument 'day' has the wrong type")
@@ -685,7 +697,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "replace" -> Json.Bool(true)
     )) shouldBe Left("unexpected argument 'replace'")
 
-    // None of the seven tools have a boolean flag. BoolFlag is what BooleanKind derives.
+    // None of the query tools have a boolean flag. BoolFlag is what BooleanKind derives.
     val boolTool: Cli.McpTool = Cli.McpTool(
       name = "probe",
       description = "probe",

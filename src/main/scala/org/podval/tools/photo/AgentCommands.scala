@@ -110,6 +110,17 @@ private[photo] object AgentResults extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentCommands.listResults(session)
 
+private[photo] object AgentDrift extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      AgentCommands.drift(session)
+
+private[photo] object AgentMissing extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.listMissing(loaded, albums)
+
 private[photo] final class AgentInclude(spanText: Option[String], paths: Seq[String]) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentCommands.catching(session):
@@ -604,6 +615,49 @@ private[photo] object AgentCommands:
           ))
         )
         (session, Result.Ok(textOf(lines), value))
+
+  // Same classes reconcile prints. dry-run builds no write touches, and the link file is not published.
+  def drift(session: Session): (Session, Result) =
+    val archive: File = session.root.configuration.archive
+    val (loaded, catalog) = session.loadCatalog
+    val found: Seq[Album.Loaded] = Archive.scan(archive).albums
+    val existing: Seq[AlbumLinks.Row] = AlbumLinks.read(archive)
+    val (ready, plan) = Reconcile.classify(
+      loaded,
+      archive,
+      catalog,
+      found,
+      existing,
+      Cli.ReconcileArgs(dryRun = true, delete = false)
+    )
+    (ready, Result.Ok(textOf(plan.actions.map(Reconcile.line)), Reconcile.actionsValue(plan.actions)))
+
+  // gather calls resolve. A date of - is not a day, so that item is not looked up.
+  // Auto-add is skipped here. Unset lines are not items.
+  def listMissing(session: Session, albums: Seq[Catalog.Album]): (Session, Result) =
+    val (ready, rows) = albums.foldLeft((session, Seq.empty[(Catalog.Album, Catalog.Item)])): (acc, album) =>
+      if album.autoAdd then acc
+      else
+        val (current, soFar) = acc
+        val (next, _, misses) = gather(current, album)
+        val wanted: Set[String] = misses.map(_._3).toSet
+        val added: Seq[(Catalog.Album, Catalog.Item)] = album.items.collect:
+          case item if wanted.contains(item.key) => album -> item
+        (next, soFar ++ added)
+    val lines: Seq[String] = rows.map: (album, item) =>
+      s"missing ${album.title} ${catalogDate(item.date)} ${item.filename} ${showUploader(item.uploader)}"
+    val value: Json = Json.Obj(Seq(
+      "missing" -> Json.Arr(rows.map: (album, item) =>
+        Json.Obj(Seq(
+          "title" -> Json.Str(album.title),
+          "date" -> Json.Str(catalogDate(item.date)),
+          "filename" -> Json.Str(item.filename),
+          "uploader" -> Json.Str(showUploader(item.uploader)),
+          "key" -> Json.Str(item.key)
+        ))
+      )
+    ))
+    (ready, Result.Ok(textOf(lines), value))
 
   def requestsFile(session: Session): File =
     File(File(session.root.configuration.archive, ".gphoto-sync"), "requests.tsv")

@@ -69,7 +69,7 @@ class McpTest extends AnyFlatSpec, Matchers:
           case other =>
             fail(other.toString)
         toolNames(field(listed, "tools")) shouldBe Seq(
-          "stems", "catalog", "items", "match", "include", "requests", "results"
+          "stems", "catalog", "items", "match", "include", "requests", "results", "drift", "missing"
         )
         val ping: String = driver.round("""{"jsonrpc":"2.0","id":"p","method":"ping"}""")
         field(parsed(ping), "id") shouldBe Json.Str("p")

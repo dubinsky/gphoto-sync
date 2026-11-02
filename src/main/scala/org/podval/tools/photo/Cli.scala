@@ -75,6 +75,8 @@ object Cli:
   ) extends Parsed
   private[photo] case object AgentRequestsArgs extends Parsed
   private[photo] case object AgentResultsArgs extends Parsed
+  private[photo] case object AgentDriftArgs extends Parsed
+  private[photo] case object AgentMissingArgs extends Parsed
 
   private[photo] final case class Run(parsed: Parsed) extends Outcome
   private[photo] case object ShellFront extends Outcome
@@ -319,6 +321,8 @@ object Cli:
     case _: AgentRequestArgs => false
     case AgentRequestsArgs => false
     case AgentResultsArgs => false
+    case AgentDriftArgs => false
+    case AgentMissingArgs => false
 
   private def callerCommand(parsed: Parsed): String = parsed match
     case _: RefreshArgs => "refresh"
@@ -593,6 +597,10 @@ object Cli:
       AgentRequests
     case AgentResultsArgs =>
       AgentResults
+    case AgentDriftArgs =>
+      AgentDrift
+    case AgentMissingArgs =>
+      AgentMissing
 
   private def finish(command: Command, values: Values, positionals: List[String], front: Front): Outcome =
     if command.name == "help" then helpText(positionals, front)
@@ -1099,12 +1107,26 @@ object Cli:
       positionals = Nil,
       flags = Nil,
       build = (_, _) => AgentResultsArgs
+    ),
+    Command(
+      name = "drift",
+      help = "report create, update, gone, pending, and skipped",
+      positionals = Nil,
+      flags = Nil,
+      build = (_, _) => AgentDriftArgs
+    ),
+    Command(
+      name = "missing",
+      help = "list catalog items absent from the day folder",
+      positionals = Nil,
+      flags = Nil,
+      build = (_, _) => AgentMissingArgs
     )
   )
 
   // Order is agentCommands order. Membership is this set.
   private val mcpToolNames: Set[String] = Set(
-    "stems", "catalog", "items", "match", "include", "requests", "results"
+    "stems", "catalog", "items", "match", "include", "requests", "results", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =

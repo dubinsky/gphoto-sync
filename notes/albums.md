@@ -264,6 +264,7 @@ An external file that never linked is reported and kept.
 It still does not remove the toml.
 
 Classes are `create`, `update`, `gone`, `pending`, and `skipped`.
+`photo agent drift` reports those classes and writes nothing.
 
 ## Filing
 
