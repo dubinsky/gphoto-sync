@@ -12,7 +12,6 @@ Nothing else in the program does.
 `photo refresh` does not write that file.
 The program does not change Google Photos except `photo publish` and `photo sync`.
 Applying `requests.tsv` stays the archive agent plus `reader/sandbox-act.mjs` in `~/Podval/gphoto-sync`.
-The archive copy of that script stays until the deletion commit.
 In this note, the local reader is that applier when a request batch is processed.
 `photo refresh` is the catalog re-read.
 The Chrome read is `notes/catalog-refresh.md`.

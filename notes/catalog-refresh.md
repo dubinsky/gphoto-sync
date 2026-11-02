@@ -12,7 +12,7 @@ The lines it writes are version 2, as the catalog section of `notes/protocol.md`
 
 `photo refresh` is the reader.
 It runs in the calling process.
-It does not shell out to `reader/read.mjs`.
+It does not shell out.
 
 - Not the Photos Library API (since 2025 it only sees media the calling app created).
   No connector exists.
@@ -23,8 +23,6 @@ It does not shell out to `reader/read.mjs`.
 - The window stays mapped while the album list scrolls.
   When `HYPRLAND_INSTANCE_SIGNATURE` is set, park the window as the Browser section says.
   On any other desktop the window stays visible.
-- The seven refresh scripts stay in the archive `reader/` until the live gate.
-  Do not run `reader/read.mjs`.
 - The work directory is `${TMPDIR:-/tmp}/gphoto-sync-refresh`, mode `0700`.
   Part files, `albums.tsv`, and `status.txt` are written there.
   A successful publish removes that directory.
@@ -256,8 +254,6 @@ A failed check leaves the work directory and sets `phase` to `error`.
 The next refresh scrolls.
 It does not open the previous refresh's parts.
 `.gphoto-sync/.download/` is only for media from `download-item`.
-The seven refresh scripts stay in the archive `reader/` until the live gate.
-Do not run `reader/read.mjs`.
 `catalog.txt.partial` and `catalog.txt.previous` stay next to `catalog.txt`.
 
 ## Privacy
@@ -333,4 +329,3 @@ Start with one item so the card count is 1.
 | Drop | Delete the sandbox album, with explicit OK | `photo refresh` | `photo agent catalog` no longer lists the title. Day-folder pictures are untouched | This is the album cleanup. Trash leftover library items only with a separate OK |
 
 Do not run this table from Gradle.
-The archive copies of this note stay until the deletion commit.

@@ -420,7 +420,6 @@ Cron is out of scope.
 
 The three notes stay three files in `notes/`.
 Only the request applier and its manifests are in `reader/`.
-The seven refresh scripts stay untracked in the archive until the live gate.
 
 - CLI get pictures from a memory card
 - CLI webapp
