@@ -65,6 +65,9 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     page.evaluate(installScript)
     firstSweep()
     secondSweep()
+    cardsFromSeen()
+
+  private def cardsFromSeen(): Seq[AlbumCard] =
     val tsv: String = page.evaluate("() => window.__gphoto.tsv()") match
       case text: String => text
       case _ => ""
@@ -116,7 +119,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       refuseDialog()
       confirmDone()
       confirmed = true
-      awaitLive(updated, System.currentTimeMillis + 20000L)
+      awaitLive(album.id, updated, System.currentTimeMillis + 20000L)
     catch
       case miss: Refresh.ActMiss =>
         throw miss
@@ -176,18 +179,25 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     else page.keyboard().press("Enter")
 
   @tailrec
-  private def awaitLive(updated: String, deadline: Long): Unit =
+  private def awaitLive(albumId: String, updated: String, deadline: Long): Unit =
     val done: Locator = page.getByRole(
       AriaRole.BUTTON,
       new Page.GetByRoleOptions().setName("Done").setExact(true)
     )
     val editorOpen: Boolean = done.count() > 0 || asBool(page.evaluate(editorOpenScript, updated))
-    // The note names no album-page header. The field just written, and a body line, are not the live title.
-    if !editorOpen || System.currentTimeMillis >= deadline then
+    // Same card read as albumCards. The field just written, and a body line, are not the live title.
+    val matched: Boolean =
+      if editorOpen then false
+      else
+        page.evaluate(installScript)
+        page.evaluate("() => window.__gphoto.grab()")
+        cardsFromSeen().find(_.id == albumId).exists(_.title == updated)
+    if matched then ()
+    else if System.currentTimeMillis >= deadline then
       throw Refresh.ActMiss("live title differs", confirmed = true)
     else
       Thread.sleep(300)
-      awaitLive(updated, deadline)
+      awaitLive(albumId, updated, deadline)
 
   @tailrec
   private def awaitCount(locator: Locator, deadline: Long, absent: String): Unit =
