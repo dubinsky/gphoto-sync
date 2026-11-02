@@ -105,6 +105,40 @@ private[photo] final class AgentRename(
         )
         AgentCommands.renameAlbum(loaded, album, wantedNew)
 
+private[photo] final class AgentSetDescription(
+  item: Option[String],
+  current: Option[String],
+  updated: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val key: String = item.getOrElse(throw IllegalArgumentException("missing item"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val text: String = updated.getOrElse(throw IllegalArgumentException("missing new"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.acceptRequest(albums, Requests.Action.SetDescription, "", key, wantedCurrent, text)
+        if text.exists(ch => ch == '\t' || ch == '\n' || ch == '\r') then
+          throw IllegalArgumentException("new contains a tab or a newline")
+        val album: Catalog.Album = AgentCommands.locateItem(albums, key)._1
+        AgentCommands.setDescription(loaded, album, key, wantedCurrent, text)
+
+private[photo] final class AgentSetDate(
+  item: Option[String],
+  current: Option[String],
+  updated: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val key: String = item.getOrElse(throw IllegalArgumentException("missing item"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val local: String = updated.getOrElse(throw IllegalArgumentException("missing new"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.acceptRequest(albums, Requests.Action.SetDate, "", key, wantedCurrent, local)
+        val album: Catalog.Album = AgentCommands.locateItem(albums, key)._1
+        AgentCommands.setDate(loaded, album, key, wantedCurrent, local)
+
 private[photo] final class AgentRequest(
   action: Requests.Action,
   album: Option[String],
@@ -415,19 +449,42 @@ private[photo] object AgentCommands:
     ))
 
   private val RenameStep: String = "More options, then Edit album, Rename album, or Rename"
+  private val DescriptionStep: String = "Open info, or the i key, then Add a description"
+  private val DateStep: String = "Date taken, then Save, Done, or OK"
 
   def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
+    withLock(session, album.title)(heldRename(session, album, updated))
+
+  def setDescription(
+    session: Session,
+    album: Catalog.Album,
+    key: String,
+    current: String,
+    text: String
+  ): (Session, Result) =
+    withLock(session, album.title)(heldDescription(session, key, current, text))
+
+  def setDate(
+    session: Session,
+    album: Catalog.Album,
+    key: String,
+    current: String,
+    local: String
+  ): (Session, Result) =
+    withLock(session, album.title)(heldDate(session, key, current, local))
+
+  private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
     Refresh.claim(places.lock) match
       case Refresh.Claim.Busy =>
         val (kept, result) = Refresh.busy(session, places)
         result match
           case Result.Failed(text, value, message) =>
-            (kept, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, message))
+            (kept, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, title), value, message))
           case other =>
             (kept, other)
       case Refresh.Claim.Owned(channel, lock) =>
-        try heldRename(session, album, updated)
+        try body
         finally Refresh.release(channel, lock)
 
   private def heldRename(
@@ -526,7 +583,7 @@ private[photo] object AgentCommands:
     recovery: String,
     detail: String
   ): (Session, Result) =
-    val shown: String = collapsedText(detail)
+    val shown: String = collapsedText(detail, "rename failed")
     val text: String =
       s"""failed rename-album
          |album ${Album.quote(album.title)}
@@ -546,9 +603,193 @@ private[photo] object AgentCommands:
     ))
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
-  private def collapsedText(detail: String): String =
+  private def heldDescription(
+    session: Session,
+    key: String,
+    current: String,
+    text: String
+  ): (Session, Result) =
+    val accepted: Either[(Session, Result), (Catalog.Album, Catalog.Item)] =
+      try Right(rereadItem(session, Requests.Action.SetDescription, key, current, text))
+      catch
+        case error: (IllegalArgumentException | IllegalStateException) =>
+          Left((session, Result.Usage(Operation.messageOf(error))))
+    accepted match
+      case Left(done) => done
+      case Right((album, item)) =>
+        var ui: PhotosAct = null
+        try
+          val launched: Either[(Session, Result), PhotosAct] =
+            try
+              // A notice would write status.txt and drop a crashed refresh's resume phase.
+              Right(Refresh.openAct(_ => ()))
+            catch
+              case error: Exception =>
+                Left(itemFailed(session, album, item, "set-description", DescriptionStep, "one-click", Operation.messageOf(error)))
+          launched match
+            case Left(done) => done
+            case Right(opened) =>
+              ui = opened
+              try
+                ui.setDescription(item, text)
+                itemOk(session, album, item, "set-description", "unchanged")
+              catch
+                case miss: Refresh.ActMiss =>
+                  val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+                  val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("set-description failed")
+                  itemFailed(session, album, item, "set-description", DescriptionStep, recovery, detail)
+                case error: Exception =>
+                  itemFailed(session, album, item, "set-description", DescriptionStep, "one-click", Operation.messageOf(error))
+        finally
+          if ui != null then
+            try ui.close()
+            catch case _: Exception => ()
+
+  private def heldDate(
+    session: Session,
+    key: String,
+    current: String,
+    local: String
+  ): (Session, Result) =
+    val accepted: Either[(Session, Result), (Catalog.Album, Catalog.Item)] =
+      try Right(rereadItem(session, Requests.Action.SetDate, key, current, local))
+      catch
+        case error: (IllegalArgumentException | IllegalStateException) =>
+          Left((session, Result.Usage(Operation.messageOf(error))))
+    accepted match
+      case Left(done) => done
+      case Right((album, item)) =>
+        val day: LocalDate = LocalDate.parse(local.take(10))
+        var ui: PhotosAct = null
+        try
+          val launched: Either[(Session, Result), PhotosAct] =
+            try
+              // A notice would write status.txt and drop a crashed refresh's resume phase.
+              Right(Refresh.openAct(_ => ()))
+            catch
+              case error: Exception =>
+                Left(itemFailed(session, album, item, "set-date", DateStep, "one-click", Operation.messageOf(error)))
+          launched match
+            case Left(done) => done
+            case Right(opened) =>
+              ui = opened
+              try
+                ui.setDate(item, local)
+                publishDate(session, album, item, day) match
+                  case Left(detail) =>
+                    itemFailed(session, album, item, "set-date", DateStep, "refresh-only", detail)
+                  case Right(next) =>
+                    itemOk(next, album, item, "set-date", "updated")
+              catch
+                case miss: Refresh.ActMiss =>
+                  val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+                  val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("set-date failed")
+                  itemFailed(session, album, item, "set-date", DateStep, recovery, detail)
+                case error: Exception =>
+                  itemFailed(session, album, item, "set-date", DateStep, "one-click", Operation.messageOf(error))
+        finally
+          if ui != null then
+            try ui.close()
+            catch case _: Exception => ()
+
+  private def rereadItem(
+    session: Session,
+    action: Requests.Action,
+    key: String,
+    current: String,
+    updated: String
+  ): (Catalog.Album, Catalog.Item) =
+    val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val albums: Seq[Catalog.Album] = Catalog.read(file)
+    val found: (Catalog.Album, Catalog.Item) = locateItem(albums, key)
+    acceptRequest(albums, action, "", key, current, updated)
+    found
+
+  private def publishDate(
+    session: Session,
+    album: Catalog.Album,
+    item: Catalog.Item,
+    day: LocalDate
+  ): Either[String, Session] =
+    val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
+    val live: File = File(directory, "catalog.txt")
+    val partial: File = File(directory, "catalog.txt.partial")
+    val previous: File = File(directory, "catalog.txt.previous")
+    val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
+    val albums: Seq[Catalog.Album] = Catalog.read(live)
+    val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
+    val groups: Either[String, Seq[Seq[String]]] =
+      albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+        case (Left(message), _) => Left(message)
+        case (Right(acc), next) =>
+          if next.id == album.id then
+            if !blocks.contains(album.id) then Left("missing album block")
+            else if !next.items.exists(_.key == item.key) then Left("no such item")
+            else
+              val revised: Catalog.Album = next.copy(items = next.items.map: found =>
+                if found.key == item.key then found.copy(date = Some(day)) else found
+              )
+              Right(acc :+ RefreshPlan.recordLines(revised))
+          else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
+    groups.flatMap: lines =>
+      try
+        Files.write(RefreshPlan.renderLines(lines), partial)
+        Right(())
+      catch case error: Exception =>
+        Left(Operation.messageOf(error))
+    .flatMap(_ => RefreshPlan.checkRetitle(partial))
+    .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+    .map(_ => session.copy(catalogCache = None))
+
+  private def itemOk(
+    session: Session,
+    album: Catalog.Album,
+    item: Catalog.Item,
+    action: String,
+    catalog: String
+  ): (Session, Result) =
+    val text: String = PlaywrightPhotosUi.redactSecrets(s"$action ${Album.quote(item.filename)}\n", album.title)
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str(action),
+      "title" -> Json.Str(album.title),
+      "catalog" -> Json.Str(catalog),
+      "albumId" -> Json.Str(album.id),
+      "itemKey" -> Json.Str(item.key)
+    ))
+    (session, Result.Ok(text, value))
+
+  private def itemFailed(
+    session: Session,
+    album: Catalog.Album,
+    item: Catalog.Item,
+    action: String,
+    step: String,
+    recovery: String,
+    detail: String
+  ): (Session, Result) =
+    val shown: String = collapsedText(detail, s"$action failed")
+    val text: String =
+      s"""failed $action
+         |filename ${Album.quote(item.filename)}
+         |step $step
+         |recovery $recovery
+         |catalog unchanged
+         |$shown
+         |""".stripMargin
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str(action),
+      "title" -> Json.Str(album.title),
+      "step" -> Json.Str(step),
+      "recovery" -> Json.Str(recovery),
+      "catalog" -> Json.Str("unchanged"),
+      "albumId" -> Json.Str(album.id),
+      "itemKey" -> Json.Str(item.key)
+    ))
+    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
+
+  private def collapsedText(detail: String, fallback: String): String =
     val message: String = detail.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
-    if message.isEmpty then "rename failed" else message
+    if message.isEmpty then fallback else message
 
   def writeAlbum(
     session: Session,
@@ -984,11 +1225,14 @@ private[photo] object AgentCommands:
     val every: Boolean = universe.keys.forall(day => span.contains(day) && claimed.exists(_._1.equals(day)))
     local.nonEmpty && every && missing <= cap && claimed.subsetOf(local)
 
-  private def uniqueItem(albums: Seq[Catalog.Album], key: String): Catalog.Item =
-    albums.flatMap(album => album.items.filter(_.key == key)) match
-      case Seq(item) => item
+  private[photo] def locateItem(albums: Seq[Catalog.Album], key: String): (Catalog.Album, Catalog.Item) =
+    albums.flatMap(album => album.items.filter(_.key == key).map(album -> _)) match
+      case Seq(found) => found
       case Seq() => throw IllegalArgumentException("no such item")
       case _ => throw IllegalArgumentException("item key is not unique")
+
+  private def uniqueItem(albums: Seq[Catalog.Album], key: String): Catalog.Item =
+    locateItem(albums, key)._2
 
   private def requireCurrent(actual: String, supplied: String): Unit =
     if actual != supplied then

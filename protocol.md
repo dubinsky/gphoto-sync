@@ -11,7 +11,8 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Album links — the `album-links.tsv` grammar.
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
-- Requests — `photo agent rename-album`, and the legacy request grammar.
+- Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`, and the legacy request
+  grammar.
 
 ## Files
 
@@ -22,6 +23,8 @@ There is no config key for that directory.
 
 `photo refresh` rewrites `catalog.txt`.
 `photo agent rename-album` rewrites one album line after the live title equals the new title.
+`photo agent set-description` does not rewrite `catalog.txt`.
+`photo agent set-date` rewrites that item's date after the `fDcn4b` read shows the calendar day.
 `requests.tsv` is a legacy file that a later command will read.
 It is not a second current path.
 The script does not apply the batch.
@@ -37,6 +40,8 @@ The program reads it.
 
 `photo refresh` only reads Google Photos.
 `photo agent rename-album` changes one album title.
+`photo agent set-description` changes one item description.
+`photo agent set-date` changes one item's date taken.
 `photo publish` and `photo sync` still change Google Photos.
 A request batch is not a refresh.
 
@@ -762,6 +767,37 @@ Replace the title field and confirm with Done, or with Enter when Done is absent
 After the live title equals `--new`, that album line's title becomes `--new`.
 The album id, the count, the owner line, and the item lines stay.
 
+`photo agent set-description` sets one item's description.
+The item key is an `item` line on exactly one album.
+`--current` equals that filename.
+`--new` may be empty.
+A tab or a newline in `--new` is rejected.
+Open info when the panel is closed.
+The control is the button whose aria-label is Open info, or the i key.
+The empty field's text is Add a description.
+Type `--new`.
+An empty `--new` clears the field.
+The command succeeds when the panel shows the resulting text.
+There is no Done button.
+The catalog is not written.
+
+`photo agent set-date` sets one item's date taken.
+The item key is an `item` line on exactly one album.
+`--current` equals that filename.
+`--new` is `YYYY-MM-DD HH:MM` local.
+In the info panel, open the control whose aria-label starts with `Date taken`.
+Open info first when that control is absent.
+The fields are Year, Month, Day, Hour, Minutes, and AM/PM.
+Type each value.
+Read AM/PM back after typing it.
+When it is not the value in `--new`, choose that option, or type it and press Enter.
+Confirm with Save, Done, or OK.
+Then the same `fDcn4b` read Refresh uses.
+The catalog `date` becomes the `YYYY-MM-DD` prefix of `--new` only when that read shows that calendar day.
+The catalog omits the clock.
+The item key, the filename, the uploader, and the album count stay.
+A read that shows a different day leaves the old date.
+
 The grammar below is legacy.
 The column tables, the version lines, and Catalog updates describe the old row statuses.
 They stay until a later command reads `requests.tsv`.
@@ -806,8 +842,8 @@ An empty file's first id is `r1`.
 |---|---|---|---|---|
 | `rename-album` (legacy) | album id | empty | current title, exact | new title |
 | `move-item` | source album id | item key | current filename | destination album id |
-| `set-description` | empty | item key | current filename | new description, empty clears |
-| `set-date` | empty | item key | current filename | `YYYY-MM-DD HH:MM` local |
+| `set-description` (legacy) | empty | item key | current filename | new description, empty clears |
+| `set-date` (legacy) | empty | item key | current filename | `YYYY-MM-DD HH:MM` local |
 | `download-item` | album id | item key | current filename | empty |
 | `delete-item` | album id | item key | current filename | empty |
 
@@ -815,17 +851,17 @@ An empty file's first id is `r1`.
 |---|---|
 | `rename-album` (legacy) | The album id exists, there is no `owner` line, `current` equals the catalog title exactly, `new` is non-empty, and `new` differs from `current`. |
 | `move-item` | The source album and the destination album exist, the item key is an `item` line on the source (not an `unset` line), `current` equals that filename, and the destination id differs from the source. |
-| `set-description` | `album-id` is empty, the item key is an `item` line on exactly one album, `current` equals that filename, and `new` may be empty. |
-| `set-date` | The same item identity as `set-description`, and `new` matches `YYYY-MM-DD HH:MM`. |
+| `set-description` (legacy) | `album-id` is empty, the item key is an `item` line on exactly one album, `current` equals that filename, and `new` may be empty. |
+| `set-date` (legacy) | The same item identity as `set-description`, and `new` matches `YYYY-MM-DD HH:MM`. |
 | `download-item` | The album id and item key name one `item` line, `current` equals the filename, `new` is empty, and the filename is not `.`, `..`, or a string containing `/`. |
 | `delete-item` | The same identity check as `download-item`, `new` is empty, the album has no `owner` line, and the item's uploader is `-`. |
 
 `rename-album` changes the album title.
 `move-item` adds the item to the destination album, then removes it from the source album.
 The item stays in the library.
-`set-description` sets the item's description.
+A legacy `set-description` row sets the item's description.
 An empty `new` clears it.
-`set-date` changes the item's date taken.
+A legacy `set-date` row changes the item's date taken.
 `new` is the item's local time.
 `download-item` downloads the original into the staging directory in Download.
 `delete-item` moves that one library item to Google Photos trash, as Delete describes.
@@ -1034,6 +1070,8 @@ It is rewritten for each processed batch.
 ### Process
 
 `photo agent rename-album` is the applier for an album rename.
+`photo agent set-description` is the applier for an item description.
+`photo agent set-date` is the applier for an item date.
 The numbered steps are the legacy batch.
 The script does not apply the batch.
 

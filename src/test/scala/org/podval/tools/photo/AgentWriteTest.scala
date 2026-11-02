@@ -642,21 +642,43 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         "destination is the source album",
         "agent", "request", "move-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg", "--new", "albSrc"
       )
-      reject("no such item", "agent", "request", "set-description", "--item", "goneId", "--current", "pic.jpg")
-      reject("no such item", "agent", "request", "set-description", "--item", "keyUnset", "--current", "pic.jpg")
+      reject(
+        "no such item",
+        "agent", "set-description", "--item", "goneId", "--current", "pic.jpg", "--new", "Hello"
+      )
+      reject(
+        "no such item",
+        "agent", "set-description", "--item", "goneId", "--current", "pic.jpg", "--new", "a\tb"
+      )
+      reject(
+        "no such item",
+        "agent", "set-description", "--item", "keyUnset", "--current", "pic.jpg", "--new", "Hello"
+      )
       reject(
         "item key is not unique",
-        "agent", "request", "set-description", "--item", "keyShare", "--current", "pic.jpg"
+        "agent", "set-description", "--item", "keyShare", "--current", "pic.jpg", "--new", "Hello"
       )
       reject(
         "current does not match \"pic.jpg\" \"other.jpg\"",
-        "agent", "request", "set-description", "--item", "keyOnly", "--current", "other.jpg"
+        "agent", "set-description", "--item", "keyOnly", "--current", "other.jpg", "--new", "Hello"
       )
-      reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 24:00")
-      reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19")
-      reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 00:60")
-      reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-02-31 09:05")
-      reject("date is not valid", "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-13-01 09:05")
+      reject(
+        "new contains a tab or a newline",
+        "agent", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "a\tb"
+      )
+      reject(
+        "new contains a tab or a newline",
+        "agent", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "a\nb"
+      )
+      reject(
+        "new contains a tab or a newline",
+        "agent", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "a\rb"
+      )
+      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 24:00")
+      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19")
+      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 00:60")
+      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-02-31 09:05")
+      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-13-01 09:05")
       reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keyDot", "--current", ".")
       reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keyDots", "--current", "..")
       reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keySlash", "--current", "a/b.jpg")
@@ -719,26 +741,16 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       Requests.append(requests(archive), Requests.Action.MoveItem, "albSrc", "keyPic", "pic.jpg", "goneId")
-      val (_, described) = exec(
-        session, "agent", "request", "set-description", "--item", "keyOnly", "--current", "pic.jpg"
-      )
-      described match
-        case Result.Ok(text, value) =>
-          text shouldBe "appended r4 set-description\n"
-          noIds(text, fixtureIds*)
-          field(value, "new") shouldBe Json.Str("")
-          field(value, "itemKey") shouldBe Json.Str("keyOnly")
-        case other =>
-          fail(other.toString)
-      val (_, dated) = exec(
-        session, "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
-      )
-      dated match
-        case Result.Ok(text, _) =>
-          text shouldBe "appended r5 set-date\n"
-          noIds(text, fixtureIds*)
-        case other =>
-          fail(other.toString)
+      val beforeLegacy: String = JFiles.readString(requests(archive).toPath)
+      Cli.parse(List(
+        "agent", "request", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "Hello"
+      )) shouldBe Cli.Usage("use photo agent set-description")
+      Cli.parse(List(
+        "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+      )) shouldBe Cli.Usage("use photo agent set-date")
+      JFiles.readString(requests(archive).toPath) shouldBe beforeLegacy
+      Requests.append(requests(archive), Requests.Action.SetDescription, "", "keyOnly", "pic.jpg", "")
+      Requests.append(requests(archive), Requests.Action.SetDate, "", "keyOnly", "pic.jpg", "2010-07-19 09:05")
       val (_, download) = exec(
         session, "agent", "request", "download-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
       )
@@ -821,8 +833,13 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       usage(session, "agent", "rename-album", "--title", "T", "--current", "Old") shouldBe "missing new"
       usage(session, "agent", "request", "move-item", "--album", "albSrc", "--current", "pic.jpg", "--new", "albDst") shouldBe
         "missing item"
-      usage(session, "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg") shouldBe "missing new"
-      usage(session, "agent", "request", "set-description", "--current", "pic.jpg") shouldBe "missing item"
+      Cli.parse(List("agent", "request", "set-description", "--current", "pic.jpg")) shouldBe
+        Cli.Usage("use photo agent set-description")
+      Cli.parse(List("agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg")) shouldBe
+        Cli.Usage("use photo agent set-date")
+      usage(session, "agent", "set-description") shouldBe "missing item"
+      usage(session, "agent", "set-description", "--item", "keyOnly") shouldBe "missing current"
+      usage(session, "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg") shouldBe "missing new"
       File(archive, ".gphoto-sync").exists shouldBe false
 
   "rename-album" should "leave the catalog unchanged when the step throws" in :
@@ -1041,6 +1058,280 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           channel.close()
           deleteTree(runtime)
 
+  "set-description" should "leave the catalog unchanged when the step throws" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDescription = (_, text) =>
+            throw IllegalStateException(s"step missed AF1QipLEAK $text AF1QipOTHER")
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", "Hello"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            Cli.processCode(result) shouldBe 1
+            text shouldBe
+              """failed set-description
+                |filename "pic.jpg"
+                |step Open info, or the i key, then Add a description
+                |recovery one-click
+                |catalog unchanged
+                |step missed 2010/07  Hello 2010/07 
+                |""".stripMargin
+            text should not include ("AF1Qip")
+            text should not include ("alb07")
+            text should not include ("keyPic")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+            field(value, "title") shouldBe Json.Str("2010/07 ")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "stay refresh-only when the panel does not show the description" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDescription = (_, _) =>
+            throw new Refresh.ActMiss("panel does not show the description", confirmed = true)
+          )
+        val (_, result) = exec(
+          session, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", "Hello"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include ("panel does not show the description")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        places.directory.exists shouldBe false
+
+  it should "leave the catalog byte-identical when the description is set" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        val seen = scala.collection.mutable.ListBuffer.empty[String]
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDescription = (item, text) =>
+            item.filename shouldBe "pic.jpg"
+            seen += text
+          ):
+            override def close(): Unit = closed = true
+        val (kept, result) = exec(
+          session, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", "Hello"
+        )
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "set-description \"pic.jpg\"\n"
+            text should not include ("alb07")
+            text should not include ("keyPic")
+            Cli.processCode(result) shouldBe 0
+            field(value, "action") shouldBe Json.Str("set-description")
+            field(value, "title") shouldBe Json.Str("2010/07 ")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+            value match
+              case Json.Obj(fields) =>
+                fields.exists(_._1 == "step") shouldBe false
+                fields.exists(_._1 == "recovery") shouldBe false
+              case other =>
+                fail(other.toString)
+          case other =>
+            fail(other.toString)
+        kept.catalogCache.isDefined shouldBe true
+        val (cleared, empty) = exec(
+          kept, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", ""
+        )
+        empty match
+          case Result.Ok(text, value) =>
+            text shouldBe "set-description \"pic.jpg\"\n"
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+          case other =>
+            fail(other.toString)
+        cleared.catalogCache.isDefined shouldBe true
+        seen.toSeq shouldBe Seq("Hello", "")
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  "set-date" should "write only that item's date when the read shows the civil day" in :
+    withArchive: archive =>
+      writeDated(archive)
+      withAct(archive): (session, places, _) =>
+        var seen: Option[String] = None
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDate = (item, local) =>
+            item.filename shouldBe "pic.jpg"
+            item.key shouldBe "keyPic"
+            seen = Some(local)
+          ):
+            override def close(): Unit = closed = true
+        val (next, result) = exec(
+          session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+        )
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "set-date \"pic.jpg\"\n"
+            text should not include ("alb07")
+            text should not include ("keyPic")
+            text should not include ("09:05")
+            field(value, "action") shouldBe Json.Str("set-date")
+            field(value, "title") shouldBe Json.Str("2010/07 ")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        seen shouldBe Some("2010-07-19 09:05")
+        next.catalogCache.isEmpty shouldBe true
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe
+          """# gphoto-catalog 2
+            |album	alb07	2	2010/07 
+            |item	alb07	pic.jpg	2010-07-19	keyPic	-
+            |item	alb07	other.jpg	2010-07-02	keyOther	-
+            |album	albKeep	1	Keep Title
+            |owner	albKeep	Ada
+            |item	albKeep	keep.jpg	2010-08-01	keyKeep	-
+            |""".stripMargin
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "leave the old bytes when the read shows a different day" in :
+    withArchive: archive =>
+      val catalog: String = writeDated(archive)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDate = (_, _) =>
+            throw new Refresh.ActMiss("read date differs", confirmed = true)
+          )
+        val (_, result) = exec(
+          session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("filename \"pic.jpg\"")
+            text should include ("step Date taken, then Save, Done, or OK")
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include ("read date differs")
+            text should not include ("keyPic")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+
+  it should "write nothing when the date step misses before confirm" in :
+    withArchive: archive =>
+      val catalog: String = writeDated(archive)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDate = (_, _) =>
+            throw new Refresh.ActMiss("Year is absent", confirmed = false)
+          )
+        val (_, result) = exec(
+          session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            text should include ("catalog unchanged")
+            text should include ("Year is absent")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+
+  it should "answer both edits from the calling process" in :
+    withArchive: archive =>
+      writePair(archive)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => fail("accept opened"))
+        val (_, described) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","set-description","--item","keyPic","--current","pic.jpg","--new","Hello"]}""",
+          (_, _) => fail("set-description was forwarded")
+        )
+        described should include ("set-description runs in the calling process")
+        val (_, dated) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","set-date","--item","keyPic","--current","pic.jpg","--new","2010-07-19 09:05"]}""",
+          (_, _) => fail("set-date was forwarded")
+        )
+        dated should include ("set-date runs in the calling process")
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDescription = (_, text) =>
+            if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
+          )
+        val sent = scala.collection.mutable.ListBuffer.empty[List[String]]
+        val (code, shown, errors) = shellOf(
+          session,
+          "agent set-description --item keyPic --current pic.jpg --new Hello",
+          Some((_, argv) =>
+            sent += argv
+            Result.Ok("sent\n", Json.Null)
+          )
+        )
+        code shouldBe 0
+        sent.isEmpty shouldBe true
+        shown shouldBe "set-description \"pic.jpg\"\n"
+        errors should not include ("Photo Archive Tool:")
+        errors should not include ("mutation failed")
+        errors should not include ("AF1Qip")
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDescription = (_, _) =>
+            throw IllegalStateException("step missed AF1QipLEAK")
+          )
+        val (failed, out, err) = shellOf(
+          session,
+          "agent set-description --item keyPic --current pic.jpg --new Hello"
+        )
+        failed shouldBe 0
+        out should include ("failed set-description")
+        out should include ("recovery one-click")
+        out should not include ("AF1Qip")
+        out should not include ("mutation failed")
+        err should not include ("mutation failed")
+        err should not include ("Photo Archive Tool:")
+        err should not include ("AF1Qip")
+
   private val fixtureIds: Seq[String] = Seq(
     "albTrail", "albOwn", "albSrc", "albDst", "albUp", "albShareA", "albShareB", "albOnly", "albBad", "albUnset",
     "keyOwn", "keyPic", "keyUp", "keyShare", "keyOnly", "keyDot", "keyDots", "keySlash", "keyUnset", "goneId"
@@ -1154,12 +1445,30 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     )
     JFiles.readString(file.toPath)
 
-  private class RenameFake(effect: (Catalog.Album, String) => Unit) extends PhotosAct:
+  private def writeDated(archive: File): String =
+    val file: File = writeCatalog(
+      archive,
+      "album\talb07\t2\t2010/07 ",
+      "item\talb07\tpic.jpg\t2010-07-01\tkeyPic\t-",
+      "item\talb07\tother.jpg\t2010-07-02\tkeyOther\t-",
+      "album\talbKeep\t1\tKeep Title",
+      "owner\talbKeep\tAda",
+      "item\talbKeep\tkeep.jpg\t2010-08-01\tkeyKeep\t-"
+    )
+    JFiles.readString(file.toPath)
+
+  private class RenameFake(
+    effect: (Catalog.Album, String) => Unit,
+    onDescription: (Catalog.Item, String) => Unit = (_, _) => (),
+    onDate: (Catalog.Item, String) => Unit = (_, _) => ()
+  ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
     def readAlbum(card: AlbumCard): Catalog.Album = throw IllegalStateException("read")
     def close(): Unit = ()
     def renameAlbum(album: Catalog.Album, updated: String): Unit = effect(album, updated)
+    def setDescription(item: Catalog.Item, text: String): Unit = onDescription(item, text)
+    def setDate(item: Catalog.Item, local: String): Unit = onDate(item, local)
 
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile

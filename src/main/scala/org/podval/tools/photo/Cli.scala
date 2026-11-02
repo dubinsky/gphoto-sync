@@ -70,6 +70,16 @@ object Cli:
     updated: Option[String],
     id: Option[String]
   ) extends Parsed
+  private[photo] final case class SetDescriptionArgs(
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String]
+  ) extends Parsed
+  private[photo] final case class SetDateArgs(
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String]
+  ) extends Parsed
   private[photo] final case class AgentRequestArgs(
     action: String,
     album: Option[String],
@@ -310,6 +320,8 @@ object Cli:
     case _: ReconcileArgs => true
     case _: FileArgs => true
     case _: RenameAlbumArgs => true
+    case _: SetDescriptionArgs => true
+    case _: SetDateArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -340,11 +352,15 @@ object Cli:
     case _: ReconcileArgs => "reconcile"
     case _: FileArgs => "file"
     case _: RenameAlbumArgs => "rename-album"
+    case _: SetDescriptionArgs => "set-description"
+    case _: SetDateArgs => "set-date"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
   private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
     case _: RenameAlbumArgs => true
+    case _: SetDescriptionArgs => true
+    case _: SetDateArgs => true
     case _ => false
 
   private def remoteStep(
@@ -610,6 +626,10 @@ object Cli:
       AgentAlbumFile(id, dryRun, replace, googleTitle, album)
     case RenameAlbumArgs(title, current, updated, id) =>
       AgentRename(title, current, updated, id)
+    case SetDescriptionArgs(item, current, updated) =>
+      AgentSetDescription(item, current, updated)
+    case SetDateArgs(item, current, updated) =>
+      AgentSetDate(item, current, updated)
     case AgentRequestArgs(action, album, item, current, updated, id) =>
       AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
     case AgentRequestsArgs =>
@@ -798,6 +818,10 @@ object Cli:
       Help(requestHelp)
     case "rename-album" :: _ =>
       Usage("use photo agent rename-album")
+    case "set-description" :: _ =>
+      Usage("use photo agent set-description")
+    case "set-date" :: _ =>
+      Usage("use photo agent set-date")
     case name :: rest =>
       requestCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -1131,6 +1155,36 @@ object Cli:
       )
     ),
     Command(
+      name = "set-description",
+      help = "set an item description",
+      positionals = Nil,
+      flags = List(
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        Flag("new", None, TextKind, "new description")
+      ),
+      build = (values, _) => SetDescriptionArgs(
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("new")
+      )
+    ),
+    Command(
+      name = "set-date",
+      help = "set an item date",
+      positionals = Nil,
+      flags = List(
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        Flag("new", None, TextKind, "new local date")
+      ),
+      build = (values, _) => SetDateArgs(
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("new")
+      )
+    ),
+    Command(
       name = "requests",
       help = "list request rows",
       positionals = Nil,
@@ -1162,7 +1216,8 @@ object Cli:
 
   // Order is agentCommands order. Membership is this set.
   private val mcpToolNames: Set[String] = Set(
-    "stems", "catalog", "items", "match", "include", "rename-album", "requests", "results", "drift", "missing"
+    "stems", "catalog", "items", "match", "include", "rename-album",
+    "set-description", "set-date", "requests", "results", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1202,6 +1257,7 @@ object Cli:
     val params: List[McpParam] = command.flags.map(mcpFlag) ++ command.positionals.map(mcpPositional)
     val required: List[String] =
       if command.name == "rename-album" then List("title", "current", "new")
+      else if command.name == "set-description" || command.name == "set-date" then List("item", "current", "new")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
     McpTool(command.name, mcpDescription(command), params, required)
@@ -1333,42 +1389,6 @@ object Cli:
       values => AgentRequestArgs(
         "move-item",
         values.texts.get("album"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("new"),
-        values.texts.get("id")
-      )
-    ),
-    requestCommand(
-      "set-description",
-      "set an item description",
-      List(
-        Flag("item", None, TextKind, "item key"),
-        Flag("current", None, TextKind, "current filename"),
-        Flag("new", None, TextKind, "new description"),
-        requestIdFlag
-      ),
-      values => AgentRequestArgs(
-        "set-description",
-        None,
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("new"),
-        values.texts.get("id")
-      )
-    ),
-    requestCommand(
-      "set-date",
-      "set an item date",
-      List(
-        Flag("item", None, TextKind, "item key"),
-        Flag("current", None, TextKind, "current filename"),
-        Flag("new", None, TextKind, "new local date"),
-        requestIdFlag
-      ),
-      values => AgentRequestArgs(
-        "set-date",
-        None,
         values.texts.get("item"),
         values.texts.get("current"),
         values.texts.get("new"),

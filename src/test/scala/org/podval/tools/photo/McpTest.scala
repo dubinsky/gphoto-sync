@@ -70,7 +70,7 @@ class McpTest extends AnyFlatSpec, Matchers:
             fail(other.toString)
         toolNames(field(listed, "tools")) shouldBe Seq(
           "stems", "catalog", "items", "match", "include", "rename-album",
-          "requests", "results", "drift", "missing"
+          "set-description", "set-date", "requests", "results", "drift", "missing"
         )
         val ping: String = driver.round("""{"jsonrpc":"2.0","id":"p","method":"ping"}""")
         field(parsed(ping), "id") shouldBe Json.Str("p")
@@ -478,6 +478,8 @@ class McpTest extends AnyFlatSpec, Matchers:
               def close(): Unit = ()
               def renameAlbum(album: Catalog.Album, updated: String): Unit =
                 throw IllegalStateException(s"step missed AF1QipLEAK ${album.id}")
+              def setDescription(item: Catalog.Item, text: String): Unit = ()
+              def setDate(item: Catalog.Item, local: String): Unit = ()
           val badLine: String = driver.round(callLine(
             Json.Long(2),
             "rename-album",
@@ -503,6 +505,8 @@ class McpTest extends AnyFlatSpec, Matchers:
               def readAlbum(card: AlbumCard): Catalog.Album = throw IllegalStateException("read")
               def close(): Unit = ()
               def renameAlbum(album: Catalog.Album, updated: String): Unit = ()
+              def setDescription(item: Catalog.Item, text: String): Unit = ()
+              def setDate(item: Catalog.Item, local: String): Unit = ()
           val okResult: Json = assertToolOk(driver.round(callLine(
             Json.Long(3),
             "rename-album",

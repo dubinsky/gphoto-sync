@@ -252,7 +252,7 @@ object RefreshPlan:
       unsets = read.fold(Seq.empty[Catalog.Unset])(_.unsets)
     )
 
-  private def recordLines(album: Catalog.Album): Seq[String] =
+  private[photo] def recordLines(album: Catalog.Album): Seq[String] =
     val owner: Seq[String] = album.owner.map(label => s"owner\t${album.id}\t${plain(label)}").toSeq
     val auto: Seq[String] = if album.autoAdd then Seq(s"auto-add\t${album.id}") else Seq.empty
     val error: Seq[String] = album.error.toSeq.map: err =>

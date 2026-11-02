@@ -25,6 +25,8 @@ private[photo] trait PhotosUi:
 // A refresh fake is not a mutation fake.
 private[photo] trait PhotosAct extends PhotosUi:
   def renameAlbum(album: Catalog.Album, updated: String): Unit
+  def setDescription(item: Catalog.Item, text: String): Unit
+  def setDate(item: Catalog.Item, local: String): Unit
 
 final class Refresh(args: Cli.RefreshArgs) extends Operation:
   def execute(session: Session): (Session, Result) =
@@ -42,7 +44,7 @@ object Refresh:
   private[photo] val AlreadyRunning: String = "already running"
   private[photo] val MutationFailed: String = "mutation failed"
 
-  // A selector miss before the confirm is one-click. confirmed means the mutating confirm already returned.
+  // confirmed means the edit was committed. A miss before that is one-click.
   private[photo] final class ActMiss(detail: String, val confirmed: Boolean) extends IllegalStateException(detail)
 
   private[photo] var placesOf: () => Places = () =>

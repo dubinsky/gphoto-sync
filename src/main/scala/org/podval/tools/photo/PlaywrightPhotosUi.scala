@@ -6,6 +6,9 @@ import scala.annotation.tailrec
 import scala.util.matching.Regex
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as NFiles, Paths}
+import java.time.Month
+import java.time.format.TextStyle
+import java.util.Locale
 
 // Gradle tests construct a fake PhotosUi. Nothing in the test suite calls open.
 private[photo] object PlaywrightPhotosUi:
@@ -123,6 +126,156 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       case error: Exception =>
         throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
 
+  def setDescription(item: Catalog.Item, text: String): Unit =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/photo/${item.key}")
+      focusDescription(System.currentTimeMillis + 20000L, opened = false)
+      page.keyboard().press("Control+A")
+      if text.isEmpty then page.keyboard().press("Backspace")
+      else page.keyboard().insertText(text)
+      confirmed = true
+      page.keyboard().press("Tab")
+      awaitDescription(text, System.currentTimeMillis + 20000L)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
+  def setDate(item: Catalog.Item, local: String): Unit =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/photo/${item.key}")
+      val civil: String = fillDate(local)
+      confirmDate()
+      confirmed = true
+      // fDcn4b runs on this page. The albums list is a different read.
+      val read: String = readItemDay(item.key)
+      if read == civil then ()
+      else throw Refresh.ActMiss("read date differs", confirmed = true)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
+  @tailrec
+  private def focusDescription(deadline: Long, opened: Boolean): Unit =
+    if asBool(page.evaluate(focusDescriptionScript)) then ()
+    else if System.currentTimeMillis >= deadline then
+      throw Refresh.ActMiss("Add a description is absent", confirmed = false)
+    else if !opened then
+      val button: Locator = page.locator("[aria-label=\"Open info\"]")
+      if button.count() > 0 then click(button.last())
+      else page.keyboard().press("i")
+      Thread.sleep(300)
+      focusDescription(deadline, opened = true)
+    else
+      Thread.sleep(300)
+      focusDescription(deadline, opened = true)
+
+  @tailrec
+  private def awaitDescription(text: String, deadline: Long): Unit =
+    if asBool(page.evaluate(descriptionShownScript, text)) then ()
+    else if System.currentTimeMillis >= deadline then
+      throw Refresh.ActMiss("panel does not show the description", confirmed = true)
+    else
+      Thread.sleep(300)
+      awaitDescription(text, deadline)
+
+  private def fillDate(local: String): String = local match
+    case clock(year, month, day, hour, minute) =>
+      val hour24: Int = hour.toInt
+      val meridiem: String = if hour24 < 12 then "AM" else "PM"
+      val hour12: String = hour24 % 12 match
+        case 0 => "12"
+        case n => n.toString
+      openDate(System.currentTimeMillis + 20000L)
+      val monthField: String = fieldInput("Month").inputValue().trim
+      val typed: Map[String, String] = Map(
+        "Year" -> year,
+        "Month" -> monthText(month.toInt, monthField),
+        "Day" -> day.toInt.toString,
+        "Hour" -> hour12,
+        "Minutes" -> minute,
+        "AM/PM" -> meridiem
+      )
+      Seq("Year", "Month", "Day", "Hour", "Minutes", "AM/PM").foreach: label =>
+        val input: Locator = fieldInput(label)
+        click(input)
+        page.keyboard().press("Control+A")
+        page.keyboard().insertText(typed(label))
+        page.keyboard().press("Tab")
+      correctMeridiem(meridiem)
+      s"$year-$month-$day"
+    case _ =>
+      throw Refresh.ActMiss("date is not valid", confirmed = false)
+
+  private def monthText(month: Int, current: String): String =
+    if current.nonEmpty && current.forall(_.isDigit) then month.toString
+    else Month.of(month).getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+
+  private def openDate(deadline: Long): Unit =
+    if dateTaken().count() == 0 then
+      val button: Locator = page.locator("[aria-label=\"Open info\"]")
+      if button.count() > 0 then click(button.last())
+      else page.keyboard().press("i")
+    awaitCount(dateTaken(), deadline, "Date taken is absent")
+    click(dateTaken().last())
+    awaitCount(page.locator("input[aria-label=\"Year\"]"), deadline, "Year is absent")
+
+  private def dateTaken(): Locator =
+    page.locator("[aria-label^=\"Date taken\"]")
+
+  private def fieldInput(label: String): Locator =
+    val found: Locator = page.locator(s"input[aria-label=\"$label\"]")
+    awaitCount(found, System.currentTimeMillis + 20000L, s"$label is absent")
+    found.last()
+
+  private def correctMeridiem(wanted: String): Unit =
+    val input: Locator = fieldInput("AM/PM")
+    if input.inputValue().trim.equalsIgnoreCase(wanted) then ()
+    else
+      click(input)
+      val option: Locator = page.getByRole(
+        AriaRole.OPTION,
+        new Page.GetByRoleOptions().setName(wanted).setExact(true)
+      )
+      if option.count() > 0 then click(option.first())
+      else
+        page.keyboard().press("Control+A")
+        page.keyboard().insertText(wanted)
+        page.keyboard().press("Enter")
+      if !input.inputValue().trim.equalsIgnoreCase(wanted) then
+        throw Refresh.ActMiss("AM/PM differs", confirmed = false)
+
+  private def confirmDate(): Unit =
+    refuseDialog()
+    Seq("Save", "Done", "OK").find(visibleButton) match
+      case Some(name) =>
+        val found: Locator = page.getByRole(
+          AriaRole.BUTTON,
+          new Page.GetByRoleOptions().setName(name).setExact(true)
+        )
+        click(found.first())
+      case None =>
+        throw Refresh.ActMiss("Save, Done, or OK is absent", confirmed = false)
+
+  private def readItemDay(key: String): String =
+    if !onPhotos || !wizardReady then ensureSession()
+    page.evaluate(itemDateScript, key) match
+      case text: String => text
+      case _ => throw IllegalStateException("read failed")
+
+  private val clock: Regex = """(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})""".r
+
   private def clickMore(): Unit =
     val options: Locator = page.locator("[aria-label=\"More options\"]")
     awaitCount(options, System.currentTimeMillis + 20000L, "More options is absent")
@@ -212,6 +365,52 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       if (!match) return false;
       match.focus();
       return document.activeElement === match;
+    }"""
+
+  private val focusDescriptionScript: String =
+    """() => {
+      const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
+      const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
+      const exact = fields.find((node) => {
+        const label = node.getAttribute('aria-label') || '';
+        const placeholder = node.getAttribute('placeholder') || '';
+        return label === 'Add a description' || placeholder === 'Add a description' || valueOf(node).trim() === 'Add a description';
+      });
+      const loose = fields.find((node) => {
+        const label = node.getAttribute('aria-label') || '';
+        const placeholder = node.getAttribute('placeholder') || '';
+        if (/search/i.test(label + ' ' + placeholder)) return false;
+        return /description/i.test(label + ' ' + placeholder + ' ' + valueOf(node));
+      });
+      const match = exact || loose;
+      if (!match) return false;
+      match.focus();
+      return document.activeElement === match;
+    }"""
+
+  // A fresh panel read. The string passed to insertText is not this check.
+  private val descriptionShownScript: String =
+    """(text) => {
+      const wanted = text == null ? '' : String(text);
+      const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
+      const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
+      const described = fields.filter((node) => {
+        const label = node.getAttribute('aria-label') || '';
+        const placeholder = node.getAttribute('placeholder') || '';
+        if (/search/i.test(label + ' ' + placeholder)) return false;
+        const value = valueOf(node);
+        return label === 'Add a description' || placeholder === 'Add a description' || /description/i.test(label + ' ' + placeholder + ' ' + value);
+      });
+      const panel = (document.body && document.body.innerText) || '';
+      if (wanted === '') {
+        const cleared = described.some((node) => {
+          const value = valueOf(node).trim();
+          return value === '' || value === 'Add a description';
+        });
+        return cleared && panel.includes('Add a description');
+      }
+      if (panel.includes(wanted)) return true;
+      return described.some((node) => valueOf(node) === wanted);
     }"""
 
   private def navigate(url: String): Unit =
@@ -648,4 +847,41 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       L.push(...out);
       if (items.length < count || fails) L.push(['error', card.id, items.length, count, nulls].join('\t'));
       return L.join('\n') + '\n';
+    }"""
+
+  // Same fDcn4b item read as readScript. The date fields are not this check.
+  private val itemDateScript: String =
+    """async (key) => {
+      const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
+      if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      async function rpc(id, args) {
+        const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 30000);
+        try {
+          const r = await fetch('/_/PhotosUi/data/batchexecute?rpcids=' + id + '&bl=' + encodeURIComponent(bl) + '&hl=en&rt=c', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body, signal: ctl.signal, credentials: 'include' });
+          if (!r.ok) throw new Error('http ' + r.status);
+          const txt = (await r.text()).replace(/^\)\]\}'/, '');
+          for (const line of txt.split('\n')) {
+            if (line.includes('wrb.fr')) {
+              try { const a = JSON.parse(line); const row = a.find(x => x && x[0] === 'wrb.fr'); if (row) return row[2]; } catch (e) {}
+            }
+          }
+          throw new Error('no wrb');
+        } finally { clearTimeout(t); }
+      }
+      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+      let raw = await retry(() => rpc('fDcn4b', [key, 1, null, null, 1]));
+      let v = raw && JSON.parse(raw);
+      let r0 = v && v[0];
+      if (!r0 || !r0[2]) {
+        raw = await retry(() => rpc('fDcn4b', [key, null, null]));
+        v = raw && JSON.parse(raw);
+        r0 = v && v[0];
+      }
+      const ts = r0 && r0[3] != null ? r0[3] : null;
+      const tz = r0 && r0[4] != null ? r0[4] : 0;
+      if (ts == null) throw new Error('read failed');
+      return new Date(Number(ts) + Number(tz || 0)).toISOString().slice(0, 10);
     }"""
