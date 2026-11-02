@@ -60,7 +60,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     val tsv: String = page.evaluate("() => window.__gphoto.tsv()") match
       case text: String => text
       case _ => ""
-    tsv.split("\n", -1).toSeq.filter(_.nonEmpty).map(cardOf)
+    tsv.split("\n", -1).toSeq.filter(_.nonEmpty).map(Refresh.cardOf)
 
   def readOwner(card: AlbumCard): Option[String] =
     if !onPhotos || !wizardReady then ensureSession()
@@ -189,57 +189,74 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     map.put("auth", card.auth)
     map
 
-  private def cardOf(line: String): AlbumCard =
-    val fields: Seq[String] = line.split("\t", -1).toSeq
-    val leaves: String = if fields.length > 4 then fields.drop(4).mkString("\t") else ""
-    AlbumCard(fields(2), fields.head, fields(1), fields.lift(3).getOrElse(""), leaves)
-
   private def redact(card: AlbumCard, error: Exception): String =
     val message: String = Option(error.getMessage).getOrElse("read failed").replace(card.id, card.title)
     message.split('\n').headOption.filter(_.nonEmpty).getOrElse("read failed")
 
+  // Create the output only after the window is found. A missing window logs and stays where it is.
   private def park(): Unit =
     val signature: String = System.getenv("HYPRLAND_INSTANCE_SIGNATURE")
     if signature == null || signature.isEmpty then ()
     else
       try
-        val cursor: (String, String) = cursorPos()
-        val before: Set[String] = monitorNames().toSet
-        focused = focusedMonitor()
-        hypr("hyprctl", "output", "create", "headless")
-        val created: Option[String] = monitorNames().find(name => !before.contains(name))
-        created.foreach: name =>
-          createdOutput = Some(name)
-          focused.foreach: monitor =>
-            hypr(
-              "hyprctl",
-              "dispatch",
-              s"hl.monitor({ name = $name, mode = 1280x800@60, pos = 20000x20000, scale = 1 }, { name = ${monitor.name}, mode = preferred, pos = ${monitor.x}x${monitor.y}, scale = auto })"
-            )
-          findWindow().foreach: address =>
-            hypr(
-              "hyprctl",
-              "dispatch",
-              s"hl.dsp.window.move({ monitor = $name, follow = false, window = address:$address })"
-            )
-          hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${cursor._1}, y = ${cursor._2} })")
+        findWindow() match
+          case None =>
+            System.err.println("refresh park: window missing")
+          case Some(address) =>
+            val cursor: (String, String) = cursorPos()
+            val before: Set[String] = monitorNames().toSet
+            focused = focusedMonitor()
+            hypr("hyprctl", "output", "create", "headless")
+            monitorNames().find(name => !before.contains(name)) match
+              case None =>
+                System.err.println("refresh park: headless missing")
+              case Some(name) =>
+                createdOutput = Some(name)
+                hypr("hyprctl", "eval", placeLua(name))
+                hypr("hyprctl", "dispatch", moveLua(name, address))
+                hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${cursor._1}, y = ${cursor._2} })")
       catch case error: Exception =>
-        System.err.println(s"refresh park: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}")
+        parkLog(error)
 
+  // Remove the output this process created even when the monitor restore throws.
   private def unpark(): Unit =
-    createdOutput.foreach: name =>
-      try
-        focused.foreach: monitor =>
-          hypr(
-            "hyprctl",
-            "dispatch",
-            s"hl.monitor({ name = ${monitor.name}, mode = preferred, pos = ${monitor.x}x${monitor.y}, scale = auto })"
-          )
-        hypr("hyprctl", "output", "remove", name)
+    val name: Option[String] = createdOutput
+    createdOutput = None
+    name.foreach: output =>
+      try focused.foreach(monitor => hypr("hyprctl", "eval", restoreLua(monitor)))
       catch case error: Exception =>
-        System.err.println(s"refresh park: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}")
-      finally
-        createdOutput = None
+        parkLog(error)
+      try hypr("hyprctl", "output", "remove", output)
+      catch case error: Exception =>
+        parkLog(error)
+
+  private def placeLua(name: String): String =
+    val headless: String =
+      "hl.monitor({ output = " + quoted(name) + ", mode = \"1280x800@60\", position = \"20000x20000\", scale = 1 })"
+    focused match
+      case None => headless
+      case Some(monitor) =>
+        headless + "\n" + restoreLua(monitor)
+
+  private def restoreLua(monitor: Monitor): String =
+    "hl.monitor({ output = " + quoted(monitor.name) + ", mode = \"preferred\", position = " +
+      quoted(s"${monitor.x}x${monitor.y}") + ", scale = \"auto\" })"
+
+  private def moveLua(name: String, address: String): String =
+    "hl.dsp.window.move({ monitor = " + quoted(name) + ", follow = false, window = \"address:" + address + "\" })"
+
+  private def quoted(text: String): String =
+    val body: String = text.flatMap:
+      case '\\' => "\\\\"
+      case '"' => "\\\""
+      case '\n' => "\\n"
+      case '\r' => "\\r"
+      case '\t' => "\\t"
+      case ch => String.valueOf(ch)
+    "\"" + body + "\""
+
+  private def parkLog(error: Exception): Unit =
+    System.err.println(s"refresh park: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}")
 
   private def cursorPos(): (String, String) =
     val text: String = hypr("hyprctl", "cursorpos")
@@ -458,7 +475,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         d = JSON.parse(await retry(() => rpc('snAcKc', [card.id, tok, null, auth])));
       }
       const out = new Array(items.length);
-      let i = 0, fails = 0;
+      let i = 0, fails = 0, nulls = 0;
       const worker = async () => {
         while (i < items.length) {
           const j = i++, it = items[j];
@@ -481,13 +498,18 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
             if (o && o[1] != null && ME && String(o[1]) !== ME) up = sp(o[11] && o[11][0] ? o[11][0] : o[1]);
           } catch (e) {}
           const fn = r0 && typeof r0[2] === 'string' && r0[2] !== '' ? r0[2] : null;
-          if (fn !== null && /[\t\n\r]/.test(fn)) throw new Error('bad filename');
-          if (fn === null) { fails++; out[j] = ['unset', card.id, date, it.k, up].join('\t'); }
-          else out[j] = ['item', card.id, fn, date, it.k, up].join('\t');
+          if (fn !== null && /[\t\n\r]/.test(fn)) {
+            fails++;
+            out[j] = ['item', card.id, String.fromCharCode(1) + JSON.stringify(fn), date, it.k, up].join('\t');
+          } else if (fn === null) {
+            fails++;
+            nulls++;
+            out[j] = ['unset', card.id, date, it.k, up].join('\t');
+          } else out[j] = ['item', card.id, fn, date, it.k, up].join('\t');
         }
       };
       await Promise.all(Array.from({ length: 6 }, worker));
       L.push(...out);
-      if (items.length < count || fails) L.push(['error', card.id, items.length, count, fails].join('\t'));
+      if (items.length < count || fails) L.push(['error', card.id, items.length, count, nulls].join('\t'));
       return L.join('\n') + '\n';
     }"""

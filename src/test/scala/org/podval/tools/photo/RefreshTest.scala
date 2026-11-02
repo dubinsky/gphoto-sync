@@ -432,6 +432,60 @@ class RefreshTest extends AnyFlatSpec, Matchers:
       pic.items.map(_.key) shouldBe Seq("k1")
       pic.unsets.isEmpty shouldBe true
 
+  it should "restore a tab or newline in a filename and count it as a name-failure" in :
+    val tab: String = "\u0001" + "\"bad\\tname.jpg\""
+    val nl: String = "\u0001" + "\"bad\\nname.jpg\""
+    val album: Catalog.Album = Refresh.parseBody(
+      s"""album\tpic\t3\tPic
+         |item\tpic\tgood.jpg\t2010-06-01\tk1\t-
+         |item\tpic\t$tab\t2010-06-01\tk2\t-
+         |item\tpic\t$nl\t2010-06-01\tk3\t-
+         |error\tpic\t3\t3\t0
+         |""".stripMargin
+    )
+    album.items.map(_.filename) shouldBe Seq("good.jpg", "bad\tname.jpg", "bad\nname.jpg")
+    album.error.map(_.nameFailures) shouldBe Some(2)
+    album.unsets.isEmpty shouldBe true
+
+  it should "keep the other items when a filename contains a tab and fail the check" in :
+    withPlaces: (archive, session, places) =>
+      val catalog: File = writeCatalog(archive, Seq(albumLine("stay", 0, "Stay")))
+      val before: Array[Byte] = NFiles.readAllBytes(catalog.toPath)
+      var calls: Int = 0
+      val ui = new Fake(Seq(card("newid", "New", "2")), albumOf = _ =>
+        calls += 1
+        Catalog.Album(
+          "newid",
+          2,
+          "New",
+          None,
+          false,
+          Some(Catalog.Error(2, 2, 1)),
+          Seq(
+            Catalog.Item("good.jpg", Some(day), "k1", None),
+            Catalog.Item("bad\tname.jpg", Some(day), "k2", None)
+          ),
+          Seq.empty
+        )
+      )
+      val failed: Result = run(session, places, refreshArgs(allowShrink = true), ui)._2
+      usage(failed) shouldBe "wrong column count"
+      calls shouldBe 2
+      java.util.Arrays.equals(NFiles.readAllBytes(catalog.toPath), before) shouldBe true
+      status(places)("phase") shouldBe "error"
+      status(places)("error") shouldBe "check"
+      val part: String = NFiles.readString(File(File(places.directory, "parts"), "newid").toPath, StandardCharsets.UTF_8)
+      part.startsWith("# part\t") shouldBe true
+      part.contains("# FAILED") shouldBe false
+      part should include ("good.jpg")
+      val partial: String = NFiles.readString(
+        File(File(archive, ".gphoto-sync"), "catalog.txt.partial").toPath,
+        StandardCharsets.UTF_8
+      )
+      partial should include ("good.jpg")
+      partial should include ("bad\tname.jpg")
+      partial.contains("bad name.jpg") shouldBe false
+
   it should "record four thrown reads as a failed part and scroll on the next run" in :
     withPlaces: (archive, session, places) =>
       val catalog: File = writeCatalog(archive, Seq(albumLine("stay", 0, "Stay")))
@@ -463,6 +517,38 @@ class RefreshTest extends AnyFlatSpec, Matchers:
       next.catalogCache.isEmpty shouldBe true
       places.directory.exists shouldBe false
       places.lock.isFile shouldBe true
+
+  it should "keep phase items when a resumed run is asked to sign in and nothing is item-read" in :
+    withPlaces: (archive, session, places) =>
+      val catalog: File = writeCatalog(archive, autoLine("aa", 2, "Auto", "Old"))
+      val before: Array[Byte] = NFiles.readAllBytes(catalog.toPath)
+      seed(places, "items", Seq("Auto\t2\taa\t\t[]"))
+      var notices: Int = 0
+      val ui = new Fake(Seq.empty, ownerOf = _ => throw IllegalStateException("nope"))
+      val failed: Result = Refresh.run(
+        session,
+        refreshArgs(),
+        notice =>
+          notices += 1
+          notice(Refresh.Notice("signin", Seq.empty))
+          ui
+        ,
+        places,
+        () => ()
+      )._2
+      usage(failed) shouldBe "owner read failed"
+      notices shouldBe 1
+      ui.albumCalls shouldBe 0
+      ui.ownerCalls shouldBe 4
+      status(places)("phase") shouldBe "items"
+      NFiles.readString(File(places.directory, "status.txt").toPath, StandardCharsets.UTF_8).contains("signin") shouldBe false
+      java.util.Arrays.equals(NFiles.readAllBytes(catalog.toPath), before) shouldBe true
+      val again = new Fake(Seq.empty, onCards = () => fail("scrolled"), ownerOf = _ => Some("Old"))
+      val text: String = okText(Refresh.run(session, refreshArgs(), _ => again, places, () => ())._2)
+      text shouldBe "kept 1\n"
+      again.cardsCalls shouldBe 0
+      again.albumCalls shouldBe 0
+      again.ownerCalls shouldBe 1
 
   it should "retry an owner four times and leave the phase on items" in :
     withPlaces: (archive, session, places) =>

@@ -36,8 +36,6 @@ object Cli:
     list: Boolean,
     allowShrink: Boolean
   ) extends Parsed
-  private[photo] final case class ReconcileArgs(delete: Boolean) extends Parsed
-  private[photo] case object FileArgs extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -239,7 +237,7 @@ object Cli:
           case ServeStop =>
             (Step.Stop, reply(request.id, ok = true, None, None, None))
           case Run(parsed) if runsInCaller(parsed) =>
-            usage(request.id, s"${callerName(parsed)} runs in the calling process")
+            usage(request.id, "refresh runs in the calling process")
           case Run(parsed) =>
             val (returned, result) = run(session, parsed)
             result match
@@ -294,15 +292,28 @@ object Cli:
 
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
     case _: RefreshArgs => true
-    case _: ReconcileArgs => true
-    case FileArgs => true
-    case _ => false
-
-  private def callerName(parsed: Parsed): String = parsed match
-    case _: RefreshArgs => "refresh"
-    case _: ReconcileArgs => "reconcile"
-    case FileArgs => "file"
-    case _ => "command"
+    case _: Lsd => false
+    case _: Ls => false
+    case _: SetMetadataArgs => false
+    case _: Albums => false
+    case _: PublishArgs => false
+    case _: SyncArgs => false
+    case _: RepairArgs => false
+    case LoginArgs => false
+    case StatusArgs => false
+    case LogoutArgs => false
+    case _: CdArgs => false
+    case PwdArgs => false
+    case ExitArgs => false
+    case _: AgentStemsArgs => false
+    case AgentCatalogArgs => false
+    case _: AgentItemsArgs => false
+    case _: AgentMatchArgs => false
+    case _: AgentIncludeArgs => false
+    case _: AgentAlbumFileArgs => false
+    case _: AgentRequestArgs => false
+    case AgentRequestsArgs => false
+    case AgentResultsArgs => false
 
   private def remoteStep(
     session: Session,
@@ -538,14 +549,6 @@ object Cli:
       Sync(path, recursive = recursive, dryRun = dryRun)
     case args: RefreshArgs =>
       Refresh(args)
-    case _: ReconcileArgs =>
-      new Operation:
-        def execute(session: Session): (Session, Result) =
-          (session, Result.Usage("reconcile is not a command"))
-    case FileArgs =>
-      new Operation:
-        def execute(session: Session): (Session, Result) =
-          (session, Result.Usage("file is not a command"))
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout

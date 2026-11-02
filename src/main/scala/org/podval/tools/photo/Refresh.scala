@@ -1,5 +1,6 @@
 package org.podval.tools.photo
 
+import scala.annotation.tailrec
 import java.io.File
 import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
 import java.nio.charset.StandardCharsets
@@ -81,6 +82,7 @@ object Refresh:
     val resumed: Boolean = canResume(places.directory)
     if !resumed then wipe(places.directory) else ensure(places.directory)
     val state = new RunState
+    if resumed then state.phase = readStatus(File(places.directory, "status.txt")).getOrElse("phase", "items")
     var ui: Option[PhotosUi] = None
     try
       val lines: Seq[String] =
@@ -261,7 +263,7 @@ object Refresh:
     Catalog.Album(plan.id, plan.count, plan.title, owner, autoAdd = true, None, Seq.empty, Seq.empty)
 
   private def writeWinner(directory: File, id: String, album: Catalog.Album): Unit =
-    val rendered: String = RefreshPlan.render(Seq(album))
+    val rendered: String = RefreshPlan.render(Seq(forPart(album)))
     val nl: Int = rendered.indexOf('\n')
     val body: String = if nl < 0 then rendered else rendered.drop(nl + 1)
     atomicWrite(partFile(directory, id), s"# part\t$id\n$body")
@@ -297,7 +299,24 @@ object Refresh:
 
   private def safe(id: String): Boolean = id.matches("[A-Za-z0-9_-]+")
 
+  // A part has to parse. A tab or newline in a filename is encoded here and restored by parseBody.
+  // The catalog render keeps those characters, so the check rejects the partial.
+  private def forPart(album: Catalog.Album): Catalog.Album =
+    if !album.items.exists(item => badName(item.filename)) then album
+    else album.copy(
+      items = album.items.map: item =>
+        if badName(item.filename) then item.copy(filename = "\u0001" + jsonString(item.filename)) else item
+      ,
+      error = album.error.map(_.copy(nameFailures = album.unsets.length))
+    )
+
+  private def badName(filename: String): Boolean =
+    filename.exists(ch => ch == '\t' || ch == '\n' || ch == '\r')
+
   private[photo] def parseBody(body: String): Catalog.Album =
+    decodeNames(readCatalogBody(body))
+
+  private def readCatalogBody(body: String): Catalog.Album =
     val text: String = if body.endsWith("\n") then body else body + "\n"
     val wrapped: String = "# gphoto-catalog 2\n" + text
     val tmp = NFiles.createTempFile("gphoto-album", ".txt")
@@ -309,6 +328,61 @@ object Refresh:
       else albums.head
     finally
       NFiles.deleteIfExists(tmp)
+
+  private def decodeNames(album: Catalog.Album): Catalog.Album =
+    if !album.items.exists(_.filename.startsWith("\u0001\"")) then album
+    else
+      val items: Seq[Catalog.Item] = album.items.map: item =>
+        if item.filename.startsWith("\u0001\"") then item.copy(filename = parseJsonString(item.filename.drop(1)))
+        else item
+      val bad: Int = items.count(item => badName(item.filename))
+      val got: Int = items.length + album.unsets.length
+      val of: Int = album.error.fold(album.count)(_.of)
+      album.copy(items = items, error = Some(Catalog.Error(got, of, album.unsets.length + bad)))
+
+  private def jsonString(text: String): String =
+    val encoded: String = text.flatMap:
+      case '\\' => "\\\\"
+      case '"' => "\\\""
+      case '\n' => "\\n"
+      case '\r' => "\\r"
+      case '\t' => "\\t"
+      case ch if ch < ' ' => f"\\u${ch.toInt}%04x"
+      case ch => String.valueOf(ch)
+    "\"" + encoded + "\""
+
+  private def parseJsonString(text: String): String =
+    if text.length < 2 || !text.startsWith("\"") || !text.endsWith("\"") then
+      throw IllegalArgumentException("bad filename")
+    else decodeJson(text.substring(1, text.length - 1), "")
+
+  @tailrec
+  private def decodeJson(rest: String, acc: String): String =
+    if rest.isEmpty then acc
+    else
+      val (plain, escaped) = rest.span(_ != '\\')
+      if escaped.isEmpty then acc + plain
+      else
+        val more: String = escaped.drop(1)
+        if more.isEmpty then throw IllegalArgumentException("bad filename")
+        else
+          val kind: String = more.substring(0, 1)
+          val tail: String = more.substring(1)
+          kind match
+            case "\"" => decodeJson(tail, acc + plain + "\"")
+            case "\\" => decodeJson(tail, acc + plain + "\\")
+            case "/" => decodeJson(tail, acc + plain + "/")
+            case "b" => decodeJson(tail, acc + plain + "\b")
+            case "f" => decodeJson(tail, acc + plain + "\f")
+            case "n" => decodeJson(tail, acc + plain + "\n")
+            case "r" => decodeJson(tail, acc + plain + "\r")
+            case "t" => decodeJson(tail, acc + plain + "\t")
+            case "u" =>
+              val hex: String = tail.take(4)
+              if hex.length < 4 || hex.exists(ch => Character.digit(ch, 16) < 0) then
+                throw IllegalArgumentException("bad filename")
+              else decodeJson(tail.drop(4), acc + plain + Integer.parseInt(hex, 16).toChar)
+            case _ => throw IllegalArgumentException("bad filename")
 
   private def itemKeys(album: Catalog.Album): Set[String] = album.items.map(_.key).toSet
 
@@ -387,7 +461,7 @@ object Refresh:
   private def lineOf(card: AlbumCard): String =
     Seq(card.title, card.countText, card.id, card.auth, card.leaves).mkString("\t")
 
-  private def cardOf(line: String): AlbumCard =
+  private[photo] def cardOf(line: String): AlbumCard =
     val fields: Seq[String] = line.split("\t", -1).toSeq
     val leaves: String = if fields.length > 4 then fields.drop(4).mkString("\t") else ""
     AlbumCard(fields(2), fields.head, fields(1), fields.lift(3).getOrElse(""), leaves)
@@ -458,11 +532,7 @@ object Refresh:
     if message.isEmpty then "refresh failed" else message
 
   private def loadUi(notice: Notice => Unit): PhotosUi =
-    val module = Class.forName("org.podval.tools.photo.PlaywrightPhotosUi$")
-    val instance = module.getField("MODULE$").get(null)
-    val method = module.getMethods.find(candidate => candidate.getName == "open" && candidate.getParameterCount == 1)
-      .getOrElse(throw IllegalStateException("refresh ui is missing"))
-    method.invoke(instance, notice).asInstanceOf[PhotosUi]
+    PlaywrightPhotosUi.open(notice)
 
   // A check failure is the only writer of phase error. Leaving items lets the next process resume.
   private final class RunState:
