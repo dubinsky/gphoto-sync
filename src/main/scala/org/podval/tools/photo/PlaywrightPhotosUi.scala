@@ -498,10 +498,11 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
             if (o && o[1] != null && ME && String(o[1]) !== ME) up = sp(o[11] && o[11][0] ? o[11][0] : o[1]);
           } catch (e) {}
           const fn = r0 && typeof r0[2] === 'string' && r0[2] !== '' ? r0[2] : null;
-          if (fn !== null && /[\t\n\r]/.test(fn)) {
-            fails++;
-            const mark = String.fromCharCode(1);
-            const escaped = fn.replace(/\t/g, mark + 't').replace(/\n/g, mark + 'n').replace(/\r/g, mark + 'r');
+          const mark = String.fromCharCode(1);
+          const bad = fn !== null && /[\t\n\r]/.test(fn);
+          if (fn !== null && (bad || fn.indexOf(mark) !== -1)) {
+            if (bad) fails++;
+            const escaped = fn.split(mark).join(mark + mark).replace(/\t/g, mark + 't').replace(/\n/g, mark + 'n').replace(/\r/g, mark + 'r');
             out[j] = ['item', card.id, escaped, date, it.k, up].join('\t');
           } else if (fn === null) {
             fails++;

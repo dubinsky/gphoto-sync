@@ -302,10 +302,11 @@ object Refresh:
   // A part has to parse. A tab or newline in a filename is encoded here and restored by parseBody.
   // The catalog render keeps those characters, so the check rejects the partial.
   private def forPart(album: Catalog.Album): Catalog.Album =
-    if !album.items.exists(item => badName(item.filename)) then album
+    val hide: Catalog.Item => Boolean = item => badName(item.filename) || item.filename.contains('\u0001')
+    if !album.items.exists(hide) then album
     else album.copy(
       items = album.items.map: item =>
-        if badName(item.filename) then item.copy(filename = escapeName(item.filename, restore = false)) else item
+        if hide(item) then item.copy(filename = escapeName(item.filename, restore = false)) else item
       ,
       error = album.error.map(_.copy(nameFailures = album.unsets.length))
     )
@@ -336,14 +337,17 @@ object Refresh:
         if item.filename.contains('\u0001') then item.copy(filename = escapeName(item.filename, restore = true))
         else item
       val bad: Int = items.count(item => badName(item.filename))
-      val got: Int = items.length + album.unsets.length
-      val of: Int = album.error.fold(album.count)(_.of)
-      album.copy(items = items, error = Some(Catalog.Error(got, of, album.unsets.length + bad)))
+      if bad == 0 then album.copy(items = items)
+      else
+        val got: Int = items.length + album.unsets.length
+        val of: Int = album.error.fold(album.count)(_.of)
+        album.copy(items = items, error = Some(Catalog.Error(got, of, album.unsets.length + bad)))
 
-  // Hide a tab, newline, or CR so a part stays one column. The catalog partial keeps the original characters.
+  // Hide a tab, newline, CR, or a literal U+0001 so a part stays one column. The catalog partial keeps the original characters.
   private def escapeName(text: String, restore: Boolean): String =
     if !restore then
       text.flatMap:
+        case '\u0001' => "\u0001\u0001"
         case '\t' => "\u0001t"
         case '\n' => "\u0001n"
         case '\r' => "\u0001r"
@@ -355,6 +359,7 @@ object Refresh:
         else
           val (plain, marked) = rest.span(_ != '\u0001')
           if marked.isEmpty then acc + plain
+          else if marked.startsWith("\u0001\u0001") then rec(marked.drop(2), acc + plain + "\u0001")
           else if marked.startsWith("\u0001t") then rec(marked.drop(2), acc + plain + "\t")
           else if marked.startsWith("\u0001n") then rec(marked.drop(2), acc + plain + "\n")
           else if marked.startsWith("\u0001r") then rec(marked.drop(2), acc + plain + "\r")

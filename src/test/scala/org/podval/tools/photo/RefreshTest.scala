@@ -449,6 +449,38 @@ class RefreshTest extends AnyFlatSpec, Matchers:
     album.error.map(_.nameFailures) shouldBe Some(3)
     album.unsets.isEmpty shouldBe true
 
+  it should "round-trip a filename that already contains the sentinel" in :
+    val encoded: String = "a\u0001\u0001t.jpg"
+    val read: Catalog.Album = Refresh.parseBody(
+      s"""album\tpic\t2\tPic
+         |item\tpic\tgood.jpg\t2010-06-01\tk1\t-
+         |item\tpic\t$encoded\t2010-06-01\tk2\t-
+         |""".stripMargin
+    )
+    read.items.map(_.filename) shouldBe Seq("good.jpg", "a\u0001t.jpg")
+    read.error shouldBe None
+    withPlaces: (archive, session, places) =>
+      val ui = new Fake(Seq(card("newid", "New", "2")), albumOf = _ =>
+        Catalog.Album(
+          "newid",
+          2,
+          "New",
+          None,
+          false,
+          None,
+          Seq(
+            Catalog.Item("good.jpg", Some(day), "k1", None),
+            Catalog.Item("a\u0001t.jpg", Some(day), "k2", None)
+          ),
+          Seq.empty
+        )
+      )
+      run(session, places, refreshArgs(allowShrink = true), ui)
+      ui.albumCalls shouldBe 1
+      val published: Catalog.Album = Catalog.read(catalogFile(archive)).find(_.title == "New").get
+      published.items.map(_.filename) shouldBe Seq("good.jpg", "a\u0001t.jpg")
+      published.error shouldBe None
+
   it should "keep the other items when a filename contains a tab and fail the check" in :
     withPlaces: (archive, session, places) =>
       val catalog: File = writeCatalog(archive, Seq(albumLine("stay", 0, "Stay")))
