@@ -62,8 +62,13 @@ object Cli:
     dryRun: Boolean,
     replace: Boolean,
     googleTitle: Option[String],
-    noRequest: Boolean,
     album: String
+  ) extends Parsed
+  private[photo] final case class RenameAlbumArgs(
+    title: Option[String],
+    current: Option[String],
+    updated: Option[String],
+    id: Option[String]
   ) extends Parsed
   private[photo] final case class AgentRequestArgs(
     action: String,
@@ -159,17 +164,22 @@ object Cli:
 
   private def render(result: Result): Unit = result match
     case Result.Ok(text, _) =>
-      print(text)
-    case Result.Failed(text, _, message) if message == Refresh.AlreadyRunning =>
-      print(text)
+      print(redacted(text))
+    case Result.Failed(text, _, message) if quietFailure(message) =>
+      print(redacted(text))
       sys.exit(processCode(result))
     case Result.Failed(text, _, message) =>
-      print(text)
-      System.err.println(usageLine(message))
+      print(redacted(text))
+      System.err.println(redacted(usageLine(message)))
       sys.exit(processCode(result))
     case Result.Usage(message) =>
-      System.err.println(usageLine(message))
+      System.err.println(redacted(usageLine(message)))
       sys.exit(processCode(result))
+
+  private def quietFailure(message: String): Boolean =
+    message == Refresh.AlreadyRunning || message == Refresh.MutationFailed
+
+  private def redacted(text: String): String = PlaywrightPhotosUi.redactSecrets(text, "")
 
   private[photo] enum Step:
     case Continue(session: Session)
@@ -267,7 +277,7 @@ object Cli:
   ): Step =
     splitLine(line) match
       case Left(message) =>
-        Console.err.println(usageLine(message))
+        Console.err.println(redacted(usageLine(message)))
         Step.Continue(session)
       case Right(Nil) =>
         Step.Continue(session)
@@ -277,10 +287,10 @@ object Cli:
             println(text)
             Step.Continue(session)
           case Usage(message) =>
-            Console.err.println(usageLine(message))
+            Console.err.println(redacted(usageLine(message)))
             Step.Continue(session)
           case ShellFront | ServeFront | ServeStop | McpFront =>
-            Console.err.println(usageLine("already running"))
+            Console.err.println(redacted(usageLine("already running")))
             Step.Continue(session)
           case Run(ExitArgs) =>
             Step.Stop
@@ -299,6 +309,7 @@ object Cli:
     case _: RefreshArgs => true
     case _: ReconcileArgs => true
     case _: FileArgs => true
+    case _: RenameAlbumArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -328,7 +339,13 @@ object Cli:
     case _: RefreshArgs => "refresh"
     case _: ReconcileArgs => "reconcile"
     case _: FileArgs => "file"
+    case _: RenameAlbumArgs => "rename-album"
     case _ => "command"
+
+  // Refresh, reconcile, and file stay off this branch. A later write adds its own arm.
+  private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
+    case _: RenameAlbumArgs => true
+    case _ => false
 
   private def remoteStep(
     session: Session,
@@ -338,24 +355,24 @@ object Cli:
     val argv: List[String] =
       try rewritePaths(session, args)
       catch case error: IllegalArgumentException =>
-        Console.err.println(usageLine(Operation.messageOf(error)))
+        Console.err.println(redacted(usageLine(Operation.messageOf(error))))
         return Step.Continue(session)
     show(session, session, exchange(session, argv), keepReturned = false)
 
   private def show(session: Session, returned: Session, result: Result, keepReturned: Boolean): Step =
     result match
       case Result.Ok(text, _) =>
-        print(text)
+        print(redacted(text))
         Step.Continue(if keepReturned then returned else session)
-      case Result.Failed(text, _, message) if message == Refresh.AlreadyRunning =>
-        print(text)
+      case Result.Failed(text, _, message) if quietFailure(message) =>
+        print(redacted(text))
         Step.Continue(if keepReturned then returned else session)
       case Result.Failed(text, _, message) =>
-        print(text)
-        Console.err.println(usageLine(message))
+        print(redacted(text))
+        Console.err.println(redacted(usageLine(message)))
         Step.Continue(if keepReturned then returned else session)
       case Result.Usage(message) =>
-        Console.err.println(usageLine(message))
+        Console.err.println(redacted(usageLine(message)))
         Step.Continue(session)
 
   // Path positionals are marked on the command. Flags stay as typed.
@@ -589,8 +606,10 @@ object Cli:
       AgentMatch(id, album)
     case AgentIncludeArgs(span, paths) =>
       AgentInclude(span, paths)
-    case AgentAlbumFileArgs(id, dryRun, replace, googleTitle, noRequest, album) =>
-      AgentAlbumFile(id, dryRun, replace, googleTitle, noRequest, album)
+    case AgentAlbumFileArgs(id, dryRun, replace, googleTitle, album) =>
+      AgentAlbumFile(id, dryRun, replace, googleTitle, album)
+    case RenameAlbumArgs(title, current, updated, id) =>
+      AgentRename(title, current, updated, id)
     case AgentRequestArgs(action, album, item, current, updated, id) =>
       AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
     case AgentRequestsArgs =>
@@ -777,6 +796,8 @@ object Cli:
       Usage("missing request action")
     case ("--help" | "-h") :: _ =>
       Help(requestHelp)
+    case "rename-album" :: _ =>
+      Usage("use photo agent rename-album")
     case name :: rest =>
       requestCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -1082,16 +1103,31 @@ object Cli:
         albumIdFlag,
         Flag("dry-run", None, BooleanKind, "print the album file and write nothing"),
         Flag("replace", None, BooleanKind, "overwrite an existing album file"),
-        Flag("google-title", None, TextKind, "exact google-title"),
-        Flag("no-request", None, BooleanKind, "do not append rename-album")
+        Flag("google-title", None, TextKind, "exact google-title")
       ),
       build = (values, args) => AgentAlbumFileArgs(
         id = values.texts.get("id"),
         dryRun = bool(values, "dry-run"),
         replace = bool(values, "replace"),
         googleTitle = values.texts.get("google-title"),
-        noRequest = bool(values, "no-request"),
         album = args.head
+      )
+    ),
+    Command(
+      name = "rename-album",
+      help = "rename an album",
+      positionals = Nil,
+      flags = List(
+        Flag("title", None, TextKind, "album title"),
+        Flag("current", None, TextKind, "current title"),
+        Flag("new", None, TextKind, "new title"),
+        albumIdFlag
+      ),
+      build = (values, _) => RenameAlbumArgs(
+        values.texts.get("title"),
+        values.texts.get("current"),
+        values.texts.get("new"),
+        values.texts.get("id")
       )
     ),
     Command(
@@ -1126,7 +1162,7 @@ object Cli:
 
   // Order is agentCommands order. Membership is this set.
   private val mcpToolNames: Set[String] = Set(
-    "stems", "catalog", "items", "match", "include", "requests", "results", "drift", "missing"
+    "stems", "catalog", "items", "match", "include", "rename-album", "requests", "results", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1164,13 +1200,17 @@ object Cli:
 
   private def mcpTool(command: Command): McpTool =
     val params: List[McpParam] = command.flags.map(mcpFlag) ++ command.positionals.map(mcpPositional)
-    val required: List[String] = command.positionals.collect:
-      case Required(name, _) => mcpIdent(name)
+    val required: List[String] =
+      if command.name == "rename-album" then List("title", "current", "new")
+      else command.positionals.collect:
+        case Required(name, _) => mcpIdent(name)
     McpTool(command.name, mcpDescription(command), params, required)
 
   private def mcpDescription(command: Command): String =
     val base: String = s"${command.help} (photo agent ${command.name}). $mcpDoNotEcho"
-    if command.name == "items" || command.name == "match" then s"$base $mcpAmbiguousId" else base
+    if command.name == "items" || command.name == "match" || command.name == "rename-album" then
+      s"$base $mcpAmbiguousId"
+    else base
 
   private def mcpFlag(flag: Flag): McpParam =
     val name: String = mcpIdent(flag.name)
@@ -1280,24 +1320,6 @@ object Cli:
     Command(name, help, Nil, flags, (values, _) => build(values))
 
   private val requestCommands: List[Command] = List(
-    requestCommand(
-      "rename-album",
-      "rename an owned album",
-      List(
-        Flag("album", None, TextKind, "album id"),
-        Flag("current", None, TextKind, "current title"),
-        Flag("new", None, TextKind, "new title"),
-        requestIdFlag
-      ),
-      values => AgentRequestArgs(
-        "rename-album",
-        values.texts.get("album"),
-        None,
-        values.texts.get("current"),
-        values.texts.get("new"),
-        values.texts.get("id")
-      )
-    ),
     requestCommand(
       "move-item",
       "move an item to another album",

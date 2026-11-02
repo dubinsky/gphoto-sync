@@ -3,11 +3,16 @@ package org.podval.tools.photo
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import scala.annotation.targetName
-import java.io.File
-import java.nio.file.{Files as JFiles}
+import java.io.{ByteArrayOutputStream, File}
+import java.nio.channels.FileChannel
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files as JFiles, StandardOpenOption}
 import java.time.{LocalDate, ZoneId}
 
 class AgentWriteTest extends AnyFlatSpec, Matchers:
+  @targetName("outcomeCanEqual")
+  private given [A <: Cli.Outcome, B <: Cli.Outcome] => CanEqual[A, B] = CanEqual.derived
+
   @targetName("resultCanEqual")
   private given [A <: Result, B <: Result] => CanEqual[A, B] = CanEqual.derived
 
@@ -51,7 +56,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       place(session, "2011 March-April Trip", "2011/04/02/March April Trip.toml", "2011/04/02/March April Trip")
       place(session, "2009 July", "2009/07/04/album.toml", "2009/07/04")
       Album.read(archive, File(archive, "2009/07/04/album.toml")).include.isEmpty shouldBe true
-      val (_, dec) = exec(session, "agent", "album-file", "--no-request", "2009 December")
+      val (_, dec) = exec(session, "agent", "album-file", "2009 December")
       dec match
         case Result.Ok(text, value) =>
           noIds(text, "albDec", "keyDec")
@@ -62,7 +67,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       december.title shouldBe "2009/12/25"
       december.include.map(Include.render) shouldBe Seq("all")
       december.external shouldBe true
-      val (_, span) = exec(session, "agent", "album-file", "--no-request", "2010 February Purim")
+      val (_, span) = exec(session, "agent", "album-file", "2010 February Purim")
       span match
         case Result.Ok(text, _) =>
           noIds(text, "albSpan", "keyA", "keyB")
@@ -149,7 +154,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/19/to-20.toml").exists shouldBe false
       File(archive, "2010/07/19/album.toml").exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
-      val (_, julyResult) = exec(session, "agent", "album-file", "--no-request", "2010/07/19 July")
+      val (_, julyResult) = exec(session, "agent", "album-file", "2010/07/19 July")
       julyResult match
         case Result.Ok(text, value) =>
           noIds(text, "albMonthWord", "keyMonthWord")
@@ -162,7 +167,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       july.span.map(Title.renderSpan) shouldBe Some("2010/07/19")
       julyParsed.span.map(Title.renderSpan) shouldBe Some("2010/07/19")
       julyParsed.name.isEmpty shouldBe true
-      val (_, picnicResult) = exec(session, "agent", "album-file", "--no-request", "2010/07/19 19 Picnic")
+      val (_, picnicResult) = exec(session, "agent", "album-file", "2010/07/19 19 Picnic")
       picnicResult match
         case Result.Ok(text, value) =>
           noIds(text, "albDayPicnic", "keyDayPicnic")
@@ -193,7 +198,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         "item\talbAug\t2412.jpg\t2010-08-01\tkeyAugDay\t-"
       )
       val session: Session = sessionFor(archive)
-      val (_, passed) = exec(session, "agent", "album-file", "--no-request", "2010/07")
+      val (_, passed) = exec(session, "agent", "album-file", "2010/07")
       passed match
         case Result.Ok(text, _) =>
           noIds(text, "albJul", "keyJul", "keyAug")
@@ -204,7 +209,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       july should include ("'all'")
       july should not include ("9999")
       Album.read(archive, File(archive, "2010/07/album.toml")).span.map(Title.renderSpan) shouldBe Some("2010/07")
-      val (_, failed) = exec(session, "agent", "album-file", "--no-request", "2010/08")
+      val (_, failed) = exec(session, "agent", "album-file", "2010/08")
       failed match
         case Result.Ok(text, _) => noIds(text, "albAug", "keyAugDay")
         case other => fail(other.toString)
@@ -281,7 +286,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       skippedNames.cached(day).isEmpty shouldBe true
-      val (_, short) = exec(skippedNames, "agent", "album-file", "--no-request", "2010/09")
+      val (_, short) = exec(skippedNames, "agent", "album-file", "2010/09")
       short match
         case Result.Ok(text, _) =>
           text should not include ("skipped")
@@ -466,7 +471,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       JFiles.readString(File(archive, "Friends.toml").toPath) should include ("google-title = \"Friends \"")
       requests(archive).exists shouldBe false
 
-  it should "append rename-album when the catalog title differs from the path title" in :
+  it should "print rename yes when the catalog title differs and append nothing" in :
     withArchive: archive =>
       mkdir(archive, "2010/07")
       writeCatalog(archive, "album\talb07\t0\t2010/07 ")
@@ -491,7 +496,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       drySession.cached(dir).isDefined shouldBe true
       File(dir, "album.toml").exists shouldBe false
       requests(archive).exists shouldBe false
-      val (quiet, suppressed) = exec(drySession, "agent", "album-file", "--no-request", "2010/07 ")
+      val (quiet, suppressed) = exec(drySession, "agent", "album-file", "2010/07 ")
       suppressed match
         case Result.Ok(text, value) =>
           text shouldBe
@@ -516,25 +521,13 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
               |path-title 2010/07
               |catalog-title "2010/07 "
               |rename yes
-              |appended r1 rename-album
               |""".stripMargin
           noIds(text, "alb07")
-          field(value, "requestId") shouldBe Json.Str("r1")
+          field(value, "requestId") shouldBe Json.Null
         case other =>
           fail(other.toString)
       written.cached(dir).isEmpty shouldBe true
-      JFiles.readString(requests(archive).toPath) shouldBe
-        "# gphoto-requests 2\nr1\trename-album\talb07\t\t2010/07 \t2010/07\n"
-      val (_, listed) = exec(written, "agent", "requests")
-      listed match
-        case Result.Ok(text, Json.Arr(Seq(row))) =>
-          text shouldBe "r1 rename-album \"2010/07 \" \"2010/07\"\n"
-          noIds(text, "alb07")
-          field(row, "albumId") shouldBe Json.Str("alb07")
-          field(row, "current") shouldBe Json.Str("2010/07 ")
-          field(row, "new") shouldBe Json.Str("2010/07")
-        case other =>
-          fail(other.toString)
+      requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
   it should "collapse working-title spaces only on the path title" in :
@@ -546,14 +539,14 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           text should include ("path-title Best Of")
           text should include ("catalog-title \"Best  Of\"")
           text should include ("rename yes")
-          text should include ("appended r1 rename-album")
+          text should not include ("appended")
           noIds(text, "albBest")
         case other =>
           fail(other.toString)
       Album.read(archive, File(archive, "Best Of.toml")).title shouldBe "Best Of"
-      JFiles.readString(requests(archive).toPath) should include ("Best  Of\tBest Of\n")
+      requests(archive).exists shouldBe false
 
-  it should "keep the album file when the rename append fails" in :
+  it should "keep a legacy requests file when the album file is written" in :
     withArchive: archive =>
       mkdir(archive, "2010/07")
       writeCatalog(archive, "album\talb07\t0\t2010/07 ")
@@ -563,12 +556,13 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       val primed: Session = sessionFor(archive).remember(dir, DirEntry(Vector.empty, Seq.empty, Seq.empty, None))
       val (returned, result) = exec(primed, "agent", "album-file", "2010/07 ")
       result match
-        case Result.Failed(text, _, message) =>
+        case Result.Ok(text, value) =>
           text should include ("wrote 2010/07/album.toml")
-          text should include ("append failed")
+          text should include ("rename yes")
+          text should not include ("append failed")
           text should not include ("appended")
           noIds(text, "alb07")
-          message shouldBe "requests are not version 2"
+          field(value, "requestId") shouldBe Json.Null
         case other =>
           fail(other.toString)
       returned.cached(dir).isEmpty shouldBe true
@@ -598,23 +592,39 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           text shouldBe message
           noIds(text, fixtureIds*)
           requests(archive).exists shouldBe false
-      reject("no such album", "agent", "request", "rename-album", "--album", "goneId", "--current", "2010/07 ", "--new", "July")
-      reject(
-        "album has an owner",
-        "agent", "request", "rename-album", "--album", "albOwn", "--current", "Owned Name", "--new", "Next"
-      )
-      reject(
-        "current does not match \"2010/07 \" \"2010/07\"",
-        "agent", "request", "rename-album", "--album", "albTrail", "--current", "2010/07", "--new", "July"
-      )
-      reject(
-        "new title is empty",
-        "agent", "request", "rename-album", "--album", "albTrail", "--current", "2010/07 ", "--new", ""
-      )
-      reject(
-        "new title is unchanged",
-        "agent", "request", "rename-album", "--album", "albTrail", "--current", "2010/07 ", "--new", "2010/07 "
-      )
+      val previousAct = Refresh.openAct
+      var opened = false
+      Refresh.openAct = _ =>
+        opened = true
+        throw IllegalStateException("opened")
+      try
+        reject(
+          "no album titled \"Missing\"",
+          "agent", "rename-album", "--title", "Missing", "--current", "Missing", "--new", "July"
+        )
+        reject(
+          "catalog title does not match",
+          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July", "--id", "goneId"
+        )
+        reject(
+          "album has an owner",
+          "agent", "rename-album", "--title", "Owned Name", "--current", "Owned Name", "--new", "Next"
+        )
+        reject(
+          "current does not match \"2010/07 \" \"2010/07\"",
+          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07", "--new", "July"
+        )
+        reject(
+          "new title is empty",
+          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", ""
+        )
+        reject(
+          "new title is unchanged",
+          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "2010/07 "
+        )
+        opened shouldBe false
+      finally
+        Refresh.openAct = previousAct
       reject("no such album", "agent", "request", "move-item", "--album", "goneId", "--item", "keyPic", "--current", "pic.jpg", "--new", "albDst")
       reject(
         "no such destination",
@@ -661,7 +671,8 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       Seq("r0", "r00", "r000", "r001").foreach: id =>
         reject(
           "request id is not valid",
-          "agent", "request", "rename-album", "--album", "albTrail", "--current", "2010/07 ", "--new", "July", "--id", id
+          "agent", "request", "move-item", "--album", "albSrc", "--item", "keyPic",
+          "--current", "pic.jpg", "--new", "albDst", "--id", id
         )
       val download: Catalog.Album = Catalog.Album(
         "alb1", 1, "Title", None, false, None,
@@ -674,26 +685,22 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       intercept[IllegalArgumentException]:
         AgentCommands.acceptRequest(Seq(download), Requests.Action.DeleteItem, "alb1", "key1", "pic.jpg", "nope")
       .getMessage shouldBe "new is not empty"
+      intercept[IllegalArgumentException]:
+        AgentCommands.acceptRequest(Seq(download), Requests.Action.RenameAlbum, "gone", "", "Title", "Next")
+      .getMessage shouldBe "no such album"
 
   it should "append r1 and list titles without album ids or item keys" in :
     withArchive: archive =>
       writeFixture(archive)
       val session: Session = sessionFor(archive)
-      val (_, rename) = exec(
-        session, "agent", "request", "rename-album", "--album", "albTrail", "--current", "2010/07 ", "--new", "July"
+      val seeded: Requests.Row = Requests.append(
+        requests(archive), Requests.Action.RenameAlbum, "albTrail", "", "2010/07 ", "July"
       )
-      rename match
-        case Result.Ok(text, value) =>
-          text shouldBe "appended r1 rename-album\n"
-          noIds(text, fixtureIds*)
-          field(value, "id") shouldBe Json.Str("r1")
-          field(value, "albumId") shouldBe Json.Str("albTrail")
-          field(value, "current") shouldBe Json.Str("2010/07 ")
-        case other =>
-          fail(other.toString)
+      seeded.id shouldBe "r1"
       val before: String = JFiles.readString(requests(archive).toPath)
       val duplicate: String = usage(
-        session, "agent", "request", "rename-album", "--album", "albTrail", "--current", "2010/07 ", "--new", "Later", "--id", "r1"
+        session, "agent", "request", "move-item",
+        "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg", "--new", "albDst", "--id", "r1"
       )
       duplicate shouldBe "duplicate request id"
       noIds(duplicate, fixtureIds*)
@@ -803,14 +810,236 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
   it should "report a missing request flag before it reads the catalog" in :
     withArchive: archive =>
       val session: Session = sessionFor(archive)
-      usage(session, "agent", "request", "rename-album") shouldBe "missing album"
-      usage(session, "agent", "request", "rename-album", "--album", "albTrail", "--new", "X") shouldBe "missing current"
-      usage(session, "agent", "request", "rename-album", "--album", "albTrail", "--current", "Old") shouldBe "missing new"
+      Cli.parse(List("agent", "request", "rename-album")) shouldBe Cli.Usage("use photo agent rename-album")
+      Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
+        Cli.Usage("use photo agent rename-album")
+      Cli.parse(List(
+        "agent", "request", "rename-album", "--album", "albTrail", "--current", "Old", "--new", "X"
+      )) shouldBe Cli.Usage("use photo agent rename-album")
+      usage(session, "agent", "rename-album") shouldBe "missing title"
+      usage(session, "agent", "rename-album", "--title", "T", "--new", "X") shouldBe "missing current"
+      usage(session, "agent", "rename-album", "--title", "T", "--current", "Old") shouldBe "missing new"
       usage(session, "agent", "request", "move-item", "--album", "albSrc", "--current", "pic.jpg", "--new", "albDst") shouldBe
         "missing item"
       usage(session, "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg") shouldBe "missing new"
       usage(session, "agent", "request", "set-description", "--current", "pic.jpg") shouldBe "missing item"
       File(archive, ".gphoto-sync").exists shouldBe false
+
+  "rename-album" should "leave the catalog unchanged when the step throws" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, opened) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((album, updated) =>
+            throw IllegalStateException(s"step missed AF1QipLEAK $updated AF1QipOTHER")
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            Cli.processCode(result) shouldBe 1
+            text shouldBe
+              """failed rename-album
+                |album "2010/07 "
+                |step More options, then Edit album, Rename album, or Rename
+                |recovery one-click
+                |catalog unchanged
+                |step missed 2010/07  July 2010/07 
+                |""".stripMargin
+            text should not include ("AF1Qip")
+            text should not include ("alb07")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("")
+            field(value, "title") shouldBe Json.Str("2010/07 ")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "retitle only that album line when the live title is clean" in :
+    withArchive: archive =>
+      writePair(archive)
+      withAct(archive): (session, places, opened) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => ()):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+        )
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "rename-album \"July\"\n"
+            text should not include ("alb07")
+            text should not include ("albKeep")
+            Cli.processCode(result) shouldBe 0
+            field(value, "action") shouldBe Json.Str("rename-album")
+            field(value, "title") shouldBe Json.Str("July")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("")
+            value match
+              case Json.Obj(fields) =>
+                fields.exists(_._1 == "step") shouldBe false
+                fields.exists(_._1 == "recovery") shouldBe false
+              case other =>
+                fail(other.toString)
+          case other =>
+            fail(other.toString)
+        val written: String = JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath)
+        written shouldBe
+          """# gphoto-catalog 2
+            |album	alb07	1	July
+            |item	alb07	pic.jpg	2010-07-01	keyPic	-
+            |album	albKeep	0	Keep Title
+            |""".stripMargin
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        File(places.directory, "status.txt").exists shouldBe false
+        File(places.directory, "albums.tsv").exists shouldBe false
+        File(places.directory, "parts").exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "leave the partial when the retitle check fails" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => ())
+        val (_, result) = exec(
+          session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July\nX"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should not include ("album set")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").isFile shouldBe true
+        places.directory.exists shouldBe false
+
+  it should "report already running without opening the browser" in :
+    withArchive: archive =>
+      writePair(archive)
+      withAct(archive): (session, places, opened) =>
+        places.directory.mkdirs()
+        JFiles.writeString(File(places.directory, "status.txt").toPath, "phase=items\nAF1QipBusy\n")
+        Refresh.claim(places.lock) match
+          case Refresh.Claim.Owned(channel, lock) =>
+            try
+              Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
+              val (_, result) = exec(
+                session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+              )
+              result match
+                case Result.Failed(text, value, message) =>
+                  message shouldBe Refresh.AlreadyRunning
+                  Cli.processCode(result) shouldBe 2
+                  text should startWith ("already running\n")
+                  text should include ("phase=items")
+                  text should not include ("AF1Qip")
+                  value shouldBe Json.Null
+                case other =>
+                  fail(other.toString)
+              opened() shouldBe false
+              File(places.directory, "albums.tsv").exists shouldBe false
+            finally
+              Refresh.release(channel, lock)
+          case Refresh.Claim.Busy =>
+            fail("lock was already held")
+
+  it should "strip every AF1Qip token on stderr and stay in the caller" in :
+    withArchive: archive =>
+      writeCatalog(archive, "album\talb07\t0\tOther")
+      PlaywrightPhotosUi.redactSecrets("AF1QipAAA and AF1QipBBB_9", "2010/07 ") shouldBe "2010/07  and 2010/07 "
+      PlaywrightPhotosUi.redactSecrets("AF1QipAAA and AF1QipBBB_9", "") shouldBe "album and album"
+      withAct(archive): (session, _, opened) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => fail("accept opened"))
+        val (_, out, err) = shellOf(
+          session,
+          "agent rename-album --title \"AF1QipAAA AF1QipBBB\" --current x --new y"
+        )
+        out shouldBe ""
+        err should include ("Photo Archive Tool:")
+        err should include ("no album titled \"album album\"")
+        err should not include ("AF1Qip")
+        opened() shouldBe false
+        var ran = false
+        val (_, line) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","rename-album","--title","2010/07 ","--current","2010/07 ","--new","July"]}""",
+          (_, _) =>
+            ran = true
+            (session, Result.Ok("ran\n", Json.Null))
+        )
+        ran shouldBe false
+        line should include ("rename-album runs in the calling process")
+        Refresh.openAct = _ => new RenameFake((_, _) => ())
+        val sent = scala.collection.mutable.ListBuffer.empty[List[String]]
+        val (code, shown, errors) = shellOf(
+          session,
+          "agent rename-album --title Other --current Other --new July",
+          Some((_, argv) =>
+            sent += argv
+            Result.Ok("sent\n", Json.Null)
+          )
+        )
+        code shouldBe 0
+        sent.isEmpty shouldBe true
+        shown shouldBe "rename-album \"July\"\n"
+        errors should not include ("Photo Archive Tool:")
+        errors should not include ("AF1Qip")
+
+  it should "run in the one-shot process while serve holds its lock" in :
+    withArchive: archive =>
+      writePair(archive)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => ())
+        val argv: List[String] = List(
+          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+        )
+        val runtime: File = JFiles.createTempDirectory("rename-serve").toFile
+        val channel: FileChannel = FileChannel.open(
+          File(runtime, "serve.lock").toPath,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.READ,
+          StandardOpenOption.WRITE
+        )
+        val lock = channel.tryLock()
+        lock should not be null
+        try
+          Cli.parse(argv) match
+            case Cli.Run(parsed) =>
+              Cli.executeOneShot(session, argv, parsed, Right(runtime), waitMs = 200) match
+                case Result.Ok(text, _) =>
+                  text shouldBe "rename-album \"July\"\n"
+                case Result.Usage(message) =>
+                  message should not include ("a command is in progress")
+                  fail(message)
+                case other =>
+                  fail(other.toString)
+            case other =>
+              fail(other.toString)
+        finally
+          lock.release()
+          channel.close()
+          deleteTree(runtime)
 
   private val fixtureIds: Seq[String] = Seq(
     "albTrail", "albOwn", "albSrc", "albDst", "albUp", "albShareA", "albShareB", "albOnly", "albBad", "albUnset",
@@ -845,7 +1074,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     )
 
   private def place(session: Session, title: String, path: String, pathTitle: String): Unit =
-    val (_, result) = exec(session, "agent", "album-file", "--no-request", title)
+    val (_, result) = exec(session, "agent", "album-file", title)
     result match
       case Result.Ok(text, value) =>
         field(value, "path") shouldBe Json.Str(path)
@@ -915,6 +1144,62 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     else if file.isDirectory then Option(file.listFiles).getOrElse(Array.empty[File]).toSeq.flatMap(tomls)
     else if file.getName.endsWith(".toml") then Seq(file.getPath)
     else Seq.empty
+
+  private def writePair(archive: File): String =
+    val file: File = writeCatalog(
+      archive,
+      "album\talb07\t1\t2010/07 ",
+      "item\talb07\tpic.jpg\t2010-07-01\tkeyPic\t-",
+      "album\talbKeep\t0\tKeep Title"
+    )
+    JFiles.readString(file.toPath)
+
+  private class RenameFake(effect: (Catalog.Album, String) => Unit) extends PhotosAct:
+    def albumCards(): Seq[AlbumCard] = Seq.empty
+    def readOwner(card: AlbumCard): Option[String] = None
+    def readAlbum(card: AlbumCard): Catalog.Album = throw IllegalStateException("read")
+    def close(): Unit = ()
+    def renameAlbum(album: Catalog.Album, updated: String): Unit = effect(album, updated)
+
+  private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
+    val parent: File = JFiles.createTempDirectory("rename-lock").toFile
+    val places: Refresh.Places = Refresh.Places(File(parent, "gphoto-sync-refresh"), File(parent, "lock"))
+    val previousPlaces = Refresh.placesOf
+    val previousAct = Refresh.openAct
+    var opened = false
+    Refresh.placesOf = () => places
+    Refresh.openAct = notice =>
+      opened = true
+      previousAct(notice)
+    try body(sessionFor(archive), places, () => opened)
+    finally
+      Refresh.placesOf = previousPlaces
+      Refresh.openAct = previousAct
+      deleteTree(parent)
+
+  private def released(places: Refresh.Places): Unit =
+    Refresh.claim(places.lock) match
+      case Refresh.Claim.Owned(channel, lock) =>
+        Refresh.release(channel, lock)
+      case Refresh.Claim.Busy =>
+        fail("lock still held")
+
+  private def shellOf(
+    session: Session,
+    line: String,
+    exchange: Option[(Session, List[String]) => Result] = None
+  ): (Int, String, String) =
+    val out = new ByteArrayOutputStream
+    val err = new ByteArrayOutputStream
+    val code: Int = Console.withOut(out):
+      Console.withErr(err):
+        Cli.shell(
+          session,
+          Iterator(line),
+          (current, parsed) => Cli.toOperation(parsed).execute(current),
+          exchange
+        )
+    (code, new String(out.toByteArray, StandardCharsets.UTF_8), new String(err.toByteArray, StandardCharsets.UTF_8))
 
   private def withArchive(body: File => Unit): Unit =
     val archive: File = JFiles.createTempDirectory("agent-write").toFile

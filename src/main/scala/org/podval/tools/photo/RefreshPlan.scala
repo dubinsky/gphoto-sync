@@ -116,6 +116,11 @@ object RefreshPlan:
       readCatalog(file).flatMap: albums =>
         idsMatch(albums, prepared.diff)
 
+  // A title edit is not a card sweep. idsMatch would reject a catalog that did not come from albums.tsv.
+  private[photo] def checkRetitle(file: File): Either[String, Unit] =
+    val bytes: Array[Byte] = NFiles.readAllBytes(file.toPath)
+    bytesOk(bytes).flatMap(_ => readCatalog(file).map(_ => ()))
+
   def render(albums: Seq[Catalog.Album]): String =
     renderLines(albums.map(recordLines))
 
@@ -259,7 +264,7 @@ object RefreshPlan:
     Seq(s"album\t${album.id}\t${album.count}\t${album.title}") ++ owner ++ auto ++ error ++ unsets ++ items
 
   // Group the source file by the id column. Not a second catalog parse: order inside a block stays as written.
-  private def blocksOf(source: String): Map[String, Seq[String]] =
+  private[photo] def blocksOf(source: String): Map[String, Seq[String]] =
     val raw: Seq[String] = source.split("\n", -1).toSeq
     val body: Seq[String] = raw.dropWhile(_ == Header)
     val lines: Seq[String] = if body.lastOption.contains("") then body.dropRight(1) else body
@@ -269,10 +274,10 @@ object RefreshPlan:
           acc.updated(id, acc.getOrElse(id, Seq.empty) :+ line)
         case _ => acc
 
-  private def copiedLines(album: Catalog.Album, blocks: Map[String, Seq[String]]): Seq[String] =
+  private[photo] def copiedLines(album: Catalog.Album, blocks: Map[String, Seq[String]]): Seq[String] =
     blocks.getOrElse(album.id, recordLines(album))
 
-  private def keptLines(
+  private[photo] def keptLines(
     stored: Catalog.Album,
     next: Catalog.Album,
     readItems: Boolean,
@@ -283,14 +288,14 @@ object RefreshPlan:
     else if next.title != stored.title then retitle(block, next.title)
     else block
 
-  private def retitle(lines: Seq[String], title: String): Seq[String] =
+  private[photo] def retitle(lines: Seq[String], title: String): Seq[String] =
     lines.map: line =>
       val fields: Seq[String] = line.split("\t", -1).toSeq
       if fields.headOption.contains("album") && fields.length >= 4 then
         fields.take(3).mkString("\t") + "\t" + title
       else line
 
-  private def renderLines(groups: Seq[Seq[String]]): String =
+  private[photo] def renderLines(groups: Seq[Seq[String]]): String =
     Header + "\n" + groups.flatten.map(_ + "\n").mkString
 
   // A CR would fail the byte check. Tab and newline, including CR, become one space. No other trim.
@@ -320,8 +325,11 @@ object RefreshPlan:
       case _ => got == found.cards.map(_.id).toSet
     if ok then Right(()) else Left("album set")
 
+  private[photo] def swap(live: File, partial: File, previous: File): Either[String, Unit] =
+    swap(live, partial, previous, moveReplacing)
+
   // previous exists only between the two renames. A failed second rename puts the live file back.
-  private def swap(live: File, partial: File, previous: File, move: (File, File) => Unit): Either[String, Unit] =
+  private[photo] def swap(live: File, partial: File, previous: File, move: (File, File) => Unit): Either[String, Unit] =
     val hadLive: Boolean = live.isFile
     try
       if hadLive then move(live, previous)

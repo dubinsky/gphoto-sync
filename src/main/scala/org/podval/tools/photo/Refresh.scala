@@ -22,6 +22,10 @@ private[photo] trait PhotosUi:
   def readAlbum(card: AlbumCard): Catalog.Album
   def close(): Unit
 
+// A refresh fake is not a mutation fake.
+private[photo] trait PhotosAct extends PhotosUi:
+  def renameAlbum(album: Catalog.Album, updated: String): Unit
+
 final class Refresh(args: Cli.RefreshArgs) extends Operation:
   def execute(session: Session): (Session, Result) =
     Refresh.run(session, args, Refresh.openUi, Refresh.placesOf())
@@ -36,12 +40,19 @@ object Refresh:
     case Other
 
   private[photo] val AlreadyRunning: String = "already running"
+  private[photo] val MutationFailed: String = "mutation failed"
+
+  // A selector miss before the confirm is one-click. confirmed means the mutating confirm already returned.
+  private[photo] final class ActMiss(detail: String, val confirmed: Boolean) extends IllegalStateException(detail)
 
   private[photo] var placesOf: () => Places = () =>
     val root: String = Option(System.getenv("TMPDIR")).filter(_.nonEmpty).getOrElse("/tmp")
     Places(File(root, "gphoto-sync-refresh"), File(root, "gphoto-sync-refresh.lock"))
 
   private[photo] var openUi: (Notice => Unit) => PhotosUi = notice => loadUi(notice)
+
+  // Gradle tests pass a fake. The Playwright class is loaded only when this default is called.
+  private[photo] var openAct: (Notice => Unit) => PhotosAct = notice => PlaywrightPhotosUi.open(notice)
 
   private[photo] def needsAnother(kinds: Seq[ReadKind]): Boolean =
     if kinds.exists(_ == ReadKind.Ok) then false
@@ -468,7 +479,7 @@ object Refresh:
         if key.nonEmpty && rest.startsWith("=") then Some(key -> rest.drop(1)) else None
       .toMap
 
-  private def busy(session: Session, places: Places): (Session, Result) =
+  private[photo] def busy(session: Session, places: Places): (Session, Result) =
     val status: String =
       if File(places.directory, "status.txt").isFile then
         NFiles.readString(File(places.directory, "status.txt").toPath, StandardCharsets.UTF_8)
@@ -531,7 +542,7 @@ object Refresh:
     atomicWrite(File(directory, "status.txt"), rows.map((key, value) => s"$key=$value\n").mkString)
 
   // Closing any descriptor for this file drops every fcntl lock this process holds.
-  private enum Claim:
+  private[photo] enum Claim:
     case Owned(channel: FileChannel, lock: FileLock)
     case Busy
 
@@ -539,7 +550,7 @@ object Refresh:
   private var ownerPath: String = null
   private var pinned: List[FileChannel] = Nil
 
-  private def claim(lockFile: File): Claim = synchronized {
+  private[photo] def claim(lockFile: File): Claim = synchronized {
     if held(lockFile) then Claim.Busy
     else
       val channel: FileChannel = FileChannel.open(
@@ -566,7 +577,7 @@ object Refresh:
   private def held(lockFile: File): Boolean =
     ownerChannel != null && ownerChannel.isOpen && ownerPath == lockFile.getAbsolutePath
 
-  private def release(channel: FileChannel, lock: FileLock): Unit = synchronized {
+  private[photo] def release(channel: FileChannel, lock: FileLock): Unit = synchronized {
     try if lock != null && lock.isValid then lock.release()
     catch case _: Exception => ()
     if ownerChannel eq channel then

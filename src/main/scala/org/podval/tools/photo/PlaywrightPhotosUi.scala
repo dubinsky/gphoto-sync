@@ -1,13 +1,21 @@
 package org.podval.tools.photo
 
-import com.microsoft.playwright.{BrowserContext, BrowserType, Page, Playwright}
-import com.microsoft.playwright.options.WaitUntilState
+import com.microsoft.playwright.{BrowserContext, BrowserType, Locator, Page, Playwright}
+import com.microsoft.playwright.options.{AriaRole, WaitUntilState}
+import scala.annotation.tailrec
+import scala.util.matching.Regex
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as NFiles, Paths}
 
-// Gradle tests construct a fake PhotosUi. Nothing in the test suite calls this class.
+// Gradle tests construct a fake PhotosUi. Nothing in the test suite calls open.
 private[photo] object PlaywrightPhotosUi:
-  def open(notice: Refresh.Notice => Unit): PhotosUi =
+  private val Secret: Regex = "AF1Qip[A-Za-z0-9_-]*".r
+
+  private[photo] def redactSecrets(text: String, title: String): String =
+    val replacement: String = if title.nonEmpty then title else "album"
+    Secret.replaceAllIn(text, Regex.quoteReplacement(replacement))
+
+  def open(notice: Refresh.Notice => Unit): PhotosAct =
     val ui = new PlaywrightPhotosUi(notice)
     try
       ui.start()
@@ -16,7 +24,7 @@ private[photo] object PlaywrightPhotosUi:
       ui.close()
       throw error
 
-private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends PhotosUi:
+private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends PhotosAct:
   private var playwright: Playwright = null
   private var context: BrowserContext = null
   private var page: Page = null
@@ -92,6 +100,129 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     finally
       try if currentPlaywright != null then currentPlaywright.close()
       finally unpark()
+
+  def renameAlbum(album: Catalog.Album, updated: String): Unit =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      try ensureSession()
+      catch
+        case error: IllegalStateException if Operation.messageOf(error) == "sign-in timed out" =>
+          throw Refresh.ActMiss("sign-in timed out", confirmed = false)
+      navigate(s"https://photos.google.com/album/${album.id}")
+      clickMore()
+      click(menuItem(awaitMenu(System.currentTimeMillis + 20000L)).first())
+      focusTitle(album.title, System.currentTimeMillis + 20000L)
+      page.keyboard().press("Control+A")
+      page.keyboard().insertText(updated)
+      refuseDialog()
+      confirmDone()
+      confirmed = true
+      awaitLive(updated, System.currentTimeMillis + 20000L)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(collapsed(error), confirmed)
+
+  private def clickMore(): Unit =
+    val options: Locator = page.locator("[aria-label=\"More options\"]")
+    awaitCount(options, System.currentTimeMillis + 20000L, "More options is absent")
+    click(options.last())
+
+  @tailrec
+  private def awaitMenu(deadline: Long): String =
+    val names: Seq[String] = Seq("Edit album", "Rename album", "Rename")
+    names.find(name => menuItem(name).count() > 0) match
+      case Some(name) => name
+      case None if System.currentTimeMillis >= deadline =>
+        throw Refresh.ActMiss("menuitem is absent", confirmed = false)
+      case None =>
+        Thread.sleep(300)
+        awaitMenu(deadline)
+
+  private def menuItem(name: String): Locator =
+    page.getByRole(AriaRole.MENUITEM, new Page.GetByRoleOptions().setName(name).setExact(true))
+
+  @tailrec
+  private def focusTitle(current: String, deadline: Long): Unit =
+    if asBool(page.evaluate(focusTitleScript, current)) then ()
+    else if System.currentTimeMillis >= deadline then
+      throw Refresh.ActMiss("title field is absent", confirmed = false)
+    else
+      Thread.sleep(300)
+      focusTitle(current, deadline)
+
+  private def refuseDialog(): Unit =
+    val named: Boolean = Seq("Delete forever", "Empty trash").exists(visibleButton)
+    val prefix: Locator = page.getByRole(
+      AriaRole.BUTTON,
+      new Page.GetByRoleOptions().setName(java.util.regex.Pattern.compile("^Move to trash"))
+    )
+    val prefixed: Boolean = prefix.count() > 0 && prefix.first().isVisible
+    if named || prefixed then throw Refresh.ActMiss("refused dialog", confirmed = false)
+
+  private def visibleButton(name: String): Boolean =
+    val found: Locator = page.getByRole(
+      AriaRole.BUTTON,
+      new Page.GetByRoleOptions().setName(name).setExact(true)
+    )
+    found.count() > 0 && found.first().isVisible
+
+  private def confirmDone(): Unit =
+    val done: Locator = page.getByRole(
+      AriaRole.BUTTON,
+      new Page.GetByRoleOptions().setName("Done").setExact(true)
+    )
+    if done.count() > 0 then click(done.first())
+    else page.keyboard().press("Enter")
+
+  @tailrec
+  private def awaitLive(updated: String, deadline: Long): Unit =
+    if asBool(page.evaluate(liveTitleScript, updated)) then ()
+    else if System.currentTimeMillis >= deadline then
+      throw Refresh.ActMiss("live title differs", confirmed = true)
+    else
+      Thread.sleep(300)
+      awaitLive(updated, deadline)
+
+  @tailrec
+  private def awaitCount(locator: Locator, deadline: Long, absent: String): Unit =
+    if locator.count() > 0 then ()
+    else if System.currentTimeMillis >= deadline then throw Refresh.ActMiss(absent, confirmed = false)
+    else
+      Thread.sleep(300)
+      awaitCount(locator, deadline, absent)
+
+  private def click(locator: Locator): Unit =
+    locator.click(new Locator.ClickOptions().setTimeout(20000))
+
+  private def collapsed(error: Exception): String =
+    val message: String = Operation.messageOf(error).replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
+    if message.isEmpty then "rename failed" else message
+
+  private val focusTitleScript: String =
+    """(current) => {
+      const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
+      const valueOf = (node) => typeof node.value === 'string' ? node.value : (node.innerText || '');
+      const match = fields.find((node) => valueOf(node) === current);
+      const placeholder = fields.find((node) =>
+        (node.getAttribute('placeholder') || '') === 'Add a title' || (node.innerText || '') === 'Add a title');
+      const target = match || placeholder;
+      if (!target) return false;
+      target.focus();
+      return document.activeElement === target;
+    }"""
+
+  private val liveTitleScript: String =
+    """(wanted) => {
+      const lines = (document.body && document.body.innerText || '').split('\n');
+      if (lines.some((line) => line === wanted)) return true;
+      const fields = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
+      return fields.some((node) =>
+        (typeof node.value === 'string' ? node.value : (node.innerText || '')) === wanted);
+    }"""
 
   private def navigate(url: String): Unit =
     page.navigate(url, new Page.NavigateOptions().setTimeout(120000).setWaitUntil(WaitUntilState.DOMCONTENTLOADED))
@@ -190,7 +321,10 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     map
 
   private def redact(card: AlbumCard, error: Exception): String =
-    val message: String = Option(error.getMessage).getOrElse("read failed").replace(card.id, card.title)
+    val message: String = PlaywrightPhotosUi.redactSecrets(
+      Option(error.getMessage).getOrElse("read failed"),
+      card.title
+    )
     message.split('\n').headOption.filter(_.nonEmpty).getOrElse("read failed")
 
   // Launch returns before Hyprland lists the window. One look misses it and the window stays on the focused monitor.

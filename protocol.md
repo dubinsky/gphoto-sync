@@ -11,7 +11,7 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Album links — the `album-links.tsv` grammar.
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
-- Requests — request rows, what applying them changes, and the applier.
+- Requests — `photo agent rename-album`, and the legacy request grammar.
 
 ## Files
 
@@ -21,12 +21,13 @@ The catalog, the request file, and the result file live in `archive/.gphoto-sync
 There is no config key for that directory.
 
 `photo refresh` rewrites `catalog.txt`.
-Nothing else in the program does.
-Applying a request batch is the other writer.
-That pass updates the catalog as Catalog updates, Download, and Delete describe.
+`photo agent rename-album` rewrites one album line after the live title equals the new title.
+`requests.tsv` is a legacy file that a later command will read.
+It is not a second current path.
+The script does not apply the batch.
 `photo reconcile` reads and writes `album-links.tsv`.
 `photo refresh` does not write that file.
-The program writes `requests.tsv`.
+The program still writes `requests.tsv` for actions that are still request rows.
 The local reader reads it and does not write it.
 `photo refresh` does not write `requests.tsv`.
 The local reader writes `results.tsv`.
@@ -34,13 +35,12 @@ The program reads it.
 `download-item` stages originals in `.download/`, as Download describes.
 `photo file` files a dated download from there, as Filing describes.
 
-The program does not change Google Photos except `photo publish` and `photo sync`.
-`photo refresh` only reads.
-Applying `requests.tsv` stays the archive agent plus `reader/sandbox-act.mjs` in this repository.
-In this note, the local reader is that applier when a request batch is processed.
+`photo refresh` only reads Google Photos.
+`photo agent rename-album` changes one album title.
+`photo publish` and `photo sync` still change Google Photos.
 A request batch is not a refresh.
 
-`catalog.txt.partial` and `catalog.txt.previous` exist only during Publish.
+`catalog.txt.partial` and `catalog.txt.previous` exist only while a catalog rewrite is published.
 They are not a second catalog.
 
 ## Catalog
@@ -468,7 +468,7 @@ Refresh does not add a request-file action.
 
 Match one catalog album to the archive and write one album file.
 Title grammar and on-disk paths are the archive-layout section of `README.adoc` in this repository.
-A request row follows Requests.
+A legacy request row follows Requests.
 A historical album file is `external = true`.
 Leave `google-album-id` unset.
 
@@ -480,26 +480,26 @@ Reconcile is that command.
 An `owner` line is Catalog.
 
 An album with an `owner` line is shared.
-Write no `rename-album` row for it.
+`photo agent album-file` does not rename it.
 `google-title` is the exact catalog title, including its spaces.
 `owner` is the label on that line.
 The path title is still the local file, chosen from the working title below.
 
-An album the signed-in account owns, whose Google title is the path title, leaves `google-title` unset.
-When the catalog title differs from that path title, write one `rename-album` row in `archive/.gphoto-sync/requests.tsv`
-in the same step as the local file.
-`current` is the exact catalog title.
-`new` is the path title.
-Leave the row for the operator to approve.
-The local reader applies it.
+An album with no `owner` line, whose Google title is the path title, leaves `google-title` unset.
+When the catalog title differs from that path title, `photo agent album-file` prints `rename yes`.
+It does not append a request row.
+A rename the operator wants is `photo agent rename-album`.
+`--current` is the exact catalog title.
+`--new` is the path title.
 
-An album the signed-in account owns, whose Google title is an override, stores that exact string in `google-title`.
-A rename of that album uses the stored `google-title` as `current`.
-The new title is a string the operator chose.
+An album with no `owner` line, whose Google title is an override, stores that exact string in `google-title`.
+`photo agent rename-album` is still the rename.
+`--current` is the exact catalog title.
+`--new` is a string the operator chose.
 
 Sync compares Library API media ids and does not match filenames, so it cannot reconcile a hand-made album.
 A later `move-item` uses the catalog item key, as Requests describes.
-Stop at the local file and the request row.
+Stop at the local file.
 It does not publish, sync, or run `repair --names`.
 
 ### Names
@@ -508,8 +508,8 @@ Take the working title from the catalog title.
 Remove leading and trailing spaces.
 Collapse each run of spaces to one space.
 Use that working title for the local path title.
-When the signed-in account owns the album and `google-title` is unset, that path title is also the new Google title.
-The request's `current` stays the exact catalog title.
+When there is no `owner` line and `google-title` is unset, that path title is the `--new` of `photo agent rename-album`.
+`--current` stays the exact catalog title.
 
 ### Skip
 
@@ -667,6 +667,7 @@ An empty claim prints `albums=-`.
 `photo reconcile` reads `catalog.txt` and `album-links.tsv`.
 The link grammar is Album links.
 It does not call `photo agent album-file` and it does not append `rename-album`.
+A rename is `photo agent rename-album`.
 
 Pending means `external` left false and `google-album-id` empty.
 There is no pending key.
@@ -752,6 +753,21 @@ Other people's items that the Download control can fetch stay on `download-item`
 
 ## Requests
 
+`photo agent rename-album` changes one album title.
+The album has no `owner` line.
+`--current` equals the catalog title exactly.
+`--new` is non-empty and differs from `--current`.
+The control is More options, then the menuitem Edit album, Rename album, or Rename.
+Replace the title field and confirm with Done, or with Enter when Done is absent.
+After the live title equals `--new`, that album line's title becomes `--new`.
+The album id, the count, the owner line, and the item lines stay.
+
+The grammar below is legacy.
+The column tables, the version lines, and Catalog updates describe the old row statuses.
+They stay until a later command reads `requests.tsv`.
+That file is not a second current path.
+The script does not apply the batch.
+
 `archive/.gphoto-sync/requests.tsv` is written by the program.
 The local reader reads it and does not write it.
 The file is absent between batches.
@@ -788,7 +804,7 @@ An empty file's first id is `r1`.
 
 | action | album-id | item-key | current | new |
 |---|---|---|---|---|
-| `rename-album` | album id | empty | current title, exact | new title |
+| `rename-album` (legacy) | album id | empty | current title, exact | new title |
 | `move-item` | source album id | item key | current filename | destination album id |
 | `set-description` | empty | item key | current filename | new description, empty clears |
 | `set-date` | empty | item key | current filename | `YYYY-MM-DD HH:MM` local |
@@ -797,7 +813,7 @@ An empty file's first id is `r1`.
 
 | action | Accept only when |
 |---|---|
-| `rename-album` | The album id exists, there is no `owner` line, `current` equals the catalog title exactly, `new` is non-empty, and `new` differs from `current`. |
+| `rename-album` (legacy) | The album id exists, there is no `owner` line, `current` equals the catalog title exactly, `new` is non-empty, and `new` differs from `current`. |
 | `move-item` | The source album and the destination album exist, the item key is an `item` line on the source (not an `unset` line), `current` equals that filename, and the destination id differs from the source. |
 | `set-description` | `album-id` is empty, the item key is an `item` line on exactly one album, `current` equals that filename, and `new` may be empty. |
 | `set-date` | The same item identity as `set-description`, and `new` matches `YYYY-MM-DD HH:MM`. |
@@ -818,6 +834,8 @@ For `delete-item`, the program does not touch Google Photos and does not rewrite
 The local reader does both, after the operator tells it to process the file.
 
 ### Catalog updates
+
+This subsection describes the old row statuses.
 
 Applying a batch updates `catalog.txt` in that pass.
 `download-item` does not change it.
@@ -904,7 +922,8 @@ There is no `rename-item` action.
 A filename change is done locally after a download.
 New actions are added to this table only after the operator agrees.
 `photos-renames.tsv` is no longer supported.
-Album renames are `rename-album` rows in `requests.tsv`.
+Album renames are `photo agent rename-album`.
+The `rename-album` row is legacy.
 
 ### Download
 
@@ -1013,6 +1032,10 @@ The local reader never writes into the request file.
 It is rewritten for each processed batch.
 
 ### Process
+
+`photo agent rename-album` is the applier for an album rename.
+The numbered steps are the legacy batch.
+The script does not apply the batch.
 
 1. The operator tells the archive agent to process the request file (e.g. "handle requests" / "process requests").
 2. The local reader re-reads this note, validates every row against the catalog and live Google Photos (missing, stale,

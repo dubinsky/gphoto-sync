@@ -69,7 +69,6 @@ private[photo] final class AgentAlbumFile(
   dryRun: Boolean,
   replace: Boolean,
   googleTitle: Option[String],
-  noRequest: Boolean,
   title: String
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -80,7 +79,41 @@ private[photo] final class AgentAlbumFile(
         if album.autoAdd then AgentCommands.skipped(loaded, album, "auto-add")
         else if album.error.exists(_.nameFailures > 0) || album.unsets.nonEmpty then
           AgentCommands.skipped(loaded, album, "unread names")
-        else AgentCommands.writeAlbum(loaded, album, dryRun, replace, googleTitle, noRequest)
+        else AgentCommands.writeAlbum(loaded, album, dryRun, replace, googleTitle)
+
+private[photo] final class AgentRename(
+  title: Option[String],
+  current: Option[String],
+  updated: Option[String],
+  id: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    val ready: Either[(Session, Result), (Session, Catalog.Album, String)] =
+      try
+        val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+        val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+        val wantedNew: String = updated.getOrElse(throw IllegalArgumentException("missing new"))
+        val (loaded, albums) = session.loadCatalog
+        try
+          val album: Catalog.Album = AgentCommands.select(albums, wantedTitle, id)
+          AgentCommands.acceptRequest(
+            albums,
+            Requests.Action.RenameAlbum,
+            album.id,
+            "",
+            wantedCurrent,
+            wantedNew
+          )
+          Right((loaded, album, wantedNew))
+        catch
+          case error: (IllegalArgumentException | IllegalStateException) =>
+            Left((loaded, Result.Usage(Operation.messageOf(error))))
+      catch
+        case error: (IllegalArgumentException | IllegalStateException) =>
+          Left((session, Result.Usage(Operation.messageOf(error))))
+    ready match
+      case Left(done) => done
+      case Right((loaded, album, wantedNew)) => AgentCommands.renameAlbum(loaded, album, wantedNew)
 
 private[photo] final class AgentRequest(
   action: Requests.Action,
@@ -391,13 +424,155 @@ private[photo] object AgentCommands:
       "unmatched" -> Json.Arr(misses.map(Json.Str.apply))
     ))
 
+  private val RenameStep: String = "More options, then Edit album, Rename album, or Rename"
+
+  def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
+    val places: Refresh.Places = Refresh.placesOf()
+    Refresh.claim(places.lock) match
+      case Refresh.Claim.Busy =>
+        val (kept, result) = Refresh.busy(session, places)
+        result match
+          case Result.Failed(text, value, message) =>
+            (kept, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, message))
+          case other =>
+            (kept, other)
+      case Refresh.Claim.Owned(channel, lock) =>
+        var ui: PhotosAct = null
+        try heldRename(session, album, updated, act => ui = act)
+        finally
+          if ui != null then
+            try ui.close()
+            catch case _: Exception => ()
+          Refresh.release(channel, lock)
+
+  private def heldRename(
+    session: Session,
+    album: Catalog.Album,
+    updated: String,
+    opened: PhotosAct => Unit
+  ): (Session, Result) =
+    val accepted: Either[(Session, Result), Catalog.Album] =
+      try Right(reread(session, album, updated))
+      catch
+        case error: (IllegalArgumentException | IllegalStateException) =>
+          Left((session, Result.Usage(Operation.messageOf(error))))
+    accepted match
+      case Left(done) => done
+      case Right(fresh) =>
+        val launched: Either[(Session, Result), PhotosAct] =
+          try
+            // A notice would write status.txt and drop a crashed refresh's resume phase.
+            Right(Refresh.openAct(_ => ()))
+          catch
+            case error: Exception =>
+              Left(renameFailed(session, fresh, "one-click", collapsed(error)))
+        launched match
+          case Left(done) => done
+          case Right(ui) =>
+            opened(ui)
+            val renamed: Either[(Session, Result), Unit] =
+              try
+                ui.renameAlbum(fresh, updated)
+                Right(())
+              catch
+                case miss: Refresh.ActMiss =>
+                  val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+                  val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("rename failed")
+                  Left(renameFailed(session, fresh, recovery, detail))
+                case error: Exception =>
+                  Left(renameFailed(session, fresh, "one-click", collapsed(error)))
+            renamed match
+              case Left(done) => done
+              case Right(_) =>
+                publishTitle(session, fresh, updated) match
+                  case Left(detail) => renameFailed(session, fresh, "refresh-only", detail)
+                  case Right(next) => renameOk(next, fresh, updated)
+
+  private def reread(session: Session, album: Catalog.Album, updated: String): Catalog.Album =
+    val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val albums: Seq[Catalog.Album] = Catalog.read(file)
+    val fresh: Catalog.Album = albums.find(_.id == album.id).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    acceptRequest(albums, Requests.Action.RenameAlbum, fresh.id, "", album.title, updated)
+    fresh
+
+  private def publishTitle(session: Session, album: Catalog.Album, updated: String): Either[String, Session] =
+    val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
+    val live: File = File(directory, "catalog.txt")
+    val partial: File = File(directory, "catalog.txt.partial")
+    val previous: File = File(directory, "catalog.txt.previous")
+    val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
+    val albums: Seq[Catalog.Album] = Catalog.read(live)
+    val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
+    val groups: Either[String, Seq[Seq[String]]] =
+      albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+        case (Left(message), _) => Left(message)
+        case (Right(acc), next) =>
+          if next.id == album.id then
+            blocks.get(album.id) match
+              case Some(block) => Right(acc :+ RefreshPlan.retitle(block, updated))
+              case None => Left("missing album block")
+          else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
+    groups.flatMap: lines =>
+      try
+        Files.write(RefreshPlan.renderLines(lines), partial)
+        Right(())
+      catch case error: Exception =>
+        Left(collapsed(error))
+    .flatMap(_ => RefreshPlan.checkRetitle(partial))
+    .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+    .map(_ => session.copy(catalogCache = None))
+
+  private def renameOk(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
+    val text: String = PlaywrightPhotosUi.redactSecrets(s"rename-album ${Album.quote(updated)}\n", updated)
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("rename-album"),
+      "title" -> Json.Str(updated),
+      "catalog" -> Json.Str("updated"),
+      "albumId" -> Json.Str(album.id),
+      "itemKey" -> Json.Str("")
+    ))
+    (session, Result.Ok(text, value))
+
+  private def renameFailed(
+    session: Session,
+    album: Catalog.Album,
+    recovery: String,
+    detail: String
+  ): (Session, Result) =
+    val shown: String = collapsedText(detail)
+    val text: String =
+      s"""failed rename-album
+         |album ${Album.quote(album.title)}
+         |step $RenameStep
+         |recovery $recovery
+         |catalog unchanged
+         |$shown
+         |""".stripMargin
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("rename-album"),
+      "title" -> Json.Str(album.title),
+      "step" -> Json.Str(RenameStep),
+      "recovery" -> Json.Str(recovery),
+      "catalog" -> Json.Str("unchanged"),
+      "albumId" -> Json.Str(album.id),
+      "itemKey" -> Json.Str("")
+    ))
+    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
+
+  private def collapsed(error: Exception): String = collapsedText(Operation.messageOf(error))
+
+  private def collapsedText(detail: String): String =
+    val message: String = detail.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
+    if message.isEmpty then "rename failed" else message
+
   def writeAlbum(
     session: Session,
     album: Catalog.Album,
     dryRun: Boolean,
     replace: Boolean,
-    googleFlag: Option[String],
-    noRequest: Boolean
+    googleFlag: Option[String]
   ): (Session, Result) =
     album.owner.foreach: _ =>
       googleFlag.foreach: flag =>
@@ -467,25 +642,7 @@ private[photo] object AgentCommands:
            |catalog-title ${Album.quote(album.title)}
            |rename $renameWord
            |""".stripMargin
-      if !willRename || noRequest then (dropped, Result.Ok(summary, value))
-      else
-        try
-          val row: Requests.Row = Requests.append(
-            requestsFile(dropped),
-            Requests.Action.RenameAlbum,
-            album.id,
-            "",
-            album.title,
-            pathTitle
-          )
-          val appended: String = summary + s"appended ${row.id} rename-album\n"
-          (dropped, Result.Ok(appended, albumValueOf(album.id, relative, pathTitle, album.title, true, Some(row.id))))
-        catch
-          case error: Exception =>
-            (
-              dropped,
-              Result.Failed(summary + "append failed\n", value, Operation.messageOf(error))
-            )
+      (dropped, Result.Ok(summary, value))
 
   // Called before the partial is created. A bad include throws and nothing is written.
   def requireInclude(
