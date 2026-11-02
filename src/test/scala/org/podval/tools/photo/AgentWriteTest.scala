@@ -622,6 +622,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           "new title is unchanged",
           "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "2010/07 "
         )
+        reject("filename is not valid", "agent", "download-item", "--title", "Bad Names", "--item", "keyDot", "--current", ".")
+        reject("filename is not valid", "agent", "download-item", "--title", "Bad Names", "--item", "keyDots", "--current", "..")
+        reject(
+          "filename is not valid",
+          "agent", "download-item", "--title", "Bad Names", "--item", "keySlash", "--current", "a/b.jpg"
+        )
         opened shouldBe false
       finally
         Refresh.openAct = previousAct
@@ -679,9 +685,6 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 00:60")
       reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-02-31 09:05")
       reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-13-01 09:05")
-      reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keyDot", "--current", ".")
-      reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keyDots", "--current", "..")
-      reject("filename is not valid", "agent", "request", "download-item", "--album", "albBad", "--item", "keySlash", "--current", "a/b.jpg")
       reject(
         "album has an owner",
         "agent", "request", "delete-item", "--album", "albOwn", "--item", "keyOwn", "--current", "pic.jpg"
@@ -748,19 +751,13 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       Cli.parse(List(
         "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
       )) shouldBe Cli.Usage("use photo agent set-date")
+      Cli.parse(List(
+        "agent", "request", "download-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
+      )) shouldBe Cli.Usage("use photo agent download-item")
       JFiles.readString(requests(archive).toPath) shouldBe beforeLegacy
       Requests.append(requests(archive), Requests.Action.SetDescription, "", "keyOnly", "pic.jpg", "")
       Requests.append(requests(archive), Requests.Action.SetDate, "", "keyOnly", "pic.jpg", "2010-07-19 09:05")
-      val (_, download) = exec(
-        session, "agent", "request", "download-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
-      )
-      download match
-        case Result.Ok(text, value) =>
-          text shouldBe "appended r6 download-item\n"
-          noIds(text, fixtureIds*)
-          field(value, "itemKey") shouldBe Json.Str("keyPic")
-        case other =>
-          fail(other.toString)
+      Requests.append(requests(archive), Requests.Action.DownloadItem, "albSrc", "keyPic", "pic.jpg", "")
       val (_, deleted) = exec(
         session, "agent", "request", "delete-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
       )
@@ -837,9 +834,15 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         Cli.Usage("use photo agent set-description")
       Cli.parse(List("agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg")) shouldBe
         Cli.Usage("use photo agent set-date")
+      Cli.parse(List(
+        "agent", "request", "download-item", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+      )) shouldBe Cli.Usage("use photo agent download-item")
       usage(session, "agent", "set-description") shouldBe "missing item"
       usage(session, "agent", "set-description", "--item", "keyOnly") shouldBe "missing current"
       usage(session, "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg") shouldBe "missing new"
+      usage(session, "agent", "download-item") shouldBe "missing title"
+      usage(session, "agent", "download-item", "--title", "Bad Names") shouldBe "missing item"
+      usage(session, "agent", "download-item", "--title", "Bad Names", "--item", "keyDot") shouldBe "missing current"
       File(archive, ".gphoto-sync").exists shouldBe false
 
   "rename-album" should "leave the catalog unchanged when the step throws" in :
@@ -1324,6 +1327,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           (_, _) => fail("set-date was forwarded")
         )
         dated should include ("set-date runs in the calling process")
+        val (_, downloaded) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","download-item","--title","2010/07 ","--item","keyPic","--current","pic.jpg"]}""",
+          (_, _) => fail("download-item was forwarded")
+        )
+        downloaded should include ("download-item runs in the calling process")
         Refresh.openAct = _ =>
           new RenameFake((_, _) => (), onDescription = (_, text) =>
             if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
@@ -1359,6 +1368,239 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         err should not include ("mutation failed")
         err should not include ("Photo Archive Tool:")
         err should not include ("AF1Qip")
+
+  "download-item" should "keep a staged file and not open Chrome" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talb07\t1\t2010/07 ",
+        "item\talb07\tIMG_pic.JPG\t2010-07-01\tkeyPic\t-",
+        "album\talbKeep\t1\tKeep Title",
+        "item\talbKeep\tIMG_pic.JPG\t2010-07-01\tkeyKeep\t-"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      val staged: File = File(archive, ".gphoto-sync/.download/2010/07/01/IMG_pic.JPG")
+      staged.getParentFile.mkdirs()
+      val body: Array[Byte] = Array[Byte](1, 2, 3, 4)
+      JFiles.write(staged.toPath, body)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDownload = (_, _) => fail("download called"))
+        val (_, first) = exec(
+          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "IMG_pic.JPG"
+        )
+        first match
+          case Result.Ok(text, value) =>
+            text shouldBe "download-item \"IMG_pic.JPG\"\n"
+            text should not include ("alb07")
+            text should not include ("keyPic")
+            Cli.processCode(first) shouldBe 0
+            field(value, "action") shouldBe Json.Str("download-item")
+            field(value, "title") shouldBe Json.Str("2010/07 ")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        val (_, second) = exec(
+          session, "agent", "download-item", "--title", "Keep Title", "--item", "keyKeep", "--current", "IMG_pic.JPG"
+        )
+        second match
+          case Result.Ok(text, value) =>
+            text shouldBe "download-item \"IMG_pic.JPG\"\n"
+            text should not include ("albKeep")
+            text should not include ("keyKeep")
+            field(value, "albumId") shouldBe Json.Str("albKeep")
+          case other =>
+            fail(other.toString)
+        JFiles.readAllBytes(staged.toPath).sameElements(body) shouldBe true
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        requests(archive).exists shouldBe false
+        places.directory.exists shouldBe false
+        released(places)
+
+  it should "keep an undated staged file" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talb07\t1\tLoose",
+        "item\talb07\tIMG_pic.JPG\t-\tkeyPic\t-"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      val staged: File = File(archive, ".gphoto-sync/.download/undated/IMG_pic.JPG")
+      staged.getParentFile.mkdirs()
+      val body: Array[Byte] = Array[Byte](5, 6)
+      JFiles.write(staged.toPath, body)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDownload = (_, _) => fail("download called"))
+        val (_, result) = exec(
+          session, "agent", "download-item", "--title", "Loose", "--item", "keyPic", "--current", "IMG_pic.JPG"
+        )
+        result match
+          case Result.Ok(text, _) =>
+            text shouldBe "download-item \"IMG_pic.JPG\"\n"
+          case other =>
+            fail(other.toString)
+        JFiles.readAllBytes(staged.toPath).sameElements(body) shouldBe true
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+
+  it should "use that album's item when the key is on two albums" in :
+    withArchive: archive =>
+      writeFixture(archive)
+      val staged: File = File(archive, ".gphoto-sync/.download/2010/07/03/pic.jpg")
+      staged.getParentFile.mkdirs()
+      val body: Array[Byte] = Array[Byte](7)
+      JFiles.write(staged.toPath, body)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDownload = (_, _) => fail("download called"))
+        val (_, result) = exec(
+          session, "agent", "download-item", "--title", "Alpha Name", "--item", "keyShare", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "download-item \"pic.jpg\"\n"
+            field(value, "albumId") shouldBe Json.Str("albShareA")
+            field(value, "itemKey") shouldBe Json.Str("keyShare")
+          case other =>
+            fail(other.toString)
+        JFiles.readAllBytes(staged.toPath).sameElements(body) shouldBe true
+
+  it should "write the staging file and leave the catalog unchanged" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        var seen: Option[File] = None
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDownload = (item, dest) =>
+            item.filename shouldBe "pic.jpg"
+            item.key shouldBe "keyPic"
+            seen = Some(dest)
+            JFiles.write(dest.toPath, Array[Byte](9, 8, 7))
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "download-item \"pic.jpg\"\n"
+            text should not include ("alb07")
+            text should not include ("keyPic")
+            field(value, "action") shouldBe Json.Str("download-item")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        val written: File = seen.getOrElse(fail("download was not called"))
+        val staged: File = File(session.root.configuration.archive, ".gphoto-sync/.download/2010/07/01/pic.jpg")
+        written.getCanonicalPath shouldBe staged.getCanonicalPath
+        JFiles.readAllBytes(written.toPath).sameElements(Array[Byte](9, 8, 7)) shouldBe true
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        requests(archive).exists shouldBe false
+        places.directory.exists shouldBe false
+        File(places.directory, "status.txt").exists shouldBe false
+        File(places.directory, "albums.tsv").exists shouldBe false
+        File(places.directory, "parts").exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "report one-click when the download writes nothing" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDownload = (_, _) => ()):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            Cli.processCode(result) shouldBe 1
+            text shouldBe
+              """failed download-item
+                |filename "pic.jpg"
+                |step More options, then Download
+                |recovery one-click
+                |catalog unchanged
+                |staged file is absent
+                |""".stripMargin
+            text should not include ("refresh-only")
+            text should not include ("alb07")
+            text should not include ("keyPic")
+            field(value, "action") shouldBe Json.Str("download-item")
+            field(value, "title") shouldBe Json.Str("2010/07 ")
+            field(value, "step") shouldBe Json.Str("More options, then Download")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        File(archive, ".gphoto-sync/.download/2010/07/01/pic.jpg").exists shouldBe false
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        places.directory.exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "report one-click when Download is absent" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDownload = (_, _) =>
+            throw new Refresh.ActMiss("Download is absent AF1QipLEAK", confirmed = false)
+          )
+        val (_, result) = exec(
+          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            text should not include ("refresh-only")
+            text should include ("Download is absent")
+            text should not include ("AF1Qip")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+
+  it should "report already running without opening the browser" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        places.directory.mkdirs()
+        JFiles.writeString(File(places.directory, "status.txt").toPath, "phase=items\nAF1QipBusy\n")
+        Refresh.claim(places.lock) match
+          case Refresh.Claim.Owned(channel, lock) =>
+            try
+              Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
+              val (_, result) = exec(
+                session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+              )
+              result match
+                case Result.Failed(text, value, message) =>
+                  message shouldBe Refresh.AlreadyRunning
+                  Cli.processCode(result) shouldBe 2
+                  text should startWith ("already running\n")
+                  text should include ("phase=items")
+                  text should not include ("AF1Qip")
+                  value shouldBe Json.Null
+                case other =>
+                  fail(other.toString)
+              JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+              File(archive, ".gphoto-sync/.download/2010/07/01/pic.jpg").exists shouldBe false
+            finally
+              Refresh.release(channel, lock)
+          case Refresh.Claim.Busy =>
+            fail("lock was already held")
 
   private val fixtureIds: Seq[String] = Seq(
     "albTrail", "albOwn", "albSrc", "albDst", "albUp", "albShareA", "albShareB", "albOnly", "albBad", "albUnset",
@@ -1488,7 +1730,8 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
   private class RenameFake(
     effect: (Catalog.Album, String) => Unit,
     onDescription: (Catalog.Item, String) => Unit = (_, _) => (),
-    onDate: (Catalog.Item, String) => Unit = (_, _) => ()
+    onDate: (Catalog.Item, String) => Unit = (_, _) => (),
+    onDownload: (Catalog.Item, File) => Unit = (_, _) => ()
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -1497,6 +1740,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     def renameAlbum(album: Catalog.Album, updated: String): Unit = effect(album, updated)
     def setDescription(item: Catalog.Item, text: String): Unit = onDescription(item, text)
     def setDate(item: Catalog.Item, local: String): Unit = onDate(item, local)
+    def downloadItem(item: Catalog.Item, destination: File): Unit = onDownload(item, destination)
 
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile

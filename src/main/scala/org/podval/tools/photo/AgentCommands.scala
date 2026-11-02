@@ -139,6 +139,23 @@ private[photo] final class AgentSetDate(
         val album: Catalog.Album = AgentCommands.locateItem(albums, key)._1
         AgentCommands.setDate(loaded, album, key, wantedCurrent, local)
 
+private[photo] final class AgentDownload(
+  title: Option[String],
+  item: Option[String],
+  current: Option[String],
+  id: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val key: String = item.getOrElse(throw IllegalArgumentException("missing item"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        val album: Catalog.Album = AgentCommands.select(albums, wantedTitle, id)
+        AgentCommands.acceptRequest(albums, Requests.Action.DownloadItem, album.id, key, wantedCurrent, "")
+        AgentCommands.downloadItem(loaded, album, key, wantedCurrent)
+
 private[photo] final class AgentRequest(
   action: Requests.Action,
   album: Option[String],
@@ -451,6 +468,7 @@ private[photo] object AgentCommands:
   private val RenameStep: String = "More options, then Edit album, Rename album, or Rename"
   private val DescriptionStep: String = "Open info, or the i key, then Add a description"
   private val DateStep: String = "Date taken, then Save, Done, or OK"
+  private val DownloadStep: String = "More options, then Download"
 
   def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     withLock(session, album.title)(heldRename(session, album, updated))
@@ -472,6 +490,20 @@ private[photo] object AgentCommands:
     local: String
   ): (Session, Result) =
     withLock(session, album.title)(heldDate(session, key, current, local))
+
+  def downloadItem(
+    session: Session,
+    album: Catalog.Album,
+    key: String,
+    current: String
+  ): (Session, Result) =
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    if stagingFile(session, item).exists then
+      itemOk(session, album, item, "download-item", "unchanged")
+    else
+      withLock(session, album.title)(heldDownload(session, album.id, key, current))
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -657,6 +689,61 @@ private[photo] object AgentCommands:
       if ui != null then
         try ui.close()
         catch case _: Exception => ()
+
+  private def heldDownload(
+    session: Session,
+    albumId: String,
+    key: String,
+    current: String
+  ): (Session, Result) =
+    val (album, item) = rereadDownload(session, albumId, key, current)
+    val dest: File = stagingFile(session, item)
+    // The file may have appeared while this command waited for the lock.
+    if dest.exists then itemOk(session, album, item, "download-item", "unchanged")
+    else
+      var ui: PhotosAct = null
+      try
+        // saveAs writes the catalog filename and does not create this directory.
+        Files.mkDirs(dest.getParentFile)
+        // A notice would write status.txt and drop a crashed refresh's resume phase.
+        ui = Refresh.openAct(_ => ())
+        ui.downloadItem(item, dest)
+        if dest.isFile then itemOk(session, album, item, "download-item", "unchanged")
+        else
+          // Download does not change Google Photos, so a missing file after the click is one-click.
+          itemFailed(session, album, item, "download-item", DownloadStep, "one-click", "staged file is absent")
+      catch
+        case miss: Refresh.ActMiss =>
+          val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("download-item failed")
+          itemFailed(session, album, item, "download-item", DownloadStep, "one-click", detail)
+        case error: Exception =>
+          itemFailed(session, album, item, "download-item", DownloadStep, "one-click", Operation.messageOf(error))
+      finally
+        if ui != null then
+          try ui.close()
+          catch case _: Exception => ()
+
+  private def rereadDownload(
+    session: Session,
+    albumId: String,
+    key: String,
+    current: String
+  ): (Catalog.Album, Catalog.Item) =
+    val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val albums: Seq[Catalog.Album] = Catalog.read(file)
+    val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    acceptRequest(albums, Requests.Action.DownloadItem, album.id, key, current, "")
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    (album, item)
+
+  private def stagingFile(session: Session, item: Catalog.Item): File =
+    val day: String = item.date.fold("undated")(date => date.toString.replace('-', '/'))
+    val inbox: File = File(File(session.root.configuration.archive, ".gphoto-sync"), ".download")
+    File(File(inbox, day), item.filename)
 
   private def rereadItem(
     session: Session,

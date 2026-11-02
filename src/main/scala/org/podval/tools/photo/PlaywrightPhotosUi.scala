@@ -4,6 +4,7 @@ import com.microsoft.playwright.{BrowserContext, BrowserType, Locator, Page, Pla
 import com.microsoft.playwright.options.{AriaRole, WaitUntilState}
 import scala.annotation.tailrec
 import scala.util.matching.Regex
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as NFiles, Paths}
 import java.time.Month
@@ -165,6 +166,30 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         throw miss
       case error: Exception =>
         throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
+  def downloadItem(item: Catalog.Item, destination: File): Unit =
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/photo/${item.key}")
+      clickMore()
+      val menu: Locator = page.getByRole(
+        AriaRole.MENUITEM,
+        new Page.GetByRoleOptions().setName(java.util.regex.Pattern.compile("^Download\\b"))
+      )
+      awaitCount(menu, System.currentTimeMillis + 20000L, "Download is absent")
+      // waitForDownload follows the context timeout, which start() left unlimited.
+      val saved = page.waitForDownload(
+        new Page.WaitForDownloadOptions().setTimeout(20000),
+        () => click(menu.first())
+      )
+      saved.saveAs(destination.toPath)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed = false)
 
   @tailrec
   private def focusDescription(deadline: Long, opened: Boolean): Unit =

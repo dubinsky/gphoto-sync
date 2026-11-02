@@ -170,10 +170,13 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("agent", "request", "set-date", "--help")) shouldBe
       Cli.Usage("use photo agent set-date")
     Cli.parse(List(
+      "agent", "download-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
+    )) shouldBe Cli.Run(Cli.DownloadItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
+    Cli.parse(List(
       "agent", "request", "download-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
-    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
-      "download-item", Some("a1"), Some("k1"), Some("a.jpg"), None, Some("r1")
-    ))
+    )) shouldBe Cli.Usage("use photo agent download-item")
+    Cli.parse(List("agent", "request", "download-item", "--help")) shouldBe
+      Cli.Usage("use photo agent download-item")
     Cli.parse(List(
       "agent", "request", "delete-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
     )) shouldBe Cli.Run(Cli.AgentRequestArgs(
@@ -378,6 +381,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |rename-album  rename an album
         |set-description  set an item description
         |set-date  set an item date
+        |download-item  download an item
         |requests  list request rows
         |results  list result rows
         |drift  report create, update, gone, pending, and skipped
@@ -387,15 +391,15 @@ class CliTest extends AnyFlatSpec, Matchers:
     agent should include ("rename-album  rename an album")
     agent should include ("set-description  set an item description")
     agent should include ("set-date  set an item date")
+    agent should include ("download-item  download an item")
     agent should not include ("move-item")
-    agent should not include ("download-item")
     agent should not include ("delete-item")
     helpOf("agent", "request", "--help") shouldBe
       """request  append one request row
         |
         |move-item  move an item to another album
-        |download-item  download an item
         |delete-item  delete an item""".stripMargin
+    helpOf("agent", "request", "--help") should not include ("download-item")
     Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
       Cli.Usage("use photo agent rename-album")
     helpOf("agent", "rename-album", "--help") shouldBe
@@ -429,6 +433,17 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--item  text  item key
         |--current  text  current filename
         |--new  text  new local date""".stripMargin
+    helpOf("agent", "download-item", "--help") shouldBe
+      """download-item  download an item
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--title  text  album title
+        |--item  text  item key
+        |--current  text  current filename
+        |--id  text  catalog album id""".stripMargin
     helpOf("agent", "album-file", "--help") should include ("--id  text  catalog album id")
     helpOf("agent", "album-file", "--help") should not include ("--no-request")
     helpOf("agent", "include", "--help") shouldBe
@@ -519,6 +534,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "request", "set-description", "--help") -> "use photo agent set-description",
       List("agent", "request", "set-date") -> "use photo agent set-date",
       List("agent", "request", "set-date", "--help") -> "use photo agent set-date",
+      List("agent", "request", "download-item") -> "use photo agent download-item",
+      List("agent", "request", "download-item", "--help") -> "use photo agent download-item",
       List("agent", "album-file", "--no-request", "2010/07") -> "unknown option '--no-request'",
       List("agent", "request", "--album", "a1", "rename-album") -> "unknown command '--album'",
       List("agent", "requests", "x") -> "extra argument 'x'",
@@ -615,12 +632,12 @@ class CliTest extends AnyFlatSpec, Matchers:
     val tools: List[Cli.McpTool] = Cli.mcpTools
     tools.map(_.name) shouldBe List(
       "stems", "catalog", "items", "match", "include", "rename-album",
-      "set-description", "set-date", "requests", "results", "drift", "missing"
+      "set-description", "set-date", "download-item", "requests", "results", "drift", "missing"
     )
     List(
       "album-file",
       "request",
-      "move-item", "download-item", "delete-item",
+      "move-item", "delete-item",
       "repair", "publish", "sync", "refresh", "reconcile", "file", "set-metadata",
       "login", "status", "logout",
       "ls", "lsd", "albums",
@@ -644,6 +661,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "rename-album" -> described("rename an album", "rename-album", ambiguous = true),
       "set-description" -> described("set an item description", "set-description", ambiguous = false),
       "set-date" -> described("set an item date", "set-date", ambiguous = false),
+      "download-item" -> described("download an item", "download-item", ambiguous = true),
       "requests" -> described("list request rows", "requests", ambiguous = false),
       "results" -> described("list result rows", "results", ambiguous = false),
       "drift" -> described("report create, update, gone, pending, and skipped", "drift", ambiguous = false),
@@ -671,6 +689,12 @@ class CliTest extends AnyFlatSpec, Matchers:
         "current" -> mcpStringSchema,
         "new" -> mcpStringSchema
       ),
+      "download-item" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "id" -> mcpStringSchema
+      ),
       "requests" -> Seq.empty,
       "results" -> Seq.empty,
       "drift" -> Seq.empty,
@@ -685,6 +709,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "rename-album" -> Seq("title", "current", "new"),
       "set-description" -> Seq("item", "current", "new"),
       "set-date" -> Seq("item", "current", "new"),
+      "download-item" -> Seq("title", "item", "current"),
       "requests" -> Seq.empty,
       "results" -> Seq.empty,
       "drift" -> Seq.empty,
@@ -760,6 +785,17 @@ class CliTest extends AnyFlatSpec, Matchers:
     dateArgv shouldBe List("agent", "set-date", "--item", "k1", "--current", "a.jpg", "--new", "2010-07-19 09:05")
     Cli.parse(dateArgv, Cli.Front.Serve) shouldBe
       Cli.Run(Cli.SetDateArgs(Some("k1"), Some("a.jpg"), Some("2010-07-19 09:05")))
+    val downloadArgv: List[String] = mcpArgv("download-item", Seq(
+      "title" -> Json.Str("Trip"),
+      "item" -> Json.Str("k1"),
+      "current" -> Json.Str("a.jpg"),
+      "id" -> Json.Str("a1")
+    ))
+    downloadArgv shouldBe List(
+      "agent", "download-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
+    )
+    Cli.parse(downloadArgv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.DownloadItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
 
     Cli.parse(mcpArgv("requests", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentRequestsArgs)
     Cli.parse(mcpArgv("results", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentResultsArgs)

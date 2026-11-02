@@ -11,8 +11,8 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Album links — the `album-links.tsv` grammar.
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
-- Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`, and the legacy request
-  grammar.
+- Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
+  `photo agent download-item`, and the legacy request grammar.
 
 ## Files
 
@@ -25,6 +25,7 @@ There is no config key for that directory.
 `photo agent rename-album` rewrites one album line after the live title equals the new title.
 `photo agent set-description` does not rewrite `catalog.txt`.
 `photo agent set-date` rewrites that item's date after the `fDcn4b` read shows the calendar day.
+`photo agent download-item` stages one original and does not rewrite `catalog.txt`.
 `requests.tsv` is a legacy file that a later command will read.
 It is not a second current path.
 The script does not apply the batch.
@@ -35,13 +36,14 @@ The local reader reads it and does not write it.
 `photo refresh` does not write `requests.tsv`.
 The local reader writes `results.tsv`.
 The program reads it.
-`download-item` stages originals in `.download/`, as Download describes.
+`photo agent download-item` stages that original in `.download/`, as Download describes.
 `photo file` files a dated download from there, as Filing describes.
 
 `photo refresh` only reads Google Photos.
 `photo agent rename-album` changes one album title.
 `photo agent set-description` changes one item description.
 `photo agent set-date` changes one item's date taken.
+`photo agent download-item` downloads one original and does not change Google Photos.
 `photo publish` and `photo sync` still change Google Photos.
 A request batch is not a refresh.
 
@@ -412,7 +414,7 @@ The sibling lock file is not removed with it.
 A failed check leaves the work directory and sets `phase` to `error`.
 The next refresh scrolls.
 It does not open the previous refresh's parts.
-`.gphoto-sync/.download/` is only for media from `download-item`.
+`.gphoto-sync/.download/` is only for media from `photo agent download-item`.
 `catalog.txt.partial` and `catalog.txt.previous` stay next to `catalog.txt`.
 
 ### Privacy
@@ -753,7 +755,7 @@ command reports it.
 The same catalog date and filename in two albums is one staged file and one archive file.
 Items in no album are out of scope.
 This command does not download and does not call Google.
-Other people's items that the Download control can fetch stay on `download-item`.
+Other people's items that the Download control can fetch stay on `photo agent download-item`.
 `--dry-run` prints the actions and writes nothing.
 
 ## Requests
@@ -797,6 +799,23 @@ The catalog `date` becomes the `YYYY-MM-DD` prefix of `--new` only when that rea
 The catalog omits the clock.
 The item key, the filename, the uploader, and the album count stay.
 A read that shows a different day leaves the old date.
+
+`photo agent download-item` downloads one item into the staging directory in Download.
+`--title` names the album.
+`--id` is required when more than one album has that title, and it must match that title.
+The item key is one `item` line on that album.
+`--current` equals that filename.
+This is not the unique-across-catalog check.
+A filename of `.`, `..`, or a string containing `/` is rejected.
+The control is More options, then the menuitem whose accessible name starts with Download.
+Shift+D is not required.
+The command does not choose a quality option.
+The command creates the staging day directory.
+When that file is already there, it keeps the file and does not overwrite it.
+The catalog is not written.
+Google Photos is not changed.
+The command does not replace an archive original.
+`photo file` is still the filer.
 
 The grammar below is legacy.
 The column tables, the version lines, and Catalog updates describe the old row statuses.
@@ -844,7 +863,7 @@ An empty file's first id is `r1`.
 | `move-item` | source album id | item key | current filename | destination album id |
 | `set-description` (legacy) | empty | item key | current filename | new description, empty clears |
 | `set-date` (legacy) | empty | item key | current filename | `YYYY-MM-DD HH:MM` local |
-| `download-item` | album id | item key | current filename | empty |
+| `download-item` (legacy) | album id | item key | current filename | empty |
 | `delete-item` | album id | item key | current filename | empty |
 
 | action | Accept only when |
@@ -853,8 +872,8 @@ An empty file's first id is `r1`.
 | `move-item` | The source album and the destination album exist, the item key is an `item` line on the source (not an `unset` line), `current` equals that filename, and the destination id differs from the source. |
 | `set-description` (legacy) | `album-id` is empty, the item key is an `item` line on exactly one album, `current` equals that filename, and `new` may be empty. |
 | `set-date` (legacy) | The same item identity as `set-description`, and `new` matches `YYYY-MM-DD HH:MM`. |
-| `download-item` | The album id and item key name one `item` line, `current` equals the filename, `new` is empty, and the filename is not `.`, `..`, or a string containing `/`. |
-| `delete-item` | The same identity check as `download-item`, `new` is empty, the album has no `owner` line, and the item's uploader is `-`. |
+| `download-item` (legacy) | The album id and item key name one `item` line, `current` equals the filename, `new` is empty, and the filename is not `.`, `..`, or a string containing `/`. |
+| `delete-item` | The same identity check as legacy `download-item`, `new` is empty, the album has no `owner` line, and the item's uploader is `-`. |
 
 `rename-album` changes the album title.
 `move-item` adds the item to the destination album, then removes it from the source album.
@@ -863,7 +882,9 @@ A legacy `set-description` row sets the item's description.
 An empty `new` clears it.
 A legacy `set-date` row changes the item's date taken.
 `new` is the item's local time.
-`download-item` downloads the original into the staging directory in Download.
+A legacy `download-item` row downloads the original into the staging directory in Download.
+For that row, the program does not create the staging day directory.
+The local reader does.
 `delete-item` moves that one library item to Google Photos trash, as Delete describes.
 The program only writes the row.
 For `delete-item`, the program does not touch Google Photos and does not rewrite the catalog.
@@ -874,7 +895,7 @@ The local reader does both, after the operator tells it to process the file.
 This subsection describes the old row statuses.
 
 Applying a batch updates `catalog.txt` in that pass.
-`download-item` does not change it.
+A legacy `download-item` row does not change it.
 `delete-item` changes it as Delete describes.
 `set-description` does not change it: the catalog has no description column.
 A `new` value that contains a tab or a newline fails that row and is not written.
@@ -963,14 +984,14 @@ The `rename-album` row is legacy.
 
 ### Download
 
-`download-item` writes one file at `archive/.gphoto-sync/.download/YYYY/MM/DD/<catalog filename>`.
+`photo agent download-item` writes one file at `archive/.gphoto-sync/.download/YYYY/MM/DD/<catalog filename>`.
 The date is that item's catalog date.
 When the date is `-`, the directory is `undated` instead of `YYYY/MM/DD`.
 The filename is copied unchanged, including a camera prefix and the extension's case.
-The local reader creates the staging day directory.
-The program does not.
+The command creates the staging day directory.
 When that file is already there, it keeps the file and does not overwrite it.
-A catalog filename that contains `/`, or is `.` or `..`, fails that row.
+It does not open the browser for a file that is already there.
+A catalog filename that contains `/`, or is `.` or `..`, is rejected.
 
 This directory is a staging inbox, not the archive.
 Files are grouped by the catalog day because the same camera name occurs on many days.
@@ -978,27 +999,31 @@ They are not flat, and they are not grouped by album.
 Album titles are not unique, and some are not safe directory names.
 The same date and filename in two albums is one file here.
 Nothing in this directory is renamed.
-`photo file` files a dated download into the archive day folder, as Filing describes.
+`photo file` is still the filer.
+It files a dated download into the archive day folder, as Filing describes.
 The strip happens on the archive name.
 Undated files stay in `undated/`.
 The program does not read `.download` as archive pictures.
-`download-item` does not rewrite `catalog.txt`, and it does not change Google Photos.
+`photo agent download-item` does not rewrite `catalog.txt`, and it does not change Google Photos.
+The command does not replace an archive original.
 The archive inbox `.upload` is a different directory.
 
-#### How the local reader downloads originals
+#### How `photo agent download-item` downloads
 
 - Use the Google Photos **UI Download** control only.
   Do not invent or guess `batchexecute` RPC ids for download; unknown RPCs may change library data.
   Catalog reads (`snAcKc`, `fDcn4b`) stay read-only inventory work and are not a substitute for downloading originals.
-- Open the item (album grid, or the item photo URL), open **More options**, choose **Download** (keyboard shortcut
-  Shift+D when the viewer has focus).
-  If a quality chooser appears, pick the original / full file, not a small web preview.
-- Chrome's suggested download name often matches the catalog filename; still place the bytes at the staging path above
-  using the catalog filename unchanged.
-- When the same catalog day and filename already exist under `.download`, keep the existing file (do not overwrite), per
-  the rule above.
-- After the batch, write `results.tsv` as usual.
-  Downloading does not rewrite the catalog.
+- Open the item, then More options, then the menuitem whose accessible name starts with Download.
+  Shift+D is optional when the viewer is focused.
+  It is not a required step.
+  The command does not choose a quality option.
+  If Download is absent, that is a miss.
+- Chrome's suggested download name may differ from the catalog filename.
+  The bytes are still saved at the staging path above, using the catalog filename unchanged.
+- When the same catalog day and filename already exist under `.download`, keep the existing file and do not overwrite
+  it.
+  The command does not open the browser for that file.
+- The command does not write `results.tsv` and does not rewrite the catalog.
 - UI Download (More options → Download / Shift+D) returns the file as Google Photos stores it.
   There is normally no quality chooser for a single-photo download.
   The info panel's pixel size is that stored file.
@@ -1072,6 +1097,7 @@ It is rewritten for each processed batch.
 `photo agent rename-album` is the applier for an album rename.
 `photo agent set-description` is the applier for an item description.
 `photo agent set-date` is the applier for an item date.
+`photo agent download-item` is the applier for a download.
 The numbered steps are the legacy batch.
 The script does not apply the batch.
 

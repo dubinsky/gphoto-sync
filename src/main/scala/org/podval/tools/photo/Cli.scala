@@ -80,6 +80,12 @@ object Cli:
     current: Option[String],
     updated: Option[String]
   ) extends Parsed
+  private[photo] final case class DownloadItemArgs(
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
+  ) extends Parsed
   private[photo] final case class AgentRequestArgs(
     action: String,
     album: Option[String],
@@ -322,6 +328,7 @@ object Cli:
     case _: RenameAlbumArgs => true
     case _: SetDescriptionArgs => true
     case _: SetDateArgs => true
+    case _: DownloadItemArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -354,6 +361,7 @@ object Cli:
     case _: RenameAlbumArgs => "rename-album"
     case _: SetDescriptionArgs => "set-description"
     case _: SetDateArgs => "set-date"
+    case _: DownloadItemArgs => "download-item"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
@@ -361,6 +369,7 @@ object Cli:
     case _: RenameAlbumArgs => true
     case _: SetDescriptionArgs => true
     case _: SetDateArgs => true
+    case _: DownloadItemArgs => true
     case _ => false
 
   private def remoteStep(
@@ -630,6 +639,8 @@ object Cli:
       AgentSetDescription(item, current, updated)
     case SetDateArgs(item, current, updated) =>
       AgentSetDate(item, current, updated)
+    case DownloadItemArgs(title, item, current, id) =>
+      AgentDownload(title, item, current, id)
     case AgentRequestArgs(action, album, item, current, updated, id) =>
       AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
     case AgentRequestsArgs =>
@@ -822,6 +833,8 @@ object Cli:
       Usage("use photo agent set-description")
     case "set-date" :: _ =>
       Usage("use photo agent set-date")
+    case "download-item" :: _ =>
+      Usage("use photo agent download-item")
     case name :: rest =>
       requestCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -1185,6 +1198,23 @@ object Cli:
       )
     ),
     Command(
+      name = "download-item",
+      help = "download an item",
+      positionals = Nil,
+      flags = List(
+        Flag("title", None, TextKind, "album title"),
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        albumIdFlag
+      ),
+      build = (values, _) => DownloadItemArgs(
+        values.texts.get("title"),
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("id")
+      )
+    ),
+    Command(
       name = "requests",
       help = "list request rows",
       positionals = Nil,
@@ -1217,7 +1247,7 @@ object Cli:
   // Order is agentCommands order. Membership is this set.
   private val mcpToolNames: Set[String] = Set(
     "stems", "catalog", "items", "match", "include", "rename-album",
-    "set-description", "set-date", "requests", "results", "drift", "missing"
+    "set-description", "set-date", "download-item", "requests", "results", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1258,13 +1288,16 @@ object Cli:
     val required: List[String] =
       if command.name == "rename-album" then List("title", "current", "new")
       else if command.name == "set-description" || command.name == "set-date" then List("item", "current", "new")
+      else if command.name == "download-item" then List("title", "item", "current")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
     McpTool(command.name, mcpDescription(command), params, required)
 
   private def mcpDescription(command: Command): String =
     val base: String = s"${command.help} (photo agent ${command.name}). $mcpDoNotEcho"
-    if command.name == "items" || command.name == "match" || command.name == "rename-album" then
+    if command.name == "items" || command.name == "match" || command.name == "rename-album" ||
+      command.name == "download-item"
+    then
       s"$base $mcpAmbiguousId"
     else base
 
@@ -1392,24 +1425,6 @@ object Cli:
         values.texts.get("item"),
         values.texts.get("current"),
         values.texts.get("new"),
-        values.texts.get("id")
-      )
-    ),
-    requestCommand(
-      "download-item",
-      "download an item",
-      List(
-        Flag("album", None, TextKind, "album id"),
-        Flag("item", None, TextKind, "item key"),
-        Flag("current", None, TextKind, "current filename"),
-        requestIdFlag
-      ),
-      values => AgentRequestArgs(
-        "download-item",
-        values.texts.get("album"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        None,
         values.texts.get("id")
       )
     ),
