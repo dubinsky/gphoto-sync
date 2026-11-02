@@ -433,18 +433,20 @@ class RefreshTest extends AnyFlatSpec, Matchers:
       pic.unsets.isEmpty shouldBe true
 
   it should "restore a tab or newline in a filename and count it as a name-failure" in :
-    val tab: String = "\u0001" + "\"bad\\tname.jpg\""
-    val nl: String = "\u0001" + "\"bad\\nname.jpg\""
+    val tab: String = "bad\u0001tname.jpg"
+    val nl: String = "bad\u0001nname.jpg"
+    val cr: String = "bad\u0001rname.jpg"
     val album: Catalog.Album = Refresh.parseBody(
-      s"""album\tpic\t3\tPic
+      s"""album\tpic\t4\tPic
          |item\tpic\tgood.jpg\t2010-06-01\tk1\t-
          |item\tpic\t$tab\t2010-06-01\tk2\t-
          |item\tpic\t$nl\t2010-06-01\tk3\t-
-         |error\tpic\t3\t3\t0
+         |item\tpic\t$cr\t2010-06-01\tk4\t-
+         |error\tpic\t4\t4\t0
          |""".stripMargin
     )
-    album.items.map(_.filename) shouldBe Seq("good.jpg", "bad\tname.jpg", "bad\nname.jpg")
-    album.error.map(_.nameFailures) shouldBe Some(2)
+    album.items.map(_.filename) shouldBe Seq("good.jpg", "bad\tname.jpg", "bad\nname.jpg", "bad\rname.jpg")
+    album.error.map(_.nameFailures) shouldBe Some(3)
     album.unsets.isEmpty shouldBe true
 
   it should "keep the other items when a filename contains a tab and fail the check" in :

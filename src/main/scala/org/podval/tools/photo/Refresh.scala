@@ -305,7 +305,7 @@ object Refresh:
     if !album.items.exists(item => badName(item.filename)) then album
     else album.copy(
       items = album.items.map: item =>
-        if badName(item.filename) then item.copy(filename = "\u0001" + jsonString(item.filename)) else item
+        if badName(item.filename) then item.copy(filename = escapeName(item.filename, restore = false)) else item
       ,
       error = album.error.map(_.copy(nameFailures = album.unsets.length))
     )
@@ -330,59 +330,36 @@ object Refresh:
       NFiles.deleteIfExists(tmp)
 
   private def decodeNames(album: Catalog.Album): Catalog.Album =
-    if !album.items.exists(_.filename.startsWith("\u0001\"")) then album
+    if !album.items.exists(_.filename.contains('\u0001')) then album
     else
       val items: Seq[Catalog.Item] = album.items.map: item =>
-        if item.filename.startsWith("\u0001\"") then item.copy(filename = parseJsonString(item.filename.drop(1)))
+        if item.filename.contains('\u0001') then item.copy(filename = escapeName(item.filename, restore = true))
         else item
       val bad: Int = items.count(item => badName(item.filename))
       val got: Int = items.length + album.unsets.length
       val of: Int = album.error.fold(album.count)(_.of)
       album.copy(items = items, error = Some(Catalog.Error(got, of, album.unsets.length + bad)))
 
-  private def jsonString(text: String): String =
-    val encoded: String = text.flatMap:
-      case '\\' => "\\\\"
-      case '"' => "\\\""
-      case '\n' => "\\n"
-      case '\r' => "\\r"
-      case '\t' => "\\t"
-      case ch if ch < ' ' => f"\\u${ch.toInt}%04x"
-      case ch => String.valueOf(ch)
-    "\"" + encoded + "\""
-
-  private def parseJsonString(text: String): String =
-    if text.length < 2 || !text.startsWith("\"") || !text.endsWith("\"") then
-      throw IllegalArgumentException("bad filename")
-    else decodeJson(text.substring(1, text.length - 1), "")
-
-  @tailrec
-  private def decodeJson(rest: String, acc: String): String =
-    if rest.isEmpty then acc
+  // Hide a tab, newline, or CR so a part stays one column. The catalog partial keeps the original characters.
+  private def escapeName(text: String, restore: Boolean): String =
+    if !restore then
+      text.flatMap:
+        case '\t' => "\u0001t"
+        case '\n' => "\u0001n"
+        case '\r' => "\u0001r"
+        case ch => String.valueOf(ch)
     else
-      val (plain, escaped) = rest.span(_ != '\\')
-      if escaped.isEmpty then acc + plain
-      else
-        val more: String = escaped.drop(1)
-        if more.isEmpty then throw IllegalArgumentException("bad filename")
+      @tailrec
+      def rec(rest: String, acc: String): String =
+        if rest.isEmpty then acc
         else
-          val kind: String = more.substring(0, 1)
-          val tail: String = more.substring(1)
-          kind match
-            case "\"" => decodeJson(tail, acc + plain + "\"")
-            case "\\" => decodeJson(tail, acc + plain + "\\")
-            case "/" => decodeJson(tail, acc + plain + "/")
-            case "b" => decodeJson(tail, acc + plain + "\b")
-            case "f" => decodeJson(tail, acc + plain + "\f")
-            case "n" => decodeJson(tail, acc + plain + "\n")
-            case "r" => decodeJson(tail, acc + plain + "\r")
-            case "t" => decodeJson(tail, acc + plain + "\t")
-            case "u" =>
-              val hex: String = tail.take(4)
-              if hex.length < 4 || hex.exists(ch => Character.digit(ch, 16) < 0) then
-                throw IllegalArgumentException("bad filename")
-              else decodeJson(tail.drop(4), acc + plain + Integer.parseInt(hex, 16).toChar)
-            case _ => throw IllegalArgumentException("bad filename")
+          val (plain, marked) = rest.span(_ != '\u0001')
+          if marked.isEmpty then acc + plain
+          else if marked.startsWith("\u0001t") then rec(marked.drop(2), acc + plain + "\t")
+          else if marked.startsWith("\u0001n") then rec(marked.drop(2), acc + plain + "\n")
+          else if marked.startsWith("\u0001r") then rec(marked.drop(2), acc + plain + "\r")
+          else rec(marked.drop(1), acc + plain + "\u0001")
+      rec(text, "")
 
   private def itemKeys(album: Catalog.Album): Set[String] = album.items.map(_.key).toSet
 

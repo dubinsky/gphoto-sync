@@ -500,7 +500,9 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
           const fn = r0 && typeof r0[2] === 'string' && r0[2] !== '' ? r0[2] : null;
           if (fn !== null && /[\t\n\r]/.test(fn)) {
             fails++;
-            out[j] = ['item', card.id, String.fromCharCode(1) + JSON.stringify(fn), date, it.k, up].join('\t');
+            const mark = String.fromCharCode(1);
+            const escaped = fn.replace(/\t/g, mark + 't').replace(/\n/g, mark + 'n').replace(/\r/g, mark + 'r');
+            out[j] = ['item', card.id, escaped, date, it.k, up].join('\t');
           } else if (fn === null) {
             fails++;
             nulls++;
