@@ -1,8 +1,6 @@
 package org.podval.tools.photo
 
-import io.github.wasabithumb.jtoml.JToml
 import scala.collection.mutable
-import scala.jdk.CollectionConverters.SetHasAsScala
 import java.io.File
 import java.nio.file.{Files as NFiles}
 import java.time.{LocalDate, YearMonth}
@@ -11,27 +9,12 @@ import java.time.{LocalDate, YearMonth}
 // a rename keeps the path and does not append rename-album.
 final class Reconcile(args: Cli.ReconcileArgs) extends Operation:
   def execute(session: Session): (Session, Result) =
-    val previous: Option[DirectoryIndex.Frame] = DirectoryIndex.begin(session)
-    val box: Reconcile.Box = Reconcile.Box()
-    try
-      val (text, thrown) = Transcript.collect:
-        Reconcile.run(session, args, box)
-      val edited: Session = DirectoryIndex.now
-      thrown match
-        case None =>
-          (edited, Result.Ok(text, box.value))
-        case Some(error: (IllegalArgumentException | IllegalStateException)) =>
-          val message: String = Operation.messageOf(error)
-          if text.isEmpty then (session, Result.Usage(message))
-          else (edited, Result.Failed(text, box.value, message))
-        case Some(error) =>
-          throw error
-    finally
-      DirectoryIndex.end(previous)
+    // Filled before a write so a failure still carries the plan. Read after the body.
+    var planned: Json = Json.Null
+    Operation.run(session, planned):
+      Reconcile.run(session, args)(planned = _)
 
 object Reconcile:
-  // Operation.run hard-codes Json.Null. The value is filled before a write so a failure still carries it.
-  private[photo] final class Box(var value: Json = Json.Null)
 
   enum Kind(val wire: String) derives CanEqual:
     case Create extends Kind("create")
@@ -56,6 +39,14 @@ object Reconcile:
 
   private final case class Plan(actions: Seq[Action], links: Seq[AlbumLinks.Row], touches: Seq[Touch])
 
+  private final case class Placed(
+    album: Catalog.Album,
+    parsed: Title.Parsed,
+    monthFile: Boolean,
+    dest: File,
+    rel: String
+  )
+
   private final case class MatchSet(
     include: Seq[Include.Entry],
     claimed: Set[(LocalDate, String)],
@@ -66,7 +57,7 @@ object Reconcile:
     case Ready(matched: MatchSet)
     case Refuse(reason: String)
 
-  private def run(session: Session, args: Cli.ReconcileArgs, box: Box): Unit =
+  private def run(session: Session, args: Cli.ReconcileArgs)(use: Json => Unit): Unit =
     val archive: File = session.root.configuration.archive
     val (catalogSession, catalog) = session.loadCatalog
     DirectoryIndex.replace(catalogSession)
@@ -75,10 +66,10 @@ object Reconcile:
     val found: Seq[Album.Loaded] = Archive.scan(archive).albums
     val (ready, plan) = classify(DirectoryIndex.now, archive, catalog, found, existing, args)
     DirectoryIndex.replace(ready)
-    box.value = jsonOf(plan)
+    use(jsonOf(plan))
     plan.actions.foreach(action => Transcript.println(line(action)))
-    if !args.dryRun && (plan.touches.nonEmpty || AlbumLinks.needsWrite(archive, plan.links)) then
-      perform(archive, plan)
+    // A dry run writes nothing. dropAll only after a toml or the link file changes.
+    if !args.dryRun && perform(archive, plan) then
       // One parent drop would leave the other directories warm.
       DirectoryIndex.dropAll()
 
@@ -147,6 +138,7 @@ object Reconcile:
 
     val creates: mutable.Map[String, (Title.Parsed, Boolean, File, String)] = mutable.Map.empty
     val refused: mutable.Map[String, String] = mutable.Map.empty
+    val placed: mutable.ListBuffer[Placed] = mutable.ListBuffer.empty
     catalog.foreach: album =>
       val blocked: Boolean =
         assigned.contains(album.id) || ambiguous.contains(album.id) || hard(album).isDefined ||
@@ -157,21 +149,32 @@ object Reconcile:
           val dest: File = Title.file(archive, parsed)
           val rel: String = Album.relative(archive, dest)
           if !dest.getParentFile.isDirectory then refused(album.id) = "no such directory"
-          else if dest.exists then
-            byRel.get(rel) match
-              case Some(row) if pending(row.album) || taken.contains(rel) =>
-                refused(album.id) = "path exists"
-              case Some(row) if agrees(album, row.album) =>
-                assigned(album.id) = row
-                taken += rel
-              case Some(_) =>
-                refused(album.id) = "working title"
-              case None =>
-                refused(album.id) = "path exists"
-          else creates(album.id) = (parsed, monthFile, dest, rel)
+          else placed += Placed(album, parsed, monthFile, dest, rel)
         catch
           case error: IllegalArgumentException =>
             refused(album.id) = placeReason(Operation.messageOf(error))
+
+    // Titles that are not exact duplicates can still place to one path. The extra is not a second link row.
+    // An existing path is not given to the first album.
+    placed.toSeq.groupBy(_.rel).foreach: (_, group) =>
+      val chosen: Placed = group.head
+      if group.sizeIs > 1 && (chosen.dest.exists || taken.contains(chosen.rel)) then
+        group.foreach(row => refused(row.album.id) = "ambiguous title")
+      else if group.sizeIs > 1 then
+        creates(chosen.album.id) = (chosen.parsed, chosen.monthFile, chosen.dest, chosen.rel)
+        group.drop(1).foreach(row => refused(row.album.id) = "ambiguous title")
+      else if chosen.dest.exists then
+        byRel.get(chosen.rel) match
+          case Some(row) if pending(row.album) || taken.contains(chosen.rel) =>
+            refused(chosen.album.id) = "path exists"
+          case Some(row) if agrees(chosen.album, row.album) =>
+            assigned(chosen.album.id) = row
+            taken += chosen.rel
+          case Some(_) =>
+            refused(chosen.album.id) = "working title"
+          case None =>
+            refused(chosen.album.id) = "path exists"
+      else creates(chosen.album.id) = (chosen.parsed, chosen.monthFile, chosen.dest, chosen.rel)
 
     var session: Session = start
     val actions: mutable.ListBuffer[Action] = mutable.ListBuffer.empty
@@ -200,6 +203,10 @@ object Reconcile:
                 keep(album.id, rel)
               else if ownerBlocked(album, row.album) then
                 actions += skipped(album.title, rel, "owner", Some(album.id))
+                keep(album.id, rel)
+              else if album.title.isEmpty && storesTitle(album, row.album) then
+                val reason: String = if row.album.owner.isDefined || album.owner.isDefined then "owner" else "title"
+                actions += skipped(album.title, rel, reason, Some(album.id))
                 keep(album.id, rel)
               else
                 val (next, prepared) = prepare(session, album, row.album.span, monthFile(row.album))
@@ -248,8 +255,10 @@ object Reconcile:
       val row: Album.Loaded = byRel(link.path)
       val label: String = if row.album.googleTitle.nonEmpty then row.album.googleTitle else row.album.title
       Action(Kind.Gone, label, relOf(row), "", Some(link.id))
-    if args.delete && !args.dryRun then
-      goneLinks.foreach(link => touches += Touch.RemoveFile(byRel(link.path).file))
+    // Link rows follow --delete even on a dry run. Only the removal and the write wait for a real run.
+    if args.delete then
+      if !args.dryRun then
+        goneLinks.foreach(link => touches += Touch.RemoveFile(byRel(link.path).file))
     else
       goneLinks.foreach(link => keep(link.id, link.path))
     val gonePaths: Set[String] = goneLinks.map(_.path).toSet
@@ -270,7 +279,8 @@ object Reconcile:
     val file: Album = row.album
     val google: Option[String] = storedGoogle(album, file)
     val published: Option[String] = storedPublished(album, file, google)
-    if (google.toSeq ++ published.toSeq).exists(badControl) then Edit.Skip("title")
+    if google.exists(_.isEmpty) || published.exists(_.isEmpty) || (google.toSeq ++ published.toSeq).exists(badControl) then
+      Edit.Skip("title")
     else
       val googleArg: Option[Option[String]] = google match
         case Some(text) if text != file.googleTitle => Some(Some(text))
@@ -355,16 +365,22 @@ object Reconcile:
 
   // None omits the key. A shared album keeps the exact catalog title even when it equals the path title.
   // A client stores it only when the catalog title differs, so publish does not rename the Library album.
+  // An empty catalog title is not stored: google-title = "" makes the next scan reject an owner file.
   private def storedGoogle(album: Catalog.Album, file: Album): Option[String] =
-    if album.owner.isDefined && file.external && file.googleAlbumId.isEmpty then Some(album.title)
-    else if client(file) && album.owner.isEmpty && album.title != file.title then Some(album.title)
-    else None
+    if album.title.isEmpty || !storesTitle(album, file) then None
+    else if client(file) && album.title == file.title then None
+    else Some(album.title)
+
+  // The catalog title would be written onto this file when it is non-empty.
+  private def storesTitle(album: Catalog.Album, file: Album): Boolean =
+    (album.owner.isDefined && file.external && file.googleAlbumId.isEmpty) ||
+      (client(file) && album.owner.isEmpty)
 
   private def storedPublished(album: Catalog.Album, file: Album, google: Option[String]): Option[String] =
-    if !client(file) then None
+    if !client(file) || album.title.isEmpty then None
     else
-      val desired: String = google.getOrElse(file.title)
-      Option.when(file.publishedTitle != desired)(desired)
+      val desired: String = google.filter(_.nonEmpty).getOrElse(file.title)
+      Option.when(desired.nonEmpty && file.publishedTitle != desired)(desired)
 
   // putInclude writes `include = []` for an empty list, so a missing key that is already empty is left alone.
   // An expansion that already equals the matched set is left alone, even when the spelling differs.
@@ -374,17 +390,11 @@ object Reconcile:
     val sameExpanded: Boolean = expanded.equals(matched.claimed)
     val sameRendered: Boolean = album.include.map(Include.render) == matched.include.map(Include.render)
     if sameExpanded || sameRendered then None
-    else if matched.include.isEmpty && !includeKey(file) then None
+    else if matched.include.isEmpty && !Album.includePresent(Files.read(file)) then None
     else Some(matched.include)
 
-  private def includeKey(file: File): Boolean =
-    val text: String = Files.read(file)
-    if text.isBlank then false
-    else
-      val table = JToml.jToml.readFromString(text)
-      table.keys(false).asScala.exists(key => key.size == 1 && key.get(0) == "include")
-
-  private def perform(archive: File, plan: Plan): Unit =
+  // True when a toml or the link file changed.
+  private def perform(archive: File, plan: Plan): Boolean =
     val wrote: mutable.LinkedHashSet[String] = mutable.LinkedHashSet.empty
     plan.touches.foreach:
       case Touch.CreateFile(dest, text) =>
@@ -400,8 +410,9 @@ object Reconcile:
         wrote += Album.relative(archive, file)
         NFiles.deleteIfExists(file.toPath)
     wrote.foreach(path => Transcript.println(s"wrote $path"))
-    if AlbumLinks.publish(archive, plan.links) then
-      Transcript.println("wrote .gphoto-sync/album-links.tsv")
+    val linksChanged: Boolean = AlbumLinks.publish(archive, plan.links)
+    if linksChanged then Transcript.println("wrote .gphoto-sync/album-links.tsv")
+    wrote.nonEmpty || linksChanged
 
   private def pair(
     albums: Seq[Catalog.Album],

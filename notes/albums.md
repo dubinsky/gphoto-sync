@@ -224,6 +224,10 @@ If the path that placement would use already exists and the working titles agree
 It does not create a second file.
 If that path exists and the working titles disagree, reconcile reports it and skips it.
 It does not overwrite.
+Two catalog titles that place to one free path record one create.
+The extra album is `ambiguous title` and is not linked.
+Two catalog titles that place to one existing path are both `ambiguous title`.
+Neither album takes that file.
 
 After a row exists, the catalog id is the identity.
 A later rename keeps the file path and does not move the file.
@@ -235,6 +239,8 @@ A shared album keeps `google-title` equal to the exact catalog title even when t
 A file that `checkGoogle` would reject is reported and skipped.
 Reconcile does not write `owner` onto a file that has `google-album-id`.
 It does not write `google-album-id`.
+An empty catalog title is not written.
+Reconcile skips that album instead of storing `google-title = ""` or an empty `published-title`.
 
 A published client album is `external` false with `google-album-id` set.
 The first link is `published-title`, the title the client last wrote.
@@ -253,5 +259,7 @@ Day-folder pictures stay.
 Without `--delete`, a gone file is reported and kept, and its link row stays so a later `--delete` still sees it.
 An external file that never linked is reported and kept.
 `--dry-run` prints the classes and writes neither toml nor `album-links.tsv`.
+`--dry-run --delete` prints `gone` and its link rows are the rows a real `--delete` would keep.
+It still does not remove the toml.
 
 Classes are `create`, `update`, `gone`, `pending`, and `skipped`.

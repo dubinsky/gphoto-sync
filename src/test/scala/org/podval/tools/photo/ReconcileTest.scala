@@ -392,6 +392,146 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       ran shouldBe false
       line should include ("reconcile runs in the calling process")
 
+  it should "skip an extra title that places on a free path and still update another album" in :
+    withArchive: archive =>
+      val hawaii: String =
+        """# keep
+          |external = true
+          |google-title = "Hawaii"
+          |owner = "Ada"
+          |""".stripMargin
+      writeToml(archive, "Hawaii.toml", hawaii)
+      writeLinks(archive, "cid-hawaii" -> "Hawaii.toml")
+      writeCatalog(
+        archive,
+        "album\tcid-hawaii\t0\tHawaii Trip",
+        "owner\tcid-hawaii\tAda",
+        "album\tcid-notes\t0\tNotes",
+        "album\tcid-gap\t0\tNotes "
+      )
+      val text: String = ok(exec(sessionFor(archive), "reconcile")._2)
+      text shouldBe
+        """update Hawaii Trip
+          |create Notes
+          |skipped Notes  ambiguous title
+          |wrote Hawaii.toml
+          |wrote Notes.toml
+          |wrote .gphoto-sync/album-links.tsv
+          |""".stripMargin
+      quiet(text, "cid-hawaii", "cid-notes", "cid-gap")
+      readToml(archive, "Notes.toml") shouldBe "external = true\n"
+      File(archive, "Notes .toml").exists shouldBe false
+      readToml(archive, "Hawaii.toml") shouldBe
+        """# keep
+          |external = true
+          |google-title = "Hawaii Trip"
+          |owner = "Ada"
+          |""".stripMargin
+      links(archive) shouldBe
+        """# gphoto-album-links 1
+          |cid-hawaii	Hawaii.toml
+          |cid-notes	Notes.toml
+          |""".stripMargin
+
+  it should "not give an existing path to the first of two titles that place there" in :
+    withArchive: archive =>
+      val before: String = "external = true\n"
+      writeToml(archive, "2010/07/19/Picnic.toml", before)
+      writeCatalog(
+        archive,
+        "album\tcid-pic\t1\tPicnic",
+        "item\tcid-pic\t1000.jpg\t2010-07-19\tkey-pic\t-",
+        "album\tcid-gap\t1\tPicnic ",
+        "item\tcid-gap\t1000.jpg\t2010-07-19\tkey-gap\t-",
+        "album\tcid-trip\t0\tTrip"
+      )
+      val text: String = ok(exec(sessionFor(archive), "reconcile")._2)
+      text shouldBe
+        """skipped Picnic ambiguous title
+          |skipped Picnic  ambiguous title
+          |create Trip
+          |skipped 2010/07/19/Picnic.toml unlinked
+          |wrote Trip.toml
+          |wrote .gphoto-sync/album-links.tsv
+          |""".stripMargin
+      quiet(text, "cid-pic", "cid-gap", "cid-trip", "key-pic", "key-gap")
+      readToml(archive, "2010/07/19/Picnic.toml") shouldBe before
+      File(archive, "Picnic.toml").exists shouldBe false
+      links(archive) shouldBe "# gphoto-album-links 1\ncid-trip\tTrip.toml\n"
+      readToml(archive, "Trip.toml") shouldBe "external = true\n"
+
+  it should "not store an empty catalog title on an owner file" in :
+    withArchive: archive =>
+      val before: String =
+        """external = true
+          |google-title = "Trip"
+          |owner = "Ada"
+          |""".stripMargin
+      writeToml(archive, "Trip.toml", before)
+      writeLinks(archive, "cid-empty" -> "Trip.toml")
+      writeCatalog(
+        archive,
+        "album\tcid-empty\t0\t",
+        "owner\tcid-empty\tAda"
+      )
+      val text: String = ok(exec(sessionFor(archive), "reconcile")._2)
+      text shouldBe "skipped  owner\n"
+      quiet(text, "cid-empty")
+      readToml(archive, "Trip.toml") shouldBe before
+      links(archive) shouldBe "# gphoto-album-links 1\ncid-empty\tTrip.toml\n"
+      val again: String = ok(exec(sessionFor(archive), "reconcile")._2)
+      again shouldBe text
+      readToml(archive, "Trip.toml") shouldBe before
+
+  it should "not set an empty published-title from an empty catalog title" in :
+    withArchive: archive =>
+      val before: String =
+        """google-album-id = "library-1"
+          |google-title = "Away"
+          |published-title = "Away"
+          |""".stripMargin
+      writeToml(archive, "Trip.toml", before)
+      writeLinks(archive, "cid-empty" -> "Trip.toml")
+      writeCatalog(archive, "album\tcid-empty\t0\t")
+      val text: String = ok(exec(sessionFor(archive), "reconcile")._2)
+      text shouldBe "skipped  title\n"
+      quiet(text, "cid-empty", "library-1")
+      readToml(archive, "Trip.toml") shouldBe before
+      links(archive) shouldBe "# gphoto-album-links 1\ncid-empty\tTrip.toml\n"
+
+  it should "preview the link rows a real --delete would keep" in :
+    withArchive: archive =>
+      val before: String =
+        """external = true
+          |google-title = "Old Title"
+          |""".stripMargin
+      writeToml(archive, "Old.toml", before)
+      mkdir(archive, "2010/07/19")
+      touch(File(archive, "2010/07/19"), "1234.jpg")
+      val link: String = "# gphoto-album-links 1\ncid-old\tOld.toml\n"
+      writeLinks(archive, "cid-old" -> "Old.toml")
+      writeCatalog(archive)
+      val kept: Result = exec(sessionFor(archive), "reconcile", "--dry-run")._2
+      ok(kept) shouldBe "gone Old Title\n"
+      linkRows(kept) shouldBe "cid-old\tOld.toml"
+      val preview: Result = exec(sessionFor(archive), "reconcile", "--dry-run", "--delete")._2
+      val text: String = ok(preview)
+      text shouldBe "gone Old Title\n"
+      quiet(text, "cid-old")
+      linkRows(preview) shouldBe ""
+      readToml(archive, "Old.toml") shouldBe before
+      File(archive, "2010/07/19/1234.jpg").isFile shouldBe true
+      links(archive) shouldBe link
+      val deleted: String = ok(exec(sessionFor(archive), "reconcile", "--delete")._2)
+      deleted shouldBe
+        """gone Old Title
+          |wrote Old.toml
+          |wrote .gphoto-sync/album-links.tsv
+          |""".stripMargin
+      File(archive, "Old.toml").exists shouldBe false
+      File(archive, "2010/07/19/1234.jpg").isFile shouldBe true
+      links(archive) shouldBe ""
+
   private def ok(result: Result): String = result match
     case Result.Ok(text, _) => text
     case other => fail(other.toString)
@@ -399,6 +539,23 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
   private def valueHas(result: Result, id: String): Unit = result match
     case Result.Ok(_, value) => value.toString should include (id)
     case other => fail(other.toString)
+
+  private def linkRows(result: Result): String = result match
+    case Result.Ok(_, Json.Obj(fields)) =>
+      fields.collectFirst:
+        case ("links", Json.Arr(rows)) =>
+          rows.flatMap:
+            case Json.Obj(link) =>
+              for
+                id <- link.collectFirst { case ("id", Json.Str(value)) => value }
+                path <- link.collectFirst { case ("path", Json.Str(value)) => value }
+              yield s"$id\t$path"
+            case _ =>
+              None
+          .mkString("\n")
+      .getOrElse(fail("no links"))
+    case other =>
+      fail(other.toString)
 
   private def quiet(text: String, ids: String*): Unit =
     ids.foreach: id =>

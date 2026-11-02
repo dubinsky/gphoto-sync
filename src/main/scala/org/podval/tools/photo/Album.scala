@@ -190,27 +190,25 @@ object Album:
     val original: String = Files.read(file)
     val titled: Seq[TextLine] = googleTitle match
       case None => splitLines(original)
-      case Some(value) => assign(file, splitLines(original), "google-title", value, drop = true)
+      case Some(value) => assign(file, splitLines(original), "google-title", value)
     val next: Seq[TextLine] = publishedTitle match
       case None => titled
-      case Some(text) => assign(file, titled, "published-title", Some(text), drop = false)
+      case Some(text) => assign(file, titled, "published-title", Some(text))
     val rendered: String = joinLines(next)
     if rendered != original then Files.write(rendered, file)
 
+  // None removes a present line. Leaving published-title alone is the None branch in spliceTitles.
   private def assign(
     file: File,
     lines: Seq[TextLine],
     key: String,
-    value: Option[String],
-    drop: Boolean
+    value: Option[String]
   ): Seq[TextLine] =
     val at: Seq[Int] = lines.zipWithIndex.collect:
       case (line, index) if singleAssignment(line.text, key) => index
     if at.sizeIs > 1 then failGoogle(file, s"$key is not a single line")
     (at.headOption, value) match
       case (None, None) =>
-        lines
-      case (Some(_), None) if !drop =>
         lines
       case (Some(index), None) =>
         lines.patch(index, Seq.empty, 1)
@@ -339,7 +337,7 @@ object Album:
   private def hasKey(table: TomlTable, name: String): Boolean =
     table.keys(false).asScala.exists(key => keyName(key) == name)
 
-  private def includePresent(text: String): Boolean =
+  private[photo] def includePresent(text: String): Boolean =
     !text.isBlank && hasKey(JToml.jToml.readFromString(text), "include")
 
   private final case class TextLine(text: String, ending: String)

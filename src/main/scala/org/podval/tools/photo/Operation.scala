@@ -4,20 +4,21 @@ trait Operation:
   def execute(session: Session): (Session, Result)
 
 object Operation:
-  def run(session: Session)(body: => Unit): (Session, Result) =
-    // Usage returns the session passed in. Ok and Failed return index edits made by the body.
-    // end only restores the caller; it does not drop.
+  // `value` is by-name so the body can assign it. Ok and Failed read it after the body.
+  // Usage returns the session passed in. Ok and Failed return index edits made by the body.
+  // end only restores the caller; it does not drop.
+  def run(session: Session, value: => Json = Json.Null)(body: => Unit): (Session, Result) =
     val previous: Option[DirectoryIndex.Frame] = DirectoryIndex.begin(session)
     try
       val (text, thrown) = Transcript.collect(body)
       val edited: Session = DirectoryIndex.now
       thrown match
         case None =>
-          (edited, Result.Ok(text, Json.Null))
+          (edited, Result.Ok(text, value))
         case Some(error: (IllegalArgumentException | IllegalStateException)) =>
           val message: String = messageOf(error)
           if text.isEmpty then (session, Result.Usage(message))
-          else (edited, Result.Failed(text, Json.Null, message))
+          else (edited, Result.Failed(text, value, message))
         case Some(error) =>
           throw error
     finally

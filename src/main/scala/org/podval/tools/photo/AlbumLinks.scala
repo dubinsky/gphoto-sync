@@ -50,11 +50,6 @@ object AlbumLinks:
         move(archive, dest, text, replace = true)
         true
 
-  def needsWrite(archive: File, rows: Seq[Row]): Boolean =
-    val dest: File = file(archive)
-    if rows.isEmpty then dest.isFile
-    else !dest.isFile || Files.read(dest) != render(rows)
-
   // A new toml must not replace a file that appeared after the plan. The link file may.
   private[photo] def writeNew(archive: File, dest: File, text: String): Unit =
     if dest.exists then throw IllegalStateException("file exists")
