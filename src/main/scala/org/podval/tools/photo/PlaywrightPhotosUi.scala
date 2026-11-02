@@ -65,9 +65,6 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     page.evaluate(installScript)
     firstSweep()
     secondSweep()
-    cardsFromSeen()
-
-  private def cardsFromSeen(): Seq[AlbumCard] =
     val tsv: String = page.evaluate("() => window.__gphoto.tsv()") match
       case text: String => text
       case _ => ""
@@ -185,19 +182,16 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       new Page.GetByRoleOptions().setName("Done").setExact(true)
     )
     val editorOpen: Boolean = done.count() > 0 || asBool(page.evaluate(editorOpenScript, updated))
-    // Same card read as albumCards. The field just written, and a body line, are not the live title.
-    val matched: Boolean =
-      if editorOpen then false
-      else
-        page.evaluate(installScript)
-        page.evaluate("() => window.__gphoto.grab()")
-        cardsFromSeen().find(_.id == albumId).exists(_.title == updated)
-    if matched then ()
-    else if System.currentTimeMillis >= deadline then
-      throw Refresh.ActMiss("live title differs", confirmed = true)
-    else
+    if editorOpen && System.currentTimeMillis < deadline then
       Thread.sleep(300)
       awaitLive(albumId, updated, deadline)
+    else if editorOpen then
+      throw Refresh.ActMiss("live title differs", confirmed = true)
+    else
+      // The live title is this id's card on the albums list.
+      val live: Option[String] = albumCards().find(_.id == albumId).map(_.title)
+      if live.contains(updated) then ()
+      else throw Refresh.ActMiss("live title differs", confirmed = true)
 
   @tailrec
   private def awaitCount(locator: Locator, deadline: Long, absent: String): Unit =
