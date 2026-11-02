@@ -181,6 +181,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |albums  list album claims
         |publish  publish albums to Google Photos
         |sync  sync album removals into local except lists
+        |refresh  refresh the Google Photos catalog from Chrome
         |login  log in to Google Photos
         |status  show Google Photos login status
         |logout  log out of Google Photos
@@ -568,7 +569,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "album-file",
       "request",
       "rename-album", "move-item", "set-description", "set-date", "download-item", "delete-item",
-      "repair", "publish", "sync", "set-metadata",
+      "repair", "publish", "sync", "refresh", "set-metadata",
       "login", "status", "logout",
       "ls", "lsd", "albums",
       "help", "cd", "pwd", "exit",

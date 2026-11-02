@@ -16,6 +16,7 @@ dependencies {
   implementation 'io.github.wasabithumb:jtoml:1.8.2'
   implementation 'com.google.photos.library:google-photos-library-client:1.7.3'
   implementation 'com.google.auth:google-auth-library-oauth2-http:1.24.0'
+  implementation 'com.microsoft.playwright:playwright:1.64.0'
   // auth 1.24.0 pulls grpc-api 1.60.1 while the Photos client stays on grpc 1.53.0.
   // 1.60 changed LoadBalancer.acceptResolvedAddresses from boolean to Status, so the channel panics.
   implementation enforcedPlatform('io.grpc:grpc-bom:1.60.1')
@@ -24,6 +25,14 @@ dependencies {
 
 application {
   mainClass = 'org.podval.tools.photo.Cli'
+}
+
+tasks.withType(Test).configureEach {
+  environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'
+}
+
+tasks.withType(JavaExec).configureEach {
+  environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'
 }
 
 jar {

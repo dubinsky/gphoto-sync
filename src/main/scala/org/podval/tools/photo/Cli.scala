@@ -31,6 +31,13 @@ object Cli:
   private[photo] final case class Albums(path: Option[String]) extends Parsed
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
+  private[photo] final case class RefreshArgs(
+    mode: RefreshPlan.Mode,
+    list: Boolean,
+    allowShrink: Boolean
+  ) extends Parsed
+  private[photo] final case class ReconcileArgs(delete: Boolean) extends Parsed
+  private[photo] case object FileArgs extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -143,16 +150,24 @@ object Cli:
   private def stdinLines: Iterator[String] =
     Iterator.continually(scala.io.StdIn.readLine()).takeWhile(_ != null)
 
+  private[photo] def processCode(result: Result): Int = result match
+    case Result.Ok(_, _) => 0
+    case Result.Failed(_, _, message) if message == Refresh.AlreadyRunning => 2
+    case _ => 1
+
   private def render(result: Result): Unit = result match
     case Result.Ok(text, _) =>
       print(text)
+    case Result.Failed(text, _, message) if message == Refresh.AlreadyRunning =>
+      print(text)
+      sys.exit(processCode(result))
     case Result.Failed(text, _, message) =>
       print(text)
       System.err.println(usageLine(message))
-      sys.exit(1)
+      sys.exit(processCode(result))
     case Result.Usage(message) =>
       System.err.println(usageLine(message))
-      sys.exit(1)
+      sys.exit(processCode(result))
 
   private[photo] enum Step:
     case Continue(session: Session)
@@ -223,6 +238,8 @@ object Cli:
             usage(request.id, "already running")
           case ServeStop =>
             (Step.Stop, reply(request.id, ok = true, None, None, None))
+          case Run(parsed) if runsInCaller(parsed) =>
+            usage(request.id, s"${callerName(parsed)} runs in the calling process")
           case Run(parsed) =>
             val (returned, result) = run(session, parsed)
             result match
@@ -265,7 +282,7 @@ object Cli:
             Step.Continue(session)
           case Run(ExitArgs) =>
             Step.Stop
-          case Run(parsed) if exchange.isDefined && !staysLocal(parsed) =>
+          case Run(parsed) if exchange.isDefined && !staysLocal(parsed) && !runsInCaller(parsed) =>
             remoteStep(session, args, exchange.get)
           case Run(parsed) =>
             val (returned, result) = run(session, parsed)
@@ -274,6 +291,18 @@ object Cli:
   private def staysLocal(parsed: Parsed): Boolean = parsed match
     case CdArgs(_) | PwdArgs | ExitArgs => true
     case _ => false
+
+  private def runsInCaller(parsed: Parsed): Boolean = parsed match
+    case _: RefreshArgs => true
+    case _: ReconcileArgs => true
+    case FileArgs => true
+    case _ => false
+
+  private def callerName(parsed: Parsed): String = parsed match
+    case _: RefreshArgs => "refresh"
+    case _: ReconcileArgs => "reconcile"
+    case FileArgs => "file"
+    case _ => "command"
 
   private def remoteStep(
     session: Session,
@@ -290,6 +319,9 @@ object Cli:
   private def show(session: Session, returned: Session, result: Result, keepReturned: Boolean): Step =
     result match
       case Result.Ok(text, _) =>
+        print(text)
+        Step.Continue(if keepReturned then returned else session)
+      case Result.Failed(text, _, message) if message == Refresh.AlreadyRunning =>
         print(text)
         Step.Continue(if keepReturned then returned else session)
       case Result.Failed(text, _, message) =>
@@ -353,7 +385,8 @@ object Cli:
     waitMs: Long = 5000
   ): Result =
     def cold: Result = toOperation(parsed).execute(session)._2
-    runtime match
+    if runsInCaller(parsed) then cold
+    else runtime match
       case Left(_) =>
         cold
       case Right(dir) =>
@@ -503,6 +536,16 @@ object Cli:
       Publish(path, recursive = recursive, dryRun = dryRun)
     case SyncArgs(path, recursive, dryRun) =>
       Sync(path, recursive = recursive, dryRun = dryRun)
+    case args: RefreshArgs =>
+      Refresh(args)
+    case _: ReconcileArgs =>
+      new Operation:
+        def execute(session: Session): (Session, Result) =
+          (session, Result.Usage("reconcile is not a command"))
+    case FileArgs =>
+      new Operation:
+        def execute(session: Session): (Session, Result) =
+          (session, Result.Usage("file is not a command"))
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -535,6 +578,8 @@ object Cli:
 
   private def finish(command: Command, values: Values, positionals: List[String], front: Front): Outcome =
     if command.name == "help" then helpText(positionals, front)
+    else if command.name == "refresh" && bool(values, "full") && values.repeats.get("album").exists(_.nonEmpty) then
+      Usage("cannot combine '--full' and '--album'")
     else command.build(values, positionals) match
       case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
         Usage("missing repair action")
@@ -608,12 +653,15 @@ object Cli:
           parseBool(raw) match
             case Some(value) => readFlags(command, rest, values.setBool(flag.name, value))
             case None => Left(Usage(s"invalid value '$raw' for '--${flag.name}'"))
-    case TextKind =>
+    case TextKind | RepeatKind =>
+      def store(raw: String): Values = flag.kind match
+        case RepeatKind => values.addRepeat(flag.name, raw)
+        case _ => values.setText(flag.name, raw)
       attached match
         case Some("") =>
           Left(Usage(s"missing value for '--${flag.name}'"))
         case Some(raw) =>
-          readFlags(command, rest, values.setText(flag.name, raw))
+          readFlags(command, rest, store(raw))
         case None =>
           rest match
             case Nil =>
@@ -622,11 +670,11 @@ object Cli:
               Left(Usage(s"missing value for '--${flag.name}'"))
             // "--" after a text option supplies the value. A bare "--" still ends flags.
             case "--" :: value :: more =>
-              readFlags(command, more, values.setText(flag.name, value))
+              readFlags(command, more, store(value))
             case value :: _ if value.startsWith("-") =>
               Left(Usage(s"value for '--${flag.name}' looks like a flag: '$value'"))
             case value :: more =>
-              readFlags(command, more, values.setText(flag.name, value))
+              readFlags(command, more, store(value))
 
   private def splitFlag(token: String): Option[(Boolean, String, Option[String])] =
     val (long: Boolean, body: String) =
@@ -745,6 +793,7 @@ object Cli:
     val kind: String = flag.kind match
       case BooleanKind => "boolean"
       case TextKind => "text"
+      case RepeatKind => "repeatable"
     s"$names  $kind  ${flag.description}"
 
   private sealed trait Positional:
@@ -757,16 +806,21 @@ object Cli:
   private sealed trait FlagKind
   private case object BooleanKind extends FlagKind
   private case object TextKind extends FlagKind
+  private case object RepeatKind extends FlagKind
 
   private final case class Flag(name: String, alias: Option[String], kind: FlagKind, description: String)
 
   private final case class Values(
     bools: Map[String, Boolean] = Map.empty,
-    texts: Map[String, String] = Map.empty
+    texts: Map[String, String] = Map.empty,
+    repeats: Map[String, List[String]] = Map.empty
   ):
+    // A repeatable flag is not a repeated option.
     def has(name: String): Boolean = bools.contains(name) || texts.contains(name)
     def setBool(name: String, value: Boolean): Values = copy(bools = bools.updated(name, value))
     def setText(name: String, value: String): Values = copy(texts = texts.updated(name, value))
+    def addRepeat(name: String, value: String): Values =
+      copy(repeats = repeats.updated(name, repeats.getOrElse(name, Nil) :+ value))
 
   private final case class Command(
     name: String,
@@ -895,6 +949,24 @@ object Cli:
         recursive = bool(values, "recursive"),
         dryRun = bool(values, "dry-run")
       )
+    ),
+    Command(
+      name = "refresh",
+      help = "refresh the Google Photos catalog from Chrome",
+      positionals = Nil,
+      flags = List(
+        Flag("full", None, BooleanKind, "item-read every album that is not auto-add"),
+        Flag("album", None, RepeatKind, "exact title; may be repeated"),
+        Flag("list", None, BooleanKind, "print the diff and write nothing"),
+        Flag("allow-shrink", None, BooleanKind, "skip only the rows < 250 floor")
+      ),
+      build = (values, _) =>
+        val titles: List[String] = values.repeats.getOrElse("album", Nil)
+        val mode: RefreshPlan.Mode =
+          if bool(values, "full") then RefreshPlan.Mode.Full
+          else if titles.nonEmpty then RefreshPlan.Mode.Album(titles)
+          else RefreshPlan.Mode.Incremental
+        RefreshArgs(mode, bool(values, "list"), bool(values, "allow-shrink"))
     ),
     Command(
       name = "login",
@@ -1045,7 +1117,7 @@ object Cli:
     val name: String = mcpIdent(flag.name)
     flag.kind match
       case BooleanKind => McpParam.BoolFlag(name)
-      case TextKind => McpParam.TextFlag(name)
+      case TextKind | RepeatKind => McpParam.TextFlag(name)
 
   private def mcpPositional(positional: Positional): McpParam = positional match
     case Required(name, _) =>

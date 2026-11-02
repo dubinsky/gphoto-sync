@@ -40,7 +40,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("--help"), Cli.Front.Shell) match
       case Cli.Help(text) =>
         text.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
-          "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync",
+          "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync", "refresh",
           "login", "status", "logout", "help", "agent", "cd", "pwd", "exit"
         )
       case other => fail(other.toString)

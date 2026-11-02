@@ -28,7 +28,7 @@ Any other non-toml file next to child directories is stray.
 `.gphoto-sync/` is the agent's workspace.
 There is no config key for it.
 The agent queries read `catalog.txt` in that directory.
-This program does not create that file.
+`photo refresh` creates and replaces `catalog.txt`.
 
 The title uses `/` on both sides of a range.
 `-` means only "through".
@@ -168,6 +168,21 @@ A year or the archive root requires `--recursive`.
 An except line is `except`, the album title, and the stem in quotes.
 A remove line is `remove`, the album title, and the stem in quotes.
 
+`photo refresh` reads the signed-in Chrome profile and rewrites `catalog.txt`.
+The default is incremental.
+It item-reads an album that is new or whose card count changed, and it does not item-read a stored auto-add album.
+`--full` item-reads every album that is not auto-add.
+`--album TITLE` may be repeated.
+The title is exact.
+`--full` together with `--album` is a usage error.
+`--list` prints the diff and writes nothing that survives the process.
+It composes with the default, with `--full`, and with `--album`.
+A full or named list adds `would-read` or `owner-only` to the count diff.
+`--allow-shrink` skips only the rows < 250 floor.
+The command runs in the calling process.
+It is not an MCP tool.
+A second refresh prints `already running` and exits 2.
+
 `photo login`, `photo status`, and `photo logout` manage the Google Photos token.
 
 `photo agent` reads the catalog and the archive.
@@ -216,6 +231,7 @@ It does not preempt a command already running.
 
 `photo shell` keeps `cd`, `pwd`, and `exit` in the shell.
 It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
+`photo refresh` stays in the shell process.
 Other commands go to the socket.
 Path arguments are archive-root paths.
 `agent include` paths are sent unchanged.
@@ -224,7 +240,8 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 
 A one-shot uses the socket when it is up and `archive` matches.
 It runs in this process when the lock is free.
-It does not start `photo serve`.
+`photo refresh` runs in this process even when the socket is up.
+A one-shot does not start `photo serve`.
 A mismatch names both paths and does not run in this process.
 
 `photo mcp` speaks MCP on standard input and output.
@@ -235,7 +252,7 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent requests`, and
 `agent results`.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
-Album files, request rows, repair, publish, and sync are not tools.
+Album files, request rows, repair, publish, sync, and refresh are not tools.
 Tool JSON may contain album ids and item keys.
 Chat should not.
 The user adds the server.
@@ -355,9 +372,9 @@ Cron is out of scope.
 
 - drop requests/result?
 
-One note with those three parts would be the clean shape. Folding them in the archive now, and moving them into gphoto-sync later, does that restructure twice.
-
-We are not at the move. Catalog.scala already enforces the grammar, and photo agent album-file already writes the local file, but the Chrome read and the request applier are still the archive agent plus reader/. Those notes are the procedure that agent runs, and Grok Build is started in the archive. Move protocol.md, catalog-refresh.md, albums.md, and reader/ into the repository in the same change that adds the Scala refresh command. Until then, delete the repeated paragraphs and leave a pointer at the file that owns the rule. AGENTS.md stays a short index.
+The three notes stay three files in `notes/`.
+Only the request applier and its manifests are in `reader/`.
+The seven refresh scripts stay untracked in the archive until the live gate.
 
 - CLI get pictures from a memory card
 - CLI webapp
