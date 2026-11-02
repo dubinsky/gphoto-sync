@@ -15,6 +15,10 @@ A catalog id is a Photos UI key.
 It is not a Library API id, so it never goes in `google-album-id` or `google-media-item-id`.
 Keep catalog ids and item keys out of the chat.
 
+`photo reconcile` links every catalog album to the files already in the archive.
+It is not `photo agent album-file`.
+The Reconcile section is that command.
+
 `google-title` and `owner` mean what the archive-layout section of the README says.
 Read the `owner` line in `notes/protocol.md`.
 
@@ -200,3 +204,54 @@ That line stays as a human check.
 The picture line's `albums=` value contains the title just written, with no spaces after commas.
 There is no `dated=` column.
 An empty claim prints `albums=-`.
+
+## Reconcile
+
+`photo reconcile` reads `catalog.txt` and `album-links.tsv`.
+The link grammar is `notes/protocol.md`.
+It does not call `photo agent album-file` and it does not append `rename-album`.
+
+Pending means `external` left false and `google-album-id` empty.
+There is no pending key.
+Reconcile does not create, rewrite, or delete a pending file.
+A pending album has no link row.
+
+The first link of an external file uses the working title.
+That title splits the catalog title on spaces, drops empty tokens, and rejoins them.
+When `google-title` is present, the match is that exact catalog title.
+Otherwise the match is the working title against the path title.
+If the path that placement would use already exists and the working titles agree, reconcile links that file.
+It does not create a second file.
+If that path exists and the working titles disagree, reconcile reports it and skips it.
+It does not overwrite.
+
+After a row exists, the catalog id is the identity.
+A later rename keeps the file path and does not move the file.
+It sets `google-title` to the exact new catalog title when the omit rule below stores that key.
+If that title newly parses as a different date span, reconcile reports it and leaves the file.
+
+Omit `google-title` only when the album has no owner.
+A shared album keeps `google-title` equal to the exact catalog title even when that equals the path title.
+A file that `checkGoogle` would reject is reported and skipped.
+Reconcile does not write `owner` onto a file that has `google-album-id`.
+It does not write `google-album-id`.
+
+A published client album is `external` false with `google-album-id` set.
+The first link is `published-title`, the title the client last wrote.
+The UI id is stored only in `album-links.tsv`.
+It is not copied into `google-album-id`.
+When the matched include differs, reconcile updates `include`.
+On that client album the same splice sets `published-title` to the desired title the file will have after the splice.
+That is the new `google-title` when that line is stored, otherwise the path title.
+The next `photo publish` then does not call `updateAlbumTitle`.
+When the catalog title equals the path title, omit `google-title` and set `published-title` to the path title if it
+differs.
+External albums do not gain a `published-title`.
+
+`--delete` removes only a toml whose stored link id is gone.
+Day-folder pictures stay.
+Without `--delete`, a gone file is reported and kept, and its link row stays so a later `--delete` still sees it.
+An external file that never linked is reported and kept.
+`--dry-run` prints the classes and writes neither toml nor `album-links.tsv`.
+
+Classes are `create`, `update`, `gone`, `pending`, and `skipped`.

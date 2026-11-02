@@ -36,6 +36,7 @@ object Cli:
     list: Boolean,
     allowShrink: Boolean
   ) extends Parsed
+  private[photo] final case class ReconcileArgs(dryRun: Boolean, delete: Boolean) extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -237,7 +238,7 @@ object Cli:
           case ServeStop =>
             (Step.Stop, reply(request.id, ok = true, None, None, None))
           case Run(parsed) if runsInCaller(parsed) =>
-            usage(request.id, "refresh runs in the calling process")
+            usage(request.id, s"${callerCommand(parsed)} runs in the calling process")
           case Run(parsed) =>
             val (returned, result) = run(session, parsed)
             result match
@@ -290,8 +291,15 @@ object Cli:
     case CdArgs(_) | PwdArgs | ExitArgs => true
     case _ => false
 
+  private def callerCommand(parsed: Parsed): String = parsed match
+    case _: ReconcileArgs => "reconcile"
+    case _: RefreshArgs => "refresh"
+    case _ => "command"
+
+  // Every real arm is listed. Refresh and reconcile stay off the serve thread.
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
     case _: RefreshArgs => true
+    case _: ReconcileArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -549,6 +557,8 @@ object Cli:
       Sync(path, recursive = recursive, dryRun = dryRun)
     case args: RefreshArgs =>
       Refresh(args)
+    case args: ReconcileArgs =>
+      Reconcile(args)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -970,6 +980,16 @@ object Cli:
           else if titles.nonEmpty then RefreshPlan.Mode.Album(titles)
           else RefreshPlan.Mode.Incremental
         RefreshArgs(mode, bool(values, "list"), bool(values, "allow-shrink"))
+    ),
+    Command(
+      name = "reconcile",
+      help = "link catalog albums to local album files",
+      positionals = Nil,
+      flags = List(
+        Flag("dry-run", None, BooleanKind, "print the classes and write nothing"),
+        Flag("delete", None, BooleanKind, "remove a toml whose link id is gone")
+      ),
+      build = (values, _) => ReconcileArgs(bool(values, "dry-run"), bool(values, "delete"))
     ),
     Command(
       name = "login",

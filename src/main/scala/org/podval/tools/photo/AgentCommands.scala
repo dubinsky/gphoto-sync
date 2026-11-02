@@ -689,7 +689,7 @@ private[photo] object AgentCommands:
       val stems: Set[String] = grouped.map(_._1).toSet
       (next, if stems.isEmpty then soFar else soFar.updated(date, stems))
 
-  private def place(album: Catalog.Album): (Title.Parsed, Boolean) =
+  private[photo] def place(album: Catalog.Album): (Title.Parsed, Boolean) =
     val working: String = album.title.split(' ').filter(_.nonEmpty).mkString(" ")
     Title.parse(working) match
       case Some(parsed) if singleMonth(parsed) =>
@@ -779,7 +779,7 @@ private[photo] object AgentCommands:
   private def isMonth(token: String): Boolean =
     monthWords.contains(token.toLowerCase(java.util.Locale.ROOT))
 
-  private def monthAllowsAll(
+  private[photo] def monthAllowsAll(
     span: Title.Span,
     claimed: Set[(LocalDate, String)],
     universe: Map[LocalDate, Set[String]]

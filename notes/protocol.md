@@ -8,6 +8,8 @@ The program reads the catalog and writes request rows.
 It reads the result file.
 `photo refresh` rewrites `catalog.txt`.
 Nothing else in the program does.
+`photo reconcile` reads and writes `album-links.tsv`.
+`photo refresh` does not write that file.
 The program does not change Google Photos except `photo publish` and `photo sync`.
 Applying `requests.tsv` stays the archive agent plus `reader/sandbox-act.mjs` in `~/Podval/gphoto-sync`.
 The archive copy of that script stays until the deletion commit.
@@ -121,6 +123,30 @@ It does not change Google Photos.
 A change Leonid makes in Google Photos by hand is not written into `catalog.txt` until a refresh reads that album.
 Applying a request batch is the other writer.
 That pass updates the catalog as Catalog updates, Download, and Delete describe.
+
+## Album links
+
+`~/Pictures/originals/.gphoto-sync/album-links.tsv` is written by `photo reconcile`.
+`photo refresh` does not write it.
+The file is absent until the first reconcile that has a row.
+Do not create it empty.
+A file that exists and does not start with `# gphoto-album-links 1` is `album links are not version 1`.
+The parser does not rewrite it into the new shape and does not delete it.
+
+```
+# gphoto-album-links 1
+<catalog-album-id>	<archive-relative toml path>
+```
+
+Two columns.
+The path is archive-relative, such as `2010/07/album.toml`, with no leading slash.
+UTF-8, LF only.
+A CR is an error.
+No blank line.
+Nothing is trimmed.
+A second row for the same id or the same path is an error.
+A pending album has no row.
+Human command output does not print the catalog id.
 
 ## Requests
 

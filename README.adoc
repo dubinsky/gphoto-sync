@@ -183,6 +183,15 @@ The command runs in the calling process.
 It is not an MCP tool.
 A second refresh prints `already running` and exits 2.
 
+`photo reconcile` links catalog albums to local album files.
+The first link of an external file is the working title, or `google-title` when that key is present.
+A later rename keeps the path.
+`--dry-run` prints the classes and writes nothing.
+`--delete` removes a toml whose link id is gone.
+Day-folder pictures stay.
+The command runs in the calling process.
+It is not an MCP tool.
+
 `photo login`, `photo status`, and `photo logout` manage the Google Photos token.
 
 `photo agent` reads the catalog and the archive.
@@ -231,7 +240,7 @@ It does not preempt a command already running.
 
 `photo shell` keeps `cd`, `pwd`, and `exit` in the shell.
 It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
-`photo refresh` stays in the shell process.
+`photo refresh` and `photo reconcile` stay in the shell process.
 Other commands go to the socket.
 Path arguments are archive-root paths.
 `agent include` paths are sent unchanged.
@@ -240,7 +249,7 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 
 A one-shot uses the socket when it is up and `archive` matches.
 It runs in this process when the lock is free.
-`photo refresh` runs in this process even when the socket is up.
+`photo refresh` and `photo reconcile` run in this process even when the socket is up.
 A one-shot does not start `photo serve`.
 A mismatch names both paths and does not run in this process.
 
@@ -252,7 +261,7 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent requests`, and
 `agent results`.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
-Album files, request rows, repair, publish, sync, and refresh are not tools.
+Album files, request rows, repair, publish, sync, refresh, and reconcile are not tools.
 Tool JSON may contain album ids and item keys.
 Chat should not.
 The user adds the server.

@@ -163,7 +163,8 @@ object Album:
     if extension.contains("toml") then name
     else throw IllegalArgumentException(s"$file: not an album file")
 
-  private def putInclude(file: File, include: Seq[Include.Entry]): Unit =
+  // Empty include writes `include = []`. Callers that mean "no key" must not call this for a missing span.
+  private[photo] def putInclude(file: File, include: Seq[Include.Entry]): Unit =
     val text: String = Files.read(file)
     val lines: Seq[TextLine] = splitLines(text)
     val block: Seq[TextLine] =
@@ -175,6 +176,66 @@ object Album:
         throw IllegalArgumentException(s"$file: include array does not end on its own line")
       case None => appendBlock(lines, block)
     Files.write(joinLines(next), file)
+
+  // jtoml sorts keys and drops comments, so a title change is one assignment line.
+  // googleTitle None leaves that key. Some(None) removes it. Some(Some(text)) sets it.
+  // publishedTitle None leaves that key.
+  private[photo] def spliceTitles(
+    file: File,
+    googleTitle: Option[Option[String]],
+    publishedTitle: Option[String]
+  ): Unit =
+    googleTitle.foreach(_.foreach(text => rejectControl(file, "google-title", text)))
+    publishedTitle.foreach(text => rejectControl(file, "published-title", text))
+    val original: String = Files.read(file)
+    val titled: Seq[TextLine] = googleTitle match
+      case None => splitLines(original)
+      case Some(value) => assign(file, splitLines(original), "google-title", value, drop = true)
+    val next: Seq[TextLine] = publishedTitle match
+      case None => titled
+      case Some(text) => assign(file, titled, "published-title", Some(text), drop = false)
+    val rendered: String = joinLines(next)
+    if rendered != original then Files.write(rendered, file)
+
+  private def assign(
+    file: File,
+    lines: Seq[TextLine],
+    key: String,
+    value: Option[String],
+    drop: Boolean
+  ): Seq[TextLine] =
+    val at: Seq[Int] = lines.zipWithIndex.collect:
+      case (line, index) if singleAssignment(line.text, key) => index
+    if at.sizeIs > 1 then failGoogle(file, s"$key is not a single line")
+    (at.headOption, value) match
+      case (None, None) =>
+        lines
+      case (Some(_), None) if !drop =>
+        lines
+      case (Some(index), None) =>
+        lines.patch(index, Seq.empty, 1)
+      case (Some(index), Some(text)) =>
+        lines.updated(index, lines(index).copy(text = s"$key = ${quote(text)}"))
+      case (None, Some(text)) =>
+        insertAssignment(lines, key, TextLine(s"$key = ${quote(text)}", "\n"))
+
+  private def insertAssignment(lines: Seq[TextLine], key: String, added: TextLine): Seq[TextLine] =
+    val beforeKey: Set[String] = key match
+      case "google-title" => Set("owner", "google-album-id", "published-title", "include")
+      case "published-title" => Set("include")
+      case _ => Set.empty
+    val pivot: Option[Int] = lines.zipWithIndex.collectFirst:
+      case (line, index) if beforeKey.exists(name => singleAssignment(line.text, name)) => index
+    pivot match
+      case Some(index) =>
+        val (before, after) = lines.splitAt(index)
+        val base: Seq[TextLine] = before match
+          case prefix :+ last if last.ending.isEmpty && last.text.nonEmpty =>
+            prefix :+ last.copy(ending = "\n")
+          case _ => before
+        base ++ Seq(added) ++ after
+      case None =>
+        appendBlock(lines, Seq(added))
 
   private final case class Common(
     external: Boolean,
