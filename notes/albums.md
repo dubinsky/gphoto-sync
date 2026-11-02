@@ -279,8 +279,8 @@ The strip happens on the archive name.
 The destination name drops one leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix, in either case, and
 lowercases a known extension.
 That is the same repair `repair --names` uses.
-A video gains a trailing `v` when that day folder already has a still of the repaired stem.
-The command passes that day's files and the staged file to the planner together.
+The command plans each day once, on that day's files plus every staged file for that day.
+A video gains a trailing `v` when a still of the repaired stem is in that set, including one staged with the video.
 A stem that is empty or does not start with a digit stays staged.
 
 The destination is `<archive>/YYYY/MM/DD/<name>`.

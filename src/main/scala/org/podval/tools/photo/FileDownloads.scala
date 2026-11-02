@@ -1,10 +1,11 @@
 package org.podval.tools.photo
 
-import java.io.File
+import java.io.{File, IOException}
 import java.nio.channels.FileChannel
-import java.nio.file.{FileAlreadyExistsException, Files as NFiles, StandardCopyOption, StandardOpenOption}
+import java.nio.file.{FileAlreadyExistsException, Files as NFiles, StandardOpenOption}
 import java.time.{DateTimeException, LocalDate}
 import java.util.UUID
+import scala.annotation.tailrec
 
 // Files dated staged downloads into civil day folders. Does not download and does not call Google.
 final case class FileDownloads(dryRun: Boolean) extends Operation:
@@ -30,20 +31,14 @@ object FileDownloads:
     if !inbox.isDirectory then Seq.empty
     else
       val staged: Seq[Staged] = scan(inbox)
-      val days: Seq[String] = staged.collect { case Staged.Dated(day, _, _) => day }.distinct
-      val existing: Map[String, Seq[File]] = days.map(day => day -> listDay(archive, day)).toMap
-      val decided: (Map[String, Set[String]], Vector[Action]) =
-        staged.foldLeft((Map.empty[String, Set[String]], Vector.empty[Action])):
-          case ((claimed, acc), Staged.Kept(_, relative, reason)) =>
-            (claimed, acc :+ Action.Keep(relative, reason))
-          case ((claimed, acc), Staged.Dated(day, file, relative)) =>
-            val names: Set[String] = claimed.getOrElse(day, Set.empty)
-            val action: Action = decide(day, File(archive, day), existing(day), names, file, relative)
-            val next: Set[String] = action match
-              case Action.Filing(_, _, _, archiveName, _) => names + archiveName
-              case Action.Keep(_, _) => names
-            (claimed.updated(day, next), acc :+ action)
-      decided._2
+      val dated: Seq[Staged.Dated] = staged.collect { case item: Staged.Dated => item }
+      val byDay: Map[String, Seq[Staged.Dated]] = dated.groupBy(_.day)
+      val existing: Map[String, Seq[File]] = byDay.keys.map(day => day -> listDay(archive, day)).toMap
+      val actions: Map[String, Iterator[Action]] = byDay.map: (day, items) =>
+        day -> decideDay(day, File(archive, day), existing(day), items).iterator
+      staged.map:
+        case Staged.Kept(_, relative, reason) => Action.Keep(relative, reason)
+        case Staged.Dated(day, _, _) => actions(day).next()
 
   private def perform(actions: Seq[Action], dryRun: Boolean): Unit =
     actions.foreach: action =>
@@ -60,60 +55,111 @@ object FileDownloads:
     case Action.Keep(relative, reason) =>
       s"keep $relative $reason"
 
-  // The stand-in is not the staged file. plan only suffixes a video when the still is in the set it is given,
-  // and a destination check has to look at the day folder, not at .download.
-  private def decide(
+  // One plan per day, on the day files plus every stand-in, so a still and a video staged together
+  // gain the same trailing v that repair --names would. The stand-in is a name in the day directory:
+  // the destination check looks there, and the staged file under .download is not renamed.
+  private def decideDay(day: String, dayDir: File, existing: Seq[File], dated: Seq[Staged.Dated]): Seq[Action] =
+    val probed: Seq[Either[Action, (Staged.Dated, File)]] = dated.map: item =>
+      val standIn: File = File(dayDir, item.file.getName)
+      standInProblem(standIn) match
+        case Some(message) => Left(Action.Keep(item.relative, message))
+        case None => Right((item, standIn))
+    val good: Seq[(Staged.Dated, File)] = probed.collect { case Right(pair) => pair }
+    val planned: Either[String, Seq[Pictures.Planned]] =
+      if good.isEmpty then Right(Seq.empty)
+      else
+        try Right(Pictures.plan(existing ++ good.map(_._2)))
+        catch case e: IllegalArgumentException => Left(e.getMessage)
+    probed.map:
+      case Left(keep) => keep
+      case Right((item, standIn)) =>
+        planned match
+          case Left(message) => Action.Keep(item.relative, message)
+          case Right(rows) => actionFor(day, dayDir, item, standIn, rows)
+
+  // plannedFile throws before a row exists. Keep that download and plan the rest of the day.
+  private def standInProblem(standIn: File): Option[String] =
+    try
+      Pictures.plan(Seq(standIn))
+      None
+    catch case e: IllegalArgumentException => Some(e.getMessage)
+
+  private def actionFor(
     day: String,
     dayDir: File,
-    existing: Seq[File],
-    claimed: Set[String],
-    staged: File,
-    relative: String
+    item: Staged.Dated,
+    standIn: File,
+    rows: Seq[Pictures.Planned]
   ): Action =
-    val standIn: File = File(dayDir, staged.getName)
-    val rows: Seq[Pictures.Planned] = Pictures.plan(existing :+ standIn)
     rows.find(_.file eq standIn) match
       case None =>
-        Action.Keep(relative, "not a picture")
+        Action.Keep(item.relative, "not a picture")
       case Some(row) if row.renameRefused =>
-        Action.Keep(relative, s"${row.finalName} does not start with a digit")
+        Action.Keep(item.relative, s"${row.finalName} does not start with a digit")
       case Some(row) if row.omitted =>
-        Action.Keep(relative, row.notRenamed.getOrElse("collision"))
-      case Some(row) if claimed.contains(row.finalName) || File(dayDir, row.finalName).exists =>
-        Action.Keep(relative, s"${row.finalName} already exists")
+        Action.Keep(item.relative, row.notRenamed.getOrElse("collision"))
+      case Some(row) if File(dayDir, row.finalName).exists =>
+        Action.Keep(item.relative, s"${row.finalName} already exists")
       case Some(row) =>
-        Action.Filing(staged, day, staged.getName, row.finalName, File(dayDir, row.finalName))
+        Action.Filing(item.file, day, item.file.getName, row.finalName, File(dayDir, row.finalName))
 
   // commitFile moves with REPLACE_EXISTING and would overwrite an archive original.
   private def commit(staged: File, destination: File): Boolean =
     if destination.exists then false
     else
-      Files.mkDirs(destination.getParentFile)
+      val dayDir: File = destination.getParentFile
+      Files.mkDirs(dayDir)
       if destination.exists then false
-      else moveNew(staged, destination)
+      else moveNew(staged, dayDir, destination)
 
-  private def moveNew(staged: File, destination: File): Boolean =
-    val partial: File = File(destination.getParentFile, s".file-${UUID.randomUUID}.partial")
-    var moved: Boolean = false
+  private def moveNew(staged: File, dayDir: File, destination: File): Boolean =
+    deleteLeftoverPartials(dayDir)
+    val partial: File = File(dayDir, s".file-${UUID.randomUUID}.partial")
+    var linked: Boolean = false
     try
       copyForced(staged, partial)
       if !destination.exists then
         try
-          NFiles.move(partial.toPath, destination.toPath, StandardCopyOption.ATOMIC_MOVE)
-          moved = true
+          linkPartial(partial, destination)
+          linked = true
         catch case _: FileAlreadyExistsException => ()
     finally
-      if !moved then NFiles.deleteIfExists(partial.toPath)
-    if moved then
+      NFiles.deleteIfExists(partial.toPath)
+    if linked then
       DirectoryIndex.dropAll()
       NFiles.delete(staged.toPath)
-    moved
+    linked
+
+  // Linux rename replaces the destination and does not throw. createLink fails if the name exists.
+  private[photo] def linkPartial(partial: File, destination: File): Unit =
+    NFiles.createLink(destination.toPath, partial.toPath)
+
+  // A killed copy leaves `.file-*.partial` in the day directory. Drop those before writing a new one.
+  private def deleteLeftoverPartials(dayDir: File): Unit =
+    Files.list(dayDir)._2
+      .filter(file => file.getName.startsWith(".file-") && file.getName.endsWith(".partial"))
+      .foreach(file => NFiles.deleteIfExists(file.toPath))
 
   private def copyForced(from: File, partial: File): Unit =
-    NFiles.copy(from.toPath, partial.toPath)
-    val channel: FileChannel = FileChannel.open(partial.toPath, StandardOpenOption.WRITE)
-    try channel.force(true)
-    finally channel.close()
+    val source: FileChannel = FileChannel.open(from.toPath, StandardOpenOption.READ)
+    try
+      val channel: FileChannel = FileChannel.open(
+        partial.toPath,
+        StandardOpenOption.CREATE_NEW,
+        StandardOpenOption.WRITE
+      )
+      try
+        transfer(source, channel, 0L, source.size())
+        channel.force(true)
+      finally channel.close()
+    finally source.close()
+
+  @tailrec
+  private def transfer(source: FileChannel, channel: FileChannel, position: Long, size: Long): Unit =
+    if position < size then
+      val n: Long = channel.transferFrom(source, position, size - position)
+      if n == 0 then throw IOException(s"short transfer at $position of $size")
+      transfer(source, channel, position + n, size)
 
   private def scan(inbox: File): Seq[Staged] =
     walkFiles(inbox).map(file => classify(inbox, file)).sortBy(_.path)
@@ -135,22 +181,14 @@ object FileDownloads:
       case _ =>
         Staged.Kept(file, relative, "not a civil day")
 
-  // A dotfile partial left by a crash is not a picture. plan would reject its extension.
+  // Dotfiles are not pictures. Pictures.plan ignores them too; this keeps a crash partial out of the stand-in set.
   private def listDay(archive: File, day: String): Seq[File] =
     val dir: File = File(archive, day)
     if !dir.isDirectory then Seq.empty
     else Files.list(dir)._2.filterNot(file => file.getName.startsWith("."))
 
   private def civil(year: String, month: String, day: String): Option[String] =
-    if year.length == 4 && month.length == 2 && day.length == 2 &&
-      digits(year) && digits(month) && digits(day) && year.toInt > 1000
-    then
-      try
-        val date: LocalDate = LocalDate.of(year.toInt, month.toInt, day.toInt)
-        val canonical: String =
-          f"${date.getYear}%04d/${date.getMonthValue}%02d/${date.getDayOfMonth}%02d"
-        Option.when(canonical == s"$year/$month/$day")(canonical)
-      catch case _: DateTimeException => None
-    else None
-
-  private def digits(text: String): Boolean = text.forall(ch => ch >= '0' && ch <= '9')
+    try
+      val date: LocalDate = LocalDate.parse(s"$year-$month-$day")
+      Option.when(date.getYear > 1000)(s"$year/$month/$day")
+    catch case _: DateTimeException => None

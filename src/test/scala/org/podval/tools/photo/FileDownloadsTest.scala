@@ -7,7 +7,7 @@ import java.awt.image.BufferedImage
 import java.io.{ByteArrayOutputStream, File}
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files as JFiles, StandardOpenOption}
+import java.nio.file.{FileAlreadyExistsException, Files as JFiles, StandardOpenOption}
 import java.time.ZoneId
 import javax.imageio.ImageIO
 
@@ -205,6 +205,106 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       err should not include ("Photo Archive Tool:")
       read(inbox, "2010/09/03/IMG_2.JPG") shouldBe "shell"
       File(archive, "2010/09/03").exists shouldBe false
+
+  it should "ignore a dotfile partial in Pictures.plan" in :
+    val dir: File = JFiles.createTempDirectory("plan-partial").toFile
+    try
+      val picture: File = File(dir, "IMG_4.JPG")
+      val partial: File = File(dir, ".file-left.partial")
+      JFiles.writeString(picture.toPath, "pic")
+      JFiles.writeString(partial.toPath, "partial")
+      Pictures.plan(Seq(partial, picture)).map(_.finalName) shouldBe Seq("4.jpg")
+      Pictures.plan(Seq(partial)).map(_.finalName) shouldBe Seq.empty[String]
+    finally deleteTree(dir)
+
+  it should "delete a leftover partial on a real run and leave it on a dry run" in :
+    withArchive: archive =>
+      val day: File = File(archive, "2010/10/02")
+      day.mkdirs()
+      val partial: File = File(day, ".file-old.partial")
+      JFiles.writeString(partial.toPath, "old")
+      val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
+      write(inbox, "2010/10/02/IMG_8.JPG", "fresh")
+      okText(FileDownloads(dryRun = true).execute(sessionFor(archive))._2) shouldBe
+        "file 2010/10/02 IMG_8.JPG 8.jpg\n"
+      read(day, ".file-old.partial") shouldBe "old"
+      File(day, "8.jpg").exists shouldBe false
+
+      okText(FileDownloads(dryRun = false).execute(sessionFor(archive))._2) shouldBe
+        """file 2010/10/02 IMG_8.JPG 8.jpg
+          |wrote 2010/10/02/8.jpg
+          |""".stripMargin
+      read(archive, "2010/10/02/8.jpg") shouldBe "fresh"
+      partial.exists shouldBe false
+      namesUnder(archive).filter(name => name.startsWith(".") || name.contains("partial")) shouldBe Set.empty[String]
+
+  it should "keep a staged non-picture and still file another day" in :
+    withArchive: archive =>
+      val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
+      write(inbox, "2010/12/03/notes.txt", "nope")
+      write(inbox, "2010/12/04/IMG_3.JPG", "yes")
+      val text: String = okText(FileDownloads(dryRun = false).execute(sessionFor(archive))._2)
+      text should include ("keep 2010/12/03/notes.txt ")
+      text should include ("illegal extension txt")
+      text should include ("file 2010/12/04 IMG_3.JPG 3.jpg")
+      text should include ("wrote 2010/12/04/3.jpg")
+      read(inbox, "2010/12/03/notes.txt") shouldBe "nope"
+      read(archive, "2010/12/04/3.jpg") shouldBe "yes"
+      File(archive, "2010/12/03").exists shouldBe false
+
+  it should "keep a day's downloads when a stray day file makes plan throw, and file other days" in :
+    withArchive: archive =>
+      write(archive, "2010/12/01/notes.txt", "stray")
+      val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
+      write(inbox, "2010/12/01/IMG_5.JPG", "blocked")
+      write(inbox, "2010/12/02/IMG_6.JPG", "other")
+      val text: String = okText(FileDownloads(dryRun = false).execute(sessionFor(archive))._2)
+      text should include ("keep 2010/12/01/IMG_5.JPG ")
+      text should include ("illegal extension txt")
+      text should include ("file 2010/12/02 IMG_6.JPG 6.jpg")
+      text should include ("wrote 2010/12/02/6.jpg")
+      read(inbox, "2010/12/01/IMG_5.JPG") shouldBe "blocked"
+      read(archive, "2010/12/01/notes.txt") shouldBe "stray"
+      read(archive, "2010/12/02/6.jpg") shouldBe "other"
+      File(archive, "2010/12/01/5.jpg").exists shouldBe false
+
+  it should "suffix a video staged with its still into an empty day" in :
+    withArchive: archive =>
+      val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
+      write(inbox, "2010/10/01/IMG_100.jpg", "still")
+      write(inbox, "2010/10/01/VID_100.mp4", "video")
+      val lines: String =
+        """file 2010/10/01 IMG_100.jpg 100.jpg
+          |file 2010/10/01 VID_100.mp4 100v.mp4
+          |""".stripMargin
+      okText(FileDownloads(dryRun = true).execute(sessionFor(archive))._2) shouldBe lines
+      File(archive, "2010/10/01").exists shouldBe false
+      read(inbox, "2010/10/01/IMG_100.jpg") shouldBe "still"
+      read(inbox, "2010/10/01/VID_100.mp4") shouldBe "video"
+
+      okText(FileDownloads(dryRun = false).execute(sessionFor(archive))._2) shouldBe
+        """file 2010/10/01 IMG_100.jpg 100.jpg
+          |wrote 2010/10/01/100.jpg
+          |file 2010/10/01 VID_100.mp4 100v.mp4
+          |wrote 2010/10/01/100v.mp4
+          |""".stripMargin
+      read(archive, "2010/10/01/100.jpg") shouldBe "still"
+      read(archive, "2010/10/01/100v.mp4") shouldBe "video"
+      File(archive, "2010/10/01/100.mp4").exists shouldBe false
+      File(inbox, "2010/10/01/IMG_100.jpg").exists shouldBe false
+      File(inbox, "2010/10/01/VID_100.mp4").exists shouldBe false
+
+  it should "not replace an existing destination via createLink" in :
+    val dir: File = JFiles.createTempDirectory("file-link").toFile
+    try
+      val destination: File = File(dir, "7.jpg")
+      val partial: File = File(dir, ".file-test.partial")
+      JFiles.writeString(destination.toPath, "OLD")
+      JFiles.writeString(partial.toPath, "NEW")
+      an [FileAlreadyExistsException] should be thrownBy FileDownloads.linkPartial(partial, destination)
+      JFiles.readString(destination.toPath) shouldBe "OLD"
+      JFiles.readString(partial.toPath) shouldBe "NEW"
+    finally deleteTree(dir)
 
   private def okText(result: Result): String = result match
     case Result.Ok(text, _) => text

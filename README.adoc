@@ -199,7 +199,8 @@ Undated files stay staged.
 Nothing inside `.download/` is renamed.
 One leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix is stripped on the archive name, and a known extension is
 lowercased.
-When a video shares that repaired stem with a still already in the day folder, the video gains a trailing `v`.
+When a video shares that repaired stem with a still in that day's files or staged with it, the video gains a trailing
+`v`.
 The command creates the day directory.
 It never overwrites an archive file.
 A collision, or a stem that is empty or does not start with a digit, stays staged and is reported.

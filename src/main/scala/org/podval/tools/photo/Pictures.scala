@@ -81,8 +81,11 @@ object Pictures:
       .sortBy(_._1)
 
   // Side-effect free. misnamedUpload ignores omitted rows and still sees a refused rename.
+  // A name that starts with `.` is not a picture. `.file-*.partial` would throw `illegal extension partial`
+  // from ls, publish, sync, and agent stems, which all plan the day `Files.listFiles` returns.
   private[photo] def plan(files: Seq[File]): Seq[Planned] =
-    val read: Seq[Planned] = files.filterNot(albumToml).map(plannedFile)
+    val read: Seq[Planned] =
+      files.filterNot(file => file.getName.startsWith(".")).filterNot(albumToml).map(plannedFile)
     decide(withVideoSuffix(read)).sortBy(_.file.getName)
 
   private val droppedPrefixes: Seq[String] = Seq("MVIMG_", "PXL_", "IMG_", "VID_", "MVI_")
