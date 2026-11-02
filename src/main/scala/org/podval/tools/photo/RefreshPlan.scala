@@ -1,7 +1,6 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as NFiles, StandardCopyOption}
 import java.time.LocalDate
 
@@ -53,32 +52,39 @@ object RefreshPlan:
           val actions: Seq[Action] = classify(cards, stored, storedById, mode, named)
           Diff(cards, stored, actions, itemReads(cards, storedById, actions, mode, named), named, mode)
 
-  def splice(found: Diff, reads: Map[String, Catalog.Album] = Map.empty): Prepared =
+  def splice(found: Diff, reads: Map[String, Catalog.Album] = Map.empty, source: String = ""): Prepared =
     val cardById: Map[String, Card] = found.cards.map(card => card.id -> card).toMap
     val storedIds: Set[String] = found.stored.map(_.id).toSet
-    val survivors: Seq[Catalog.Album] = found.stored.flatMap: album =>
-      val copied: Boolean = found.mode match
+    val blocks: Map[String, Seq[String]] = blocksOf(source)
+    val survivors: Seq[(Catalog.Album, Seq[String])] = found.stored.flatMap: album =>
+      val copyWhole: Boolean = found.mode match
         case Mode.Album(_) => !found.named.contains(album.id)
         case _ => false
-      if copied then Some(album)
+      if copyWhole then Some(album -> copiedLines(album, blocks))
       else cardById.get(album.id).map: card =>
-        rewrite(album, card, found.itemReads.contains(album.id), reads)
-    val appended: Seq[Catalog.Album] = found.cards.flatMap: card =>
+        val readItems: Boolean = found.itemReads.contains(album.id)
+        val next: Catalog.Album = rewrite(album, card, readItems, reads)
+        next -> keptLines(album, next, readItems, blocks)
+    val appended: Seq[(Catalog.Album, Seq[String])] = found.cards.flatMap: card =>
       val wanted: Boolean = found.mode match
         case Mode.Album(_) => found.named.contains(card.id)
         case _ => true
-      if !storedIds.contains(card.id) && wanted then Some(fresh(card, reads)) else None
-    val albums: Seq[Catalog.Album] = survivors ++ appended
-    Prepared(found, albums, render(albums))
+      if !storedIds.contains(card.id) && wanted then
+        val next: Catalog.Album = taken(card, reads.get(card.id))
+        Some(next -> recordLines(next))
+      else None
+    val rows: Seq[(Catalog.Album, Seq[String])] = survivors ++ appended
+    Prepared(found, rows.map(_._1), renderLines(rows.map(_._2)))
 
   def plan(
     lines: Seq[String],
     stored: Seq[Catalog.Album],
     mode: Mode,
     allowShrink: Boolean,
-    reads: Map[String, Catalog.Album] = Map.empty
+    reads: Map[String, Catalog.Album] = Map.empty,
+    source: String = ""
   ): Either[String, Prepared] =
-    diff(lines, stored, mode, allowShrink).map(splice(_, reads))
+    diff(lines, stored, mode, allowShrink).map(found => splice(found, reads, source))
 
   def publish(
     directory: File,
@@ -88,7 +94,7 @@ object RefreshPlan:
     val partial: File = File(directory, PartialName)
     val live: File = File(directory, LiveName)
     val previous: File = File(directory, PreviousName)
-    write(partial, prepared.text)
+    Files.write(prepared.text, partial)
     check(partial, prepared).flatMap: _ =>
       swap(live, partial, previous, move)
 
@@ -98,21 +104,20 @@ object RefreshPlan:
     stored: Seq[Catalog.Album],
     mode: Mode,
     allowShrink: Boolean,
-    reads: Map[String, Catalog.Album] = Map.empty
+    reads: Map[String, Catalog.Album] = Map.empty,
+    source: String = ""
   ): Either[String, Prepared] =
-    plan(lines, stored, mode, allowShrink, reads).flatMap: prepared =>
+    plan(lines, stored, mode, allowShrink, reads, source).flatMap: prepared =>
       publish(directory, prepared).map(_ => prepared)
 
   private[photo] def check(file: File, prepared: Prepared): Either[String, Unit] =
     val bytes: Array[Byte] = NFiles.readAllBytes(file.toPath)
     bytesOk(bytes).flatMap: _ =>
       readCatalog(file).flatMap: albums =>
-        idsMatch(albums, prepared.diff).flatMap: _ =>
-          scopeComplete(albums, prepared.diff)
+        idsMatch(albums, prepared.diff)
 
   def render(albums: Seq[Catalog.Album]): String =
-    val body: String = albums.flatMap(recordLines).map(_ + "\n").mkString
-    Header + "\n" + body
+    renderLines(albums.map(recordLines))
 
   private def useFloor(mode: Mode, allowShrink: Boolean): Boolean = mode match
     case Mode.Album(_) => false
@@ -230,9 +235,6 @@ object RefreshPlan:
       unsets = Seq.empty
     )
 
-  private def fresh(card: Card, reads: Map[String, Catalog.Album]): Catalog.Album =
-    taken(card, reads.get(card.id))
-
   private def taken(card: Card, read: Option[Catalog.Album]): Catalog.Album =
     Catalog.Album(
       id = card.id,
@@ -255,6 +257,41 @@ object RefreshPlan:
     val items: Seq[String] = album.items.map: item =>
       s"item\t${album.id}\t${item.filename}\t${dateText(item.date)}\t${item.key}\t${person(item.uploader)}"
     Seq(s"album\t${album.id}\t${album.count}\t${album.title}") ++ owner ++ auto ++ error ++ unsets ++ items
+
+  // Group the source file by the id column. Not a second catalog parse: order inside a block stays as written.
+  private def blocksOf(source: String): Map[String, Seq[String]] =
+    val raw: Seq[String] = source.split("\n", -1).toSeq
+    val body: Seq[String] = raw.dropWhile(_ == Header)
+    val lines: Seq[String] = if body.lastOption.contains("") then body.dropRight(1) else body
+    lines.foldLeft(Map.empty[String, Seq[String]]): (acc, line) =>
+      line.split("\t", -1).toSeq match
+        case _ +: id +: _ if id.nonEmpty =>
+          acc.updated(id, acc.getOrElse(id, Seq.empty) :+ line)
+        case _ => acc
+
+  private def copiedLines(album: Catalog.Album, blocks: Map[String, Seq[String]]): Seq[String] =
+    blocks.getOrElse(album.id, recordLines(album))
+
+  private def keptLines(
+    stored: Catalog.Album,
+    next: Catalog.Album,
+    readItems: Boolean,
+    blocks: Map[String, Seq[String]]
+  ): Seq[String] =
+    val block: Seq[String] = blocks.getOrElse(stored.id, Seq.empty)
+    if readItems || block.isEmpty || next.copy(title = stored.title) != stored then recordLines(next)
+    else if next.title != stored.title then retitle(block, next.title)
+    else block
+
+  private def retitle(lines: Seq[String], title: String): Seq[String] =
+    lines.map: line =>
+      val fields: Seq[String] = line.split("\t", -1).toSeq
+      if fields.headOption.contains("album") && fields.length >= 4 then
+        fields.take(3).mkString("\t") + "\t" + title
+      else line
+
+  private def renderLines(groups: Seq[Seq[String]]): String =
+    Header + "\n" + groups.flatten.map(_ + "\n").mkString
 
   // A CR would fail the byte check. Tab and newline, including CR, become one space. No other trim.
   private def plain(text: String): String =
@@ -283,28 +320,6 @@ object RefreshPlan:
       case _ => got == found.cards.map(_.id).toSet
     if ok then Right(()) else Left("album set")
 
-  private def scopeComplete(albums: Seq[Catalog.Album], found: Diff): Either[String, Unit] =
-    val byId: Map[String, Catalog.Album] = albums.map(album => album.id -> album).toMap
-    val missingOrShort: Boolean = scopeIds(found).exists: id =>
-      !byId.get(id).exists(complete)
-    if missingOrShort then Left("incomplete") else Right(())
-
-  private def scopeIds(found: Diff): Set[String] = found.mode match
-    case Mode.Full => found.cards.map(_.id).toSet
-    case Mode.Album(_) => found.named
-    case Mode.Incremental =>
-      found.actions.collect:
-        case Action.Add(card) => card.id
-        case Action.CountChange(_, card) => card.id
-      .toSet
-
-  private def complete(album: Catalog.Album): Boolean =
-    if album.autoAdd then album.items.isEmpty && album.unsets.isEmpty && album.error.isEmpty
-    else album.error.isDefined || album.items.length == album.count
-
-  private def write(file: File, text: String): Unit =
-    NFiles.write(file.toPath, text.getBytes(StandardCharsets.UTF_8))
-
   // previous exists only between the two renames. A failed second rename puts the live file back.
   private def swap(live: File, partial: File, previous: File, move: (File, File) => Unit): Either[String, Unit] =
     val hadLive: Boolean = live.isFile
@@ -315,15 +330,27 @@ object RefreshPlan:
         forget(previous)
         Right(())
       catch case failed: Exception =>
-        restore(live, previous, hadLive, move)
-        Left(renameMessage(failed))
+        restore(live, previous, hadLive, move) match
+          case Right(()) => Left(renameMessage(failed))
+          case Left(during) => Left(s"${renameMessage(failed)}; $during")
     catch case failed: Exception =>
       Left(renameMessage(failed))
 
-  private def restore(live: File, previous: File, hadLive: Boolean, move: (File, File) => Unit): Unit =
+  private def restore(
+    live: File,
+    previous: File,
+    hadLive: Boolean,
+    move: (File, File) => Unit
+  ): Either[String, Unit] =
     if hadLive && !live.isFile && previous.isFile then
-      try move(previous, live)
-      catch case _: Exception => ()
+      try
+        move(previous, live)
+        Right(())
+      catch case failed: Exception =>
+        Left(s"catalog.txt is missing: ${renameMessage(failed)}")
+    else if hadLive && !live.isFile then
+      Left("catalog.txt is missing")
+    else Right(())
 
   private def forget(previous: File): Unit =
     try if previous.exists then NFiles.delete(previous.toPath)
@@ -333,12 +360,9 @@ object RefreshPlan:
     Option(failed.getMessage).filter(_.nonEmpty).getOrElse("rename failed")
 
   private val moveReplacing: (File, File) => Unit = (from, to) =>
-    if to.exists then
-      NFiles.move(
-        from.toPath,
-        to.toPath,
-        StandardCopyOption.ATOMIC_MOVE,
-        StandardCopyOption.REPLACE_EXISTING
-      )
-    else
-      NFiles.move(from.toPath, to.toPath, StandardCopyOption.ATOMIC_MOVE)
+    NFiles.move(
+      from.toPath,
+      to.toPath,
+      StandardCopyOption.ATOMIC_MOVE,
+      StandardCopyOption.REPLACE_EXISTING
+    )
