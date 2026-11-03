@@ -6,7 +6,7 @@ import java.net.{BindException, InetSocketAddress}
 import java.nio.ByteBuffer
 import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
 import java.nio.charset.{CharacterCodingException, CodingErrorAction, StandardCharsets}
-import java.nio.file.{FileSystemLoopException, Files as NFiles, InvalidPathException, NoSuchFileException, StandardOpenOption}
+import java.nio.file.{FileSystemException, Files as NFiles, NoSuchFileException, StandardOpenOption}
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.{CountDownLatch, ExecutorService, Executors}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
@@ -73,9 +73,7 @@ object Web:
 
   // Decode once. A decoded ".." is still rejected. Callers pass the raw path, not a second decoding.
   private[photo] def reject(archive: File, raw: String): Either[Rejected, java.nio.file.Path] =
-    percentDecode(raw).flatMap(lexical).flatMap: names =>
-      val candidate: File = names.foldLeft(archive)((dir, name) => File(dir, name))
-      confine(archive, candidate)
+    percentDecode(raw).flatMap(lexical).flatMap(names => confine(archive, names))
 
   // Path.startsWith matches elements. "Pictures-other" is not under "Pictures".
   private[photo] def contained(root: java.nio.file.Path, candidate: java.nio.file.Path): Boolean =
@@ -134,8 +132,10 @@ object Web:
       installSignals()
       latch.await()
       Right(())
-    catch case _: BindException =>
-      Left(s"address already in use: $loopback:$port")
+    catch case caught: BindException =>
+      val detail: String = Option(caught.getMessage).getOrElse("")
+      if detail.contains("Address already in use") then Left(s"address already in use: $loopback:$port")
+      else Left(detail)
     finally
       if server != null && serverRef.compareAndSet(server, null) then runtimeRef.set(None)
       if server != null then server.stop(0)
@@ -230,18 +230,12 @@ object Web:
     ch.isDigit || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
 
   private def lexical(decoded: String): Either[Rejected, List[String]] =
-    if decoded.exists(ch => ch == '\\' || ch == '\u0000') then Left(Rejected(400, escapeMessage))
-    else if isAbsolute(decoded) then Left(Rejected(400, escapeMessage))
+    if decoded.exists(ch => ch == '\\' || ch == '\u0000') || decoded.startsWith("/") then
+      Left(Rejected(400, escapeMessage))
     else
       val names: List[String] = segments(decoded, Nil)
       if names.exists(name => name.isEmpty || name == "." || name == "..") then Left(Rejected(400, escapeMessage))
       else Right(names)
-
-  private def isAbsolute(decoded: String): Boolean =
-    decoded.startsWith("/") || (
-      try java.nio.file.Path.of(decoded).isAbsolute
-      catch case _: InvalidPathException => true
-    )
 
   @tailrec
   private def segments(rest: String, acc: List[String]): List[String] =
@@ -249,12 +243,15 @@ object Web:
     if more.isEmpty then (name :: acc).reverse
     else segments(more.drop(1), name :: acc)
 
-  private def confine(archive: File, candidate: File): Either[Rejected, java.nio.file.Path] =
+  // Walk each existing name. toRealPath of a missing child under an outside symlink is NoSuchFileException,
+  // which would hide the escape. NOFOLLOW_LINKS leaves the link name, so the prefix check would accept it.
+  private def confine(archive: File, names: List[String]): Either[Rejected, java.nio.file.Path] =
     try
       val root: java.nio.file.Path = archive.toPath.toRealPath()
-      // NOFOLLOW_LINKS leaves the symlink element, so a prefix check would accept a target outside the archive.
-      val real: java.nio.file.Path = candidate.toPath.toRealPath()
-      if contained(root, real) then Right(real) else Left(Rejected(400, escapeMessage))
+      names.foldLeft[Either[Rejected, java.nio.file.Path]](Right(root)): (soFar, name) =>
+        soFar.flatMap: dir =>
+          val resolved: java.nio.file.Path = dir.resolve(name).toRealPath()
+          if contained(root, resolved) then Right(resolved) else Left(Rejected(400, escapeMessage))
     catch
       case _: NoSuchFileException => Left(Rejected(404, missingPicture))
-      case _: FileSystemLoopException => Left(Rejected(400, escapeMessage))
+      case _: FileSystemException => Left(Rejected(400, escapeMessage))

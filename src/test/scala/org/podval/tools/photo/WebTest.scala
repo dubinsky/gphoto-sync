@@ -35,6 +35,8 @@ class WebTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("web", "--port", "0")) shouldBe Cli.Usage("port must be 1 to 65535")
     Cli.parse(List("web", "--port", "65536")) shouldBe Cli.Usage("port must be 1 to 65535")
     Cli.parse(List("web", "--port", "nope")) shouldBe Cli.Usage("port must be 1 to 65535")
+    Cli.parse(List("web", "--port", "+8765")) shouldBe Cli.Usage("port must be 1 to 65535")
+    Cli.parse(List("web", "--port", "0000000000008765")) shouldBe Cli.Run(Cli.WebArgs(8765))
     Cli.parse(List("web", "extra")) shouldBe Cli.Usage("extra argument 'extra'")
     Cli.parse(List("web", "--port", "8766", "--port", "8767")) shouldBe Cli.Usage("repeated option '--port'")
     Cli.toOperation(Cli.WebArgs(8766)) shouldBe Web(8766)
@@ -105,6 +107,39 @@ class WebTest extends AnyFlatSpec, Matchers:
       socket.close()
       deleteTree(runtime)
 
+  it should "report a bind failure that is not a taken port" in :
+    val runtime: File = JFiles.createTempDirectory("web-denied").toFile
+    val probe = new java.net.ServerSocket()
+    try
+      val denied: Option[String] =
+        try
+          probe.bind(new InetSocketAddress(loopback, 80))
+          None
+        catch case caught: java.net.BindException =>
+          Some(Option(caught.getMessage).getOrElse(""))
+      denied match
+        case Some(message) =>
+          val out = new ByteArrayOutputStream
+          val err = new ByteArrayOutputStream
+          val failed: Either[String, Unit] = Console.withOut(out):
+            Console.withErr(err):
+              Web.start(runtime, 80)
+          if message.contains("Address already in use") then
+            failed shouldBe Left(s"address already in use: $loopback:80")
+          else
+            failed shouldBe Left(message)
+          text(out) shouldBe ""
+          text(err) shouldBe ""
+          assert(Web.handlerRuntime.isEmpty)
+          val port: Int = freePort()
+          val (_, _, ended) = running(runtime, port)(())
+          ended shouldBe Right(())
+        case None =>
+          succeed
+    finally
+      probe.close()
+      deleteTree(runtime)
+
   it should "keep another holder of web.lock when this JVM already has it" in :
     val runtime: File = JFiles.createTempDirectory("web-overlap").toFile
     val port: Int = freePort()
@@ -139,6 +174,12 @@ class WebTest extends AnyFlatSpec, Matchers:
       JFiles.createSymbolicLink(File(day, "2412.jpg").toPath, secret.toPath)
       JFiles.createSymbolicLink(File(day, "gone.jpg").toPath, File(outside, "missing.jpg").toPath)
       JFiles.createSymbolicLink(File(archive, "2011").toPath, outside.toPath)
+      val loop: File = File(archive, "loop")
+      JFiles.createSymbolicLink(loop.toPath, loop.toPath)
+      val linkA: File = File(archive, "link-a")
+      val linkB: File = File(archive, "link-b")
+      JFiles.createSymbolicLink(linkA.toPath, linkB.toPath)
+      JFiles.createSymbolicLink(linkB.toPath, linkA.toPath)
 
       rejected(archive, "../x")
       rejected(archive, "2010/07/04/../../x")
@@ -152,6 +193,12 @@ class WebTest extends AnyFlatSpec, Matchers:
       rejected(archive, "2010/07/04/a\u0000b")
       rejected(archive, "2010/07/04/2412.jpg")
       rejected(archive, "2011")
+      rejected(archive, "2011/secret.jpg")
+      rejected(archive, "2011/missing.jpg")
+      rejected(archive, "2010/07/04/1000.jpg/extra")
+      rejected(archive, "loop")
+      rejected(archive, "loop/child")
+      rejected(archive, "link-a/child")
       Web.reject(archive, "2010/07/04/gone.jpg") shouldBe Left(Web.Rejected(404, "no such picture"))
       Web.reject(archive, "2010/07/04/9999.jpg") shouldBe Left(Web.Rejected(404, "no such picture"))
       Web.reject(archive, "%252e%252e") shouldBe Left(Web.Rejected(404, "no such picture"))

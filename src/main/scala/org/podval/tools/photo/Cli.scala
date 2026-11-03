@@ -749,10 +749,10 @@ object Cli:
     raw match
       case None =>
         Right(Web.defaultPort)
-      case Some(text) =>
-        val digits: Boolean = text.nonEmpty && text.length <= 10 && text.forall(_.isDigit)
-        val port: Long = if digits then text.toLong else 0L
-        if digits && port >= 1L && port <= 65535L then Right(port.toInt) else Left(message)
+      case Some(text) if text.nonEmpty && text.forall(_.isDigit) =>
+        text.toIntOption.filter(port => port >= 1 && port <= 65535).toRight(message)
+      case Some(_) =>
+        Left(message)
 
   private def helpText(positionals: List[String], front: Front): Outcome = positionals match
     case Nil =>
@@ -1200,10 +1200,7 @@ object Cli:
       flags = List(
         Flag("port", None, TextKind, s"loopback port; default ${Web.defaultPort}")
       ),
-      build = (values, _) =>
-        webPort(values.texts.get("port")) match
-          case Right(port) => WebArgs(port)
-          case Left(message) => throw IllegalArgumentException(message)
+      build = (_, _) => throw IllegalStateException("web is parsed by the front")
     ),
     Command(
       name = "login",
