@@ -1335,8 +1335,8 @@ Keep the album id and the item key out of chat.
 
 `photo agent match [--id <id>] <album>` matches that album's items to local stems.
 The command does not write.
-A line is `matched <n> of <m>`, then one `<day> <filename> <stem>` line per hit, then `unmatched <date> <filename>`.
-The unmatched date is `-` when the catalog date is `-`.
+A line is `matched <n> of <m>`, then one `<day> <filename> <stem>` line per hit, then one `unmatched <day> <filename>`
+line per miss, and that day is `-` when the catalog date is `-`.
 An auto-add album prints `skipped auto-add`.
 An album with unread names prints `skipped unread names`.
 JSON has `id`, `matched`, and `unmatched`.
