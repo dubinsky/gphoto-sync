@@ -245,6 +245,21 @@ It does not print album ids or item keys.
 `photo agent stems <day>` lists that day's grouped stems.
 Extensions are sorted and joined with `+`.
 The metadata comes from sidecar TOML, not from EXIF.
+`photo agent years` lists the archive years.
+The command does not write.
+A line is the year, with no leading slash, such as `2009`.
+`photo agent months <year>` lists the months of one year.
+The command does not write.
+A line is the archive-relative month, with no leading slash, such as `2010/07`.
+`photo agent days <month>` lists the days of one month.
+The command does not write.
+A line is the archive-relative day, with no leading slash, such as `2010/07/19`.
+`photo agent claims <path>` lists album claims for one day.
+The command does not write.
+A line is `<day>/<stem> albums=<title>,<title>`, or `albums=-` when the claim has no title.
+`photo agent locate <day> <stem>` lists catalog rows that match one local stem.
+The command does not write.
+A line is the album title, the date, the filename, and the uploader.
 `photo agent catalog` lists every catalog album, sorted by title, without the album id.
 `photo agent items [--id <id>] <album>` lists that album's item and unset rows.
 The album is an exact catalog title.
@@ -321,8 +336,10 @@ It is a client of `photo serve`, the same way `photo shell` is.
 It starts a detached `photo serve` when the socket is down, and it does not stop that process on exit.
 It does not run a command in this process when the socket is down.
 A mismatch names both paths, says to run `photo serve stop`, and does not run the command in this process.
-Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent drift`, and
-`agent missing`.
+Tools are `agent stems`, `agent years`, `agent months`, `agent days`, `agent claims`, `agent catalog`, `agent items`,
+`agent match`, `agent locate`, `agent include`, `agent rename-album`, `agent set-description`, `agent set-date`,
+`agent download-item`, `agent add-to-album`, `agent remove-from-album`, `agent move-item`, `agent delete-item`,
+`agent upload-item`, `agent create-album`, `agent delete-album`, `agent drift`, and `agent missing`.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
 Album files, repair, publish, sync, refresh, reconcile, and file are not tools.
 Tool JSON may contain album ids and item keys.
@@ -337,6 +354,9 @@ command = "photo"
 args = [ "mcp" ]
 enabled = true
 ----
+
+Another computer runs `photo mcp` over SSH, and that stdio stream is MCP: the archive host is the machine with the
+files, and there is no second transport.
 
 `command` is whatever executable already runs `photo serve`.
 The Gradle main class is `org.podval.tools.photo.Cli`.
@@ -438,7 +458,8 @@ Cron is out of scope.
 
 - packaging/publishing/installation/setup/documentstion
 
-- if we keep Google Photos API support and use it for item upload from local archive - why do we need "create album" via Google Photos UI?
+- if we keep Google Photos API support and use it for item upload from local archive - why do we need "create album" via
+  Google Photos UI?
 
 - fix day and date-range albums: split, merge, month...
 

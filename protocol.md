@@ -15,6 +15,7 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
   `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
   `photo agent delete-item`, `photo agent upload-item`, `photo agent create-album`, and `photo agent delete-album`.
+- Agent reads — the read-only `photo agent` commands.
 
 ## Files
 
@@ -1236,3 +1237,156 @@ Do not invent or guess a `batchexecute` RPC for this.
 `photo agent upload-item` is the applier for uploading one archive file into an existing album.
 `photo agent create-album` is the applier for creating an empty album.
 `photo agent delete-album` is the applier for deleting an album.
+
+## Agent reads
+
+When `photo` is on `PATH`, call the command and use its JSON.
+Do not parse `catalog.txt`, sidecar TOML, or the `YYYY/MM/DD` tree to answer these questions.
+The grammars stay in their own sections for an agent that does not have the program.
+This section does not restate the catalog grammar.
+It does not document the MCP JSON-RPC envelope, the socket path, or the Grok config.
+A truncated tool result is incomplete.
+
+### photo agent stems
+
+`photo agent stems <day>` lists that day's grouped stems.
+The command does not write.
+A line is the stem, then the extensions sorted and joined with `+`.
+The metadata comes from sidecar TOML, not from EXIF.
+JSON has `day` and `stems`.
+Each stem has `stem`, `extensions`, and `metadata`.
+A `metadata` key that is unset is absent.
+The keys that may be present are `source`, `timestamp`, `date`, `bad-raw`, `orientation`, `google-media-item-id`,
+`already-in-google`, and `uploader`.
+Keep `google-media-item-id` out of chat.
+
+### photo agent years
+
+`photo agent years` lists the archive years.
+The command does not write.
+A line is the year, with no leading slash, such as `2009`.
+JSON has `years`, an array of those strings.
+The JSON has no album id, item key, or `google-media-item-id`.
+
+### photo agent months
+
+`photo agent months <year>` lists the months of one year.
+The command does not write.
+A line is the archive-relative month, with no leading slash, such as `2010/07`.
+JSON has `year`, `present`, and `months`.
+`present` is false when that year directory is absent, and `months` is then empty.
+The JSON has no album id, item key, or `google-media-item-id`.
+
+### photo agent days
+
+`photo agent days <month>` lists the days of one month.
+The month is `YYYY/MM`, such as `2010/07`.
+The command does not write.
+A line is the archive-relative day, with no leading slash, such as `2010/07/19`.
+JSON has `month`, `present`, and `days`.
+`present` is false when that month directory is absent, and `days` is then empty.
+The JSON has no album id, item key, or `google-media-item-id`.
+
+### photo agent claims
+
+`photo agent claims <path>` lists album claims for one day.
+The path is that day.
+The command does not write.
+A line is `<day>/<stem> albums=<title>,<title>`, with titles sorted and no spaces after commas.
+An empty claim and an excluded-only claim both print `albums=-`.
+JSON has `path`, `present`, and `claims`.
+Each claim has `path`, `stem`, `albums`, and `excludedOnly`.
+`albums` is titles only.
+`excludedOnly` is how JSON tells an empty claim from an excluded-only claim.
+`Pictures.plan` omits a stem that has only `toml`, `thm`, or `tif`, so both `agent stems` and `claims` omit it, and a
+day of only `2412.tif` is `present: true` and `"claims": []`.
+When the day directory is absent, `present` is false and `claims` is empty.
+The JSON has no album id, item key, or `google-media-item-id`.
+
+### photo agent catalog
+
+`photo agent catalog` lists every catalog album, sorted by title.
+The command does not write.
+A line is `AgentCommands.catalogLine`: the quoted title, `count=<count> items=<items>`, then `owned` or
+`owner="<label>"`, and, when set, `auto-add`, `error got=<got> of=<of> name-failures=<n>`, `unset=<n>`, and `ambiguous`.
+The line does not include the album id.
+JSON has `albums`.
+Each album has `id`, `title`, `count`, `owned`, `owner`, `autoAdd`, `error`, `unset`, `items`, and `ambiguous`.
+`owner` and `error` may be null.
+When `error` is an object it has `got`, `of`, and `nameFailures`.
+Keep the album id out of chat.
+
+### photo agent items
+
+`photo agent items [--id <id>] <album>` lists that album's item and unset rows.
+The album is an exact catalog title.
+The command does not write.
+An auto-add album prints `auto-add`.
+Otherwise a line is `<filename> <date> <uploader>`, and an unset line is `unset <date> <uploader>`.
+On the line, `date` and `uploader` are `-` when the catalog has no value.
+JSON has `id`, `error`, `items`, and `unsets`.
+Each item has `filename`, `date`, `key`, and `uploader`.
+Each unset has `date`, `key`, and `uploader`.
+In JSON, `date` and `uploader` are null when the catalog has no value.
+`error` is the same nullable object as catalog.
+Keep the album id and the item key out of chat.
+
+### photo agent match
+
+`photo agent match [--id <id>] <album>` matches that album's items to local stems.
+The command does not write.
+A line is `matched <n> of <m>`, then one `<day> <filename> <stem>` line per hit, then `unmatched <date> <filename>`.
+The unmatched date is `-` when the catalog date is `-`.
+An auto-add album prints `skipped auto-add`.
+An album with unread names prints `skipped unread names`.
+JSON has `id`, `matched`, and `unmatched`.
+Each matched element has `day` and `stem`.
+`unmatched` is an array of strings.
+Keep the album id and every unmatched string out of chat.
+
+### photo agent locate
+
+`photo agent locate <day> <stem>` lists catalog rows that match one local stem.
+The command does not write.
+The stem is the grouped stem `photo agent stems` lists.
+The catalog filename uses the prefix rule in Match.
+A date of `-` is not a row, and `photo agent missing` lists those items.
+A line is the album title, the date `YYYY-MM-DD`, the filename, and the uploader.
+The title is not quoted.
+The line has no album id and no item key.
+More than one row is `ambiguous: true` with every row present.
+JSON has `day`, `stem`, `directory`, `present`, `ambiguous`, and `matches`.
+Each match has `title`, `date`, `filename`, `uploader`, `id`, and `key`.
+When the day directory is absent, `directory` and `present` are false and `matches` is empty.
+When the stem is not in that day's grouped stems, `directory` is true, `present` is false, and `matches` is empty.
+Keep the album id and the item key out of chat.
+
+### photo agent include
+
+`photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines.
+The command does not write.
+The human line is `Include.render`.
+JSON has `rendered` and `logical`, each an array of strings.
+The JSON has no album id, item key, or `google-media-item-id`.
+
+### photo agent drift
+
+`photo agent drift` reports reconcile drift.
+The command does not write.
+The human line is `Reconcile.line`.
+JSON has `actions`.
+Each action has `class`, `title`, `path`, `reason`, and `id`.
+`reason` and `id` may be null, and both keys are present.
+Keep the album id out of chat.
+
+### photo agent missing
+
+`photo agent missing` lists every catalog item whose filename stem is absent from that civil day's folder.
+The command does not write.
+A line is `missing <title> <date> <filename> <uploader>`.
+The title is not quoted.
+`date` and `uploader` are the string `-` when the catalog has no value.
+The line does not include a catalog id or an item key.
+JSON has `missing`.
+Each element has `title`, `date`, `filename`, `uploader`, and `key`.
+Keep the item key out of chat.
