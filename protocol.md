@@ -13,7 +13,7 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Album files — match, the album file, reconcile, and filing.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
   `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
-  `photo agent delete-item`, and the legacy request grammar.
+  `photo agent delete-item`, `photo agent apply-requests`, and the legacy request grammar.
 
 ## Files
 
@@ -41,17 +41,19 @@ Delete forever and Empty trash are not clicked.
 `photo agent delete-item` publishes nothing for Delete forever or Empty trash.
 When the confirm ran and the key is still present, `catalog.txt` stays byte-identical.
 `photo agent delete-item` does not change the archive or `.download/`.
-`requests.tsv` is a legacy file that a later command will read.
-It is not a second current path.
+`requests.tsv` is a legacy file.
+`photo agent apply-requests` reads `requests.tsv`.
+`requests.tsv` is not a second current path.
+The script is not a reader and is not the applier.
 The script does not apply the batch.
 `photo reconcile` reads and writes `album-links.tsv`.
 `photo refresh` does not write that file.
 The program does not append `requests.tsv`.
-The local reader reads it and does not write it.
 `photo agent request` has no action that appends a row.
+`photo agent apply-requests` does not write `requests.tsv`.
 `photo refresh` does not write `requests.tsv`.
-The local reader writes `results.tsv`.
-The program reads it.
+`photo agent apply-requests` does not write `results.tsv`.
+`photo agent results` reads `results.tsv` when `results.tsv` is present.
 `photo agent download-item` stages that original in `.download/`, as Download describes.
 `photo file` files a dated download from there, as Filing describes.
 
@@ -944,16 +946,18 @@ Chrome stays closed and `catalog.txt` stays byte-identical.
 
 The grammar below is legacy.
 The column tables, the version lines, and Catalog updates describe the old row statuses.
-They stay until a later command reads `requests.tsv`.
-That file is not a second current path.
+`photo agent apply-requests` reads `requests.tsv`.
+`photo agent apply-requests` does not write `requests.tsv`.
+`requests.tsv` is not a second current path.
+The script is not a reader and is not the applier.
 The script does not apply the batch.
 
 `archive/.gphoto-sync/requests.tsv` is written by the program.
-The local reader reads it and does not write it.
-The file is absent between batches.
-Do not create it empty.
+`photo agent apply-requests` reads `requests.tsv` and does not write `requests.tsv`.
+`photo agent apply-requests` does not delete `requests.tsv`.
+Do not create `requests.tsv` empty.
 A file that exists and does not start with `# gphoto-requests 2` is `requests are not version 2`.
-The program does not rewrite it into the new shape and does not delete it.
+The program does not rewrite `requests.tsv` into the new shape and does not delete `requests.tsv`.
 
 ```
 # gphoto-requests 2
@@ -1009,7 +1013,8 @@ A legacy `set-date` row changes the item's date taken.
 `new` is the item's local time.
 A legacy `download-item` row downloads the original into the staging directory in Download.
 For that row, the program does not create the staging day directory.
-The local reader does.
+`photo agent download-item` creates the staging day directory.
+The script does not create the staging day directory.
 A legacy `delete-item` row is not the applier.
 `photo agent delete-item` moves that one library item to Google Photos trash, as Delete describes.
 
@@ -1202,7 +1207,7 @@ There is no results row.
 
 ### Results
 
-`archive/.gphoto-sync/results.tsv` is written by the local reader.
+`archive/.gphoto-sync/results.tsv` is not written by `photo agent apply-requests`.
 
 ```
 # gphoto-results 2
@@ -1219,9 +1224,9 @@ UTF-8, LF only.
 A CR is an error.
 A blank line is not a row.
 A trailing partial line with no LF is a parse error, not a row.
-The results file is separate from the request file.
-The local reader never writes into the request file.
-It is rewritten for each processed batch.
+`results.tsv` is separate from `requests.tsv`.
+`photo agent apply-requests` never writes into `requests.tsv`.
+`photo agent apply-requests` does not write `results.tsv`.
 
 ### Process
 
@@ -1233,22 +1238,35 @@ It is rewritten for each processed batch.
 `photo agent remove-from-album` is the applier for removing an item from an album.
 `photo agent move-item` is the applier for moving an item from one album to another.
 `photo agent delete-item` is the applier for moving one library item to trash.
-The numbered steps are the legacy batch.
+The script is not a reader and is not the applier.
 The script does not apply the batch.
 
-1. The operator tells the archive agent to process the request file (e.g. "handle requests" / "process requests").
-2. The local reader re-reads this note, validates every row against the catalog and live Google Photos (missing, stale,
-   duplicated or invalid rows are noted in results and skipped), and performs the valid actions in Google Photos without
-   a dry run or approval step.
-   It re-checks each current value just before changing it, then verifies the result.
-3. The local reader updates the catalog in the Catalog shape and writes `archive/.gphoto-sync/results.tsv`.
-4. The program reads the results file.
-   The archive agent reads it and continues from there.
-   Delete or replace `requests.tsv` before the next batch.
+`photo agent apply-requests` reads a legacy `requests.tsv`.
+`photo agent apply-requests` prints a plan unless `--apply` is present.
+The plan does not open Chrome.
+`--apply` is a second run.
+`--apply` is the only run that clicks.
+`--apply` re-reads the catalog and `requests.tsv.outcomes` before each click.
+`requests.tsv.outcomes` sits beside `requests.tsv`.
+The first line of `requests.tsv.outcomes` is `# gphoto-request-outcomes 1`.
+Each later line is a request id, `needs-agent` or `done`, and epoch millis, separated by tabs.
+An outcome line has no album id, no item key, and no title.
+A missing `requests.tsv.outcomes` means there are no outcomes.
+A malformed line or a repeated id makes `photo agent apply-requests` exit non-zero before Chrome.
+An outcome line wins over the catalog.
+A `needs-agent` line stays when another album is published.
+`photo agent apply-requests` does not click a request id that has a `needs-agent` line.
+A `done` line is a successful `set-description`.
+`photo agent apply-requests` does not click a `done` row.
+`photo agent apply-requests` appends `needs-agent` or `done` and does not delete an outcome line.
+`photo agent apply-requests` does not delete `requests.tsv.outcomes`.
+`photo agent apply-requests` does not rewrite `requests.tsv`.
+`photo agent apply-requests` does not delete `requests.tsv`.
+`photo agent apply-requests` does not write `results.tsv`.
 
-The local reader never deletes, shares or edits anything in Google Photos without the operator's explicit OK.
-Request handling when the operator says to process the file is that OK for the actions in `requests.tsv`.
-A legacy `delete-item` row, once the operator says to process the request file, is the OK to trash those items.
-`photo agent delete-item` is not this row.
-Deleting an album or emptying trash still needs a separate explicit OK, as do sharing and deleting library items not
-named by `photo agent delete-item`.
+`--apply` is the explicit OK for a legacy row that is still click.
+A legacy `delete-item` row on `--apply` is the OK to trash that item.
+`photo agent delete-item` is the command that clicks.
+Deleting an album or emptying trash still needs a separate OK.
+Sharing still needs a separate OK.
+A library item that no legacy `delete-item` row names still needs a separate OK.

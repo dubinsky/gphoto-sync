@@ -325,6 +325,15 @@ object RefreshPlan:
       case _ => got == found.cards.map(_.id).toSet
     if ok then Right(()) else Left("album set")
 
+  // Tests fail the second rename. The default move is the one publish uses.
+  private[photo] var moveReplacing: (File, File) => Unit = (from, to) =>
+    NFiles.move(
+      from.toPath,
+      to.toPath,
+      StandardCopyOption.ATOMIC_MOVE,
+      StandardCopyOption.REPLACE_EXISTING
+    )
+
   private[photo] def swap(live: File, partial: File, previous: File): Either[String, Unit] =
     swap(live, partial, previous, moveReplacing)
 
@@ -367,10 +376,4 @@ object RefreshPlan:
   private def renameMessage(failed: Exception): String =
     Option(failed.getMessage).filter(_.nonEmpty).getOrElse("rename failed")
 
-  private val moveReplacing: (File, File) => Unit = (from, to) =>
-    NFiles.move(
-      from.toPath,
-      to.toPath,
-      StandardCopyOption.ATOMIC_MOVE,
-      StandardCopyOption.REPLACE_EXISTING
-    )
+

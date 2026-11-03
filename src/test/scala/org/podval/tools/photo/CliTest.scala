@@ -410,6 +410,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |move-item  move an item to another album
         |delete-item  delete an item
         |requests  list request rows
+        |apply-requests  read a legacy requests file
         |results  list result rows
         |drift  report create, update, gone, pending, and skipped
         |missing  list catalog items absent from the day folder""".stripMargin
@@ -717,6 +718,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     List(
       "album-file",
       "request",
+      "apply-requests",
       "repair", "publish", "sync", "refresh", "reconcile", "file", "set-metadata",
       "login", "status", "logout",
       "ls", "lsd", "albums",

@@ -238,9 +238,7 @@ private[photo] final class AgentRequest(
       val (loaded, albums) = session.loadCatalog
       AgentCommands.catching(loaded):
         AgentCommands.acceptRequest(albums, action, fields._1, fields._2, fields._3, fields._4)
-        val file: File = AgentCommands.requestsFile(loaded)
-        val row: Requests.Row = Requests.append(file, action, fields._1, fields._2, fields._3, fields._4, id)
-        (loaded, Result.Ok(s"appended ${row.id} ${row.action.wire}\n", AgentCommands.requestValue(row)))
+        (loaded, Result.Usage("photo agent request does not append"))
 
 private[photo] object AgentRequests extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -645,6 +643,9 @@ private[photo] object AgentCommands:
     acceptDelete(album, item)
     withLock(session, album.title)(heldDelete(session, album.id, key, current))
 
+  // Set by apply-requests so the outcome line is written before this lock is released.
+  private[photo] var afterHeld: Result => Unit = _ => ()
+
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
     Refresh.claim(places.lock) match
@@ -656,7 +657,10 @@ private[photo] object AgentCommands:
           case other =>
             (kept, other)
       case Refresh.Claim.Owned(channel, lock) =>
-        try body
+        try
+          val done: (Session, Result) = body
+          afterHeld(done._2)
+          done
         finally Refresh.release(channel, lock)
 
   private def heldRename(
@@ -880,7 +884,7 @@ private[photo] object AgentCommands:
     )
     (album, item)
 
-  private def stagingFile(session: Session, item: Catalog.Item): File =
+  private[photo] def stagingFile(session: Session, item: Catalog.Item): File =
     val day: String = item.date.fold("undated")(date => date.toString.replace('-', '/'))
     val inbox: File = File(File(session.root.configuration.archive, ".gphoto-sync"), ".download")
     File(File(inbox, day), item.filename)

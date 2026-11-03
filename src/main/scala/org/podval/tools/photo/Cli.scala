@@ -123,6 +123,7 @@ object Cli:
     id: Option[String]
   ) extends Parsed
   private[photo] case object AgentRequestsArgs extends Parsed
+  private[photo] final case class ApplyRequestsArgs(perform: Boolean) extends Parsed
   private[photo] case object AgentResultsArgs extends Parsed
   private[photo] case object AgentDriftArgs extends Parsed
   private[photo] case object AgentMissingArgs extends Parsed
@@ -361,6 +362,7 @@ object Cli:
     case _: RemoveFromAlbumArgs => true
     case _: MoveItemArgs => true
     case _: DeleteItemArgs => true
+    case _: ApplyRequestsArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -398,6 +400,7 @@ object Cli:
     case _: RemoveFromAlbumArgs => "remove-from-album"
     case _: MoveItemArgs => "move-item"
     case _: DeleteItemArgs => "delete-item"
+    case _: ApplyRequestsArgs => "apply-requests"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
@@ -693,6 +696,8 @@ object Cli:
       AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
     case AgentRequestsArgs =>
       AgentRequests
+    case ApplyRequestsArgs(perform) =>
+      AgentApply(perform)
     case AgentResultsArgs =>
       AgentResults
     case AgentDriftArgs =>
@@ -1348,6 +1353,13 @@ object Cli:
       positionals = Nil,
       flags = Nil,
       build = (_, _) => AgentRequestsArgs
+    ),
+    Command(
+      name = "apply-requests",
+      help = "read a legacy requests file",
+      positionals = Nil,
+      flags = List(Flag("apply", None, BooleanKind, "click the rows that are still click")),
+      build = (values, _) => ApplyRequestsArgs(bool(values, "apply"))
     ),
     Command(
       name = "results",
