@@ -95,15 +95,12 @@ class ServeTest extends AnyFlatSpec, Matchers:
 
   "serve" should "treat cd, pwd, and exit as usage and keep reading" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq(
+      respond(session, Seq(
         """{"argv":["cd","2010"]}""",
         """{"argv":["pwd"]}""",
         """{"argv":["exit"]}""",
         """{"argv":["lsd","2010"]}"""
-      ))
-      code shouldBe 0
-      err shouldBe ""
-      responses(out) shouldBe List(
+      )) shouldBe List(
         usage(session, "cd is only available in the shell"),
         usage(session, "pwd is only available in the shell"),
         usage(session, "exit is only available in the shell"),
@@ -113,58 +110,48 @@ class ServeTest extends AnyFlatSpec, Matchers:
   it should "reset the cursor after a command" in :
     prepared: (_, session) =>
       var cursors: List[String] = Nil
-      val (_, _, _) = run(
+      val lines: List[String] = respond(
         session,
         Seq("""{"argv":["ls","2010"]}""", """{"argv":["lsd","2010"]}"""),
         (current, parsed) =>
           cursors = cursors :+ Session.display(current.cursor)
           parsed match
             case _: Cli.Ls =>
+              current.catalogCache.isDefined shouldBe false
               val year: Directory = current.parse("2010") match
                 case directory: Directory => directory
                 case other => fail(other.toString)
-              (current.copy(cursor = year), Result.Ok("moved\n", Json.Null))
+              val marked: Session =
+                current.copy(cursor = year, catalogCache = Some(CatalogCache(1L, 2L, Seq.empty[Catalog.Album])))
+              (marked, Result.Ok("moved\n", Json.Null))
             case _ =>
+              val cache: CatalogCache =
+                current.catalogCache.getOrElse(fail("continued session dropped catalogCache"))
+              cache.size shouldBe 1L
+              cache.mtimeMillis shouldBe 2L
               (current, Result.Ok("next\n", Json.Null))
       )
       cursors shouldBe List("", "")
+      lines shouldBe List(
+        rendered(session, ok = true, text = Some("moved\n"), value = Some(Json.Null)),
+        rendered(session, ok = true, text = Some("next\n"), value = Some(Json.Null))
+      )
 
-  it should "stop on serve stop and not read the next line" in :
+  it should "return Step.Stop for serve stop" in :
     prepared: (_, session) =>
-      var reads: Int = 0
-      val lines: Iterator[String] = Seq(
-        """{"id":"1","argv":["serve","stop"]}""",
-        """{"argv":["lsd","2010"]}"""
-      ).iterator.map: line =>
-        reads += 1
-        line
-      val (code, out, err) = runIterator(session, lines)
-      code shouldBe 0
-      err shouldBe ""
-      reads shouldBe 1
-      responses(out) shouldBe List(rendered(session, ok = true, id = Some("1")))
-
-  it should "return 0 on EOF without an exit" in :
-    prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq("""{"argv":["lsd","2010"]}"""))
-      code shouldBe 0
-      err shouldBe ""
-      responses(out) shouldBe List(lsdOk(session))
-      val (emptyCode, emptyOut, emptyErr) = run(session, Seq.empty)
-      emptyCode shouldBe 0
-      emptyOut shouldBe ""
-      emptyErr shouldBe ""
+      Cli.serveResponse(session, """{"id":"1","argv":["serve","stop"]}""") match
+        case (Cli.Step.Stop, line) =>
+          line shouldBe rendered(session, ok = true, id = Some("1"))
+        case other =>
+          fail(other.toString)
 
   it should "reject a blank line and still run the next command" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq(
+      respond(session, Seq(
         "",
         " \t ",
         """{"argv":["lsd","2010"]}"""
-      ))
-      code shouldBe 0
-      err shouldBe ""
-      responses(out) shouldBe List(
+      )) shouldBe List(
         usage(session, "empty request"),
         usage(session, "empty request"),
         lsdOk(session)
@@ -172,7 +159,8 @@ class ServeTest extends AnyFlatSpec, Matchers:
 
   it should "reject a malformed request and keep the session" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq(
+      val malformed: String = usage(session, "malformed request")
+      respond(session, Seq(
         """{"argv":["cd","2010"]}""",
         """{"argv":["pwd"],"extra":1}""",
         """{"id":"n","argv":[{"a":true}]}""",
@@ -186,11 +174,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         """{"id":"1","argv":["\q"]}""",
         """{"id":"t","argv":["pwd"]} true""",
         """{"argv":["lsd","2010"]}"""
-      ))
-      code shouldBe 0
-      err shouldBe ""
-      val malformed: String = usage(session, "malformed request")
-      responses(out) shouldBe List(
+      )) shouldBe List(
         usage(session, "cd is only available in the shell"),
         malformed,
         withId("n", malformed),
@@ -208,14 +192,11 @@ class ServeTest extends AnyFlatSpec, Matchers:
 
   it should "omit a missing id and echo a string id" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq(
+      respond(session, Seq(
         """{"argv":["lsd","2010"]}  """,
         """{ "id" : "1" , "argv" : [ "lsd", "2010" ] }""",
         """{"id":"a\/b\"c\\d\n\t\r","argv":["lsd","2010"]}"""
-      ))
-      code shouldBe 0
-      err shouldBe ""
-      responses(out) shouldBe List(
+      )) shouldBe List(
         lsdOk(session),
         rendered(session, ok = true, text = Some("/2010\n"), value = Some(Json.Null), id = Some("1")),
         rendered(
@@ -229,13 +210,10 @@ class ServeTest extends AnyFlatSpec, Matchers:
 
   it should "reject a flag after the album positional" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq(
+      respond(session, Seq(
         """{"argv":["agent","items","2010/07","--id","a1"]}""",
         """{"argv":["lsd","2010"]}"""
-      ))
-      code shouldBe 0
-      err shouldBe ""
-      responses(out) shouldBe List(
+      )) shouldBe List(
         usage(session, "extra argument '--id'"),
         lsdOk(session)
       )
@@ -247,9 +225,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         "album\ta1\t1\t2010/07",
         "item\ta1\tone.jpg\t2010-07-19\tk1\t-"
       )
-      val (code, out, err) = run(session, Seq(
-        """{"argv":["agent","items","--id","a1","2010/07"]}"""
-      ))
+      val (_, line) = Cli.serveResponse(session, """{"argv":["agent","items","--id","a1","2010/07"]}""")
       val value: Json = Json.Obj(Seq(
         "id" -> Json.Str("a1"),
         "error" -> Json.Null,
@@ -261,16 +237,13 @@ class ServeTest extends AnyFlatSpec, Matchers:
         )))),
         "unsets" -> Json.Arr(Seq.empty)
       ))
-      val line: String = rendered(
+      val textField: String = """"text":"one.jpg 2010-07-19 -\n""""
+      line shouldBe rendered(
         session,
         ok = true,
         text = Some("one.jpg 2010-07-19 -\n"),
         value = Some(value)
       )
-      val textField: String = """"text":"one.jpg 2010-07-19 -\n""""
-      code shouldBe 0
-      err shouldBe ""
-      responses(out) shouldBe List(line)
       textField should not include ("a1")
       line should include (""""id":"a1"""")
       Option(File(archive, ".gphoto-sync").list()).get.toSet shouldBe Set("catalog.txt")
@@ -287,25 +260,18 @@ class ServeTest extends AnyFlatSpec, Matchers:
       help should not include ("shell  start a session")
       help should not include ("serve  answer one JSON command per line")
       help should not include ("cd  ")
-      val (code, out, err) = run(session, Seq("""{"argv":["help"]}"""))
-      code shouldBe 0
-      err shouldBe ""
-      out.count(_ == '\n') shouldBe 1
-      responses(out) shouldBe List(
-        rendered(session, ok = true, text = Some(help + "\n"), value = Some(Json.Null))
-      )
+      val (_, line) = Cli.serveResponse(session, """{"argv":["help"]}""")
+      line.exists(_ == '\n') shouldBe false
+      line shouldBe rendered(session, ok = true, text = Some(help + "\n"), value = Some(Json.Null))
 
   it should "reject shell and serve inside serve" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq(
+      respond(session, Seq(
         """{"argv":["shell"]}""",
         """{"argv":["serve"]}""",
         """{"id":"s","argv":["shell","--help"]}""",
         """{"argv":["lsd","2010"]}"""
-      ))
-      code shouldBe 0
-      err shouldBe ""
-      responses(out) shouldBe List(
+      )) shouldBe List(
         usage(session, "already running"),
         usage(session, "already running"),
         usage(session, "already running", id = Some("s")),
@@ -314,10 +280,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
 
   it should "escape a backspace so the echoed id round-trips" in :
     prepared: (_, session) =>
-      val (code, out, err) = run(session, Seq("""{"id":"a\b","argv":["lsd","2010"]}"""))
-      code shouldBe 0
-      err shouldBe ""
-      val line: String = responses(out).head
+      val (_, line) = Cli.serveResponse(session, """{"id":"a\b","argv":["lsd","2010"]}""")
       line shouldBe rendered(
         session,
         ok = true,
@@ -333,17 +296,15 @@ class ServeTest extends AnyFlatSpec, Matchers:
         case Right(other) =>
           fail(other.toString)
 
-  it should "let an unexpected exception leave serve" in :
+  it should "let an unexpected exception leave serveResponse" in :
     prepared: (_, session) =>
-      val out: ByteArrayOutputStream = new ByteArrayOutputStream
-      val err: ByteArrayOutputStream = new ByteArrayOutputStream
       val thrown: RuntimeException = the [RuntimeException] thrownBy
-        Console.withOut(out):
-          Console.withErr(err):
-            Cli.serve(session, Iterator("""{"argv":["lsd","2010"]}"""), (_, _) => throw RuntimeException("boom"))
+        Cli.serveResponse(
+          session,
+          """{"argv":["lsd","2010"]}""",
+          (_, _) => throw RuntimeException("boom")
+        )
       thrown.getMessage shouldBe "boom"
-      text(out) shouldBe ""
-      text(err) shouldBe ""
 
   "the response writer" should "keep order and escape controls" in :
     Serve.write(Json.Obj(Seq(
@@ -825,33 +786,22 @@ class ServeTest extends AnyFlatSpec, Matchers:
   private def withId(id: String, line: String): String =
     """{"id":"""" + id + "\"," + line.drop(1)
 
-  private def responses(text: String): List[String] =
-    val parts: Seq[String] = text.split("\n", -1).toSeq
-    parts.last shouldBe ""
-    parts.dropRight(1).toList
-
-  private def run(session: Session, lines: Seq[String]): (Int, String, String) =
-    run(session, lines, (current, parsed) => Cli.toOperation(parsed).execute(current))
-
-  private def run(
+  private def respond(
     session: Session,
     lines: Seq[String],
-    executeCommand: (Session, Cli.Parsed) => (Session, Result)
-  ): (Int, String, String) =
-    runIterator(session, lines.iterator, executeCommand)
-
-  private def runIterator(
-    session: Session,
-    lines: Iterator[String],
     executeCommand: (Session, Cli.Parsed) => (Session, Result) = (current, parsed) =>
       Cli.toOperation(parsed).execute(current)
-  ): (Int, String, String) =
-    val out: ByteArrayOutputStream = new ByteArrayOutputStream
-    val err: ByteArrayOutputStream = new ByteArrayOutputStream
-    val code: Int = Console.withOut(out):
-      Console.withErr(err):
-        Cli.serve(session, lines, executeCommand)
-    (code, text(out), text(err))
+  ): List[String] =
+    val (_, rendered) =
+      lines.foldLeft((session, List.empty[String])):
+        case ((current, acc), line) =>
+          val (step, text) = Cli.serveResponse(current, line, executeCommand)
+          step match
+            case Cli.Step.Continue(next) =>
+              (next, acc :+ text)
+            case Cli.Step.Stop =>
+              fail("serve stop is one response, not a batch")
+    rendered
 
   private def shell(
     session: Session,

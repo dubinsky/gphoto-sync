@@ -248,23 +248,7 @@ object Cli:
         case Step.Continue(next) => loop(next)
     loop(session)
 
-  private[photo] def serve(
-    session: Session,
-    lines: Iterator[String],
-    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
-  ): Int =
-    @tailrec
-    def loop(current: Session): Int =
-      if !lines.hasNext then 0
-      else
-        val (step, rendered) = serveResponse(current, lines.next(), run)
-        println(rendered)
-        step match
-          case Step.Stop => 0
-          case Step.Continue(next) => loop(next)
-    loop(session)
-
-  // The socket writes this line on the connection. The line handler prints it.
+  // The socket writes this line on the connection. serveResponse does not print it.
   private[photo] def serveResponse(
     session: Session,
     line: String,
