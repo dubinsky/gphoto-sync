@@ -255,7 +255,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         case other => fail(other.toString)
       help.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
         "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
-        "login", "status", "logout", "help", "agent"
+        "card", "login", "status", "logout", "help", "agent"
       )
       help should not include ("shell  start a session")
       help should not include ("serve  answer one JSON command per line")

@@ -39,6 +39,8 @@ object Cli:
   private[photo] final case class ReconcileArgs(dryRun: Boolean, delete: Boolean) extends Parsed
   private[photo] final case class FileArgs(dryRun: Boolean) extends Parsed
   private[photo] final case class PushArgs(dryRun: Boolean) extends Parsed
+  private[photo] final case class CardDiscover(dryRun: Boolean) extends Parsed
+  private[photo] final case class CardCopy(dryRun: Boolean, path: Option[String]) extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -335,12 +337,14 @@ object Cli:
     case CdArgs(_) | PwdArgs | ExitArgs => true
     case _ => false
 
-  // Every real arm is listed. Refresh, reconcile, file, and push stay off the serve thread.
+  // Every real arm is listed. Refresh, reconcile, file, push, and card stay off the serve thread.
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
     case _: RefreshArgs => true
     case _: ReconcileArgs => true
     case _: FileArgs => true
     case _: PushArgs => true
+    case _: CardDiscover => true
+    case _: CardCopy => true
     case _: RenameAlbumArgs => true
     case _: SetDescriptionArgs => true
     case _: SetDateArgs => true
@@ -384,6 +388,8 @@ object Cli:
     case _: ReconcileArgs => "reconcile"
     case _: FileArgs => "file"
     case _: PushArgs => "push"
+    case _: CardDiscover => "card"
+    case _: CardCopy => "card"
     case _: RenameAlbumArgs => "rename-album"
     case _: SetDescriptionArgs => "set-description"
     case _: SetDateArgs => "set-date"
@@ -397,7 +403,7 @@ object Cli:
     case _: DeleteAlbumArgs => "delete-album"
     case _ => "command"
 
-  // Refresh, reconcile, file, and push stay off this branch.
+  // Refresh, reconcile, file, push, and card stay off this branch.
   private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
     case _: RenameAlbumArgs => true
     case _: SetDescriptionArgs => true
@@ -607,6 +613,8 @@ object Cli:
               Usage(s"extra argument '$extra'")
     case "agent" :: rest =>
       parseAgent(rest, front)
+    case "card" :: rest =>
+      parseCard(rest, front)
     case name :: rest =>
       lookup(name, rest, front)
 
@@ -652,6 +660,10 @@ object Cli:
       FileDownloads(dryRun)
     case PushArgs(dryRun) =>
       Push(dryRun)
+    case CardDiscover(dryRun) =>
+      DiscoverCard(dryRun)
+    case CardCopy(dryRun, path) =>
+      CopyCard(dryRun, path)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -727,6 +739,8 @@ object Cli:
       Help(topHelp(front))
     case name :: Nil if name == "agent" =>
       Help(agentHelp)
+    case name :: Nil if name == "card" =>
+      Help(cardHelp)
     case name :: Nil =>
       registry.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -861,14 +875,28 @@ object Cli:
         List(shellLine, serveLine, mcpLine)
       case Front.Shell | Front.Serve =>
         Nil
+    val commandLines: List[String] = commands.map(lineOf)
+    val (beforeLogin, fromLogin) = commandLines.span(!_.startsWith("login "))
     val lines: List[String] =
-      (commands ++ List(helpCommand)).map(lineOf) ++
+      beforeLogin ++ List(cardLine) ++ fromLogin ++ List(lineOf(helpCommand)) ++
         frontLines ++
         List(agentLine) ++
         sessionCommands.map(lineOf)
     (header ++ lines).mkString("\n")
 
   private def lineOf(command: Command): String = s"${command.name}  ${command.help}"
+
+  private def parseCard(args: List[String], front: Front): Outcome = args match
+    case Nil =>
+      finish(discoverCommand, Values(), Nil, front)
+    case ("--help" | "-h") :: _ =>
+      Help(cardHelp)
+    case "copy" :: rest =>
+      parseCommand(copyCommand, rest, front)
+    case token :: _ if !token.startsWith("-") =>
+      Usage(s"unknown command '$token'")
+    case rest =>
+      parseCommand(discoverCommand, rest, front)
 
   private def parseAgent(args: List[String], front: Front): Outcome = args match
     case Nil =>
@@ -1934,6 +1962,38 @@ object Cli:
   private val mcpLine: String = "mcp  expose agent queries on MCP stdio"
 
   private val agentLine: String = "agent  query the catalog and the archive"
+
+  private val cardLine: String = "card  find a camera card or copy it into .upload"
+
+  private def cardHelp: String =
+    List(
+      cardLine,
+      "",
+      "No subcommand prints one card and does not copy.",
+      "--dry-run prints that card and does not mount.",
+      "A filed stem is claimed when Include.claims matches that folder day.",
+      "include = all does that inside the album span.",
+      "include = all except does not claim an excepted stem.",
+      "No include line is written.",
+      "Unclaimed pictures are omitted from photo publish.",
+      "copy  copy DCIM picture files into .upload"
+    ).mkString("\n")
+
+  private val discoverCommand: Command = Command(
+    name = "card",
+    help = "print one camera card",
+    positionals = Nil,
+    flags = List(Flag("dry-run", None, BooleanKind, "print the device and do not mount")),
+    build = (values, _) => CardDiscover(bool(values, "dry-run"))
+  )
+
+  private val copyCommand: Command = Command(
+    name = "copy",
+    help = "copy DCIM picture files into .upload",
+    positionals = List(Optional("path", path = false)),
+    flags = List(Flag("dry-run", None, BooleanKind, "print copy and keep lines and write nothing")),
+    build = (values, args) => CardCopy(bool(values, "dry-run"), args.headOption)
+  )
 
   private val requestLine: String = "request  redirect that does not append"
 

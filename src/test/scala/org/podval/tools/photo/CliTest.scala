@@ -19,6 +19,23 @@ class CliTest extends AnyFlatSpec, Matchers:
   @targetName("jsonCanEqual")
   private given [A <: Json, B <: Json] => CanEqual[A, B] = CanEqual.derived
 
+  "card" should "parse discover and copy without joining the registry" in :
+    Cli.parse(List("card")) shouldBe Cli.Run(Cli.CardDiscover(dryRun = false))
+    Cli.parse(List("card", "--dry-run")) shouldBe Cli.Run(Cli.CardDiscover(dryRun = true))
+    Cli.parse(List("card", "--dry-run=false")) shouldBe Cli.Run(Cli.CardDiscover(dryRun = false))
+    Cli.parse(List("card", "copy")) shouldBe Cli.Run(Cli.CardCopy(dryRun = false, path = None))
+    Cli.parse(List("card", "copy", "--dry-run", "/tmp/card")) shouldBe
+      Cli.Run(Cli.CardCopy(dryRun = true, path = Some("/tmp/card")))
+    Cli.parse(List("card", "--dry-run", "--dry-run")) shouldBe Cli.Usage("repeated option '--dry-run'")
+    Cli.parse(List("card", "copy", "a", "b")) shouldBe Cli.Usage("extra argument 'b'")
+    Cli.parse(List("card", "eject")) shouldBe Cli.Usage("unknown command 'eject'")
+    Cli.parse(List("help", "card", "copy")) shouldBe Cli.Usage("extra argument 'copy'")
+    Cli.toOperation(Cli.CardDiscover(dryRun = true)) shouldBe DiscoverCard(dryRun = true)
+    Cli.toOperation(Cli.CardCopy(dryRun = false, path = Some("/tmp/card"))) shouldBe
+      CopyCard(dryRun = false, path = Some("/tmp/card"))
+    Cli.inProcessWrite(Cli.CardDiscover(dryRun = false)) shouldBe false
+    Cli.inProcessWrite(Cli.CardCopy(dryRun = true, path = None)) shouldBe false
+
   "parse" should "accept every subcommand" in :
     Cli.parse(List("lsd", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = false))
     Cli.parse(List("lsd", "--long", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = true))
@@ -245,6 +262,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |refresh  refresh the Google Photos catalog from Chrome
         |reconcile  link catalog albums to local album files
         |file  file staged downloads into civil day folders
+        |card  find a camera card or copy it into .upload
         |login  log in to Google Photos
         |status  show Google Photos login status
         |logout  log out of Google Photos
@@ -358,6 +376,35 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--dry-run  boolean  print the plan and do not open Chrome""".stripMargin
     helpOf("push", "-h") shouldBe helpOf("push", "--help")
 
+    helpOf("help", "card") shouldBe
+      """card  find a camera card or copy it into .upload
+        |
+        |No subcommand prints one card and does not copy.
+        |--dry-run prints that card and does not mount.
+        |A filed stem is claimed when Include.claims matches that folder day.
+        |include = all does that inside the album span.
+        |include = all except does not claim an excepted stem.
+        |No include line is written.
+        |Unclaimed pictures are omitted from photo publish.
+        |copy  copy DCIM picture files into .upload""".stripMargin
+    helpOf("card", "--help") shouldBe helpOf("help", "card")
+    helpOf("card", "--dry-run", "--help") shouldBe
+      """card  print one camera card
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--dry-run  boolean  print the device and do not mount""".stripMargin
+    helpOf("card", "copy", "--help") shouldBe
+      """copy  copy DCIM picture files into .upload
+        |
+        |Positionals:
+        |path  optional
+        |
+        |Flags:
+        |--dry-run  boolean  print copy and keep lines and write nothing""".stripMargin
+
     helpOf("login", "--help") shouldBe
       """login  log in to Google Photos
         |
@@ -411,7 +458,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |
         |Flags:
         |none""".stripMargin
-    top.linesIterator.exists(_.startsWith("cd")) shouldBe false
+    top.linesIterator.exists(_.startsWith("cd ")) shouldBe false
     top.linesIterator.exists(_.startsWith("pwd")) shouldBe false
     top.linesIterator.exists(_.startsWith("exit")) shouldBe false
     top.linesIterator.exists(_.startsWith("agent")) shouldBe true
@@ -807,7 +854,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "requests",
       "results",
       "apply-requests",
-      "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "set-metadata",
+      "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "card", "set-metadata",
       "login", "status", "logout",
       "ls", "lsd", "albums",
       "help", "cd", "pwd", "exit",
