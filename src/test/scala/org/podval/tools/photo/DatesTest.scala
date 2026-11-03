@@ -173,8 +173,11 @@ class DatesTest extends AnyFlatSpec, Matchers:
       ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", jpeg)
       JFiles.copy(resource("/dates/evening-no-offset.jpg").toPath, File(day, "3404.thm").toPath)
       val picture: Picture = pictureAt(originals, "2009/06/11/3404")
-      Dates.captureDescriptor(picture).map(_.name) shouldBe Some("jpg")
-      Dates.embeddedClock(picture, None) shouldBe None
+      val preferred: Option[Extension.Descriptor] = Dates.captureDescriptor(picture)
+      preferred.map(_.name) shouldBe Some("jpg")
+      val read: Option[Dates.Clock] = preferred.flatMap: descriptor =>
+        descriptor.dater.read(descriptor.name, picture.file(descriptor.name), None, picture.zone)
+      read shouldBe None
       Dates.readStill(picture.file("thm")).isDefined shouldBe true
 
   it should "treat a shifted creation_time as real Z when the filename is nine seconds off" in :

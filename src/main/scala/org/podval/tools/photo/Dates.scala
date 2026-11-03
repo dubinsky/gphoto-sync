@@ -59,19 +59,29 @@ object Dates:
     def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
       readCrw(file)
 
-  // Library creationdate, then ffprobe. A library failure does not abort.
+  // Library creationdate, then ffprobe. A library failure is no clock, then ffprobe, same as a missing ffprobe.
   object Mov extends Reader:
     def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
-      readVideo("mov", file, filename, zone)
+      val found: Option[Clock] =
+        usable(readMovLibrary(file)).orElse:
+          probeStdout(file).flatMap(text => parseVideoTags(text, filename, zone))
+      usable(found)
 
   // mp4, m4v, and 3gp. Mp4MetadataReader never builds QuickTimeMetadataDirectory.
   object FFProbe extends Reader:
     def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
-      readVideo(extension, file, filename, zone)
+      usable(probeStdout(file).flatMap(text => parseVideoTags(text, filename, zone)))
 
   object FFProbeAVI extends Reader:
     def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
-      readVideo("avi", file, filename, zone)
+      val format: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+      val prefix: String = "TAG:creation_time="
+      val found: Option[Clock] = probeStdout(file).flatMap: stdout =>
+        stdout.split('\n').toSeq.map(_.trim).find(_.startsWith(prefix)).flatMap: line =>
+          val text: String = line.drop(prefix.length)
+          try Some(Clock(LocalDateTime.parse(text, format), None, Source.VideoAvi))
+          catch case _: DateTimeParseException => None
+      usable(found)
 
   // One trailing v, then one trailing _1. The stored stem is not changed. Callers choose the date a short name may use.
   def fromFileName(name: String, zone: ZoneId, shortDate: Option[LocalDate]): Option[(Clock, String)] =
@@ -227,15 +237,6 @@ object Dates:
       .orElse(picture.raw)
       .orElse(picture.normal.filter(Extension.video.contains))
 
-  def embeddedClock(picture: Picture, filename: Option[Clock]): Option[Clock] =
-    captureDescriptor(picture).flatMap: descriptor =>
-      usable(descriptor.dater.read(
-        descriptor.name,
-        picture.file(descriptor.name),
-        usable(filename),
-        picture.zone
-      ))
-
   final case class ExifWhen(when: Int, sub: Int, offset: Int, source: Source)
 
   val dateTimeOriginal: ExifWhen =
@@ -349,19 +350,6 @@ object Dates:
         parsed.map(value => chooseZ(value, filename, zone))
     usable(apple).orElse(usable(fromCreation))
 
-  // mov, mp4, m4v, and 3gp. A mov library failure is no clock, then ffprobe, same as a missing ffprobe.
-  def readVideo(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
-    val read: Option[Clock] = extension match
-      case "mov" =>
-        usable(readMovLibrary(file)).orElse(probeClock(file, filename, zone))
-      case "mp4" | "m4v" | "3gp" =>
-        probeClock(file, filename, zone)
-      case "avi" =>
-        readAvi(file)
-      case _ =>
-        None
-    usable(read)
-
   private def readMovLibrary(file: File): Option[Clock] =
     try
       val metadata: Metadata = ImageMetadataReader.readMetadata(file)
@@ -377,18 +365,6 @@ object Dates:
   private def probeStdout(file: File): Option[String] =
     try Some(Process(s"ffprobe -v quiet $file -show_entries $ffprobeShowEntries").!!)
     catch case _: RuntimeException => None
-
-  private def probeClock(file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
-    probeStdout(file).flatMap(text => parseVideoTags(text, filename, zone))
-
-  private def readAvi(file: File): Option[Clock] =
-    val format: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-    val prefix: String = "TAG:creation_time="
-    probeStdout(file).flatMap: stdout =>
-      stdout.split('\n').toSeq.map(_.trim).find(_.startsWith(prefix)).flatMap: line =>
-        val text: String = line.drop(prefix.length)
-        try Some(Clock(LocalDateTime.parse(text, format), None, Source.VideoAvi))
-        catch case _: DateTimeParseException => None
 
   def readCrw(file: File): Option[Clock] =
     val format: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss yyyy")
