@@ -136,7 +136,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
     assessed.timestampWrong shouldBe false
     assessed.writesMtime shouldBe None
     assessed.dayShouldBe shouldBe None
-    val disagreement: Dates.Disagreement = assessed.disagreement.getOrElse(fail("no disagreement"))
+    val disagreement: Dates.Ranked.Disagree = assessed.disagreement.getOrElse(fail("no disagreement"))
     disagreement.timestamp.isEqual(timestamp) shouldBe true
     disagreement.date.isEqual(date) shouldBe true
 
@@ -211,7 +211,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
     Dates.sameSecond(civil, fraction, zone) shouldBe true
     Dates.sameSecond(civil, onSecond, zone) shouldBe true
     Dates.sameSecond(civil, onSecond.plusSeconds(1), zone) shouldBe false
-    Dates.writeInstant(civil.truncatedTo(ChronoUnit.SECONDS), zone).toEpochMilli shouldBe onSecond.toEpochMilli
+    civil.truncatedTo(ChronoUnit.SECONDS).atZone(zone).toInstant.toEpochMilli shouldBe onSecond.toEpochMilli
 
   it should "leave a picture with no clock and no folder day undated" in :
     val picture: Picture = uploadPicture()

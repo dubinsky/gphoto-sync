@@ -246,14 +246,12 @@ object Dates:
     clock: Option[Clock]
   ) derives CanEqual
 
-  final case class Disagreement(timestamp: LocalDateTime, date: LocalDate) derives CanEqual
-
   final case class Assessment(
     clock: Option[Clock],
     timestampsVary: Boolean,
     timestampWrong: Boolean,
     dayShouldBe: Option[Day],
-    disagreement: Option[Disagreement]
+    disagreement: Option[Ranked.Disagree]
   ) derives CanEqual:
     // Folder midnight is not a capture time, and a disagreement has no winner to stamp.
     def writesMtime: Option[Clock] =
@@ -321,13 +319,13 @@ object Dates:
   ): Assessment =
     val moveTo: Option[Day] = dayShouldBe(picture, ranked)
     ranked match
-      case Ranked.Disagree(timestamp, date) =>
+      case disagree: Ranked.Disagree =>
         Assessment(
           clock = None,
           timestampsVary = timestampsVary,
           timestampWrong = false,
           dayShouldBe = None,
-          disagreement = Some(Disagreement(timestamp, date))
+          disagreement = Some(disagree)
         )
       case Ranked.Undated =>
         Assessment(None, timestampsVary, timestampWrong = false, dayShouldBe = None, disagreement = None)
@@ -467,20 +465,20 @@ object Dates:
           try Some(LocalDateTime.parse(digits))
           catch case _: DateTimeParseException => None
         parsed.map(value => chooseZ(value, filename, zone))
-    usable(apple).orElse(fromCreation).flatMap(clock => usable(Some(clock)))
+    usable(apple).orElse(usable(fromCreation))
 
   // mov, mp4, m4v, and 3gp. A mov library failure is no clock, then ffprobe, same as a missing ffprobe.
   def readVideo(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
     val read: Option[Clock] = extension match
       case "mov" =>
-        readMovLibrary(file).flatMap(clock => usable(Some(clock))).orElse(probeClock(file, filename, zone))
+        usable(readMovLibrary(file)).orElse(probeClock(file, filename, zone))
       case "mp4" | "m4v" | "3gp" =>
         probeClock(file, filename, zone)
       case "avi" =>
         readAvi(file)
       case _ =>
         None
-    read.flatMap(clock => usable(Some(clock)))
+    usable(read)
 
   private def readMovLibrary(file: File): Option[Clock] =
     try
@@ -509,9 +507,6 @@ object Dates:
         val text: String = line.drop(prefix.length)
         try Some(Clock(LocalDateTime.parse(text, format), None, Source.VideoAvi))
         catch case _: DateTimeParseException => None
-
-  def writeInstant(civil: LocalDateTime, zone: ZoneId): Instant =
-    civil.atZone(zone).toInstant
 
   def sameSecond(civil: LocalDateTime, stored: Instant, zone: ZoneId): Boolean =
     civil.truncatedTo(ChronoUnit.SECONDS).isEqual(
