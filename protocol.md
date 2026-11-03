@@ -12,8 +12,8 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
-  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, and the legacy request
-  grammar.
+  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`, and
+  the legacy request grammar.
 
 ## Files
 
@@ -31,6 +31,10 @@ There is no config key for that directory.
 `catalog.txt` byte-identical.
 `photo agent remove-from-album` rewrites that album only when the source key is gone and otherwise leaves `catalog.txt`
 byte-identical.
+`photo agent move-item` rewrites the source album and the destination album in one swap only when `putInAlbum` and
+`takeOut` are both clean.
+Otherwise `catalog.txt` stays byte-identical.
+If the add confirm ran, recovery is refresh-only and the text names both titles.
 `requests.tsv` is a legacy file that a later command will read.
 It is not a second current path.
 The script does not apply the batch.
@@ -51,6 +55,7 @@ The program reads it.
 `photo agent download-item` downloads one original and does not change Google Photos.
 `photo agent add-to-album` adds one item to an existing album.
 `photo agent remove-from-album` removes one item from an album.
+`photo agent move-item` adds one item to an existing album and then removes it from the source album, in one session.
 `photo publish` and `photo sync` still change Google Photos.
 A request batch is not a refresh.
 
@@ -512,7 +517,7 @@ An album with no `owner` line, whose Google title is an override, stores that ex
 `--new` is a string the operator chose.
 
 Sync compares Library API media ids and does not match filenames, so it cannot reconcile a hand-made album.
-A later `move-item` uses the catalog item key, as Requests describes.
+`photo agent move-item` uses the catalog item key, as Requests describes.
 Stop at the local file.
 It does not publish, sync, or run `repair --names`.
 
@@ -884,6 +889,42 @@ Anything else leaves `catalog.txt` byte-identical.
 A miss before Remove from album or before the Remove button is one-click.
 After the Remove button was clicked, a source key that is still present is refresh-only.
 
+`photo agent move-item` moves one item from the source album to the destination album in one session.
+`--title` names the source album and `--dest` names the destination album.
+`--id` is required when more than one album has the source title, and it must match.
+`--dest-id` is required when more than one album has the destination title, and it must match.
+The source item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
+The command does not require the uploader to be `-` and does not reject an `owner` line on the source.
+The destination is a different album.
+`acceptPut` runs on the destination before Chrome opens, and again on the reread under the lock.
+An `owner` line, `auto-add`, unread names, or an excepted stem does not click.
+That refusal is the same one `photo agent add-to-album` uses.
+It is usage.
+Chrome stays closed and `catalog.txt` stays byte-identical.
+The session calls `putInAlbum` and then `takeOut`.
+It does not run `photo agent add-to-album` or `photo agent remove-from-album`.
+One swap publishes both albums only when both halves are clean.
+The destination gains the new item line.
+The filename is `--current`.
+The date and the uploader come from the read when it has them, and otherwise from the source line.
+The destination `count` increases by one.
+When an `error` line is present, `of` becomes the new count and `got` increases by one.
+`name-failures` stays.
+The source loses that item line and `count` decreases by one.
+When an `error` line is present, `of` becomes the new count and `got` decreases by one.
+`name-failures` stays.
+Every other album is copied unchanged.
+The catalog check is the same one `photo agent add-to-album` and `photo agent remove-from-album` use.
+Any other outcome leaves `catalog.txt` byte-identical, including when the add already happened.
+If `putInAlbum` misses before the confirm, `takeOut` is not called and recovery is one-click.
+If the add confirm ran and the new key is not clean, `takeOut` is not called.
+Recovery is refresh-only and the text names both titles.
+If `putInAlbum` returned the clean key and `takeOut` then fails, recovery is refresh-only, the text names both titles,
+and neither album is published.
+A catalog read that throws after both halves return is refresh-only and leaves the file byte-identical.
+Success names the action and both titles.
+Stdout has no album id and no item key.
+
 The grammar below is legacy.
 The column tables, the version lines, and Catalog updates describe the old row statuses.
 They stay until a later command reads `requests.tsv`.
@@ -927,7 +968,7 @@ An empty file's first id is `r1`.
 | action | album-id | item-key | current | new |
 |---|---|---|---|---|
 | `rename-album` (legacy) | album id | empty | current title, exact | new title |
-| `move-item` | source album id | item key | current filename | destination album id |
+| `move-item` (legacy) | source album id | item key | current filename | destination album id |
 | `set-description` (legacy) | empty | item key | current filename | new description, empty clears |
 | `set-date` (legacy) | empty | item key | current filename | `YYYY-MM-DD HH:MM` local |
 | `download-item` (legacy) | album id | item key | current filename | empty |
@@ -936,14 +977,14 @@ An empty file's first id is `r1`.
 | action | Accept only when |
 |---|---|
 | `rename-album` (legacy) | The album id exists, there is no `owner` line, `current` equals the catalog title exactly, `new` is non-empty, and `new` differs from `current`. |
-| `move-item` | The source album and the destination album exist, the item key is an `item` line on the source (not an `unset` line), `current` equals that filename, and the destination id differs from the source. |
+| `move-item` (legacy) | The source album and the destination album exist, the item key is an `item` line on the source (not an `unset` line), `current` equals that filename, and the destination id differs from the source. |
 | `set-description` (legacy) | `album-id` is empty, the item key is an `item` line on exactly one album, `current` equals that filename, and `new` may be empty. |
 | `set-date` (legacy) | The same item identity as `set-description`, and `new` matches `YYYY-MM-DD HH:MM`. |
 | `download-item` (legacy) | The album id and item key name one `item` line, `current` equals the filename, `new` is empty, and the filename is not `.`, `..`, or a string containing `/`. |
 | `delete-item` | The same identity check as legacy `download-item`, `new` is empty, the album has no `owner` line, and the item's uploader is `-`. |
 
 `rename-album` changes the album title.
-`move-item` adds the item to the destination album, then removes it from the source album.
+A legacy `move-item` row adds the item to the destination album, then removes it from the source album.
 The item stays in the library.
 A legacy `set-description` row sets the item's description.
 An empty `new` clears it.
@@ -987,7 +1028,8 @@ When it is not the value in `new`, choose that option, or type it and press Ente
 Confirm with Save, Done, or OK.
 The item read that decides the catalog date is the same `fDcn4b` read Refresh uses.
 
-`move-item` adds the item to the destination album, then removes it from the source album.
+A legacy `move-item` row adds the item to the destination album, then removes it from the source album.
+`photo agent move-item` is not this row.
 The destination key is not the source key.
 Before the change, read the destination album's item keys with `snAcKc`.
 On the open item, More options, then Add to album, then the existing destination album.
@@ -1167,6 +1209,7 @@ It is rewritten for each processed batch.
 `photo agent download-item` is the applier for a download.
 `photo agent add-to-album` is the applier for adding an item to an existing album.
 `photo agent remove-from-album` is the applier for removing an item from an album.
+`photo agent move-item` is the applier for moving an item from one album to another.
 The numbered steps are the legacy batch.
 The script does not apply the batch.
 

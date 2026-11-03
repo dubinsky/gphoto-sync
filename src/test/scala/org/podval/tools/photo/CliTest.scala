@@ -144,11 +144,17 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
       Cli.Usage("use photo agent rename-album")
     Cli.parse(List(
+      "agent", "move-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg",
+      "--dest", "Other", "--id", "a1", "--dest-id", "a2"
+    )) shouldBe Cli.Run(Cli.MoveItemArgs(
+      Some("Trip"), Some("k1"), Some("a.jpg"), Some("Other"), Some("a1"), Some("a2")
+    ))
+    Cli.parse(List(
       "agent", "request", "move-item", "--album", "a1", "--item", "k1",
       "--current", "a.jpg", "--new", "a2", "--id", "r1"
-    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
-      "move-item", Some("a1"), Some("k1"), Some("a.jpg"), Some("a2"), Some("r1")
-    ))
+    )) shouldBe Cli.Usage("use photo agent move-item")
+    Cli.parse(List("agent", "request", "move-item", "--help")) shouldBe
+      Cli.Usage("use photo agent move-item")
     Cli.parse(List(
       "agent", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello"
     )) shouldBe Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("Hello")))
@@ -397,6 +403,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |download-item  download an item
         |add-to-album  add an item to an album
         |remove-from-album  remove an item from an album
+        |move-item  move an item to another album
         |requests  list request rows
         |results  list result rows
         |drift  report create, update, gone, pending, and skipped
@@ -409,13 +416,13 @@ class CliTest extends AnyFlatSpec, Matchers:
     agent should include ("download-item  download an item")
     agent should include ("add-to-album  add an item to an album")
     agent should include ("remove-from-album  remove an item from an album")
-    agent should not include ("move-item")
+    agent should include ("move-item  move an item to another album")
     agent should not include ("delete-item")
     helpOf("agent", "request", "--help") shouldBe
       """request  append one request row
         |
-        |move-item  move an item to another album
         |delete-item  delete an item""".stripMargin
+    helpOf("agent", "request", "--help") should not include ("move-item")
     helpOf("agent", "request", "--help") should not include ("download-item")
     Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
       Cli.Usage("use photo agent rename-album")
@@ -485,6 +492,19 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--item  text  item key
         |--current  text  current filename
         |--id  text  catalog album id""".stripMargin
+    helpOf("agent", "move-item", "--help") shouldBe
+      """move-item  move an item to another album
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--title  text  album title
+        |--item  text  item key
+        |--current  text  current filename
+        |--dest  text  destination album title
+        |--id  text  catalog album id
+        |--dest-id  text  destination album id""".stripMargin
     helpOf("agent", "album-file", "--help") should include ("--id  text  catalog album id")
     helpOf("agent", "album-file", "--help") should not include ("--no-request")
     helpOf("agent", "include", "--help") shouldBe
@@ -577,6 +597,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "request", "set-date", "--help") -> "use photo agent set-date",
       List("agent", "request", "download-item") -> "use photo agent download-item",
       List("agent", "request", "download-item", "--help") -> "use photo agent download-item",
+      List("agent", "request", "move-item") -> "use photo agent move-item",
+      List("agent", "request", "move-item", "--help") -> "use photo agent move-item",
       List("agent", "album-file", "--no-request", "2010/07") -> "unknown option '--no-request'",
       List("agent", "request", "--album", "a1", "rename-album") -> "unknown command '--album'",
       List("agent", "requests", "x") -> "extra argument 'x'",
@@ -674,12 +696,12 @@ class CliTest extends AnyFlatSpec, Matchers:
     tools.map(_.name) shouldBe List(
       "stems", "catalog", "items", "match", "include", "rename-album",
       "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-      "requests", "results", "drift", "missing"
+      "move-item", "requests", "results", "drift", "missing"
     )
     List(
       "album-file",
       "request",
-      "move-item", "delete-item",
+      "delete-item",
       "repair", "publish", "sync", "refresh", "reconcile", "file", "set-metadata",
       "login", "status", "logout",
       "ls", "lsd", "albums",
@@ -706,6 +728,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "download-item" -> described("download an item", "download-item", ambiguous = true),
       "add-to-album" -> described("add an item to an album", "add-to-album", ambiguous = true),
       "remove-from-album" -> described("remove an item from an album", "remove-from-album", ambiguous = true),
+      "move-item" -> described("move an item to another album", "move-item", ambiguous = true),
       "requests" -> described("list request rows", "requests", ambiguous = false),
       "results" -> described("list result rows", "results", ambiguous = false),
       "drift" -> described("report create, update, gone, pending, and skipped", "drift", ambiguous = false),
@@ -753,6 +776,14 @@ class CliTest extends AnyFlatSpec, Matchers:
         "current" -> mcpStringSchema,
         "id" -> mcpStringSchema
       ),
+      "move-item" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "dest" -> mcpStringSchema,
+        "id" -> mcpStringSchema,
+        "dest-id" -> mcpStringSchema
+      ),
       "requests" -> Seq.empty,
       "results" -> Seq.empty,
       "drift" -> Seq.empty,
@@ -770,6 +801,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "download-item" -> Seq("title", "item", "current"),
       "add-to-album" -> Seq("title", "item", "current", "dest"),
       "remove-from-album" -> Seq("title", "item", "current"),
+      "move-item" -> Seq("title", "item", "current", "dest"),
       "requests" -> Seq.empty,
       "results" -> Seq.empty,
       "drift" -> Seq.empty,

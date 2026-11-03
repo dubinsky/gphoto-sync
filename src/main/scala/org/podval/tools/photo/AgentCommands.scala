@@ -189,6 +189,24 @@ private[photo] final class AgentRemove(
       AgentCommands.catching(loaded):
         AgentCommands.takeOut(loaded, albums, wantedTitle, id, key, wantedCurrent)
 
+private[photo] final class AgentMove(
+  title: Option[String],
+  item: Option[String],
+  current: Option[String],
+  dest: Option[String],
+  id: Option[String],
+  destId: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val key: String = item.getOrElse(throw IllegalArgumentException("missing item"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val destTitle: String = dest.getOrElse(throw IllegalArgumentException("missing dest"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.moveItem(loaded, albums, wantedTitle, id, key, wantedCurrent, destTitle, destId)
+
 private[photo] final class AgentRequest(
   action: Requests.Action,
   album: Option[String],
@@ -575,6 +593,26 @@ private[photo] object AgentCommands:
     requireCurrent(item.filename, current)
     withLock(session, album.title)(heldTake(session, album.id, key, current))
 
+  def moveItem(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    title: String,
+    id: Option[String],
+    key: String,
+    current: String,
+    destTitle: String,
+    destId: Option[String]
+  ): (Session, Result) =
+    val album: Catalog.Album = select(albums, title, id)
+    val destination: Catalog.Album = select(albums, destTitle, destId)
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    requireCurrent(item.filename, current)
+    if album.id == destination.id then throw IllegalArgumentException("destination is the source album")
+    acceptPut(session, destination, item)
+    withLock(session, album.title)(heldMove(session, album.id, key, current, destination.id))
+
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
     Refresh.claim(places.lock) match
@@ -890,7 +928,7 @@ private[photo] object AgentCommands:
         read.key,
         read.uploader.orElse(item.uploader)
       )
-      publishAlbum(session, destination.id, dest => revisedAdd(dest, line)) match
+      publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))) match
         case Right(next) =>
           addOk(next, destination, current, line.key)
         case Left(message) =>
@@ -919,7 +957,7 @@ private[photo] object AgentCommands:
       // A notice would write status.txt and drop a crashed refresh's resume phase.
       ui = Refresh.openAct(_ => ())
       ui.takeOut(album, item)
-      publishAlbum(session, album.id, next => revisedTake(next, item)) match
+      publishAlbum(session, Seq(album.id -> (next => revisedTake(next, item)))) match
         case Right(next) =>
           itemOk(next, album, item, "remove-from-album", "updated")
         case Left(message) =>
@@ -931,6 +969,57 @@ private[photo] object AgentCommands:
         itemFailed(session, album, item, "remove-from-album", RemoveStep, recovery, detail)
       case error: Exception =>
         itemFailed(session, album, item, "remove-from-album", RemoveStep, "one-click", Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
+  private def heldMove(
+    session: Session,
+    sourceId: String,
+    key: String,
+    current: String,
+    destinationId: String
+  ): (Session, Result) =
+    val (source, item, destination) = rereadAdd(session, sourceId, key, current, destinationId)
+    var ui: PhotosAct = null
+    try
+      // That option creates an album, so Chrome stays closed.
+      if destination.title == "New album" then
+        throw Refresh.ActMiss("New album is not a destination", confirmed = false)
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      val read: Catalog.Item = ui.putInAlbum(item, destination, current)
+      val line: Catalog.Item = Catalog.Item(
+        current,
+        read.date.orElse(item.date),
+        read.key,
+        read.uploader.orElse(item.uploader)
+      )
+      try
+        ui.takeOut(source, item)
+        publishAlbum(session, Seq(
+          destination.id -> (dest => revisedAdd(dest, line)),
+          source.id -> (next => revisedTake(next, item))
+        )) match
+          case Right(next) =>
+            moveOk(next, source, destination, current, line.key)
+          case Left(message) =>
+            moveFailed(session, source, destination, item, RemoveStep, "refresh-only", message)
+      catch
+        // The add confirm already ran. A miss on the remove is not one-click.
+        case miss: Refresh.ActMiss =>
+          val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("move-item failed")
+          moveFailed(session, source, destination, item, RemoveStep, "refresh-only", detail)
+        case error: Exception =>
+          moveFailed(session, source, destination, item, RemoveStep, "refresh-only", Operation.messageOf(error))
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("move-item failed")
+        moveFailed(session, source, destination, item, AddStep, recovery, detail)
+      case error: Exception =>
+        moveFailed(session, source, destination, item, AddStep, "one-click", Operation.messageOf(error))
     finally
       if ui != null then
         try ui.close()
@@ -978,8 +1067,7 @@ private[photo] object AgentCommands:
 
   private def publishAlbum(
     session: Session,
-    albumId: String,
-    revise: Catalog.Album => Catalog.Album
+    revisions: Seq[(String, Catalog.Album => Catalog.Album)]
   ): Either[String, Session] =
     try
       val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
@@ -988,17 +1076,19 @@ private[photo] object AgentCommands:
       val previous: File = File(directory, "catalog.txt.previous")
       val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
       val albums: Seq[Catalog.Album] = Catalog.read(live)
-      if !albums.exists(_.id == albumId) then Left("no such album")
+      if revisions.exists((id, _) => !albums.exists(_.id == id)) then Left("no such album")
       else
         val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
         val groups: Either[String, Seq[Seq[String]]] =
           albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
             case (Left(message), _) => Left(message)
             case (Right(acc), next) =>
-              if next.id == albumId then
-                if !blocks.contains(albumId) then Left("missing album block")
-                else Right(acc :+ RefreshPlan.recordLines(revise(next)))
-              else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
+              revisions.find(_._1 == next.id) match
+                case Some((_, revise)) =>
+                  if !blocks.contains(next.id) then Left("missing album block")
+                  else Right(acc :+ RefreshPlan.recordLines(revise(next)))
+                case None =>
+                  Right(acc :+ RefreshPlan.copiedLines(next, blocks))
         groups.flatMap: lines =>
           try
             Files.write(RefreshPlan.renderLines(lines), partial)
@@ -1081,6 +1171,61 @@ private[photo] object AgentCommands:
       "itemKey" -> Json.Str(key)
     ))
     (session, Result.Ok(text, value))
+
+  private def moveOk(
+    session: Session,
+    source: Catalog.Album,
+    destination: Catalog.Album,
+    filename: String,
+    key: String
+  ): (Session, Result) =
+    val text: String = PlaywrightPhotosUi.redactSecrets(
+      s"move-item ${Album.quote(filename)} ${Album.quote(source.title)} ${Album.quote(destination.title)}\n",
+      source.title
+    )
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("move-item"),
+      "title" -> Json.Str(source.title),
+      "destination" -> Json.Str(destination.title),
+      "catalog" -> Json.Str("updated"),
+      "albumId" -> Json.Str(source.id),
+      "destinationId" -> Json.Str(destination.id),
+      "itemKey" -> Json.Str(key)
+    ))
+    (session, Result.Ok(text, value))
+
+  private def moveFailed(
+    session: Session,
+    source: Catalog.Album,
+    destination: Catalog.Album,
+    item: Catalog.Item,
+    step: String,
+    recovery: String,
+    detail: String
+  ): (Session, Result) =
+    val shown: String = collapsedText(detail, "move-item failed")
+    val text: String =
+      s"""failed move-item
+         |filename ${Album.quote(item.filename)}
+         |album ${Album.quote(source.title)}
+         |destination ${Album.quote(destination.title)}
+         |step $step
+         |recovery $recovery
+         |catalog unchanged
+         |$shown
+         |""".stripMargin
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("move-item"),
+      "title" -> Json.Str(source.title),
+      "destination" -> Json.Str(destination.title),
+      "step" -> Json.Str(step),
+      "recovery" -> Json.Str(recovery),
+      "catalog" -> Json.Str("unchanged"),
+      "albumId" -> Json.Str(source.id),
+      "destinationId" -> Json.Str(destination.id),
+      "itemKey" -> Json.Str(item.key)
+    ))
+    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, source.title), value, Refresh.MutationFailed))
 
   private def itemOk(
     session: Session,
