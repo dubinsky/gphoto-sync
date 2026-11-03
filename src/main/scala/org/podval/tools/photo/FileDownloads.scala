@@ -117,27 +117,25 @@ object FileDownloads:
         if hits.isEmpty then
           Action.Filing(item.file, day, item.file.getName, row.finalName, File(dayDir, row.finalName))
         else
-          val catalog: LocalDate = LocalDate.parse(day.replace('/', '-'))
-          Action.DateMismatch(Title.dayText(catalog), item.file.getName, hits)
+          Action.DateMismatch(day, item.file.getName, hits)
 
   // Previous day, then next. loadGrouped does not create a missing neighbor.
   private def adjacentHits(day: String, filename: String): Seq[(String, String)] =
     val catalog: LocalDate = LocalDate.parse(day.replace('/', '-'))
     val (stem, extension) = Files.splitOnLast(filename, '.')
     Seq(catalog.minusDays(1), catalog.plusDays(1)).flatMap: neighbor =>
-      AgentCommands.resolve(groupedOn(neighbor), stem, extension).map: local =>
+      val session: Session = DirectoryIndex.now
+      // A neighbor Pictures.plan rejects is not a hit, and must not abort the other days.
+      val grouped: Map[String, Set[String]] =
+        try
+          val (loaded, rows, _) =
+            AgentCommands.loadGrouped(session, AgentCommands.civilDay(session.root, neighbor))
+          if loaded ne session then DirectoryIndex.replace(loaded)
+          rows.toMap
+        catch case _: IllegalArgumentException =>
+          Map.empty
+      AgentCommands.resolve(grouped, stem, extension).map: local =>
         Title.dayText(neighbor) -> local
-
-  // A neighbor Pictures.plan rejects is not a hit, and must not abort the other days.
-  private def groupedOn(date: LocalDate): Map[String, Set[String]] =
-    val session: Session = DirectoryIndex.now
-    try
-      val (loaded, grouped, _) =
-        AgentCommands.loadGrouped(session, AgentCommands.civilDay(session.root, date))
-      if loaded ne session then DirectoryIndex.replace(loaded)
-      grouped.toMap
-    catch case _: IllegalArgumentException =>
-      Map.empty
 
   // commitFile moves with REPLACE_EXISTING and would overwrite an archive original.
   private def commit(staged: File, destination: File): Boolean =
