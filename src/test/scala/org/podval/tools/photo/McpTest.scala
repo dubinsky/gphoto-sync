@@ -70,7 +70,7 @@ class McpTest extends AnyFlatSpec, Matchers:
             fail(other.toString)
         val listedTools: Json = field(listed, "tools")
         toolNames(listedTools) shouldBe Seq(
-          "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "rename-album",
+          "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "rename-album",
           "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
           "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
         )
@@ -271,6 +271,53 @@ class McpTest extends AnyFlatSpec, Matchers:
         assertCompact(out)
         File(archive, "requests.tsv").exists shouldBe false
         File(archive, "results.tsv").exists shouldBe false
+      finally
+        running.finish()
+        deleteTree(runtime)
+
+  it should "return locate from the temp archive" in :
+    prepared: (archive, session) =>
+      val day: File = File(archive, "2010/07/19")
+      day.mkdirs() shouldBe true
+      JFiles.write(File(day, "IMG_2412.jpg").toPath, Array.emptyByteArray)
+      writeCatalog(
+        archive,
+        "album\taid-june\t1\tJune",
+        "item\taid-june\tIMG_2412.jpg\t2010-07-19\tk-june\t-"
+      )
+      val runtime: File = tempRuntime()
+      val running: Running = start(session, runtime)
+      try
+        val (code, out, err) = drive(Right(runtime), session): driver =>
+          driver.round("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""")
+          val locate: Json = assertToolOk(driver.round(callLine(
+            Json.Str("l"),
+            "locate",
+            Some(Json.Obj(Seq(
+              "day" -> Json.Str("2010/07/19"),
+              "stem" -> Json.Str("2412")
+            )))
+          )))
+          val text: String = contentText(locate)
+          text shouldBe "June 2010-07-19 IMG_2412.jpg -\n"
+          text should not include ("aid-june")
+          text should not include ("k-june")
+          val value: Json = field(locate, "structuredContent")
+          outputMismatch(advertisedSchema("locate"), value) shouldBe None
+          field(value, "ambiguous") shouldBe Json.Bool(false)
+          field(value, "matches") match
+            case Json.Arr(Seq(row)) =>
+              field(row, "id") shouldBe Json.Str("aid-june")
+              field(row, "key") shouldBe Json.Str("k-june")
+            case other =>
+              fail(other.toString)
+        code shouldBe 0
+        err shouldBe ""
+        assertCompact(out)
+        File(archive, "requests.tsv").exists shouldBe false
+        File(archive, "results.tsv").exists shouldBe false
+        File(File(archive, ".gphoto-sync"), "requests.tsv").exists shouldBe false
+        File(File(archive, ".gphoto-sync"), "results.tsv").exists shouldBe false
       finally
         running.finish()
         deleteTree(runtime)

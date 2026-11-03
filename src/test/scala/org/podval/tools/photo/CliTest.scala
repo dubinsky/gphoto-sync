@@ -128,6 +128,8 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("agent", "match", "--id", "a1", "2010/07")) shouldBe
       Cli.Run(Cli.AgentMatchArgs(Some("a1"), "2010/07"))
     Cli.parse(List("agent", "match", "2010/07")) shouldBe Cli.Run(Cli.AgentMatchArgs(None, "2010/07"))
+    Cli.parse(List("agent", "locate", "2010/07/19", "2412")) shouldBe
+      Cli.Run(Cli.AgentLocateArgs("2010/07/19", "2412"))
     Cli.parse(List(
       "agent", "include", "--span", "2010/07", "2010/07/19/2412", "2010/07/20/2413"
     )) shouldBe Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
@@ -429,6 +431,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |catalog  list catalog albums
         |items  list catalog items for one album
         |match  match catalog items to local stems
+        |locate  list catalog rows that match one local stem
         |include  compress include lines
         |album-file  write an album file
         |request  redirect that does not append
@@ -601,6 +604,15 @@ class CliTest extends AnyFlatSpec, Matchers:
         |
         |Flags:
         |--id  text  catalog album id""".stripMargin
+    helpOf("agent", "locate", "--help") shouldBe
+      """locate  list catalog rows that match one local stem
+        |
+        |Positionals:
+        |day  required
+        |stem  required
+        |
+        |Flags:
+        |none""".stripMargin
 
   it should "reject usage errors" in :
     val errors: List[(List[String], String)] = List(
@@ -664,6 +676,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "months") -> "missing year",
       List("agent", "days") -> "missing month",
       List("agent", "claims") -> "missing path",
+      List("agent", "locate") -> "missing day",
+      List("agent", "locate", "2010/07/19") -> "missing stem",
+      List("agent", "locate", "--id", "a1", "2010/07/19", "2412") -> "unknown option '--id'",
       List("agent", "years", "2010") -> "extra argument '2010'",
       List("agent", "items") -> "missing album",
       List("agent", "match") -> "missing album",
@@ -782,7 +797,7 @@ class CliTest extends AnyFlatSpec, Matchers:
   "mcpTools" should "derive the query commands and the in-process writes, and reject everything else" in :
     val tools: List[Cli.McpTool] = Cli.mcpTools
     tools.map(_.name) shouldBe List(
-      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "rename-album",
+      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "rename-album",
       "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
       "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
     )
@@ -815,6 +830,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "catalog" -> described("list catalog albums", "catalog", ambiguous = false),
       "items" -> described("list catalog items for one album", "items", ambiguous = true),
       "match" -> described("match catalog items to local stems", "match", ambiguous = true),
+      "locate" -> described("list catalog rows that match one local stem", "locate", ambiguous = false),
       "include" -> described("compress include lines", "include", ambiguous = false),
       "rename-album" -> described("rename an album", "rename-album", ambiguous = true),
       "set-description" -> described("set an item description", "set-description", ambiguous = false),
@@ -843,6 +859,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "catalog" -> Seq.empty,
       "items" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
       "match" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
+      "locate" -> Seq("day" -> mcpStringSchema, "stem" -> mcpStringSchema),
       "include" -> Seq("span" -> mcpStringSchema, "paths" -> mcpPathsSchema),
       "rename-album" -> Seq(
         "title" -> mcpStringSchema,
@@ -913,6 +930,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "catalog" -> Seq.empty,
       "items" -> Seq("album"),
       "match" -> Seq("album"),
+      "locate" -> Seq("day", "stem"),
       "include" -> Seq.empty,
       "rename-album" -> Seq("title", "current", "new"),
       "set-description" -> Seq("item", "current", "new"),
@@ -979,6 +997,13 @@ class CliTest extends AnyFlatSpec, Matchers:
     ))
     matched shouldBe List("agent", "match", "--id", "a1", "2010/07")
     Cli.parse(matched, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMatchArgs(Some("a1"), "2010/07"))
+
+    val located: List[String] = mcpArgv("locate", Seq(
+      "stem" -> Json.Str("2412"),
+      "day" -> Json.Str("2010/07/19")
+    ))
+    located shouldBe List("agent", "locate", "2010/07/19", "2412")
+    Cli.parse(located, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentLocateArgs("2010/07/19", "2412"))
 
     val include: List[String] = mcpArgv("include", Seq(
       "paths" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"), Json.Str("2010/07/20/2413"))),
@@ -1095,7 +1120,7 @@ class CliTest extends AnyFlatSpec, Matchers:
   "mcpTools" should "mark reads read-only and accept the values those commands emit" in :
     val tools: List[Cli.McpTool] = Cli.mcpTools
     Cli.mcpReadOnly shouldBe Set(
-      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "drift", "missing"
+      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "drift", "missing"
     )
     List(
       "rename-album", "set-description", "set-date", "download-item", "add-to-album",
@@ -1265,6 +1290,56 @@ class CliTest extends AnyFlatSpec, Matchers:
         )))),
         "unmatched" -> Json.Arr(Seq(Json.Str("k9")))
       ))),
+      "locate" -> Seq(
+        Json.Obj(Seq(
+          "day" -> Json.Str("2099/01/01"),
+          "stem" -> Json.Str("2412"),
+          "directory" -> Json.Bool(false),
+          "present" -> Json.Bool(false),
+          "ambiguous" -> Json.Bool(false),
+          "matches" -> Json.Arr(Seq.empty)
+        )),
+        Json.Obj(Seq(
+          "day" -> Json.Str("2010/07/19"),
+          "stem" -> Json.Str("2412"),
+          "directory" -> Json.Bool(true),
+          "present" -> Json.Bool(true),
+          "ambiguous" -> Json.Bool(false),
+          "matches" -> Json.Arr(Seq(Json.Obj(Seq(
+            "title" -> Json.Str("June"),
+            "date" -> Json.Str("2010-07-19"),
+            "filename" -> Json.Str("one.jpg"),
+            "uploader" -> Json.Str("-"),
+            "id" -> Json.Str("a1"),
+            "key" -> Json.Str("k1")
+          ))))
+        )),
+        Json.Obj(Seq(
+          "day" -> Json.Str("2010/07/19"),
+          "stem" -> Json.Str("2412"),
+          "directory" -> Json.Bool(true),
+          "present" -> Json.Bool(true),
+          "ambiguous" -> Json.Bool(true),
+          "matches" -> Json.Arr(Seq(
+            Json.Obj(Seq(
+              "title" -> Json.Str("Alpha"),
+              "date" -> Json.Str("2010-07-19"),
+              "filename" -> Json.Str("IMG_2412.jpg"),
+              "uploader" -> Json.Str("-"),
+              "id" -> Json.Str("album-alpha"),
+              "key" -> Json.Str("item-alpha")
+            )),
+            Json.Obj(Seq(
+              "title" -> Json.Str("Beta"),
+              "date" -> Json.Str("2010-07-19"),
+              "filename" -> Json.Str("2412.jpg"),
+              "uploader" -> Json.Str("Ada"),
+              "id" -> Json.Str("album-beta"),
+              "key" -> Json.Str("item-beta")
+            ))
+          ))
+        ))
+      ),
       "include" -> Seq(
         Json.Obj(Seq(
           "rendered" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"))),
@@ -1328,6 +1403,22 @@ class CliTest extends AnyFlatSpec, Matchers:
         "date" -> Json.Null,
         "filename" -> Json.Str("one.jpg"),
         "uploader" -> Json.Str("-"),
+        "key" -> Json.Str("k1")
+      ))))
+    ))).isDefined shouldBe true
+    val locate: Json = tools.find(_.name == "locate").flatMap(_.outputSchema).getOrElse(fail("locate"))
+    outputMismatch(locate, Json.Obj(Seq(
+      "day" -> Json.Str("2010/07/19"),
+      "stem" -> Json.Str("2412"),
+      "directory" -> Json.Bool(true),
+      "present" -> Json.Bool(true),
+      "ambiguous" -> Json.Bool(false),
+      "matches" -> Json.Arr(Seq(Json.Obj(Seq(
+        "title" -> Json.Str("June"),
+        "date" -> Json.Null,
+        "filename" -> Json.Str("one.jpg"),
+        "uploader" -> Json.Str("-"),
+        "id" -> Json.Str("a1"),
         "key" -> Json.Str("k1")
       ))))
     ))).isDefined shouldBe true

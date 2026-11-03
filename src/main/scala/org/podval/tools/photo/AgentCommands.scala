@@ -153,6 +153,11 @@ private[photo] final class AgentMatch(id: Option[String], title: String) extends
           AgentCommands.skipped(loaded, album, "unread names")
         else AgentCommands.matchItems(loaded, album)
 
+private[photo] final class AgentLocate(dayText: String, stem: String) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      AgentCommands.locate(session, dayText, stem)
+
 private[photo] final class AgentAlbumFile(
   id: Option[String],
   dryRun: Boolean,
@@ -458,6 +463,31 @@ private[photo] object AgentCommands:
     )
     (loaded, Result.Ok(textOf(rows), value))
 
+  // Match skips an unread album before gather. This walk does not. A date of - is not a row.
+  def locate(session: Session, dayText: String, stem: String): (Session, Result) =
+    val day: Day = parseDay(session, dayText)
+    val shown: String = Title.dayText(day.date)
+    if !day.directory.isDirectory then
+      (session, Result.Ok("", locateValue(shown, stem, directory = false, present = false, Seq.empty)))
+    else
+      val (loaded, grouped, _) = loadGrouped(session, day, readSidecars = false)
+      val byStem: Map[String, Set[String]] = grouped.toMap
+      if !byStem.contains(stem) then
+        (loaded, Result.Ok("", locateValue(shown, stem, directory = true, present = false, Seq.empty)))
+      else
+        val (cataloged, albums) = loaded.loadCatalog
+        val rows: Seq[(Catalog.Album, Catalog.Item, LocalDate)] = albums.flatMap: album =>
+          album.items.flatMap: item =>
+            item.date match
+              case Some(date) if date.isEqual(day.date) =>
+                val (name, extension) = Files.splitOnLast(item.filename, '.')
+                if resolve(byStem, name, extension).contains(stem) then Some((album, item, date)) else None
+              case _ =>
+                None
+        val lines: Seq[String] = rows.map: (album, item, date) =>
+          s"${album.title} ${date.toString} ${item.filename} ${showUploader(item.uploader)}"
+        (cataloged, Result.Ok(textOf(lines), locateValue(shown, stem, directory = true, present = true, rows)))
+
   // Same lookup as agent match. Album-file does not keep a second copy.
   def gather(
     session: Session,
@@ -606,6 +636,31 @@ private[photo] object AgentCommands:
       "date" -> unset.date.fold(Json.Null)(date => Json.Str(date.toString)),
       "key" -> Json.Str(unset.key),
       "uploader" -> unset.uploader.fold(Json.Null)(Json.Str.apply)
+    ))
+
+  private def locateValue(
+    day: String,
+    stem: String,
+    directory: Boolean,
+    present: Boolean,
+    rows: Seq[(Catalog.Album, Catalog.Item, LocalDate)]
+  ): Json =
+    Json.Obj(Seq(
+      "day" -> Json.Str(day),
+      "stem" -> Json.Str(stem),
+      "directory" -> Json.Bool(directory),
+      "present" -> Json.Bool(present),
+      "ambiguous" -> Json.Bool(rows.length > 1),
+      "matches" -> Json.Arr(rows.map: (album, item, date) =>
+        Json.Obj(Seq(
+          "title" -> Json.Str(album.title),
+          "date" -> Json.Str(date.toString),
+          "filename" -> Json.Str(item.filename),
+          "uploader" -> Json.Str(showUploader(item.uploader)),
+          "id" -> Json.Str(album.id),
+          "key" -> Json.Str(item.key)
+        ))
+      )
     ))
 
   private def matchValue(

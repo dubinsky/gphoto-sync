@@ -708,6 +708,137 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       kept.catalogCache.isEmpty shouldBe true
       noRequests(archive)
 
+  "agent locate" should "list catalog rows for one local stem and not read a catalog it cannot hit" in :
+    withArchive: archive =>
+      val day: File = File(archive, "2010/07/19")
+      touch(day, "IMG_2412.jpg")
+      touch(day, "2412.mp4")
+      touch(day, "9999.jpg")
+      JFiles.writeString(File(day, "2412.toml").toPath, "=\n")
+      File(archive, "2010/07/20").mkdirs() shouldBe true
+      File(archive, "2010/02/31").mkdirs() shouldBe true
+      val session: Session = Session(rootFor(archive))
+
+      val (missingDir, absent) = exec(session, "agent", "locate", "2099/01/01", "2412")
+      absent shouldBe Result.Ok(
+        "",
+        locateValue("2099/01/01", "2412", directory = false, present = false, Seq.empty)
+      )
+      missingDir.catalogCache.isEmpty shouldBe true
+      missingDir.index.isEmpty shouldBe true
+      File(archive, ".gphoto-sync").exists shouldBe false
+
+      val (rawSession, rawName) = exec(session, "agent", "locate", "2010/07/19", "IMG_2412")
+      rawName shouldBe Result.Ok(
+        "",
+        locateValue("2010/07/19", "IMG_2412", directory = true, present = false, Seq.empty)
+      )
+      rawSession.catalogCache.isEmpty shouldBe true
+      rawSession.cached(day).isDefined shouldBe true
+      File(File(archive, ".gphoto-sync"), "catalog.txt").exists shouldBe false
+
+      List("2010", "2010/07", "2010/07/19/2412", "2010/02/31").foreach: path =>
+        exec(session, "agent", "locate", path, "2412")._2 shouldBe Result.Usage("not a day")
+      exec(session, "agent", "locate", "2010/07/19", "2412")._2 shouldBe Result.Usage("catalog is absent")
+
+      writeCatalog(
+        archive,
+        "album\taid-alpha\t4\tAlpha",
+        "item\taid-alpha\tIMG_2412.jpg\t2010-07-19\tk-alpha\t-",
+        "item\taid-alpha\tghost.jpg\t-\tk-ghost\t-",
+        "item\taid-alpha\t1000.jpg\t2010-07-20\tk-other\t-",
+        "item\taid-alpha\t2412.mp4\t2010-07-19\tk-video\t-",
+        "album\taid-trip\t2\tBest Trip",
+        "error\taid-trip\t2\t2\t1",
+        "item\taid-trip\tIMG_2412.JPG\t2010-07-19\tk-trip\t-",
+        "unset\taid-trip\t2010-07-20\tk-unset\tCara",
+        "album\taid-beta\t1\tBeta",
+        "item\taid-beta\t2412.jpg\t2010-07-19\tk-beta\tAda",
+        "album\taid-box\t0\tInbox",
+        "auto-add\taid-box"
+      )
+      val before: Long = Extension.constructed
+      val beforeFiles: Map[String, String] = filesOf(archive)
+      val (loaded, found) = exec(Session(rootFor(archive)), "agent", "locate", "2010/07/19", "2412")
+      Extension.constructed shouldBe before
+      filesOf(archive) shouldBe beforeFiles
+      val text: String =
+        """Alpha 2010-07-19 IMG_2412.jpg -
+          |Best Trip 2010-07-19 IMG_2412.JPG -
+          |Beta 2010-07-19 2412.jpg Ada
+          |""".stripMargin
+      val rows: Seq[Json] = Seq(
+        locateRow("Alpha", "2010-07-19", "IMG_2412.jpg", "-", "aid-alpha", "k-alpha"),
+        locateRow("Best Trip", "2010-07-19", "IMG_2412.JPG", "-", "aid-trip", "k-trip"),
+        locateRow("Beta", "2010-07-19", "2412.jpg", "Ada", "aid-beta", "k-beta")
+      )
+      found shouldBe Result.Ok(
+        text,
+        locateValue("2010/07/19", "2412", directory = true, present = true, rows)
+      )
+      found match
+        case Result.Ok(shown, value) =>
+          noIds(
+            shown,
+            "aid-alpha", "aid-trip", "aid-beta", "aid-box",
+            "k-alpha", "k-ghost", "k-other", "k-video", "k-trip", "k-unset", "k-beta"
+          )
+          shown should not include ("missing")
+          shown should not include ("ambiguous")
+          shown should not include ("matched")
+          shown should not include ("\"")
+          field(value, "ambiguous") shouldBe Json.Bool(true)
+          value.toString should include ("k-alpha")
+          value.toString should not include ("k-ghost")
+          value.toString should not include ("k-other")
+          value.toString should not include ("k-video")
+          value.toString should not include ("k-unset")
+          value.toString should not include ("aid-box")
+        case other =>
+          fail(other.toString)
+      loaded.catalogCache.isDefined shouldBe true
+      loaded.cached(day).isDefined shouldBe true
+      loaded.cached(File(archive, "2010/07/20")).isEmpty shouldBe true
+
+      val (_, video) = exec(loaded, "agent", "locate", "2010/07/19", "2412v")
+      video shouldBe Result.Ok(
+        "Alpha 2010-07-19 2412.mp4 -\n",
+        locateValue(
+          "2010/07/19",
+          "2412v",
+          directory = true,
+          present = true,
+          Seq(locateRow("Alpha", "2010-07-19", "2412.mp4", "-", "aid-alpha", "k-video"))
+        )
+      )
+      video match
+        case Result.Ok(shown, value) =>
+          noIds(shown, "aid-alpha", "k-video")
+          field(value, "ambiguous") shouldBe Json.Bool(false)
+        case other =>
+          fail(other.toString)
+
+      exec(loaded, "agent", "locate", "2010/07/19", "9999")._2 shouldBe Result.Ok(
+        "",
+        locateValue("2010/07/19", "9999", directory = true, present = true, Seq.empty)
+      )
+
+      val (stillCold, stillRaw) = exec(Session(rootFor(archive)), "agent", "locate", "2010/07/19", "IMG_2412")
+      stillRaw shouldBe Result.Ok(
+        "",
+        locateValue("2010/07/19", "IMG_2412", directory = true, present = false, Seq.empty)
+      )
+      stillCold.catalogCache.isEmpty shouldBe true
+
+      val (stillMissing, stillAbsent) = exec(Session(rootFor(archive)), "agent", "locate", "2099/01/01", "2412")
+      stillAbsent shouldBe Result.Ok(
+        "",
+        locateValue("2099/01/01", "2412", directory = false, present = false, Seq.empty)
+      )
+      stillMissing.catalogCache.isEmpty shouldBe true
+      stillMissing.index.isEmpty shouldBe true
+      noRequests(archive)
+
   private def claimRow(path: String, stem: String, albums: Seq[String], excludedOnly: Boolean): Json =
     Json.Obj(Seq(
       "path" -> Json.Str(path),
@@ -778,6 +909,39 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
         "reason" -> reason.fold(Json.Null)(Json.Str.apply),
         "id" -> id.fold(Json.Null)(Json.Str.apply)
       ))))
+    ))
+
+  private def locateValue(
+    day: String,
+    stem: String,
+    directory: Boolean,
+    present: Boolean,
+    matches: Seq[Json]
+  ): Json =
+    Json.Obj(Seq(
+      "day" -> Json.Str(day),
+      "stem" -> Json.Str(stem),
+      "directory" -> Json.Bool(directory),
+      "present" -> Json.Bool(present),
+      "ambiguous" -> Json.Bool(matches.length > 1),
+      "matches" -> Json.Arr(matches)
+    ))
+
+  private def locateRow(
+    title: String,
+    date: String,
+    filename: String,
+    uploader: String,
+    id: String,
+    key: String
+  ): Json =
+    Json.Obj(Seq(
+      "title" -> Json.Str(title),
+      "date" -> Json.Str(date),
+      "filename" -> Json.Str(filename),
+      "uploader" -> Json.Str(uploader),
+      "id" -> Json.Str(id),
+      "key" -> Json.Str(key)
     ))
 
   private def missingRow(title: String, date: String, filename: String, uploader: String, key: String): Json =

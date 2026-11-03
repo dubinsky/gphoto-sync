@@ -61,6 +61,7 @@ object Cli:
   private[photo] case object AgentCatalogArgs extends Parsed
   private[photo] final case class AgentItemsArgs(id: Option[String], album: String) extends Parsed
   private[photo] final case class AgentMatchArgs(id: Option[String], album: String) extends Parsed
+  private[photo] final case class AgentLocateArgs(day: String, stem: String) extends Parsed
   private[photo] final case class AgentIncludeArgs(span: Option[String], paths: Seq[String]) extends Parsed
   private[photo] final case class AgentAlbumFileArgs(
     id: Option[String],
@@ -388,6 +389,7 @@ object Cli:
     case AgentCatalogArgs => false
     case _: AgentItemsArgs => false
     case _: AgentMatchArgs => false
+    case _: AgentLocateArgs => false
     case _: AgentIncludeArgs => false
     case _: AgentAlbumFileArgs => false
     case AgentDriftArgs => false
@@ -693,6 +695,8 @@ object Cli:
       AgentItems(id, album)
     case AgentMatchArgs(id, album) =>
       AgentMatch(id, album)
+    case AgentLocateArgs(day, stem) =>
+      AgentLocate(day, stem)
     case AgentIncludeArgs(span, paths) =>
       AgentInclude(span, paths)
     case AgentAlbumFileArgs(id, dryRun, replace, googleTitle, album) =>
@@ -1241,6 +1245,13 @@ object Cli:
       build = (values, args) => AgentMatchArgs(values.texts.get("id"), args.head)
     ),
     Command(
+      name = "locate",
+      help = "list catalog rows that match one local stem",
+      positionals = List(Required("day", path = true), Required("stem")),
+      flags = Nil,
+      build = (_, args) => AgentLocateArgs(args.head, args.tail.head)
+    ),
+    Command(
       name = "include",
       help = "compress include lines",
       positionals = List(Rest("year/month/day/stem", schemaName = Some("paths"))),
@@ -1456,14 +1467,14 @@ object Cli:
 
   // Order is agentCommands order. Membership is this set.
   private val mcpToolNames: Set[String] = Set(
-    "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "rename-album",
+    "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "rename-album",
     "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
     "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
   )
 
   // Reads only. A name here has an output schema. Writes stay out, so both hints stay unset.
   private[photo] val mcpReadOnly: Set[String] = Set(
-    "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "drift", "missing"
+    "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1527,6 +1538,7 @@ object Cli:
         case "catalog" => mcpCatalogOutputSchema
         case "items" => mcpItemsOutputSchema
         case "match" => mcpMatchOutputSchema
+        case "locate" => mcpLocateOutputSchema
         case "include" => mcpIncludeOutputSchema
         case "drift" => mcpDriftOutputSchema
         case "missing" => mcpMissingOutputSchema
@@ -1768,6 +1780,28 @@ object Cli:
       "unmatched" -> mcpStringArraySchema
     ),
     Seq("id", "matched", "unmatched")
+  )
+
+  private val mcpLocateOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "day" -> mcpJsonType("string"),
+      "stem" -> mcpJsonType("string"),
+      "directory" -> mcpJsonType("boolean"),
+      "present" -> mcpJsonType("boolean"),
+      "ambiguous" -> mcpJsonType("boolean"),
+      "matches" -> mcpArraySchema(mcpObjectSchema(
+        Seq(
+          "title" -> mcpJsonType("string"),
+          "date" -> mcpJsonType("string"),
+          "filename" -> mcpJsonType("string"),
+          "uploader" -> mcpJsonType("string"),
+          "id" -> mcpJsonType("string"),
+          "key" -> mcpJsonType("string")
+        ),
+        Seq("title", "date", "filename", "uploader", "id", "key")
+      ))
+    ),
+    Seq("day", "stem", "directory", "present", "ambiguous", "matches")
   )
 
   private val mcpIncludeOutputSchema: Json = mcpObjectSchema(
