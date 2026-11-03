@@ -1030,7 +1030,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       name = "probe",
       description = "probe",
       params = List(Cli.McpParam.BoolFlag("dry-run"), Cli.McpParam.StringPos("album")),
-      required = List("album")
+      required = List("album"),
+      readOnlyHint = false,
+      outputSchema = None
     )
     mcpProperties(boolTool) shouldBe Seq(
       "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
@@ -1052,6 +1054,191 @@ class CliTest extends AnyFlatSpec, Matchers:
     help shouldBe a [Cli.Help]
     help should not be a [Cli.Run]
     help should not be a [Cli.Usage]
+
+  "mcpTools" should "mark reads read-only and accept the values those commands emit" in :
+    val tools: List[Cli.McpTool] = Cli.mcpTools
+    Cli.mcpReadOnly shouldBe Set(
+      "stems", "catalog", "items", "match", "include", "drift", "missing"
+    )
+    List(
+      "rename-album", "set-description", "set-date", "download-item", "add-to-album",
+      "remove-from-album", "move-item", "delete-item", "upload-item", "create-album", "delete-album"
+    ).foreach: name =>
+      Cli.mcpReadOnly.contains(name) shouldBe false
+      tools.exists(_.name == name) shouldBe true
+    tools.foreach: tool =>
+      if Cli.mcpReadOnly.contains(tool.name) then
+        tool.readOnlyHint shouldBe true
+        tool.outputSchema.isDefined shouldBe true
+      else
+        tool.readOnlyHint shouldBe false
+        tool.outputSchema shouldBe None
+
+    val error: Json = Json.Obj(Seq(
+      "got" -> Json.Long(1),
+      "of" -> Json.Long(2),
+      "nameFailures" -> Json.Long(1)
+    ))
+    val fixtures: Map[String, Seq[Json]] = Map(
+      "stems" -> Seq(Json.Obj(Seq(
+        "day" -> Json.Str("2010/07/19"),
+        "stems" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "stem" -> Json.Str("2412"),
+            "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
+            "metadata" -> Json.Obj(Seq(
+              "source" -> Json.Str("camera"),
+              "timestamp" -> Json.Str("2010-07-19T09:05:00"),
+              "date" -> Json.Str("2010-07-19"),
+              "orientation" -> Json.Str("Rotate 90 CW"),
+              "google-media-item-id" -> Json.Str("media-1"),
+              "uploader" -> Json.Str("Ada"),
+              "bad-raw" -> Json.Bool(true),
+              "already-in-google" -> Json.Bool(false)
+            ))
+          )),
+          Json.Obj(Seq(
+            "stem" -> Json.Str("2413"),
+            "extensions" -> Json.Arr(Seq(Json.Str("jpg"), Json.Str("cr2"))),
+            "metadata" -> Json.Obj(Seq(
+              "source" -> Json.Str("scan"),
+              "bad-raw" -> Json.Bool(false)
+            ))
+          ))
+        ))
+      ))),
+      "catalog" -> Seq(Json.Obj(Seq(
+        "albums" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "id" -> Json.Str("a1"),
+            "title" -> Json.Str("June"),
+            "count" -> Json.Long(1),
+            "owned" -> Json.Bool(true),
+            "owner" -> Json.Null,
+            "autoAdd" -> Json.Bool(false),
+            "error" -> Json.Null,
+            "unset" -> Json.Long(0),
+            "items" -> Json.Long(1),
+            "ambiguous" -> Json.Bool(false)
+          )),
+          Json.Obj(Seq(
+            "id" -> Json.Str("a2"),
+            "title" -> Json.Str("Shared"),
+            "count" -> Json.Long(2),
+            "owned" -> Json.Bool(false),
+            "owner" -> Json.Str("Ada"),
+            "autoAdd" -> Json.Bool(false),
+            "error" -> error,
+            "unset" -> Json.Long(1),
+            "items" -> Json.Long(1),
+            "ambiguous" -> Json.Bool(true)
+          ))
+        ))
+      ))),
+      "items" -> Seq(Json.Obj(Seq(
+        "id" -> Json.Str("a1"),
+        "error" -> error,
+        "items" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "filename" -> Json.Str("one.jpg"),
+            "date" -> Json.Null,
+            "key" -> Json.Str("k1"),
+            "uploader" -> Json.Null
+          )),
+          Json.Obj(Seq(
+            "filename" -> Json.Str("two.jpg"),
+            "date" -> Json.Str("2010-07-19"),
+            "key" -> Json.Str("k2"),
+            "uploader" -> Json.Str("Ada")
+          ))
+        )),
+        "unsets" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "date" -> Json.Null,
+            "key" -> Json.Str("u1"),
+            "uploader" -> Json.Str("Ada")
+          )),
+          Json.Obj(Seq(
+            "date" -> Json.Str("2010-07-20"),
+            "key" -> Json.Str("u2"),
+            "uploader" -> Json.Null
+          ))
+        ))
+      ))),
+      "match" -> Seq(Json.Obj(Seq(
+        "id" -> Json.Str("a1"),
+        "matched" -> Json.Arr(Seq(Json.Obj(Seq(
+          "day" -> Json.Str("2010/07/19"),
+          "stem" -> Json.Str("2412")
+        )))),
+        "unmatched" -> Json.Arr(Seq(Json.Str("k9")))
+      ))),
+      "include" -> Seq(
+        Json.Obj(Seq(
+          "rendered" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"))),
+          "logical" -> Json.Arr(Seq(Json.Str("2010/07/19/2412")))
+        )),
+        Json.Obj(Seq(
+          "rendered" -> Json.Arr(Seq.empty),
+          "logical" -> Json.Arr(Seq.empty)
+        ))
+      ),
+      "drift" -> Seq(Json.Obj(Seq(
+        "actions" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "class" -> Json.Str("create"),
+            "title" -> Json.Str("Trip"),
+            "path" -> Json.Str("2010/07/19"),
+            "reason" -> Json.Null,
+            "id" -> Json.Null
+          )),
+          Json.Obj(Seq(
+            "class" -> Json.Str("pending-rename"),
+            "title" -> Json.Str("July"),
+            "path" -> Json.Str("2010/07"),
+            "reason" -> Json.Str("leftover"),
+            "id" -> Json.Str("a1")
+          ))
+        ))
+      ))),
+      "missing" -> Seq(Json.Obj(Seq(
+        "missing" -> Json.Arr(Seq(Json.Obj(Seq(
+          "title" -> Json.Str("June"),
+          "date" -> Json.Str("-"),
+          "filename" -> Json.Str("one.jpg"),
+          "uploader" -> Json.Str("-"),
+          "key" -> Json.Str("k1")
+        ))))
+      )))
+    )
+    Cli.mcpReadOnly.foreach: name =>
+      val schema: Json = tools.find(_.name == name).flatMap(_.outputSchema).getOrElse(fail(name))
+      fixtures(name).foreach: value =>
+        withClue(s"$name $value"):
+          outputMismatch(schema, value) shouldBe None
+
+    val drift: Json = tools.find(_.name == "drift").flatMap(_.outputSchema).getOrElse(fail("drift"))
+    outputMismatch(drift, Json.Obj(Seq(
+      "actions" -> Json.Arr(Seq.empty),
+      "links" -> Json.Arr(Seq.empty)
+    ))).isDefined shouldBe true
+    outputMismatch(drift, Json.Obj(Seq(
+      "actions" -> Json.Arr(Seq(Json.Obj(Seq(
+        "class" -> Json.Str("create"),
+        "title" -> Json.Str("Trip"),
+        "path" -> Json.Str("2010/07/19")
+      ))))
+    ))).isDefined shouldBe true
+    val missing: Json = tools.find(_.name == "missing").flatMap(_.outputSchema).getOrElse(fail("missing"))
+    outputMismatch(missing, Json.Obj(Seq(
+      "missing" -> Json.Arr(Seq(Json.Obj(Seq(
+        "title" -> Json.Str("June"),
+        "date" -> Json.Null,
+        "filename" -> Json.Str("one.jpg"),
+        "uploader" -> Json.Str("-"),
+        "key" -> Json.Str("k1")
+      ))))
+    ))).isDefined shouldBe true
 
   private val mcpStringSchema: Json = Json.Obj(Seq("type" -> Json.Str("string")))
 
@@ -1140,3 +1327,108 @@ class CliTest extends AnyFlatSpec, Matchers:
 
   private def sync(path: Option[String], recursive: Boolean, dryRun: Boolean): Cli.Outcome =
     Cli.Run(Cli.SyncArgs(path, recursive, dryRun))
+
+// Subset the read tools advertise. No $ref. A null in a null|object union skips properties.
+private[photo] def outputMismatch(schema: Json, value: Json): Option[String] =
+  def mismatch(current: Json, sample: Json, path: String): Option[String] = current match
+    case Json.Obj(fields) =>
+      typeNames(fields) match
+        case Left(message) => Some(s"$path $message")
+        case Right(names) =>
+          names.find(name => accepts(name, sample)) match
+            case None =>
+              Some(s"$path is not ${names.mkString(" or ")}: $sample")
+            case Some("object") =>
+              objectMismatch(fields, sample, path)
+            case Some("array") =>
+              arrayMismatch(fields, sample, path)
+            case Some(_) =>
+              None
+    case _ =>
+      Some(s"$path schema is not an object")
+
+  def typeNames(fields: Seq[(String, Json)]): Either[String, Seq[String]] =
+    fields.collectFirst { case ("type", typed) => typed } match
+      case Some(Json.Str(name)) => Right(Seq(name))
+      case Some(Json.Arr(items)) if items.isEmpty => Left("type union is empty")
+      case Some(Json.Arr(items)) =>
+        items.foldLeft[Either[String, Seq[String]]](Right(Seq.empty)):
+          case (Left(message), _) => Left(message)
+          case (Right(acc), Json.Str(name)) => Right(acc :+ name)
+          case (Right(_), _) => Left("type union is not strings")
+      case Some(_) => Left("type is not a string or array")
+      case None => Left("has no type")
+
+  def accepts(name: String, sample: Json): Boolean = (name, sample) match
+    case ("string", Json.Str(_)) => true
+    case ("integer", Json.Long(_)) => true
+    case ("boolean", Json.Bool(_)) => true
+    case ("array", Json.Arr(_)) => true
+    case ("object", Json.Obj(_)) => true
+    case ("null", Json.Null) => true
+    case _ => false
+
+  def objectMismatch(fields: Seq[(String, Json)], sample: Json, path: String): Option[String] =
+    sample match
+      case Json.Obj(props) =>
+        propertiesOf(fields, path) match
+          case Left(message) => Some(message)
+          case Right(properties) =>
+            closedOf(fields, path) match
+              case Left(message) => Some(message)
+              case Right(closed) =>
+                requiredOf(fields, path) match
+                  case Left(message) => Some(message)
+                  case Right(required) =>
+                    val unknown: Option[String] =
+                      if !closed then None
+                      else props.collectFirst:
+                        case (key, _) if !properties.exists(_._1 == key) => s"$path.$key is not allowed"
+                    val missing: Option[String] = required.collectFirst:
+                      case name if !props.exists(_._1 == name) => s"$path.$name is required"
+                    val nested: Option[String] = props.foldLeft[Option[String]](None):
+                      case (Some(message), _) => Some(message)
+                      case (None, (key, child)) =>
+                        properties.find(_._1 == key) match
+                          case None => None
+                          case Some((_, childSchema)) => mismatch(childSchema, child, s"$path.$key")
+                    unknown.orElse(missing).orElse(nested)
+      case _ =>
+        Some(s"$path is not an object")
+
+  def propertiesOf(fields: Seq[(String, Json)], path: String): Either[String, Seq[(String, Json)]] =
+    fields.collectFirst { case ("properties", value) => value } match
+      case Some(Json.Obj(nested)) => Right(nested)
+      case Some(_) => Left(s"$path properties is not an object")
+      case None => Left(s"$path has no properties")
+
+  def closedOf(fields: Seq[(String, Json)], path: String): Either[String, Boolean] =
+    fields.collectFirst { case ("additionalProperties", value) => value } match
+      case None => Right(false)
+      case Some(Json.Bool(allowed)) => Right(!allowed)
+      case Some(_) => Left(s"$path additionalProperties is not a boolean")
+
+  def requiredOf(fields: Seq[(String, Json)], path: String): Either[String, Seq[String]] =
+    fields.collectFirst { case ("required", value) => value } match
+      case None => Right(Seq.empty)
+      case Some(Json.Arr(items)) =>
+        items.foldLeft[Either[String, Seq[String]]](Right(Seq.empty)):
+          case (Left(message), _) => Left(message)
+          case (Right(acc), Json.Str(name)) => Right(acc :+ name)
+          case (Right(_), _) => Left(s"$path required entry is not a string")
+      case Some(_) =>
+        Left(s"$path required is not an array")
+
+  def arrayMismatch(fields: Seq[(String, Json)], sample: Json, path: String): Option[String] =
+    sample match
+      case Json.Arr(items) =>
+        fields.collectFirst { case ("items", itemSchema) => itemSchema } match
+          case None => Some(s"$path has no items")
+          case Some(itemSchema) =>
+            items.zipWithIndex.foldLeft[Option[String]](None):
+              case (Some(message), _) => Some(message)
+              case (None, (item, index)) => mismatch(itemSchema, item, s"$path[$index]")
+      case _ =>
+        Some(s"$path is not an array")
+
+  mismatch(schema, value, "$")

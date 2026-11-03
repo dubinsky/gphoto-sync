@@ -1417,6 +1417,11 @@ object Cli:
     "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
   )
 
+  // Reads only. A name here has an output schema. Writes stay out, so both hints stay unset.
+  private[photo] val mcpReadOnly: Set[String] = Set(
+    "stems", "catalog", "items", "match", "include", "drift", "missing"
+  )
+
   private val mcpDoNotEcho: String =
     "Do not echo album ids, item keys, or google-media-item-id in chat."
 
@@ -1435,7 +1440,9 @@ object Cli:
     name: String,
     description: String,
     params: List[McpParam],
-    required: List[String]
+    required: List[String],
+    readOnlyHint: Boolean,
+    outputSchema: Option[Json]
   ):
     def inputSchema: Json = mcpSchema(params, required)
 
@@ -1464,7 +1471,21 @@ object Cli:
       else if command.name == "create-album" || command.name == "delete-album" then List("title")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
-    McpTool(command.name, mcpDescription(command), params, required)
+    val readOnly: Boolean = mcpReadOnly.contains(command.name)
+    val outputSchema: Option[Json] =
+      if !readOnly then None
+      else Some(command.name match
+        case "stems" => mcpStemsOutputSchema
+        case "catalog" => mcpCatalogOutputSchema
+        case "items" => mcpItemsOutputSchema
+        case "match" => mcpMatchOutputSchema
+        case "include" => mcpIncludeOutputSchema
+        case "drift" => mcpDriftOutputSchema
+        case "missing" => mcpMissingOutputSchema
+        case other =>
+          throw IllegalStateException(s"$other is read-only and has no output schema")
+      )
+    McpTool(command.name, mcpDescription(command), params, required, readOnly, outputSchema)
 
   private def mcpDescription(command: Command): String =
     val base: String = s"${command.help} (photo agent ${command.name}). $mcpDoNotEcho"
@@ -1523,6 +1544,181 @@ object Cli:
         "type" -> Json.Str("array"),
         "items" -> Json.Obj(Seq("type" -> Json.Str("string")))
       ))
+
+  private def mcpJsonType(kind: String): Json =
+    Json.Obj(Seq("type" -> Json.Str(kind)))
+
+  private def mcpNullableType(kind: String): Json =
+    Json.Obj(Seq("type" -> Json.Arr(Seq(Json.Str(kind), Json.Str("null")))))
+
+  private def mcpArraySchema(items: Json): Json =
+    Json.Obj(Seq(
+      "type" -> Json.Str("array"),
+      "items" -> items
+    ))
+
+  private def mcpObjectSchema(
+    properties: Seq[(String, Json)],
+    required: Seq[String],
+    nullable: Boolean = false
+  ): Json =
+    val kind: Json =
+      if nullable then Json.Arr(Seq(Json.Str("object"), Json.Str("null")))
+      else Json.Str("object")
+    Json.Obj(Seq(
+      "type" -> kind,
+      "additionalProperties" -> Json.Bool(false),
+      "properties" -> Json.Obj(properties),
+      "required" -> Json.Arr(required.map(Json.Str.apply))
+    ))
+
+  private val mcpStringArraySchema: Json = mcpArraySchema(mcpJsonType("string"))
+
+  private val mcpErrorOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "got" -> mcpJsonType("integer"),
+      "of" -> mcpJsonType("integer"),
+      "nameFailures" -> mcpJsonType("integer")
+    ),
+    Seq("got", "of", "nameFailures"),
+    nullable = true
+  )
+
+  private val mcpMetadataOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "source" -> mcpJsonType("string"),
+      "timestamp" -> mcpJsonType("string"),
+      "date" -> mcpJsonType("string"),
+      "orientation" -> mcpJsonType("string"),
+      "google-media-item-id" -> mcpJsonType("string"),
+      "uploader" -> mcpJsonType("string"),
+      "bad-raw" -> mcpJsonType("boolean"),
+      "already-in-google" -> mcpJsonType("boolean")
+    ),
+    Seq.empty
+  )
+
+  private val mcpStemsOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "day" -> mcpJsonType("string"),
+      "stems" -> mcpArraySchema(mcpObjectSchema(
+        Seq(
+          "stem" -> mcpJsonType("string"),
+          "extensions" -> mcpStringArraySchema,
+          "metadata" -> mcpMetadataOutputSchema
+        ),
+        Seq("stem", "extensions", "metadata")
+      ))
+    ),
+    Seq("day", "stems")
+  )
+
+  private val mcpCatalogOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "albums" -> mcpArraySchema(mcpObjectSchema(
+        Seq(
+          "id" -> mcpJsonType("string"),
+          "title" -> mcpJsonType("string"),
+          "count" -> mcpJsonType("integer"),
+          "owned" -> mcpJsonType("boolean"),
+          "owner" -> mcpNullableType("string"),
+          "autoAdd" -> mcpJsonType("boolean"),
+          "error" -> mcpErrorOutputSchema,
+          "unset" -> mcpJsonType("integer"),
+          "items" -> mcpJsonType("integer"),
+          "ambiguous" -> mcpJsonType("boolean")
+        ),
+        Seq(
+          "id", "title", "count", "owned", "owner", "autoAdd", "error", "unset", "items", "ambiguous"
+        )
+      ))
+    ),
+    Seq("albums")
+  )
+
+  private val mcpItemOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "filename" -> mcpJsonType("string"),
+      "date" -> mcpNullableType("string"),
+      "key" -> mcpJsonType("string"),
+      "uploader" -> mcpNullableType("string")
+    ),
+    Seq("filename", "date", "key", "uploader")
+  )
+
+  private val mcpUnsetOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "date" -> mcpNullableType("string"),
+      "key" -> mcpJsonType("string"),
+      "uploader" -> mcpNullableType("string")
+    ),
+    Seq("date", "key", "uploader")
+  )
+
+  private val mcpItemsOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "id" -> mcpJsonType("string"),
+      "error" -> mcpErrorOutputSchema,
+      "items" -> mcpArraySchema(mcpItemOutputSchema),
+      "unsets" -> mcpArraySchema(mcpUnsetOutputSchema)
+    ),
+    Seq("id", "error", "items", "unsets")
+  )
+
+  private val mcpMatchOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "id" -> mcpJsonType("string"),
+      "matched" -> mcpArraySchema(mcpObjectSchema(
+        Seq(
+          "day" -> mcpJsonType("string"),
+          "stem" -> mcpJsonType("string")
+        ),
+        Seq("day", "stem")
+      )),
+      "unmatched" -> mcpStringArraySchema
+    ),
+    Seq("id", "matched", "unmatched")
+  )
+
+  private val mcpIncludeOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "rendered" -> mcpStringArraySchema,
+      "logical" -> mcpStringArraySchema
+    ),
+    Seq("rendered", "logical")
+  )
+
+  private val mcpDriftOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "actions" -> mcpArraySchema(mcpObjectSchema(
+        Seq(
+          "class" -> mcpJsonType("string"),
+          "title" -> mcpJsonType("string"),
+          "path" -> mcpJsonType("string"),
+          "reason" -> mcpNullableType("string"),
+          "id" -> mcpNullableType("string")
+        ),
+        Seq("class", "title", "path", "reason", "id")
+      ))
+    ),
+    Seq("actions")
+  )
+
+  private val mcpMissingOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "missing" -> mcpArraySchema(mcpObjectSchema(
+        Seq(
+          "title" -> mcpJsonType("string"),
+          "date" -> mcpJsonType("string"),
+          "filename" -> mcpJsonType("string"),
+          "uploader" -> mcpJsonType("string"),
+          "key" -> mcpJsonType("string")
+        ),
+        Seq("title", "date", "filename", "uploader", "key")
+      ))
+    ),
+    Seq("missing")
+  )
 
   private def readMcpFields(
     params: List[McpParam],
