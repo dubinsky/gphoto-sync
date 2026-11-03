@@ -12,8 +12,8 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
-  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`, and
-  `photo agent delete-item`.
+  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
+  `photo agent delete-item`, and `photo agent upload-item`.
 
 ## Files
 
@@ -41,6 +41,8 @@ Delete forever and Empty trash are not clicked.
 `photo agent delete-item` publishes nothing for Delete forever or Empty trash.
 When the confirm ran and the key is still present, `catalog.txt` stays byte-identical.
 `photo agent delete-item` does not change the archive or `.download/`.
+`photo agent upload-item` adds one destination `item` line only for the clean confirmed key and otherwise leaves
+`catalog.txt` byte-identical.
 `photo reconcile` reads and writes `album-links.tsv`.
 `photo refresh` does not write that file.
 `photo agent download-item` stages that original in `.download/`, as Download describes.
@@ -55,6 +57,7 @@ When the confirm ran and the key is still present, `catalog.txt` stays byte-iden
 `photo agent remove-from-album` removes one item from an album.
 `photo agent move-item` adds one item to an existing album and then removes it from the source album, in one session.
 `photo agent delete-item` moves one library item to Google Photos trash.
+`photo agent upload-item` uploads one archive file into an existing album.
 `photo publish` and `photo sync` still change Google Photos.
 
 `catalog.txt.partial` and `catalog.txt.previous` exist only while a catalog rewrite is published.
@@ -928,6 +931,7 @@ A catalog read that throws after both halves return is refresh-only and leaves t
 Success names the action and both titles.
 Stdout has no album id and no item key.
 
+`photo agent upload-item` uploads one archive file into an existing album, as Upload describes.
 `photo agent delete-item` moves one library item to Google Photos trash, as Delete describes.
 `--title` names the album.
 `--id` is required when more than one album has that title, and it must match.
@@ -1002,6 +1006,53 @@ The archive inbox `.upload` is a different directory.
   Takeout remains the bulk alternative for archives.
 - Still never invent or guess batchexecute RPC ids for download.
 
+### Upload
+
+`photo agent upload-item` uploads one archive file into an existing album.
+The positional is `path`.
+`--dest` names the destination album.
+`--dest-id` is required when more than one album has that title, and it must match.
+This is not `batchCreate`.
+The command does not call `Publish`.
+Before Chrome opens, the command refuses when `path` is outside the archive, when the extension is not `jpg`, `jpeg`,
+`mov`, `mp4`, `avi`, or `3gp`, when gather's stem and civil-date rules find a catalog item, or when that file's sidecar
+has a non-empty `google-media-item-id` or `already-in-google` true.
+An exact stem matches.
+One leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix matches.
+RAW, `heic`, `png`, and `webp` stay local.
+`acceptPut` runs on the destination before Chrome opens, and again on the reread under the lock.
+An `owner` line, `auto-add`, unread names, or an excepted stem does not open Chrome.
+A refusal is usage.
+Chrome stays closed and `catalog.txt` stays byte-identical.
+The command opens the destination album.
+When that album has items, the control is the button whose accessible name is `Add photos`.
+When that album is empty, the control is the button whose accessible name is `Select photos`.
+If neither button is present, the command fails one-click and clicks nothing else.
+That button opens the add dialog.
+The commit control is the button whose accessible name is `Select from computer`.
+That button opens the file chooser.
+Choosing the file uploads it into the open album.
+There is no second confirm button.
+The dialog button `Done` adds selected library photos.
+The command does not click it.
+The command does not click a photo in the picker.
+The command does not click New album, Add a title, or the menuitem Import photos from your computer.
+If `Select from computer` is absent, the command fails one-click and clicks nothing else.
+The command reads the destination keys with `snAcKc` before the file is chosen and again after it.
+Do not invent or guess a `batchexecute` RPC for the upload.
+It publishes only when the destination key set grew by exactly one key that was absent before and that key's `fDcn4b`
+filename equals the archive file's name.
+The new `item` line uses that filename.
+The date and the uploader come from that read when it has them.
+The destination `count` increases by one.
+When an `error` line is present, `of` becomes the new count and `got` increases by one.
+`name-failures` stays.
+When there is no `error` line, none is written.
+No `unset` line is written.
+Anything else leaves `catalog.txt` byte-identical.
+A miss before the file is chosen is one-click.
+After the file was chosen, a live read that is not the clean case is refresh-only.
+
 ### Delete
 
 `photo agent delete-item` moves one library item to Google Photos trash.
@@ -1043,3 +1094,4 @@ When the confirm ran and the source key is still present, `catalog.txt` stays by
 `photo agent remove-from-album` is the applier for removing an item from an album.
 `photo agent move-item` is the applier for moving an item from one album to another.
 `photo agent delete-item` is the applier for moving one library item to trash.
+`photo agent upload-item` is the applier for uploading one archive file into an existing album.

@@ -114,6 +114,11 @@ object Cli:
     current: Option[String],
     id: Option[String]
   ) extends Parsed
+  private[photo] final case class UploadItemArgs(
+    path: Option[String],
+    dest: Option[String],
+    destId: Option[String]
+  ) extends Parsed
   private[photo] case object AgentDriftArgs extends Parsed
   private[photo] case object AgentMissingArgs extends Parsed
 
@@ -351,6 +356,7 @@ object Cli:
     case _: RemoveFromAlbumArgs => true
     case _: MoveItemArgs => true
     case _: DeleteItemArgs => true
+    case _: UploadItemArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -385,6 +391,7 @@ object Cli:
     case _: RemoveFromAlbumArgs => "remove-from-album"
     case _: MoveItemArgs => "move-item"
     case _: DeleteItemArgs => "delete-item"
+    case _: UploadItemArgs => "upload-item"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
@@ -397,6 +404,7 @@ object Cli:
     case _: RemoveFromAlbumArgs => true
     case _: MoveItemArgs => true
     case _: DeleteItemArgs => true
+    case _: UploadItemArgs => true
     case _ => false
 
   private def remoteStep(
@@ -676,6 +684,8 @@ object Cli:
       AgentMove(title, item, current, dest, id, destId)
     case DeleteItemArgs(title, item, current, id) =>
       AgentDelete(title, item, current, id)
+    case UploadItemArgs(path, dest, destId) =>
+      AgentUpload(path, dest, destId)
     case AgentDriftArgs =>
       AgentDrift
     case AgentMissingArgs =>
@@ -868,6 +878,8 @@ object Cli:
       Usage("use photo agent move-item")
     case "delete-item" :: _ =>
       Usage("use photo agent delete-item")
+    case "upload-item" :: _ =>
+      Usage("use photo agent upload-item")
     case name :: rest =>
       requestCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -1324,6 +1336,20 @@ object Cli:
       )
     ),
     Command(
+      name = "upload-item",
+      help = "upload one archive file into an album",
+      positionals = List(Required("path", path = true)),
+      flags = List(
+        Flag("dest", None, TextKind, "destination album title"),
+        Flag("dest-id", None, TextKind, "destination album id")
+      ),
+      build = (values, args) => UploadItemArgs(
+        args.headOption,
+        values.texts.get("dest"),
+        values.texts.get("dest-id")
+      )
+    ),
+    Command(
       name = "drift",
       help = "report create, update, gone, pending, pending-rename, and skipped",
       positionals = Nil,
@@ -1343,7 +1369,7 @@ object Cli:
   private val mcpToolNames: Set[String] = Set(
     "stems", "catalog", "items", "match", "include", "rename-album",
     "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-    "move-item", "delete-item", "drift", "missing"
+    "move-item", "delete-item", "upload-item", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1389,6 +1415,7 @@ object Cli:
         List("title", "item", "current", "dest")
       else if command.name == "remove-from-album" || command.name == "delete-item" then
         List("title", "item", "current")
+      else if command.name == "upload-item" then List("path", "dest")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
     McpTool(command.name, mcpDescription(command), params, required)
@@ -1398,7 +1425,7 @@ object Cli:
     if command.name == "items" || command.name == "match" || command.name == "rename-album" ||
       command.name == "download-item" || command.name == "add-to-album" ||
       command.name == "remove-from-album" || command.name == "move-item" ||
-      command.name == "delete-item"
+      command.name == "delete-item" || command.name == "upload-item"
     then
       s"$base $mcpAmbiguousId"
     else base

@@ -1257,6 +1257,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           (_, _) => fail("delete-item was forwarded")
         )
         deleted should include ("delete-item runs in the calling process")
+        val (_, uploaded) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","upload-item","--dest","Keep Title","2010/07/01/pic.jpg"]}""",
+          (_, _) => fail("upload-item was forwarded")
+        )
+        uploaded should include ("upload-item runs in the calling process")
         Refresh.openAct = _ =>
           new RenameFake((_, _) => (), onDescription = (_, text) =>
             if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
@@ -2607,6 +2613,426 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
+  "upload-item" should "refuse a path before Chrome opens" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      val outside: File = JFiles.createTempFile("upload-outside", ".jpg").toFile
+      val sibling: File = File(archive.getParentFile, archive.getName + "-extra/2010/07/01/pic.jpg")
+      sibling.getParentFile.mkdirs()
+      JFiles.write(sibling.toPath, Array.emptyByteArray)
+      touch(File(archive, "2010/02/31"), "pic.jpg")
+      touch(File(archive, "2010/07/01"), "pic.png")
+      touch(File(archive, "2010/07/01"), "pic")
+      touch(archive, "notes.jpg")
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          called = true
+          new RenameFake((_, _) => (), onUpload = (_, _, _) => fail("opened"))
+        Cli.parse(List("agent", "upload-item", "--dest", "Dest Title")) shouldBe Cli.Usage("missing path")
+        usage(session, "agent", "upload-item", "2010/07/01/pic.jpg") shouldBe "missing dest"
+        usage(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/missing.jpg") shouldBe
+          "no such file"
+        usage(session, "agent", "upload-item", "--dest", "Dest Title", outside.getCanonicalPath) shouldBe
+          "path is outside the archive"
+        usage(session, "agent", "upload-item", "--dest", "Dest Title", sibling.getCanonicalPath) shouldBe
+          "path is outside the archive"
+        usage(session, "agent", "upload-item", "--dest", "Dest Title", "notes.jpg") shouldBe "not a picture path"
+        usage(session, "agent", "upload-item", "--dest", "Dest Title", "2010/02/31/pic.jpg") shouldBe
+          "not a picture path"
+        usage(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.png") shouldBe
+          "extension is not uploadable"
+        usage(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic") shouldBe
+          "extension is not uploadable"
+        called shouldBe false
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+      outside.delete()
+
+  it should "refuse a catalog item, a sidecar mark, or a destination rule before Chrome opens" in :
+    uploadRefuse(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title"
+      ),
+      "catalog item exists"
+    )
+    uploadRefuse(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\tIMG_pic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title"
+      ),
+      "catalog item exists"
+    )
+    uploadRefuse(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\tpic.cr2\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title"
+      ),
+      "catalog item exists"
+    )
+    uploadRefuse(
+      Seq("album\talbDst\t0\tDest Title"),
+      "already in google",
+      prepare = archive =>
+        JFiles.writeString(
+          File(archive, "2010/07/01/pic.toml").toPath,
+          Metadata.encode(Metadata(`google-media-item-id` = Some("media-1")))
+        )
+    )
+    uploadRefuse(
+      Seq("album\talbDst\t0\tDest Title"),
+      "already in google",
+      prepare = archive =>
+        JFiles.writeString(
+          File(archive, "2010/07/01/pic.toml").toPath,
+          Metadata.encode(Metadata(`already-in-google` = Some(true)))
+        )
+    )
+    uploadRefuse(
+      Seq(
+        "album\talbDst\t0\tDest Title",
+        "owner\talbDst\tAda"
+      ),
+      "destination has an owner"
+    )
+    uploadRefuse(
+      Seq(
+        "album\talbDst\t0\tDest Title",
+        "auto-add\talbDst"
+      ),
+      "destination is auto-add"
+    )
+    uploadRefuse(
+      Seq(
+        "album\talbDst\t2\tDest Title",
+        "error\talbDst\t1\t2\t1",
+        "unset\talbDst\t2010-07-09\tkeyUnset\t-"
+      ),
+      "destination has unread names"
+    )
+    uploadRefuse(
+      Seq(
+        "album\talbOne\t0\tDest Title",
+        "album\talbTwo\t0\tDest Title"
+      ),
+      "more than one album titled \"Dest Title\""
+    )
+    uploadRefuse(
+      Seq(
+        "album\talbDst\t0\tDest Title",
+        "album\talbOther\t0\tOther"
+      ),
+      "catalog title does not match",
+      args = Seq("--dest-id", "albOther")
+    )
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      JFiles.writeString(File(archive, "Dest.toml").toPath, "include = [\"2010/07/01 except pic\"]\n")
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          called = true
+          new RenameFake((_, _) => (), onUpload = (_, _, _) => fail("opened"))
+        usage(session, "agent", "upload-item", "--dest", "Dest", "2010/07/01/pic.jpg") shouldBe
+          "destination excepts \"pic\""
+        called shouldBe false
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "open for a file the catalog does not already have" in :
+    openedUpload(Seq(
+      "album\talbOther\t1\tOther",
+      "item\talbOther\tpic.jpg\t2010-07-02\tkeyPic\t-",
+      "album\talbDst\t0\tDest Title"
+    ))
+    openedUpload(Seq(
+      "album\talbOther\t1\tOther",
+      "item\talbOther\tother.jpg\t2010-07-01\tkeyOther\t-",
+      "album\talbDst\t0\tDest Title"
+    ))
+    openedUpload(Seq(
+      "album\talbOther\t1\tOther",
+      "item\talbOther\tIMG_IMG_pic.jpg\t2010-07-01\tkeyPic\t-",
+      "album\talbDst\t0\tDest Title"
+    ))
+    openedUpload(
+      Seq("album\talbDst\t0\tDest Title"),
+      prepare = archive =>
+        JFiles.writeString(
+          File(archive, "2010/07/01/pic.toml").toPath,
+          Metadata.encode(Metadata(`already-in-google` = Some(false), `google-media-item-id` = Some("")))
+        )
+    )
+    openedUpload(Seq("album\talbDst\t0\tDest Title"), relative = "2010/07/01/pic.JPG")
+    openedUpload(Seq("album\talbDst\t0\tDest Title"), relative = "2010/07/01/clip.3gp")
+
+  it should "write the confirmed item from the archive name and the read" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbDst\t1\tDest Title",
+        "error\talbDst\t1\t1\t0",
+        "item\talbDst\tkeep.jpg\t2010-07-02\tkeyKeep\tAda",
+        "album\talbKeep\t0\tKeep Title"
+      )
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (destination, file, current) =>
+            current shouldBe "pic.jpg"
+            file.getName shouldBe "pic.jpg"
+            destination.title shouldBe "Dest Title"
+            Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", Some("Ida"))
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "upload-item \"pic.jpg\" \"Dest Title\"\n"
+            text should not include ("albDst")
+            text should not include ("keyNew")
+            field(value, "action") shouldBe Json.Str("upload-item")
+            field(value, "title") shouldBe Json.Str("Dest Title")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("albDst")
+            field(value, "itemKey") shouldBe Json.Str("keyNew")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(
+          "album\talbDst\t2\tDest Title",
+          "error\talbDst\t2\t2\t0",
+          "item\talbDst\tkeep.jpg\t2010-07-02\tkeyKeep\tAda",
+          "item\talbDst\tpic.jpg\t2011-01-02\tkeyNew\tIda",
+          "album\talbKeep\t0\tKeep Title"
+        )
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        File(places.directory, "status.txt").exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "accept an absolute path and write no error line when the read has no date" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      val picture: File = File(archive, "2010/07/01/pic.jpg")
+      picture.getParentFile.mkdirs()
+      JFiles.write(picture.toPath, Array.emptyByteArray)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (_, _, current) =>
+            current shouldBe "pic.jpg"
+            Catalog.Item("ignored.jpg", None, "keyNew", None)
+          )
+        val (_, result) = exec(
+          session, "agent", "upload-item", "--dest", "Dest Title", picture.getCanonicalPath
+        )
+        result match
+          case Result.Ok(text, _) =>
+            text shouldBe "upload-item \"pic.jpg\" \"Dest Title\"\n"
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(
+          "album\talbDst\t1\tDest Title",
+          "item\talbDst\tpic.jpg\t-\tkeyNew\t-"
+        )
+        JFiles.readString(catalogFile.toPath) should not include ("error")
+        JFiles.readString(catalogFile.toPath) should not include ("unset")
+        places.directory.exists shouldBe false
+        released(places)
+
+  it should "fail one-click when the chooser was not reached" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
+            throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
+          )
+        val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("failed upload-item")
+            text should include ("filename \"pic.jpg\"")
+            text should include ("step Add photos or Select photos, then Select from computer")
+            text should include ("recovery one-click")
+            text should include ("Add photos is absent")
+            text should not include ("refresh-only")
+            text should not include ("albDst")
+            field(value, "action") shouldBe Json.Str("upload-item")
+            field(value, "title") shouldBe Json.Str("Dest Title")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "itemKey") shouldBe Json.Str("")
+            field(value, "albumId") shouldBe Json.Str("albDst")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+        released(places)
+
+  it should "stay refresh-only when the file was chosen and the read is not clean" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
+            throw new Refresh.ActMiss("live key differs", confirmed = true)
+          )
+        val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should not include ("one-click")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "stay one-click when the upload throws before the file is chosen" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
+            throw IllegalStateException("chooser missed")
+          )
+        val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            text should include ("chooser missed")
+            text should not include ("refresh-only")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+
+  it should "stay refresh-only when the catalog write fails after the file was chosen" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
+            catalogFile.setReadable(false, false)
+            Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+          )
+        try
+          val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
+          result match
+            case Result.Failed(text, value, message) =>
+              message shouldBe Refresh.MutationFailed
+              text should include ("recovery refresh-only")
+              text should include ("catalog unchanged")
+              field(value, "recovery") shouldBe Json.Str("refresh-only")
+            case other =>
+              fail(other.toString)
+          catalogFile.setReadable(true, false)
+          JFiles.readString(catalogFile.toPath) shouldBe catalog
+          File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        finally
+          catalogFile.setReadable(true, false)
+
+  it should "report already running without opening the browser" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      withAct(archive): (session, places, _) =>
+        places.directory.mkdirs()
+        JFiles.writeString(File(places.directory, "status.txt").toPath, "phase=items\nAF1QipBusy\n")
+        Refresh.claim(places.lock) match
+          case Refresh.Claim.Owned(channel, lock) =>
+            try
+              Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
+              val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
+              result match
+                case Result.Failed(text, value, message) =>
+                  message shouldBe "already running"
+                  Cli.processCode(result) shouldBe 2
+                  text should not include ("AF1Qip")
+                  value shouldBe Json.Null
+                case other =>
+                  fail(other.toString)
+              JFiles.readString(catalogFile.toPath) shouldBe catalog
+            finally
+              Refresh.release(channel, lock)
+          case Refresh.Claim.Busy =>
+            fail("lock was already held")
+
+  private def uploadRefuse(
+    lines: Seq[String],
+    message: String,
+    prepare: File => Unit = _ => (),
+    args: Seq[String] = Seq.empty
+  ): Unit =
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, lines*)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      prepare(archive)
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          called = true
+          new RenameFake((_, _) => (), onUpload = (_, _, _) => fail("opened"))
+        val argv: Seq[String] =
+          Seq("agent", "upload-item", "--dest", "Dest Title") ++ args ++ Seq("2010/07/01/pic.jpg")
+        usage(session, argv*) shouldBe message
+        called shouldBe false
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  private def openedUpload(
+    lines: Seq[String],
+    relative: String = "2010/07/01/pic.jpg",
+    prepare: File => Unit = _ => ()
+  ): Unit =
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, lines*)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, relative).getParentFile, File(relative).getName)
+      prepare(archive)
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
+            called = true
+            throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
+          )
+        val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", relative)
+        called shouldBe true
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
   private def deleteCatalog(archive: File): File =
     writeCatalog(
       archive,
@@ -2792,7 +3218,9 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (_, _, _) =>
       throw IllegalStateException("put"),
     onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
-    onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => ()
+    onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+    onUpload: (Catalog.Album, File, String) => Catalog.Item = (_, _, _) =>
+      throw IllegalStateException("upload")
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -2806,6 +3234,8 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       onPut(item, destination, current)
     def takeOut(album: Catalog.Album, item: Catalog.Item): Unit = onTake(album, item)
     def trash(album: Catalog.Album, item: Catalog.Item): Unit = onTrash(album, item)
+    def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item =
+      onUpload(destination, file, current)
 
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile

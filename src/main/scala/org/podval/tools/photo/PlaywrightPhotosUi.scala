@@ -1,6 +1,6 @@
 package org.podval.tools.photo
 
-import com.microsoft.playwright.{BrowserContext, BrowserType, Locator, Page, Playwright}
+import com.microsoft.playwright.{BrowserContext, BrowserType, FileChooser, Locator, Page, Playwright}
 import com.microsoft.playwright.options.{AriaRole, WaitUntilState}
 import scala.annotation.tailrec
 import scala.util.matching.Regex
@@ -293,6 +293,64 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         click(button.first())
         if readKeyList(album.id).contains(item.key) then
           throw Refresh.ActMiss("source key is present", confirmed = true)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
+  def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/album/${destination.id}")
+      val before: Set[String] = readKeyList(destination.id).toSet
+      // Add photos is the toolbar once the album has items. An empty album shows Select photos.
+      val opener: String =
+        if visibleButton("Add photos") then "Add photos"
+        else if visibleButton("Select photos") then "Select photos"
+        else throw Refresh.ActMiss("Add photos is absent", confirmed = false)
+      refuseDialog()
+      val open: Locator = page.getByRole(
+        AriaRole.BUTTON,
+        new Page.GetByRoleOptions().setName(opener).setExact(true)
+      )
+      click(open.first())
+      refuseDialog()
+      if !visibleButton("Select from computer") then
+        throw Refresh.ActMiss("Select from computer is absent", confirmed = false)
+      val computer: Locator = page.getByRole(
+        AriaRole.BUTTON,
+        new Page.GetByRoleOptions().setName("Select from computer").setExact(true)
+      )
+      // Dialog Done adds a library photo. The chooser is the upload, so the flag flips at setFiles.
+      val chooser: FileChooser = page.waitForFileChooser(new Runnable:
+        def run(): Unit = click(computer.first())
+      )
+      confirmed = true
+      chooser.setFiles(file.toPath)
+
+      @tailrec
+      def awaitAdded(deadline: Long): Catalog.Item =
+        val after: Seq[String] = readKeyList(destination.id)
+        val added: Seq[String] = after.filterNot(before.contains)
+        val named: Map[String, Catalog.Item] =
+          if added.lengthIs == 1 then
+            readFact(added.head, destination.id) match
+              case Some(found) => Map(added.head -> found)
+              case None => Map.empty
+          else Map.empty
+        AgentCommands.confirmedAdd(before, after, named, current) match
+          case Some(found) => found
+          case None if System.currentTimeMillis >= deadline =>
+            throw Refresh.ActMiss("live key differs", confirmed = true)
+          case None =>
+            Thread.sleep(300)
+            awaitAdded(deadline)
+
+      awaitAdded(System.currentTimeMillis + 20000L)
     catch
       case miss: Refresh.ActMiss =>
         throw miss

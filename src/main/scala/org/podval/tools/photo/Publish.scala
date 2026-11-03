@@ -27,7 +27,7 @@ final case class Publish(path: Option[String], recursive: Boolean, dryRun: Boole
 object Publish:
   private val batchSize: Int = 50
 
-  private val uploadable: Seq[String] = Seq(
+  private[photo] val uploadable: Seq[String] = Seq(
     Extension.JPG.name,
     Extension.JPEG.name,
     Extension.MOV.name,

@@ -222,6 +222,19 @@ private[photo] final class AgentDelete(
       AgentCommands.catching(loaded):
         AgentCommands.deleteItem(loaded, albums, wantedTitle, id, key, wantedCurrent)
 
+private[photo] final class AgentUpload(
+  path: Option[String],
+  dest: Option[String],
+  destId: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wantedPath: String = path.getOrElse(throw IllegalArgumentException("missing path"))
+      val destTitle: String = dest.getOrElse(throw IllegalArgumentException("missing dest"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.uploadItem(loaded, albums, wantedPath, destTitle, destId)
+
 private[photo] object AgentDrift extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentCommands.catching(session):
@@ -513,6 +526,7 @@ private[photo] object AgentCommands:
   private val AddStep: String = "More options, then Add to album, then the existing album"
   private val RemoveStep: String = "More options, then Remove from album, then Remove"
   private val TrashStep: String = "Move to trash"
+  private val UploadStep: String = "Add photos or Select photos, then Select from computer"
 
   def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     withLock(session, album.title)(heldRename(session, album, updated))
@@ -619,6 +633,18 @@ private[photo] object AgentCommands:
     requireCurrent(item.filename, current)
     acceptDelete(album, item)
     withLock(session, album.title)(heldDelete(session, album.id, key, current))
+
+  def uploadItem(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    pathText: String,
+    destTitle: String,
+    destId: Option[String]
+  ): (Session, Result) =
+    val ready: UploadReady = checkUpload(session, albums, pathText, destTitle, destId)
+    withLock(ready.session, ready.destination.title)(
+      heldUpload(ready.session, pathText, ready.destination.id)
+    )
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -1061,6 +1087,39 @@ private[photo] object AgentCommands:
         try ui.close()
         catch case _: Exception => ()
 
+  private final case class UploadReady(
+    session: Session,
+    destination: Catalog.Album,
+    file: File,
+    name: String
+  )
+
+  // The reread stays outside the catch. A refusal here is usage, and Chrome stays closed.
+  private def heldUpload(session: Session, pathText: String, destinationId: String): (Session, Result) =
+    val ready: UploadReady = rereadUpload(session, pathText, destinationId)
+    var ui: PhotosAct = null
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      val read: Catalog.Item = ui.uploadItem(ready.destination, ready.file, ready.name)
+      val line: Catalog.Item = Catalog.Item(ready.name, read.date, read.key, read.uploader)
+      publishAlbum(session, Seq(ready.destination.id -> (dest => revisedAdd(dest, line)))) match
+        case Right(next) =>
+          uploadOk(next, ready.destination, ready.name, line.key)
+        case Left(message) =>
+          uploadFailed(session, ready.destination, ready.name, "refresh-only", message)
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("upload-item failed")
+        uploadFailed(session, ready.destination, ready.name, recovery, detail)
+      case error: Exception =>
+        uploadFailed(session, ready.destination, ready.name, "one-click", Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
   private def rereadAdd(
     session: Session,
     sourceId: String,
@@ -1180,16 +1239,101 @@ private[photo] object AgentCommands:
     if item.uploader.isDefined then throw IllegalArgumentException("uploader is not -")
 
   private def acceptPut(session: Session, destination: Catalog.Album, item: Catalog.Item): Unit =
+    acceptDestination(session, destination, knownLocal(session, item))
+
+  private def acceptDestination(
+    session: Session,
+    destination: Catalog.Album,
+    known: Option[(LocalDate, String)]
+  ): Unit =
     if destination.owner.isDefined then throw IllegalArgumentException("destination has an owner")
     if destination.autoAdd then throw IllegalArgumentException("destination is auto-add")
     if destination.error.exists(_.nameFailures > 0) || destination.unsets.nonEmpty then
       throw IllegalArgumentException("destination has unread names")
-    knownLocal(session, item).foreach: (day, stem) =>
+    known.foreach: (day, stem) =>
       albumFile(session, destination).foreach: file =>
         val album: Album = Album.read(session.root.configuration.archive, file)
         // Same test Sync uses for an except.
         if album.positive(day, stem) && !album.claims(day, stem) then
           throw IllegalArgumentException(s"destination excepts ${Album.quote(stem)}")
+
+  private def checkUpload(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    pathText: String,
+    destTitle: String,
+    destId: Option[String]
+  ): UploadReady =
+    val (file, relative) = uploadFile(session, pathText)
+    val (day, stem, name) = uploadName(relative)
+    val destination: Catalog.Album = select(albums, destTitle, destId)
+    val loaded: Session = refuseUpload(session, albums, destination, day, stem)
+    UploadReady(loaded, destination, file, name)
+
+  private def rereadUpload(session: Session, pathText: String, destinationId: String): UploadReady =
+    val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val albums: Seq[Catalog.Album] = Catalog.read(catalog)
+    val destination: Catalog.Album = albums.find(_.id == destinationId).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    val (file, relative) = uploadFile(session, pathText)
+    val (day, stem, name) = uploadName(relative)
+    val loaded: Session = refuseUpload(session, albums, destination, day, stem)
+    UploadReady(loaded, destination, file, name)
+
+  private def refuseUpload(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    destination: Catalog.Album,
+    day: LocalDate,
+    stem: String
+  ): Session =
+    val (loaded, grouped, sidecars) = loadGrouped(session, civilDay(session.root, day), readSidecars = true)
+    val groupedMap: Map[String, Set[String]] = grouped.toMap
+    val matched: Boolean = albums.exists: album =>
+      album.items.exists: item =>
+        item.date.contains(day) && {
+          val (itemStem, itemExt) = Files.splitOnLast(item.filename, '.')
+          resolve(groupedMap, itemStem, itemExt).contains(stem)
+        }
+    if matched then throw IllegalArgumentException("catalog item exists")
+    sidecars.get(stem).foreach: metadata =>
+      val marked: Boolean =
+        metadata.`google-media-item-id`.exists(_.nonEmpty) || metadata.`already-in-google`.contains(true)
+      if marked then throw IllegalArgumentException("already in google")
+    acceptDestination(loaded, destination, Some(day -> stem))
+    loaded
+
+  private def uploadFile(session: Session, text: String): (File, String) =
+    val archive: File = session.root.configuration.archive.getCanonicalFile
+    val raw: File = if text.startsWith("/") then File(text) else File(archive, text)
+    if !raw.isFile then throw IllegalArgumentException("no such file")
+    val file: File = raw.getCanonicalFile
+    val root: java.nio.file.Path = archive.toPath
+    val placed: java.nio.file.Path = file.toPath
+    // startsWith is a path prefix, so an archive named ".../originals" does not accept ".../originals-extra".
+    if !placed.startsWith(root) || placed.getNameCount <= root.getNameCount then
+      throw IllegalArgumentException("path is outside the archive")
+    (file, Album.relative(archive, file))
+
+  private def uploadName(relative: String): (LocalDate, String, String) =
+    def fixed(text: String, length: Int): Boolean =
+      text.length == length && text.forall(_.isDigit)
+    relative.split('/').filter(_.nonEmpty).toSeq match
+      case Seq(year, month, day, name) if fixed(year, 4) && fixed(month, 2) && fixed(day, 2) =>
+        val date: LocalDate =
+          try LocalDate.of(year.toInt, month.toInt, day.toInt)
+          catch case _: DateTimeException =>
+            throw IllegalArgumentException("not a picture path")
+        val (rawStem, extension) = Files.splitOnLast(name, '.')
+        val lowered: Option[String] = extension.map(_.toLowerCase(java.util.Locale.ROOT)).filter(_.nonEmpty)
+        if rawStem.isEmpty then throw IllegalArgumentException("not a picture path")
+        else if !lowered.exists(Publish.uploadable.contains) then
+          throw IllegalArgumentException("extension is not uploadable")
+        // Grouped keys drop one leading camera prefix. The except stem and the sidecar key are that name.
+        (date, Pictures.dropOnePrefix(rawStem), name)
+      case _ =>
+        throw IllegalArgumentException("not a picture path")
 
   private def albumFile(session: Session, destination: Catalog.Album): Option[File] =
     val archive: File = session.root.configuration.archive
@@ -1229,6 +1373,42 @@ private[photo] object AgentCommands:
       "itemKey" -> Json.Str(key)
     ))
     (session, Result.Ok(text, value))
+
+  private def uploadOk(
+    session: Session,
+    destination: Catalog.Album,
+    filename: String,
+    key: String
+  ): (Session, Result) =
+    val text: String = PlaywrightPhotosUi.redactSecrets(
+      s"upload-item ${Album.quote(filename)} ${Album.quote(destination.title)}\n",
+      destination.title
+    )
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("upload-item"),
+      "title" -> Json.Str(destination.title),
+      "catalog" -> Json.Str("updated"),
+      "albumId" -> Json.Str(destination.id),
+      "itemKey" -> Json.Str(key)
+    ))
+    (session, Result.Ok(text, value))
+
+  private def uploadFailed(
+    session: Session,
+    destination: Catalog.Album,
+    filename: String,
+    recovery: String,
+    detail: String
+  ): (Session, Result) =
+    itemFailed(
+      session,
+      destination,
+      Catalog.Item(filename, None, "", None),
+      "upload-item",
+      UploadStep,
+      recovery,
+      detail
+    )
 
   private def moveOk(
     session: Session,
