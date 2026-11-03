@@ -517,9 +517,9 @@ An album with no `owner` line, whose Google title is an override, stores that ex
 `--new` is a string the operator chose.
 
 Sync compares Library API media ids and does not match filenames, so it cannot reconcile a hand-made album.
-`photo agent move-item` uses the catalog item key, as Requests describes.
-Stop at the local file.
+`photo agent album-file` stops at the local file.
 It does not publish, sync, or run `repair --names`.
+`photo agent move-item` uses the catalog item key, as Requests describes.
 
 ### Names
 
