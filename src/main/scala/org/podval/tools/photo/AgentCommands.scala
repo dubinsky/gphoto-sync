@@ -1051,8 +1051,7 @@ private[photo] object AgentCommands:
     val (stem, extension) = Files.splitOnLast(item.filename, '.')
     item.date.flatMap: date =>
       val (_, grouped, _) = loadGrouped(session, civilDay(session.root, date))
-      resolve(grouped.toMap, stem, extension).map: local =>
-        Album.splitPath(s"${Title.dayText(date)}/$local")
+      resolve(grouped.toMap, stem, extension).map(local => (date, local))
 
   private[photo] def confirmedAdd(
     before: Set[String],
