@@ -70,29 +70,37 @@ object Repair:
     dryRun: Boolean,
     setTimestamp: (Picture, String, Instant) => Unit
   ): Unit =
-    PictureAudit(picture).timestamp.foreach: timestamp =>
+    PictureAudit(picture).writesMtime.foreach: clock =>
+      val instant: Instant = clock.civil.atZone(picture.zone).toInstant
       picture.extensions.foreach: extension =>
-        if !Dates.equal(timestamp, extension.current) then
-          act(dryRun, s"$extension: changing timestamp ${extension.current} to $timestamp"):
-            setTimestamp(picture, extension.name, timestamp)
+        if !Dates.sameSecond(clock.civil, extension.current, picture.zone) then
+          act(dryRun, s"$extension: changing timestamp ${extension.current} to $instant"):
+            setTimestamp(picture, extension.name, instant)
 
   private def repairDays(picture: Picture, dryRun: Boolean): Unit =
-    PictureAudit(picture).dayShouldBe.foreach: dayShouldBe =>
-      act(dryRun, s"moving $picture to $dayShouldBe"):
-        val originals: File = picture.root.configuration.archive
-        val from: String = s"${Album.relative(originals, picture.parent.directory)}/${picture.name}"
-        val to: String = s"${Album.relative(originals, dayShouldBe.directory)}/${picture.name}"
-        // Reject a bad curated file before any picture moves, so a later repair --days can retry.
-        Album.rewriteInclude(originals, from, to)
-        Files.mkDirs(dayShouldBe.directory)
-        val extensionNamesAll: Set[String] =
-          picture.extensions.map(_.name) ++ Option.when(picture.hasMetadata)(Metadata.extension).toSet
-        extensionNamesAll.foreach: extension =>
-          val fromFile: File = File(picture.parent.directory, s"${picture.name}.$extension")
-          val toFile: File = File(dayShouldBe.directory, s"${picture.name}.$extension")
-          Transcript.println(s"moving $fromFile to $toFile")
-          Files.move(fromFile, toFile)
-        Files.deleteEmptyDirectories(picture.parent.directory)
+    val audit: Dates.Assessment = PictureAudit(picture)
+    audit.disagreement match
+      case Some(disagree) =>
+        Transcript.println(
+          s"DATE DISAGREES WITH TIMESTAMP $picture timestamp=${disagree.timestamp} date=${disagree.date}"
+        )
+      case None =>
+        audit.dayShouldBe.foreach: dayShouldBe =>
+          act(dryRun, s"moving $picture to $dayShouldBe"):
+            val originals: File = picture.root.configuration.archive
+            val from: String = s"${Album.relative(originals, picture.parent.directory)}/${picture.name}"
+            val to: String = s"${Album.relative(originals, dayShouldBe.directory)}/${picture.name}"
+            // Reject a bad curated file before any picture moves, so a later repair --days can retry.
+            Album.rewriteInclude(originals, from, to)
+            Files.mkDirs(dayShouldBe.directory)
+            val extensionNamesAll: Set[String] =
+              picture.extensions.map(_.name) ++ Option.when(picture.hasMetadata)(Metadata.extension).toSet
+            extensionNamesAll.foreach: extension =>
+              val fromFile: File = File(picture.parent.directory, s"${picture.name}.$extension")
+              val toFile: File = File(dayShouldBe.directory, s"${picture.name}.$extension")
+              Transcript.println(s"moving $fromFile to $toFile")
+              Files.move(fromFile, toFile)
+            Files.deleteEmptyDirectories(picture.parent.directory)
 
   private def act(dryRun: Boolean, message: String)(action: => Unit): Unit =
     Transcript.println(message)

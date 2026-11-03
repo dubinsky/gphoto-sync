@@ -5,7 +5,7 @@ import org.scalatest.matchers.should.Matchers
 import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Files as JFiles
-import java.time.ZoneId
+import java.time.{LocalDateTime, ZoneId}
 import javax.imageio.ImageIO
 
 class RepairTest extends AnyFlatSpec, Matchers:
@@ -185,6 +185,117 @@ class RepairTest extends AnyFlatSpec, Matchers:
       )
       set shouldBe false
 
+  "repair --days" should "not move an evening jpeg with no offset" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/11/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      val out: String = capture(run(root, "2009/06/11", days = true))
+      picture.isFile shouldBe true
+      File(originals, "2009/06/12/3404.jpg").exists shouldBe false
+      out should not include ("moving")
+
+  it should "move an evening jpeg back from the next UTC day" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/12/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      val out: String = capture(run(root, "2009/06/12", days = true))
+      picture.exists shouldBe false
+      File(originals, "2009/06/11/3404.jpg").isFile shouldBe true
+      out should include ("/2009/06/11")
+
+  it should "not let a compact filename override DateTimeOriginal" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/10/20090610_120000.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      run(root, "2009/06/10", days = true)
+      picture.exists shouldBe false
+      File(originals, "2009/06/11/20090610_120000.jpg").isFile shouldBe true
+
+  it should "move a counter-named file to the sidecar date and keep the embedded time" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/11/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      JFiles.writeString(File(originals, "2009/06/11/3404.toml").toPath, "date = 2012-04-04\n")
+      val audit: Dates.Assessment = PictureAudit(root.parsePicture("2009/06/11/3404"))
+      val clock: Dates.Clock = audit.clock.getOrElse(fail("no clock"))
+      (clock.source eq Dates.Source.SidecarDate) shouldBe true
+      clock.civil.isEqual(LocalDateTime.parse("2012-04-04T23:41:10.050")) shouldBe true
+      clock.offset.isEmpty shouldBe true
+      run(root, "2009/06/11", days = true)
+      picture.exists shouldBe false
+      File(originals, "2012/04/04/3404.jpg").isFile shouldBe true
+      File(originals, "2012/04/04/3404.toml").isFile shouldBe true
+
+  it should "not move or stamp when the sidecar date disagrees with the timestamp" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/11/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      JFiles.writeString(
+        File(originals, "2009/06/11/3404.toml").toPath,
+        "timestamp = \"2011-06-29T09:45:00\"\ndate = 2011-06-30\n"
+      )
+      var set: Boolean = false
+      val out: String = capture(run(
+        root,
+        "2009/06/11",
+        timestamps = true,
+        days = true,
+        setTimestamp = (_, _, _) => set = true
+      ))
+      set shouldBe false
+      picture.isFile shouldBe true
+      File(originals, "2011/06/29/3404.jpg").exists shouldBe false
+      File(originals, "2011/06/30/3404.jpg").exists shouldBe false
+      out should include (
+        "DATE DISAGREES WITH TIMESTAMP /2009/06/11/3404 timestamp=2011-06-29T09:45 date=2011-06-30"
+      )
+
+  it should "not move or stamp an upload with no clock" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, ".upload/1000.jpg")
+      picture.getParentFile.mkdirs()
+      ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
+      var set: Boolean = false
+      val repairOut: String = capture(run(
+        root,
+        ".upload",
+        timestamps = true,
+        days = true,
+        setTimestamp = (_, _, _) => set = true
+      ))
+      set shouldBe false
+      picture.isFile shouldBe true
+      repairOut should not include ("moving")
+      val (_, result) = ListPictures(
+        ".upload",
+        long = true,
+        nameContains = None,
+        hasExtension = None,
+        property = None,
+        timestampFromNameFormat = None,
+        timestampFromName = false,
+        timestampFromNameOnly = false,
+        timestampsVary = false,
+        hasMetadata = false,
+        noNormal = false,
+        noTimestamp = false,
+        wrongTimestamp = false,
+        wrongDay = false,
+        wrong = false
+      ).execute(Session(root))
+      result match
+        case Result.Ok(text, _) =>
+          text should include ("NO TIMESTAMP")
+          text should not include ("source=FolderDay")
+        case Result.Failed(text, _, message) => fail(s"$message\n$text")
+        case Result.Usage(message) => fail(message)
+
   private def run(
     root: Root,
     path: String,
@@ -226,3 +337,8 @@ class RepairTest extends AnyFlatSpec, Matchers:
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))
     file.delete()
+
+  private def copyFixture(name: String, to: File): Unit =
+    to.getParentFile.mkdirs()
+    val url = Option(getClass.getResource(name)).getOrElse(fail(s"missing $name"))
+    JFiles.copy(File(url.toURI).toPath, to.toPath)

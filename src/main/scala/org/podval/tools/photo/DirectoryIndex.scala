@@ -7,7 +7,7 @@ private[photo] final case class FileStamp(name: String, size: Long, mtimeMillis:
 
 private[photo] final case class ListedExtension(
   name: String,
-  fromMetadata: Option[Instant],
+  read: Option[Dates.Clock],
   current: Instant
 )
 
@@ -19,8 +19,8 @@ private[photo] final case class ListedPicture(
   hasNormal: Boolean,
   extensionNames: Vector[String],
   metadata: Metadata,
-  timestampFromName: Option[(Instant, String)],
-  audit: PictureAudit.Result,
+  timestampFromName: Option[(Dates.Clock, String)],
+  audit: Dates.Assessment,
   extensions: Vector[ListedExtension]
 )
 

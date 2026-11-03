@@ -1,7 +1,8 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.time.Instant
+import java.time.{Instant, ZoneId}
+import java.time.temporal.ChronoUnit
 
 final case class ListPictures(
   path: String,
@@ -40,9 +41,10 @@ final case class ListPictures(
   ): Session =
     val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(day.directory, filesOnly = true)
     val cached: Option[DirEntry] = session.cached(day.directory).filter(_.fingerprint == fingerprint)
+    val zone: ZoneId = day.root.configuration.zoneId
     cached.flatMap(_.listing) match
       case Some(rows) =>
-        rows.foreach(lsListed(_, propertyAndValue))
+        rows.foreach(lsListed(_, propertyAndValue, zone))
         session
       case None =>
         val grouped: Seq[(String, Set[String])] = Pictures.group(Files.listFiles(day.directory), NameMode.Leave)
@@ -62,15 +64,16 @@ final case class ListPictures(
     val byName: Map[String, Extension] = picture.extensions.iterator.map(ext => ext.name -> ext).toMap
     val ordered: Vector[Extension] = orderedNames.map(byName)
     val metadata: Metadata = readSidecar(picture)
-    val timestampFromName: Option[(Instant, String)] =
+    val timestampFromName: Option[(Dates.Clock, String)] =
       Dates.fromFileName(picture.name, picture.zone, metadata.date.orElse(picture.parent.day.map(_.date)))
-    val reads: Vector[ListedExtension] = ordered.map(ext => listedExtension(picture, ext))
-    val audit: PictureAudit.Result = PictureAudit.assessed(
+    val reads: Vector[ListedExtension] =
+      ordered.map(ext => listedExtension(picture, ext, Dates.usable(timestampFromName.map(_._1))))
+    val audit: Dates.Assessment = PictureAudit.assessed(
       picture,
-      reads.map(_.fromMetadata).toSet,
+      reads.map(ext => Dates.Observed(ext.name, Extension.votes(ext.name), ext.read)),
       reads.map(_.current),
       timestampFromName.map(_._1),
-      Dates.FromMetadata.timestamp(metadata, picture.zone)
+      metadata
     )
     ListedPicture(
       stem = picture.name,
@@ -92,15 +95,19 @@ final case class ListPictures(
       if corrected.isFile then Metadata.read(corrected)
       else sourceFile(picture, Metadata.extension).filter(_.isFile).fold(Metadata.default)(Metadata.read)
 
-  private def listedExtension(picture: Picture, extension: Extension): ListedExtension =
+  private def listedExtension(
+    picture: Picture,
+    extension: Extension,
+    filename: Option[Dates.Clock]
+  ): ListedExtension =
     val corrected: File = picture.file(extension.name)
-    if corrected.isFile then ListedExtension(extension.name, extension.fromMetadata, extension.current)
+    if corrected.isFile then ListedExtension(extension.name, extension.read, extension.current)
     else
       val source: File = sourceFile(picture, extension.name).getOrElse(corrected)
       ListedExtension(
         extension.name,
-        extension.descriptor.dater.get(source, picture.zone),
-        Dates.FromFile.instant(source, picture.zone)
+        extension.descriptor.dater.read(extension.name, source, filename, picture.zone),
+        Dates.FromFile.instant(source)
       )
 
   private def sourceFile(picture: Picture, extension: String): Option[File] =
@@ -109,7 +116,7 @@ final case class ListPictures(
       .map(_.file)
 
   private def ls(picture: Picture, propertyAndValue: Option[Property.AndValue[?]]): Unit =
-    lazy val audit: PictureAudit.Result = PictureAudit(picture)
+    lazy val audit: Dates.Assessment = PictureAudit(picture)
 
     val included: Boolean =
       (nameContains.isEmpty || picture.name.contains(nameContains.get)) &&
@@ -117,14 +124,22 @@ final case class ListPictures(
       (propertyAndValue.isEmpty || propertyAndValue.get.is(picture.metadata)) &&
       (timestampFromNameFormat.isEmpty || picture.timestampFromName.map(_._2).contains(timestampFromNameFormat.get)) &&
       (!timestampFromName || picture.timestampFromName.isDefined) &&
-      (!timestampFromNameOnly || picture.timestampFromName.isDefined && picture.extensions.forall(_.fromMetadata.isEmpty)) &&
+      (!timestampFromNameOnly || filenameOnly(
+        picture.timestampFromName.isDefined,
+        picture.extensions.map(extension => extension.votes -> extension.read)
+      )) &&
       (!timestampsVary || audit.timestampsVary) &&
       (!hasMetadata || picture.hasMetadata) &&
       (!noNormal || picture.normal.isEmpty) &&
-      (!noTimestamp || audit.timestamp.isEmpty) &&
+      (!noTimestamp || PictureAudit.noAssessedTimestamp(audit)) &&
       (!wrongTimestamp || audit.timestampWrong) &&
       (!wrongDay || audit.dayShouldBe.isDefined) &&
-      (!wrong || (picture.normal.isEmpty || audit.timestamp.isEmpty || audit.timestampWrong || audit.dayShouldBe.isDefined))
+      (!wrong || (
+        picture.normal.isEmpty ||
+        PictureAudit.noAssessedTimestamp(audit) ||
+        audit.timestampWrong ||
+        audit.dayShouldBe.isDefined
+      ))
 
     if included then
       val showAudit: Boolean = long || timestampsVary || noTimestamp || wrongTimestamp || wrongDay || wrong
@@ -135,30 +150,44 @@ final case class ListPictures(
         picture.extensions.map(_.name).mkString("+") ++
         (if picture.normal.isDefined then "" else " NO NORMAL IMAGE" ++ (if !normalGenerationSuppressed then "" else "; GENERATION SUPPRESSED")) ++
         (if !picture.hasMetadata then "" else s" [${picture.metadata}]") ++
-        picture.timestampFromName.fold("")(timestampFromName => s" timestampFromName=${timestampFromName._1} (${timestampFromName._2})") ++
+        picture.timestampFromName.fold("")(found => s" timestampFromName=${show(found._1)} (${found._2})") ++
         (if !showAudit then "" else
-          audit.timestamp.fold(" NO TIMESTAMP")(timestamp => s" timestamp=$timestamp") ++
+          auditText(audit) ++
             audit.dayShouldBe.fold("")(dayShouldBe => s" WRONG DAY; SHOULD BE: $dayShouldBe") ++
             "\n" ++
-            picture.extensions.map(extensionToString(_, audit.timestamp)).mkString("\n")
+            picture.extensions.map(extension =>
+              extensionLine(extension.name, extension.read, extension.current, audit.writesMtime, picture.zone)
+            ).mkString("\n")
           )
       )
 
-  private def lsListed(row: ListedPicture, propertyAndValue: Option[Property.AndValue[?]]): Unit =
+  private def lsListed(
+    row: ListedPicture,
+    propertyAndValue: Option[Property.AndValue[?]],
+    zone: ZoneId
+  ): Unit =
     val included: Boolean =
       (nameContains.isEmpty || row.stem.contains(nameContains.get)) &&
       (hasExtension.isEmpty || row.extensionNames.contains(hasExtension.get)) &&
       (propertyAndValue.isEmpty || propertyAndValue.get.is(row.metadata)) &&
       (timestampFromNameFormat.isEmpty || row.timestampFromName.map(_._2).contains(timestampFromNameFormat.get)) &&
       (!timestampFromName || row.timestampFromName.isDefined) &&
-      (!timestampFromNameOnly || row.timestampFromName.isDefined && row.extensions.forall(_.fromMetadata.isEmpty)) &&
+      (!timestampFromNameOnly || filenameOnly(
+        row.timestampFromName.isDefined,
+        row.extensions.map(extension => Extension.votes(extension.name) -> extension.read)
+      )) &&
       (!timestampsVary || row.audit.timestampsVary) &&
       (!hasMetadata || row.hasMetadata) &&
       (!noNormal || !row.hasNormal) &&
-      (!noTimestamp || row.audit.timestamp.isEmpty) &&
+      (!noTimestamp || PictureAudit.noAssessedTimestamp(row.audit)) &&
       (!wrongTimestamp || row.audit.timestampWrong) &&
       (!wrongDay || row.audit.dayShouldBe.isDefined) &&
-      (!wrong || (!row.hasNormal || row.audit.timestamp.isEmpty || row.audit.timestampWrong || row.audit.dayShouldBe.isDefined))
+      (!wrong || (
+        !row.hasNormal ||
+        PictureAudit.noAssessedTimestamp(row.audit) ||
+        row.audit.timestampWrong ||
+        row.audit.dayShouldBe.isDefined
+      ))
 
     if included then
       val showAudit: Boolean = long || timestampsVary || noTimestamp || wrongTimestamp || wrongDay || wrong
@@ -168,23 +197,50 @@ final case class ListPictures(
         row.extensionNames.mkString("+") ++
         (if row.hasNormal then "" else " NO NORMAL IMAGE" ++ (if !normalGenerationSuppressed then "" else "; GENERATION SUPPRESSED")) ++
         (if !row.hasMetadata then "" else s" [${row.metadata}]") ++
-        row.timestampFromName.fold("")(timestampFromName => s" timestampFromName=${timestampFromName._1} (${timestampFromName._2})") ++
+        row.timestampFromName.fold("")(found => s" timestampFromName=${show(found._1)} (${found._2})") ++
         (if !showAudit then "" else
-          row.audit.timestamp.fold(" NO TIMESTAMP")(timestamp => s" timestamp=$timestamp") ++
+          auditText(row.audit) ++
             row.audit.dayShouldBe.fold("")(dayShouldBe => s" WRONG DAY; SHOULD BE: $dayShouldBe") ++
             "\n" ++
-            row.extensions.map(extension => extensionListed(extension, row.audit.timestamp)).mkString("\n")
+            row.extensions.map(extension =>
+              extensionLine(extension.name, extension.read, extension.current, row.audit.writesMtime, zone)
+            ).mkString("\n")
           )
       )
 
-  private def extensionListed(extension: ListedExtension, timestamp: Option[Instant]): String =
-    s"  .${extension.name}" ++
-      extension.fromMetadata.fold("")(fromMetadata => s" fromMetadata=$fromMetadata") ++
-      s" current=${extension.current}" ++
-      timestamp.flatMap(timestamp => Option.when(!Dates.equal(timestamp, extension.current))(timestamp)).fold("")(toSet => s" toSet=$toSet")
+  private def filenameOnly(hasName: Boolean, captured: Iterable[(Boolean, Option[Dates.Clock])]): Boolean =
+    hasName && captured.forall((votes, clock) => !votes || Dates.usable(clock).isEmpty)
 
-  private def extensionToString(extension: Extension, timestamp: Option[Instant]): String =
-    s"  .${extension.name}" ++
-      extension.fromMetadata.fold("")(fromMetadata => s" fromMetadata=$fromMetadata") ++
-      s" current=${extension.current}" ++
-      timestamp.flatMap(timestamp => Option.when(!Dates.equal(timestamp, extension.current))(timestamp)).fold("")(toSet => s" toSet=$toSet")
+  private def show(clock: Dates.Clock): String =
+    clock.offset.fold(clock.civil.toString)(offset => s"${clock.civil}${offset.getId}")
+
+  private def auditText(audit: Dates.Assessment): String =
+    audit.disagreement match
+      case Some(disagree) =>
+        s" DATE DISAGREES WITH TIMESTAMP timestamp=${disagree.timestamp} date=${disagree.date}"
+      case None =>
+        audit.clock match
+          case Some(clock) if clock.source == Dates.Source.FolderDay =>
+            " NO TIMESTAMP source=FolderDay"
+          case Some(clock) =>
+            s" timestamp=${show(clock)} source=${clock.source}"
+          case None =>
+            " NO TIMESTAMP"
+
+  private def extensionLine(
+    name: String,
+    read: Option[Dates.Clock],
+    current: Instant,
+    writes: Option[Dates.Clock],
+    zone: ZoneId
+  ): String =
+    val currentText: String =
+      current.atZone(zone).toLocalDateTime.truncatedTo(ChronoUnit.SECONDS).toString
+    val toSet: String = writes
+      .filter(clock => !Dates.sameSecond(clock.civil, current, zone))
+      .map(clock => clock.civil.truncatedTo(ChronoUnit.SECONDS).toString)
+      .fold("")(text => s" toSet=$text")
+    s"  .$name" ++
+      read.fold("")(clock => s" read=${show(clock)}") ++
+      s" current=$currentText" ++
+      toSet

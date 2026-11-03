@@ -1006,7 +1006,7 @@ object Cli:
     Flag("property", None, TextKind, "keep pictures whose sidecar property matches"),
     Flag("timestamp-from-name-format", None, TextKind, "keep pictures whose filename clock uses this format"),
     Flag("timestamp-from-name", None, BooleanKind, "keep pictures whose filename encodes a time"),
-    Flag("timestamp-from-name-only", None, BooleanKind, "keep pictures with a filename clock and no file metadata time"),
+    Flag("timestamp-from-name-only", None, BooleanKind, "keep pictures with a filename clock and no usable voting capture time"),
     Flag("timestamps-vary", None, BooleanKind, "keep pictures whose file times differ by more than an hour"),
     Flag("has-metadata", None, BooleanKind, "keep pictures that have a sidecar"),
     Flag("no-normal", None, BooleanKind, "keep pictures with no normal image"),

@@ -1,60 +1,59 @@
 package org.podval.tools.photo
 
-import java.time.{Instant, LocalDate}
+import java.time.{Instant, LocalDateTime, ZoneOffset}
 
-// The timestamp and day assessment printed by ls and applied by repair.
+// The clock and day assessment printed by ls and applied by repair.
 object PictureAudit:
-  final case class Result(
-    timestampsVary: Boolean,
-    timestamp: Option[Instant],
-    timestampWrong: Boolean,
-    dayShouldBe: Option[Day]
-  )
-
-  def apply(picture: Picture): Result =
+  def apply(picture: Picture): Dates.Assessment =
     assessed(
       picture,
-      picture.extensions.map(_.fromMetadata),
+      picture.extensions.toSeq.map: extension =>
+        Dates.Observed(extension.name, extension.votes, extension.read),
       picture.extensions.map(_.current),
       picture.timestampFromName.map(_._1),
-      Dates.FromMetadata.get(picture)
+      picture.metadata
     )
 
-  // currents is only the equality check. The caller supplies the filename clock and sidecar timestamp.
+  def noAssessedTimestamp(audit: Dates.Assessment): Boolean =
+    audit.clock.forall(_.source == Dates.Source.FolderDay)
+
+  // observed is already read, so a misnamed file can supply the bytes without the corrected path.
   private[photo] def assessed(
     picture: Picture,
-    fromMetadata: Set[Option[Instant]],
+    observed: Seq[Dates.Observed],
     currents: Iterable[Instant],
-    filenameClock: Option[Instant],
-    sidecarTimestamp: Option[Instant]
-  ): Result =
-    // Note: in the pictures saw where metadata timestamp is present and file name also encodes the timestamp:
-    // - for '3gp' and 'mp4' metadata timestamp is sometimes later than the file name timestamp
-    //   (and a few hours for the timezone offset) - metadata probably records timestamp of the end of recording;
-    // - for 'jpg' metadata timestamp is sometimes earlier than the file name timestamp by a second;
-    // I pick the earliest ;)
-    val timestamps: Set[Option[Instant]] =
-      fromMetadata ++ Set(filenameClock)
-    val timestampEarliest: Option[Instant] = Dates.earliest(timestamps)
-    val timestampLatest: Option[Instant] = Dates.latest(timestamps)
-    val timestampsVary: Boolean = timestampEarliest.isDefined && timestampLatest.isDefined &&
-      Dates.distanceInMinutes(timestampEarliest.get, timestampLatest.get) > 60
-
-    val timestamp: Option[Instant] = sidecarTimestamp.orElse(timestampEarliest)
-
-    val timestampWrong: Boolean = timestamp.fold(false)(timestamp =>
-      currents.exists(current => !Dates.equal(timestamp, current))
-    )
-
-    val dayShouldBe: Option[Day] = timestamp.flatMap: timestamp =>
-      val date: LocalDate = Dates.toZonedDateTime(timestamp).toLocalDate
-      val year: Int = date.getYear
-      val month: Int = date.getMonthValue
-      val day: Int = date.getDayOfMonth
-
-      // some photos were taken with no time set on the camera...
-      val isDefaultDate: Boolean = month == 1 && day == 1 && (year == 1980 || year == 2000)
-      val isCorrectDay: Boolean = picture.parent.day.exists(_.date.isEqual(date))
-      Option.when(!isDefaultDate && !isCorrectDay)(picture.root.year(year).month(month).day(day))
-
-    Result(timestampsVary, timestamp, timestampWrong, dayShouldBe)
+    filename: Option[Dates.Clock],
+    metadata: Metadata
+  ): Dates.Assessment =
+    // A timestamp that does not parse still throws, as it does today.
+    val timestamp: Option[LocalDateTime] = metadata.timestamp.map(LocalDateTime.parse)
+    val usableName: Option[Dates.Clock] = Dates.usable(filename)
+    val preferred: Option[String] = Dates.captureDescriptor(picture).map(_.name)
+    val embedded: Option[Dates.Clock] = preferred.flatMap: name =>
+      observed.find(_.extension == name).flatMap(row => Dates.usable(row.clock))
+    val folder: Option[Dates.Clock] = picture.parent.day.map: day =>
+      Dates.Clock(day.date.atStartOfDay, None, Dates.Source.FolderDay)
+    val ranked: Dates.Ranked = Dates.rank(Dates.RankInput(
+      timestamp,
+      metadata.date,
+      embedded,
+      usableName,
+      folder
+    ))
+    val winner: Set[LocalDateTime] = ranked match
+      case Dates.Ranked.Chosen(clock) if clock.source != Dates.Source.FolderDay => Set(clock.civil)
+      case _ => Set.empty
+    val voting: Set[LocalDateTime] = observed.iterator
+      .filter(_.votes)
+      .flatMap(row => Dates.usable(row.clock))
+      .map(_.civil)
+      .toSet
+    val vary: Set[LocalDateTime] =
+      timestamp.toSet ++ winner ++ voting ++ usableName.map(_.civil).toSet
+    val timestampsVary: Boolean =
+      vary.size >= 2 &&
+        Dates.minutesApart(
+          vary.minBy(_.toEpochSecond(ZoneOffset.UTC)),
+          vary.maxBy(_.toEpochSecond(ZoneOffset.UTC))
+        ) > Dates.varyMinutes
+    Dates.assessment(picture, ranked, timestampsVary, currents)

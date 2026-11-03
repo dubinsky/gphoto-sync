@@ -1,7 +1,7 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.time.{Instant, ZoneId}
+import java.time.ZoneId
 
 final class Picture(
   override val parent: Pictures,
@@ -27,5 +27,5 @@ final class Picture(
   lazy val metadata: Metadata = Option.when(hasMetadata)(Metadata.read(metadataFile)).getOrElse(Metadata.default)
 
   // Sidecar date is a short-name input here. Claims passes only the folder day.
-  lazy val timestampFromName: Option[(Instant, String)] =
+  lazy val timestampFromName: Option[(Dates.Clock, String)] =
     Dates.fromFileName(name, zone, metadata.date.orElse(parent.day.map(_.date)))

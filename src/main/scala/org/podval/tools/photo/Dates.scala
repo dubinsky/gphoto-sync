@@ -4,7 +4,7 @@ import com.drew.imaging.{ImageMetadataReader, ImageProcessingException}
 import com.drew.metadata.Metadata
 import com.drew.metadata.exif.{ExifDirectoryBase, ExifSubIFDDirectory}
 import com.drew.metadata.mov.metadata.QuickTimeMetadataDirectory
-import scala.sys.process.{Process, ProcessBuilder}
+import scala.sys.process.Process
 import java.io.{File, IOException}
 import java.nio.file.Files
 import java.nio.file.attribute.FileTime
@@ -17,15 +17,9 @@ import java.time.{
   LocalTime,
   OffsetDateTime,
   ZoneId,
-  ZoneOffset,
-  ZonedDateTime
+  ZoneOffset
 }
 import java.time.temporal.ChronoUnit
-
-// correct for single 'mov' and 'mp4' files with no thumbnails to bring the timestamp back;
-// TODO from neighbourly-numbered pictures it is clear that sometimes 'mov' metadata timestamp
-// is zoned, but sometimes it is not :(
-// - or maybe I should treat timestamps from the 'jpg' metadata as zoned too?!
 
 // metadata-extractor *code* suggests that old Canon raw format CRW *is* supported:
 // - in https://github.com/drewnoakes/metadata-extractor/blob/main/Source/com/drew/imaging/tiff/TiffMetadataReader.java
@@ -38,182 +32,72 @@ import java.time.temporal.ChronoUnit
 // - "As CRW files are not TIFF, they should not be handled by TiffReader"
 // TODO suggest clarification to code comments in metadata-extractor.
 
-// TODO for 'cr2, metadata-extractor provides millisecond precision...
-
-// metadata-extractor 2.22.0 reads CR3 (Cr3MetadataReader) and MOV (QuickTimeMetadataReader).
-// HeifReader reads heic, heif, and avif, and ImageMetadataReader already calls it.
-// This program still dates cr3 with dcraw, and mov, mp4, and m4v with ffprobe.
-// Dates.MetadataExtractor is the dater for the stills, heic, heif, avif, png, webp, and the TIFF raw suffixes.
+// metadata-extractor 2.22.0 reads CR3 (Cr3MetadataReader) and stills through ExifSubIFDDirectory.
+// CRW is absent from that switch, so it stays on dcraw.
 // RWL is the Leica suffix; that TIFF arm reads it when the bytes are TIFF. RW2 stays on the same row.
 // Do not add a second reader for them.
 object Dates:
-  def equal(left: Instant, right: Instant): Boolean =
-    Math.abs(left.toEpochMilli - right.toEpochMilli) == 0
-
-  def earliest(options: Set[Option[Instant]]): Option[Instant] =
-    val instants: Set[Instant] = options.flatten
-    Option.when(instants.nonEmpty)(instants.min)
-
-  def latest(options: Set[Option[Instant]]): Option[Instant] =
-    val instants: Set[Instant] = options.flatten
-    Option.when(instants.nonEmpty)(instants.max)
-
-  def distanceInMinutes(from: Instant, to: Instant): Long =
-    Math.abs(ChronoUnit.MINUTES.between(from, to))
-  
-  private def UTC: ZoneOffset = ZoneOffset.UTC
-
-  private def fromZone(instant: Instant, zone: ZoneId): Instant = instant.atZone(zone).withZoneSameLocal(UTC).toInstant
-
-  private def toZone(instant: Instant, zone: ZoneId): Instant = instant.atZone(UTC).withZoneSameLocal(zone).toInstant
-
-  def toZonedDateTime(instant: Instant): ZonedDateTime = instant.atZone(UTC)
-
-  sealed abstract class Dater(val isZoned: Boolean):
-    def toInstant(zone: ZoneId)(localDateTime: LocalDateTime): Instant =
-      val result: Instant = localDateTime.toInstant(UTC)
-      if !isZoned then result else fromZone(result, zone)
-  // TODO this probably should be:
-  //    val zoneOffset: ZoneOffset =
-  //      if !isZoned
-  //      then UTC
-  //      else zone.getRules.getOffset(localDateTime)
-  //
-  //    localDateTime.toInstant(zoneOffset)
-
-  sealed abstract class FromFileMetadata(isZoned: Boolean) extends Dater(isZoned):
-    final def get(picture: Picture, extension: String): Option[Instant] =
-      get(picture.file(extension), picture.zone)
-      
-    def get(file: File, zone: ZoneId): Option[Instant]
-
-  sealed abstract class External(isZoned: Boolean) extends FromFileMetadata(isZoned):
-    protected def process(file: File): ProcessBuilder
-    protected def lineStart: String
-    protected def lineEffective(line: String): String = line
-    protected def format: DateTimeFormatter
-
-    final override def get(file: File, zone: ZoneId): Option[Instant] =
-      try process(file)
-        .!!
-        .split('\n')
-        .find(_.startsWith(lineStart))
-        .map(_.substring(lineStart.length))
-        .map(_.trim)
-        .map(lineEffective)
-        .map(LocalDateTime.parse(_, format))
-        .map(toInstant(zone))
-      catch
-        case _: RuntimeException => None
-
-  sealed class FFProbe(isZoned: Boolean) extends External(isZoned):
-    final override protected def process(file: File): ProcessBuilder =
-      Process(s"ffprobe -v quiet $file -show_entries stream=index,codec_type:stream_tags=creation_time:format_tags=creation_time")
-    final override protected def lineStart: String =
-      "TAG:creation_time="
-    override protected def format: DateTimeFormatter =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.nnnnnn'Z'") // 2010-07-06T20:50:02.000000Z
-
-  object FFProbeZoned extends FFProbe(isZoned = true)
-  object FFProbeUTC extends FFProbe(isZoned = false)
-  object FFProbeAVI extends FFProbe(isZoned = false):
-    override protected def format: DateTimeFormatter =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd' 'HH:mm:ss") // 2003-11-30 19:49:59
-
-  sealed abstract class DCRrawOrRawIdentify(isZoned: Boolean) extends External(isZoned):
-    final override protected def lineStart: String =
-      "Timestamp:"
-    final override protected def lineEffective(line: String): String =
-      if line(8) == ' ' then line.updated(8, '0') else line  // pad day of the month
-    final override protected def format: DateTimeFormatter =
-      DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss yyyy") // Wed Nov  7 03:53:52 2001
-
-  object DCRaw extends DCRrawOrRawIdentify(isZoned = false):
-    override protected def process(file: File): ProcessBuilder = Process(s"dcraw -i -v $file").#||(Process("true"))
-
-  object RawIdentify extends DCRrawOrRawIdentify(isZoned = false):
-    override protected def process(file: File): ProcessBuilder = Process(s"raw-identify -v $file")
-
-  object MetadataExtractor extends FromFileMetadata(isZoned = false):
-    final override def get(file: File, zone: ZoneId): Option[Instant] =
-      val metadata: Metadata = ImageMetadataReader.readMetadata(file)
-      for
-        exif: ExifSubIFDDirectory <- Option(metadata.getFirstDirectoryOfType(classOf[ExifSubIFDDirectory]))
-        instant: Instant <- Option(exif.getDateOriginal).map(_.toInstant)
-      yield
-        if !isZoned then instant else toZone(instant, zone)
-
-  sealed abstract class FromLocalDateTimeName(isZoned: Boolean) extends Dater(isZoned):
-    protected def format: DateTimeFormatter
-
-    final def get(name: String, zone: ZoneId): Option[Instant] =
-      try
-        val localDateTime: LocalDateTime = LocalDateTime.parse(name, format)
-        Some(toInstant(zone)(localDateTime))
-      catch
-        case _: DateTimeParseException => None
-
-  object NameFull extends FromLocalDateTimeName(isZoned = false):
-    override protected def format: DateTimeFormatter =
-      DateTimeFormatter.ofPattern("yyyy-M-d-H-m-s") // 2010-09-14-19-49-2
-
-  object NameCompact extends FromLocalDateTimeName(isZoned = false):
-    override protected def format: DateTimeFormatter =
-      DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss") // 20120812_013216
-
-  object NameMillis extends Dater(isZoned = false):
-    def get(name: String, zone: ZoneId): Option[Instant] =
-      if name.length != 13 || name.exists(char => !char.isDigit) then None else
-        try
-          Some(Instant.ofEpochMilli(name.toLong))
-          // TODO do zoned conversion
-        catch
-          case _: NumberFormatException => None
-
-  object NameShort extends Dater(isZoned = false):
-    private val format: DateTimeFormatter = DateTimeFormatter.ofPattern("HHmmss") // 013216
-
-    def get(name: String, zone: ZoneId, date: LocalDate): Option[Instant] =
-      try
-        Some(toInstant(zone)(date.atTime(LocalTime.parse(name, format))))
-      catch
-        case _: DateTimeParseException => None
-
-  // One trailing v, then one trailing _1. The stored stem is not changed. Callers choose the date NameShort may use.
-  def fromFileName(name: String, zone: ZoneId, shortDate: Option[LocalDate]): Option[(Instant, String)] =
-    val withoutV: String = if name.endsWith("v") then name.dropRight(1) else name
-    val clock: String = if withoutV.endsWith("_1") then withoutV.dropRight("_1".length) else withoutV
-    NameFull.get(clock, zone).map(_ -> "full")
-      .orElse(NameCompact.get(clock, zone).map(_ -> "compact"))
-      .orElse(NameMillis.get(clock, zone).map(_ -> "millis"))
-      .orElse(shortDate.flatMap(date => NameShort.get(clock, zone, date).map(_ -> "short")))
-
-  object FromMetadata extends Dater(isZoned = false):
-    def get(picture: Picture): Option[Instant] =
-      Option.when(picture.hasMetadata)(picture.metadata).flatMap(timestamp(_, picture.zone))
-
-    // Same parse as get, from a sidecar already read. Does not open a file.
-    private[photo] def timestamp(metadata: org.podval.tools.photo.Metadata, zone: ZoneId): Option[Instant] =
-      metadata.timestamp.map(LocalDateTime.parse).map(toInstant(zone))
-
-  object FromFile extends Dater(isZoned = true):
+  // Raw mtime. The caller stores civil.atZone(zone); this does not convert.
+  object FromFile:
     def get(picture: Picture, extension: String): Instant =
-      instant(picture.file(extension), picture.zone)
+      instant(picture.file(extension))
 
-    private[photo] def instant(file: File, zone: ZoneId): Instant =
-      val read: Instant =
-        //Instant.ofEpochMilli(file.lastModified)
-        Files.getLastModifiedTime(file.toPath).toInstant
-
-      // TODO isZoned
-      fromZone(read, zone)
+    private[photo] def instant(file: File): Instant =
+      Files.getLastModifiedTime(file.toPath).toInstant
 
     def set(picture: Picture, extension: String, instant: Instant): Unit =
-      val file: File = picture.file(extension)
-      // TODO isZoned
-      val toSet: Instant = toZone(instant, picture.zone)
-      //file.setLastModified(getMillis(toSet))
-      Files.setLastModifiedTime(file.toPath, FileTime.from(toSet))
+      Files.setLastModifiedTime(picture.file(extension).toPath, FileTime.from(instant))
+
+  sealed abstract class Reader:
+    def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock]
+
+  object StillExif extends Reader:
+    def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
+      readStill(file)
+
+  object DCRaw extends Reader:
+    def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
+      readCrw(file)
+
+  // Library creationdate, then ffprobe. A library failure does not abort.
+  object Mov extends Reader:
+    def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
+      readVideo("mov", file, filename, zone)
+
+  // mp4, m4v, and 3gp. Mp4MetadataReader never builds QuickTimeMetadataDirectory.
+  object FFProbe extends Reader:
+    def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
+      readVideo(extension, file, filename, zone)
+
+  object FFProbeAVI extends Reader:
+    def read(extension: String, file: File, filename: Option[Clock], zone: ZoneId): Option[Clock] =
+      readVideo("avi", file, filename, zone)
+
+  // One trailing v, then one trailing _1. The stored stem is not changed. Callers choose the date a short name may use.
+  def fromFileName(name: String, zone: ZoneId, shortDate: Option[LocalDate]): Option[(Clock, String)] =
+    val withoutV: String = if name.endsWith("v") then name.dropRight(1) else name
+    val text: String = if withoutV.endsWith("_1") then withoutV.dropRight("_1".length) else withoutV
+    def parse(format: DateTimeFormatter, source: Source, kind: String): Option[(Clock, String)] =
+      try Some(Clock(LocalDateTime.parse(text, format), None, source) -> kind)
+      catch case _: DateTimeParseException => None
+    parse(DateTimeFormatter.ofPattern("yyyy-M-d-H-m-s"), Source.FilenameFull, "full")
+      .orElse(parse(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"), Source.FilenameCompact, "compact"))
+      .orElse:
+        if text.length != 13 || text.exists(char => !char.isDigit) then None
+        else
+          try Some(millisClock(text.toLong, zone) -> "millis")
+          catch case _: NumberFormatException => None
+      .orElse(shortDate.flatMap: date =>
+        val parsed: Option[(Clock, String)] =
+          try
+            Some(Clock(
+              date.atTime(LocalTime.parse(text, DateTimeFormatter.ofPattern("HHmmss"))),
+              None,
+              Source.FilenameShort
+            ) -> "short")
+          catch case _: DateTimeParseException => None
+        parsed
+      )
 
   val varyMinutes: Long = 60
 
@@ -343,16 +227,14 @@ object Dates:
       .orElse(picture.raw)
       .orElse(picture.normal.filter(Extension.video.contains))
 
-  // dcraw still returns an instant, so CRW has no civil clock on this path.
   def embeddedClock(picture: Picture, filename: Option[Clock]): Option[Clock] =
     captureDescriptor(picture).flatMap: descriptor =>
-      val file: File = picture.file(descriptor.name)
-      val read: Option[Clock] =
-        if descriptor eq Extension.CRW then None
-        else if Extension.video.contains(descriptor) then
-          readVideo(descriptor.name, file, filename, picture.zone)
-        else readStill(file)
-      usable(read)
+      usable(descriptor.dater.read(
+        descriptor.name,
+        picture.file(descriptor.name),
+        usable(filename),
+        picture.zone
+      ))
 
   final case class ExifWhen(when: Int, sub: Int, offset: Int, source: Source)
 
@@ -507,6 +389,18 @@ object Dates:
         val text: String = line.drop(prefix.length)
         try Some(Clock(LocalDateTime.parse(text, format), None, Source.VideoAvi))
         catch case _: DateTimeParseException => None
+
+  def readCrw(file: File): Option[Clock] =
+    val format: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss yyyy")
+    val prefix: String = "Timestamp:"
+    try
+      Process(s"dcraw -i -v $file").#||(Process("true")).!!.split('\n').find(_.startsWith(prefix)).map: line =>
+        val text: String = line.drop(prefix.length).trim
+        val (head, tail) = text.splitAt(8)
+        val padded: String = if tail.startsWith(" ") then head + "0" + tail.drop(1) else text
+        Clock(LocalDateTime.parse(padded, format), None, Source.CrwDcraw)
+    catch
+      case _: RuntimeException => None
 
   def sameSecond(civil: LocalDateTime, stored: Instant, zone: ZoneId): Boolean =
     civil.truncatedTo(ChronoUnit.SECONDS).isEqual(

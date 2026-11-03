@@ -279,7 +279,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--property  text  keep pictures whose sidecar property matches
         |--timestamp-from-name-format  text  keep pictures whose filename clock uses this format
         |--timestamp-from-name  boolean  keep pictures whose filename encodes a time
-        |--timestamp-from-name-only  boolean  keep pictures with a filename clock and no file metadata time
+        |--timestamp-from-name-only  boolean  keep pictures with a filename clock and no usable voting capture time
         |--timestamps-vary  boolean  keep pictures whose file times differ by more than an hour
         |--has-metadata  boolean  keep pictures that have a sidecar
         |--no-normal  boolean  keep pictures with no normal image

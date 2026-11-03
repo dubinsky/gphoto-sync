@@ -23,8 +23,8 @@ class DatesTest extends AnyFlatSpec, Matchers:
   "fromFileName" should "label each filename clock" in :
     labeled("2010-09-14-19-49-2", "2010-09-14T19:49:02") shouldBe "full"
     labeled("20120812_013216", "2012-08-12T01:32:16") shouldBe "compact"
-    val millis: (Instant, String) = Dates.fromFileName("1300000000000", zone, None).getOrElse(fail("no clock"))
-    millis._1.toEpochMilli shouldBe 1300000000000L
+    val millis: (Dates.Clock, String) = Dates.fromFileName("1300000000000", zone, None).getOrElse(fail("no clock"))
+    millis._1 shouldBe Dates.millisClock(1300000000000L, zone)
     millis._2 shouldBe "millis"
     labeled("013216", "2012-08-12T01:32:16", Some(LocalDate.of(2012, 8, 12))) shouldBe "short"
 
@@ -32,8 +32,8 @@ class DatesTest extends AnyFlatSpec, Matchers:
     labeled("20120812_013216_1", "2012-08-12T01:32:16") shouldBe "compact"
 
   it should "drop one trailing v before _1 without rewriting the stem" in :
-    val plain: Long = clock("20191220_141955")
-    val burst: Long = clock("20191220_141955_1")
+    val plain: Dates.Clock = clock("20191220_141955")
+    val burst: Dates.Clock = clock("20191220_141955_1")
     clock("20191220_141955v") shouldBe plain
     clock("20191220_141955_1v") shouldBe burst
     labeled("20191220_141955v", "2019-12-20T14:19:55") shouldBe "compact"
@@ -279,12 +279,19 @@ class DatesTest extends AnyFlatSpec, Matchers:
   private def sameOffset(found: Option[ZoneOffset], id: Option[String]): Unit =
     found.map(_.getId) shouldBe id
 
-  private def clock(name: String): Long =
-    Dates.fromFileName(name, zone, None).getOrElse(fail(s"no clock in $name"))._1.toEpochMilli
+  private def clock(name: String): Dates.Clock =
+    Dates.fromFileName(name, zone, None).getOrElse(fail(s"no clock in $name"))._1
 
-  private def labeled(name: String, clock: String, shortDate: Option[LocalDate] = None): String =
-    val found: (Instant, String) = Dates.fromFileName(name, zone, shortDate).getOrElse(fail(s"no clock in $name"))
-    found._1.toEpochMilli shouldBe LocalDateTime.parse(clock).toInstant(ZoneOffset.UTC).toEpochMilli
+  private def labeled(name: String, text: String, shortDate: Option[LocalDate] = None): String =
+    val found: (Dates.Clock, String) = Dates.fromFileName(name, zone, shortDate).getOrElse(fail(s"no clock in $name"))
+    found._1.civil.isEqual(LocalDateTime.parse(text)) shouldBe true
+    found._1.offset shouldBe None
+    val expected: Dates.Source = found._2 match
+      case "full" => Dates.Source.FilenameFull
+      case "compact" => Dates.Source.FilenameCompact
+      case "short" => Dates.Source.FilenameShort
+      case other => fail(other)
+    (found._1.source eq expected) shouldBe true
     found._2
 
   private def resource(path: String): File =
