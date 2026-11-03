@@ -34,6 +34,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
   private var page: Page = null
   private var createdOutput: Option[String] = None
   private var focused: Option[Monitor] = None
+  private var savedCursor: Option[(String, String)] = None
+  private var ruleEnabled: Boolean = false
 
   private val albumsUrl: String = "https://photos.google.com/albums"
 
@@ -51,15 +53,29 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       "--no-first-run",
       "--no-default-browser-check",
       "--window-position=40,40",
-      "--window-size=1400,900"
+      "--window-size=1400,900",
+      "--class=gphoto-sync"
     ))
     val home: String = Option(System.getenv("HOME")).filter(_.nonEmpty).getOrElse(System.getProperty("user.home"))
+    // A set signature can outlive the compositor. All three checks have to hold.
+    val hyprland: Boolean =
+      try
+        val signature: String = System.getenv("HYPRLAND_INSTANCE_SIGNATURE")
+        val runtime: String = System.getenv("XDG_RUNTIME_DIR")
+        signature != null && !signature.isBlank &&
+          runtime != null && !runtime.isBlank &&
+          new File(new File(runtime, "hypr"), signature).isDirectory &&
+          { hypr("hyprctl", "monitors", "-j"); true }
+      catch case _: Exception =>
+        false
+    if !hyprland then System.err.println("refresh park: hyprland not running")
+    else preparePark()
     context = created.chromium().launchPersistentContext(Paths.get(home, ".config", "gphoto-sync-chrome"), options)
     context.setDefaultTimeout(0)
     context.setDefaultNavigationTimeout(120000)
     val pages = context.pages()
     page = if pages.isEmpty then context.newPage() else pages.get(0)
-    park()
+    if hyprland then confirmPark()
     navigate(albumsUrl)
 
   def albumCards(): Seq[AlbumCard] =
@@ -932,40 +948,80 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     )
     message.split('\n').headOption.filter(_.nonEmpty).getOrElse("read failed")
 
-  // Launch returns before Hyprland lists the window. One look misses it and the window stays on the focused monitor.
-  // Create the output only after the window is found. A missing window logs and stays where it is.
-  private def park(): Unit =
-    val signature: String = System.getenv("HYPRLAND_INSTANCE_SIGNATURE")
-    if signature == null || signature.isEmpty then ()
-    else
-      try
-        findWindow(System.currentTimeMillis + 20000L) match
-          case None =>
-            System.err.println("refresh park: window missing")
-          case Some(address) =>
-            val cursor: (String, String) = cursorPos()
-            val before: Set[String] = monitorNames().toSet
-            focused = focusedMonitor()
-            hypr("hyprctl", "output", "create", "headless")
-            monitorNames().find(name => !before.contains(name)) match
-              case None =>
-                System.err.println("refresh park: headless missing")
-              case Some(name) =>
-                createdOutput = Some(name)
-                hypr("hyprctl", "eval", placeLua(name))
+  // Launch returns before Hyprland lists the window, so the confirm poll stays when createdOutput is set.
+  // The output is created before launch, and only after detection succeeds.
+  private def preparePark(): Unit =
+    try
+      savedCursor = Some(cursorPos())
+      focused = focusedMonitor()
+      val before: Set[String] = monitorNames().toSet
+      hypr("hyprctl", "output", "create", "headless")
+      monitorNames().find(name => !before.contains(name)) match
+        case None =>
+          System.err.println("refresh park: headless missing")
+        case Some(name) =>
+          createdOutput = Some(name)
+          hypr("hyprctl", "eval", placeLua(name))
+          savedCursor.foreach(cursor =>
+            hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${cursor._1}, y = ${cursor._2} })")
+          )
+          hypr(
+            "hyprctl",
+            "eval",
+            "hl.window_rule({ name = \"gphoto-sync-park\", enabled = true, match = { class = \"^gphoto-sync$\" }, monitor = " +
+              quoted(name + " silent") + ", no_initial_focus = true, no_anim = true })"
+          )
+          ruleEnabled = true
+    catch case error: Exception =>
+      parkLog(error)
+
+  private def confirmPark(): Unit =
+    createdOutput match
+      case None => ()
+      case Some(name) =>
+        try
+          findWindow(System.currentTimeMillis + 20000L) match
+            case None =>
+              System.err.println("refresh park: window missing")
+            case Some((address, monitorId)) =>
+              val onCreated: Boolean = monitorId.exists(id =>
+                topObjects(hypr("hyprctl", "monitors", "-j")).exists(obj =>
+                  jsonNumber(obj, "id").contains(id) && jsonString(obj, "name").contains(name)
+                )
+              )
+              if !onCreated then
+                System.err.println(s"refresh park: window not on $name")
                 hypr("hyprctl", "dispatch", moveLua(name, address))
-                hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${cursor._1}, y = ${cursor._2} })")
-      catch case error: Exception =>
-        parkLog(error)
+                savedCursor.foreach(cursor =>
+                  hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${cursor._1}, y = ${cursor._2} })")
+                )
+        catch case error: Exception =>
+          parkLog(error)
 
   // Remove the output this process created even when the monitor restore throws.
   private def unpark(): Unit =
+    val enabled: Boolean = ruleEnabled
+    val cursor: Option[(String, String)] = savedCursor
+    val monitor: Option[Monitor] = focused
     val name: Option[String] = createdOutput
+    ruleEnabled = false
+    savedCursor = None
+    focused = None
     createdOutput = None
-    name.foreach: output =>
-      try focused.foreach(monitor => hypr("hyprctl", "eval", restoreLua(monitor)))
+    if enabled then
+      try hypr("hyprctl", "eval", "hl.window_rule({ name = \"gphoto-sync-park\", enabled = false })")
       catch case error: Exception =>
         parkLog(error)
+    try monitor.foreach(recorded => hypr("hyprctl", "eval", restoreLua(recorded)))
+    catch case error: Exception =>
+      parkLog(error)
+    try
+      cursor.foreach(recorded =>
+        hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${recorded._1}, y = ${recorded._2} })")
+      )
+    catch case error: Exception =>
+      parkLog(error)
+    name.foreach: output =>
       try hypr("hyprctl", "output", "remove", output)
       catch case error: Exception =>
         parkLog(error)
@@ -1016,7 +1072,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         yield Monitor(name, x, y)
     .flatten
 
-  private def findWindow(deadlineMs: Long): Option[String] =
+  private def findWindow(deadlineMs: Long): Option[(String, Option[String])] =
     findWindowNow() match
       case found @ Some(_) => found
       case None if System.currentTimeMillis >= deadlineMs => None
@@ -1024,10 +1080,10 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         Thread.sleep(300)
         findWindow(deadlineMs)
 
-  private def findWindowNow(): Option[String] =
+  private def findWindowNow(): Option[(String, Option[String])] =
     topObjects(hypr("hyprctl", "clients", "-j")).collectFirst:
       case obj if jsonNumber(obj, "pid").exists(mainChrome) =>
-        jsonString(obj, "address")
+        jsonString(obj, "address").map(address => (address, jsonNumber(obj, "monitor")))
     .flatten
 
   private def mainChrome(pid: String): Boolean =

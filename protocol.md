@@ -219,7 +219,7 @@ A change the operator makes in Google Photos by hand is not written into `catalo
 - The browser is the signed-in profile `~/.config/gphoto-sync-chrome`.
   It is not the normal Chrome profile and does not appear in that profile's avatar menu.
 - The window stays mapped while the album list scrolls.
-  When `HYPRLAND_INSTANCE_SIGNATURE` is set, park the window as Browser says.
+  When detection succeeds, the window is parked as Browser says.
   On any other desktop the window stays visible.
 - The work directory is `${TMPDIR:-/tmp}/gphoto-sync-refresh`, mode `0700`.
   Part files, `albums.tsv`, and `status.txt` are written there.
@@ -399,32 +399,52 @@ The window is headed.
 The catalog read uses a 1400 by 900 viewport and the same window size, at position 40,40.
 It drops the default `--enable-automation` argument.
 It passes `--disable-blink-features=AutomationControlled`, `--no-first-run`, `--no-default-browser-check`,
-`--window-position=40,40`, and `--window-size=1400,900`.
+`--window-position=40,40`, `--window-size=1400,900`, and `--class=gphoto-sync`.
 Downloads are accepted.
 The page timeout is unlimited.
 Navigation waits at most 120 seconds.
 
-Park only when `HYPRLAND_INSTANCE_SIGNATURE` is set.
-Look for the Chrome window until it exists, every 300 ms, for up to 20 seconds.
-Launch returns before Hyprland lists the window.
-One look misses it and leaves the window on the focused monitor.
+Park only when detection succeeds, and do it before Chrome is launched.
+Detection is a non-blank `HYPRLAND_INSTANCE_SIGNATURE`, the directory
+`$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE`, and `hyprctl monitors -j` exiting 0.
+The cursor and the focused monitor are recorded before `hyprctl output create headless`.
+The new name is the one absent from the set taken before the create.
+Do not assume `HEADLESS-1`.
+Place and the focused-monitor restore stay one eval: headless mode `1280x800@60`, position `20000x20000`, scale `1`; the
+focused monitor mode `preferred`, saved `XxY`, scale `auto`.
+Restore the cursor before the rule, and again after a fallback `moveLua`.
+On exit, restore the cursor only when prepare recorded one.
+The `("0", "0")` fold inside `cursorPos` is not a recorded cursor unless prepare stored that result.
+The rule is `hyprctl eval` of `hl.window_rule`, name `gphoto-sync-park`, `enabled` true, `match.class` `^gphoto-sync$`,
+`monitor` the created name plus ` silent`, `no_initial_focus` true, and `no_anim` true.
+Do not use `hyprctl keyword`.
+Do not write the rule or the output into the Hyprland config.
+The same name updates that rule.
+The class match is replaced.
+Effects append.
+The last `monitor` value is the one applied.
+Disabling passes `enabled` false and does not omit it.
+After launch, poll every 300 ms for up to 20 seconds only when this process created an output.
+A failed detection does not poll and does not call `hyprctl` again.
+The command line check is unchanged.
 The window's command line contains `gphoto-sync-chrome` and `remote-debugging-pipe`, and it does not contain `--type=`.
-Remember the cursor with `hyprctl cursorpos` before creating an output.
-Record the focused monitor's name and position.
-Create a headless output with `hyprctl output create headless`.
-The new monitor is the name that was not in the set taken before that create.
-Do not assume the name `HEADLESS-1`.
-Place it with one `hl.monitor` call: that output name, mode `1280x800@60`, position `20000x20000`, scale `1`.
-In the same eval, restore the focused monitor: mode `preferred`, its saved `x` and `y` as `XxY`, scale `auto`.
-Move the Chrome window with `hl.dsp.window.move`.
-`monitor` is the created name, `follow` is false, and `window` is `address:` plus the client address.
-Lua arguments use `=`.
-Restore the cursor with `hyprctl dispatch` of `hl.dsp.cursor.move({ x = N, y = M })`.
+Resolve the client `monitor` id through `hyprctl monitors -j`.
+If that monitor is the created output, do not move the window.
+Otherwise log `refresh park: window not on` and the output name, then dispatch `moveLua` only.
+`moveLua` is `hl.dsp.window.move`, `follow` false, and `window` `address:` plus the address.
+Do not call `output create`, `hl.monitor`, or `hl.window_rule` from that fallback.
+A missing window logs `refresh park: window missing` and leaves the window where it is.
+A missing output is logged in prepare: `refresh park: headless missing`.
+Do not log that line for a failed detection, and do not log it again after launch.
+Leave the window where it is.
 Do not pin the window.
-Do not write the output into the Hyprland config.
-When Chrome exits, restore the physical monitor, then remove only the output this process created.
-If that window is still missing after 20 seconds, log `refresh park: window missing` and leave the window where it is.
-When `HYPRLAND_INSTANCE_SIGNATURE` is unset, leave the window visible.
+On exit, disable the rule if it was enabled, restore the physical monitor when one was recorded, restore the cursor when
+prepare recorded one, and remove only the output this process created.
+A failed detection records none of these, so exit calls no `hyprctl`.
+When detection fails, leave the window visible.
+Log `refresh park: hyprland not running` once.
+Do not call `confirmPark`.
+Do not log `refresh park: headless missing`.
 
 ### Parts and status
 
