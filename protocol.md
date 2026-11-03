@@ -565,7 +565,9 @@ When the raw stem is absent from the archive, drop one leading prefix, whichever
 The prefixes are `MVIMG_`, `PXL_`, `IMG_`, `VID_`, and `MVI_`, in either case.
 A `.MP` or `.PORTRAIT` tail stays in the stem.
 Accept the remainder only when that same day's folder contains it.
-A repaired stem that exists only on another day stays absent.
+A stem found only on the previous or next civil day is a date mismatch, not a match, not a missing item, and not a
+second file.
+A stem found only further away stays unmatched.
 The same camera counter on another day is a different picture.
 
 A still (`jpg` or `gif`) and a video (`mp4`, `mov`, `avi`, or `3gp`) in that day's folder that drop to one stem use a
@@ -781,6 +783,11 @@ A stem that is empty or does not start with a digit stays staged.
 
 The destination is `<archive>/YYYY/MM/DD/<name>`.
 The command creates the day directory.
+If the planned stem is absent on the staged day and `resolve` hits the previous or next civil day, print
+`date-mismatch <catalog-day> <catalog-filename> <archive-day> <stem>`, do not create the day directory, and do not
+write.
+The staged file stays in `.download`.
+A stem found only further away stays the current file-or-keep behavior.
 It never overwrites an archive file.
 If the destination exists, or the repaired name would collide with a different picture, the staged file stays and the
 command reports it.
@@ -1337,11 +1344,13 @@ Keep the album id and the item key out of chat.
 The command does not write.
 A line is `matched <n> of <m>`, then one `<day> <filename> <stem>` line per hit, then one `unmatched <day> <filename>`
 line per miss, and that day is `-` when the catalog date is `-`.
+A date mismatch in that non-hit section is `date-mismatch <catalog-day> <filename> <archive-day> <stem>`.
 An auto-add album prints `skipped auto-add`.
 An album with unread names prints `skipped unread names`.
-JSON has `id`, `matched`, and `unmatched`.
+JSON has `id`, `matched`, `unmatched`, and `dateMismatches`.
 Each matched element has `day` and `stem`.
 `unmatched` is an array of strings.
+Each `dateMismatches` element has `catalogDay`, `filename`, `archiveDay`, and `stem`.
 Keep the album id and every unmatched string out of chat.
 
 ### photo agent locate
@@ -1382,6 +1391,7 @@ Keep the album id out of chat.
 ### photo agent missing
 
 `photo agent missing` lists every catalog item whose filename stem is absent from that civil day's folder.
+A stem on the previous or next civil day is not a missing line, and a stem found only further away still is.
 The command does not write.
 A line is `missing <title> <date> <filename> <uploader>`.
 The title is not quoted.

@@ -256,7 +256,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           |2010/07/19 VID_123.mp4 123v
           |unmatched 2010/07/20 9999.jpg
           |unmatched - ghost.jpg
-          |unmatched 2010/07/19 8888.jpg
+          |date-mismatch 2010/07/19 8888.jpg 2010/07/18 8888
           |""".stripMargin
       result shouldBe Result.Ok(text, matchValue(
         "m1",
@@ -266,7 +266,8 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           "2010/07/19" -> "2412.MP",
           "2010/07/19" -> "123v"
         ),
-        Seq("k2", "k5", "k7")
+        Seq("k2", "k5"),
+        Seq(("2010/07/19", "8888.jpg", "2010/07/18", "8888"))
       ))
       result match
         case Result.Ok(shown, _) =>
@@ -274,7 +275,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       loaded.cached(day).isDefined shouldBe true
-      loaded.cached(File(archive, "2010/07/18")).isEmpty shouldBe true
+      loaded.cached(File(archive, "2010/07/18")).isDefined shouldBe true
       loaded.cached(File(archive, "2010/07/20")).isEmpty shouldBe true
       File(day, "2412.cr2").isFile shouldBe true
       File(day, "2412.jpg").exists shouldBe false
@@ -474,7 +475,8 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       loaded.cached(day).isDefined shouldBe true
-      loaded.cached(File(archive, "2010/07/20")).isEmpty shouldBe true
+      loaded.cached(File(archive, "2010/07/20")).isDefined shouldBe true
+      File(archive, "2010/07/18").exists shouldBe false
 
   "agent years" should "list year names and skip dot directories" in :
     withArchive: archive =>
@@ -855,14 +857,27 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
 
   private def emptyMatch(id: String): Json = matchValue(id, Seq.empty, Seq.empty)
 
-  private def matchValue(id: String, matched: Seq[(String, String)], unmatched: Seq[String]): Json =
+  private def matchValue(
+    id: String,
+    matched: Seq[(String, String)],
+    unmatched: Seq[String],
+    mismatches: Seq[(String, String, String, String)] = Seq.empty
+  ): Json =
     Json.Obj(Seq(
       "id" -> Json.Str(id),
       "matched" -> Json.Arr(matched.map(pair => Json.Obj(Seq(
         "day" -> Json.Str(pair._1),
         "stem" -> Json.Str(pair._2)
       )))),
-      "unmatched" -> Json.Arr(unmatched.map(Json.Str.apply))
+      "unmatched" -> Json.Arr(unmatched.map(Json.Str.apply)),
+      "dateMismatches" -> Json.Arr(mismatches.map: (catalogDay, filename, archiveDay, stem) =>
+        Json.Obj(Seq(
+          "catalogDay" -> Json.Str(catalogDay),
+          "filename" -> Json.Str(filename),
+          "archiveDay" -> Json.Str(archiveDay),
+          "stem" -> Json.Str(stem)
+        ))
+      )
     ))
 
   private def includeValue(rendered: Seq[String], logical: Seq[String]): Json =

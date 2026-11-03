@@ -448,18 +448,23 @@ private[photo] object AgentCommands:
 
   // Skip is a result. Do not read a day, and do not treat unread names as unmatched files.
   def skipped(session: Session, album: Catalog.Album, reason: String): (Session, Result) =
-    (session, Result.Ok(s"skipped $reason\n", matchValue(album, Seq.empty, Seq.empty)))
+    (session, Result.Ok(s"skipped $reason\n", matchValue(album, Seq.empty, Seq.empty, Seq.empty)))
 
   def matchItems(session: Session, album: Catalog.Album): (Session, Result) =
-    val (loaded, hits, misses) = gather(session, album)
+    val (loaded, hits, nonHits) = gather(session, album)
     val rows: Seq[String] =
       Seq(s"matched ${hits.length} of ${album.items.length}") ++
         hits.map(hit => s"${Title.dayText(hit._1)} ${hit._2} ${hit._3}") ++
-        misses.map(miss => s"unmatched ${miss._1.fold("-")(Title.dayText)} ${miss._2}")
+        nonHits.map:
+          case NonHit.Miss(date, filename, _) =>
+            s"unmatched ${date.fold("-")(Title.dayText)} $filename"
+          case NonHit.Mismatch(catalogDay, filename, archiveDay, stem) =>
+            s"date-mismatch ${Title.dayText(catalogDay)} $filename ${Title.dayText(archiveDay)} $stem"
     val value: Json = matchValue(
       album,
       hits.map(hit => hit._1 -> hit._3),
-      misses.map(miss => miss._3)
+      nonHits.collect { case NonHit.Miss(_, _, key) => key },
+      nonHits.collect { case mismatch: NonHit.Mismatch => mismatch }
     )
     (loaded, Result.Ok(textOf(rows), value))
 
@@ -488,27 +493,44 @@ private[photo] object AgentCommands:
           s"${album.title} ${date.toString} ${item.filename} ${showUploader(item.uploader)}"
         (cataloged, Result.Ok(textOf(lines), locateValue(shown, stem, directory = true, present = true, rows)))
 
-  // Same lookup as agent match. Album-file does not keep a second copy.
+  // A miss is not a hit. An adjacent hit is neither, so album-file does not keep a second copy.
+  enum NonHit:
+    case Miss(date: Option[LocalDate], filename: String, key: String)
+    case Mismatch(catalogDay: LocalDate, filename: String, archiveDay: LocalDate, stem: String)
+
   def gather(
     session: Session,
     album: Catalog.Album
-  ): (Session, Seq[(LocalDate, String, String)], Seq[(Option[LocalDate], String, String)]) =
+  ): (Session, Seq[(LocalDate, String, String)], Seq[NonHit]) =
     album.items.foldLeft(
-      (session, Seq.empty[(LocalDate, String, String)], Seq.empty[(Option[LocalDate], String, String)])
+      (session, Seq.empty[(LocalDate, String, String)], Seq.empty[NonHit])
     ): (acc, item) =>
-      val (current, matched, unmatched) = acc
+      val (current, matched, nonHits) = acc
       // Catalog names are not files. nameAndExtension is this same last-dot split.
       val (stem, extension) = Files.splitOnLast(item.filename, '.')
       item.date match
         case None =>
-          (current, matched, unmatched :+ (None, item.filename, item.key))
+          (current, matched, nonHits :+ NonHit.Miss(None, item.filename, item.key))
         case Some(date) =>
           val (next, grouped, _) = loadGrouped(current, civilDay(current.root, date))
           resolve(grouped.toMap, stem, extension) match
             case Some(local) =>
-              (next, matched :+ (date, item.filename, local), unmatched)
+              (next, matched :+ (date, item.filename, local), nonHits)
             case None =>
-              (next, matched, unmatched :+ (Some(date), item.filename, item.key))
+              val (after, found) = Seq(date.minusDays(1), date.plusDays(1)).foldLeft(
+                (next, Seq.empty[(LocalDate, String)])
+              ): (dayAcc, neighbor) =>
+                val (daySession, soFar) = dayAcc
+                val (loaded, neighborGrouped, _) =
+                  loadGrouped(daySession, civilDay(daySession.root, neighbor))
+                val hitStem: Option[String] = resolve(neighborGrouped.toMap, stem, extension)
+                (loaded, hitStem.fold(soFar)(local => soFar :+ (neighbor, local)))
+              if found.isEmpty then
+                (after, matched, nonHits :+ NonHit.Miss(Some(date), item.filename, item.key))
+              else
+                val mismatches: Seq[NonHit] = found.map: (archiveDay, local) =>
+                  NonHit.Mismatch(date, item.filename, archiveDay, local)
+                (after, matched, nonHits ++ mismatches)
 
   def parseSpan(text: String): Title.Span =
     Title.parse(text) match
@@ -586,7 +608,7 @@ private[photo] object AgentCommands:
   ): Map[String, Metadata] =
     grouped.map(row => row._1 -> sidecar(planned, directory, row._1)).toMap
 
-  private def resolve(
+  private[photo] def resolve(
     grouped: Map[String, Set[String]],
     stem: String,
     extension: Option[String]
@@ -666,7 +688,8 @@ private[photo] object AgentCommands:
   private def matchValue(
     album: Catalog.Album,
     hits: Seq[(LocalDate, String)],
-    misses: Seq[String]
+    misses: Seq[String],
+    mismatches: Seq[NonHit.Mismatch]
   ): Json =
     Json.Obj(Seq(
       "id" -> Json.Str(album.id),
@@ -676,7 +699,15 @@ private[photo] object AgentCommands:
           "stem" -> Json.Str(stem)
         ))
       ),
-      "unmatched" -> Json.Arr(misses.map(Json.Str.apply))
+      "unmatched" -> Json.Arr(misses.map(Json.Str.apply)),
+      "dateMismatches" -> Json.Arr(mismatches.map: mismatch =>
+        Json.Obj(Seq(
+          "catalogDay" -> Json.Str(Title.dayText(mismatch.catalogDay)),
+          "filename" -> Json.Str(mismatch.filename),
+          "archiveDay" -> Json.Str(Title.dayText(mismatch.archiveDay)),
+          "stem" -> Json.Str(mismatch.stem)
+        ))
+      )
     ))
 
   private val RenameStep: String = "More options, then Edit album, Rename album, or Rename"
@@ -2368,8 +2399,8 @@ private[photo] object AgentCommands:
       if album.autoAdd then acc
       else
         val (current, soFar) = acc
-        val (next, _, misses) = gather(current, album)
-        val wanted: Set[String] = misses.map(_._3).toSet
+        val (next, _, nonHits) = gather(current, album)
+        val wanted: Set[String] = nonHits.collect { case NonHit.Miss(_, _, key) => key }.toSet
         val added: Seq[(Catalog.Album, Catalog.Item)] = album.items.collect:
           case item if wanted.contains(item.key) => album -> item
         (next, soFar ++ added)

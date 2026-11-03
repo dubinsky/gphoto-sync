@@ -294,6 +294,37 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       File(inbox, "2010/10/01/IMG_100.jpg").exists shouldBe false
       File(inbox, "2010/10/01/VID_100.mp4").exists shouldBe false
 
+  it should "not file a stem that exists only on an adjacent day" in :
+    withArchive: archive =>
+      write(archive, "2010/07/18/2412.jpg", "previous")
+      write(archive, "2010/07/20/9.jpg", "earlier")
+      write(archive, "2010/07/22/9.jpg", "later")
+      val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
+      write(inbox, "2010/07/19/IMG_2412.JPG", "staged")
+      write(inbox, "2010/07/21/IMG_9.JPG", "both")
+      val lines: String =
+        """date-mismatch 2010/07/19 IMG_2412.JPG 2010/07/18 2412
+          |date-mismatch 2010/07/21 IMG_9.JPG 2010/07/20 9
+          |date-mismatch 2010/07/21 IMG_9.JPG 2010/07/22 9
+          |""".stripMargin
+      okText(FileDownloads(dryRun = true).execute(sessionFor(archive))._2) shouldBe lines
+      File(archive, "2010/07/19").exists shouldBe false
+      File(archive, "2010/07/21").exists shouldBe false
+      read(inbox, "2010/07/19/IMG_2412.JPG") shouldBe "staged"
+      read(inbox, "2010/07/21/IMG_9.JPG") shouldBe "both"
+
+      val text: String = okText(FileDownloads(dryRun = false).execute(sessionFor(archive))._2)
+      text shouldBe lines
+      text should not include ("wrote")
+      text should not include ("file ")
+      File(archive, "2010/07/19").exists shouldBe false
+      File(archive, "2010/07/21").exists shouldBe false
+      read(inbox, "2010/07/19/IMG_2412.JPG") shouldBe "staged"
+      read(inbox, "2010/07/21/IMG_9.JPG") shouldBe "both"
+      read(archive, "2010/07/18/2412.jpg") shouldBe "previous"
+      read(archive, "2010/07/20/9.jpg") shouldBe "earlier"
+      read(archive, "2010/07/22/9.jpg") shouldBe "later"
+
   it should "not replace an existing destination via createLink" in :
     val dir: File = JFiles.createTempDirectory("file-link").toFile
     try

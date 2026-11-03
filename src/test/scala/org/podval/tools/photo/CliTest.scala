@@ -1288,7 +1288,13 @@ class CliTest extends AnyFlatSpec, Matchers:
           "day" -> Json.Str("2010/07/19"),
           "stem" -> Json.Str("2412")
         )))),
-        "unmatched" -> Json.Arr(Seq(Json.Str("k9")))
+        "unmatched" -> Json.Arr(Seq(Json.Str("k9"))),
+        "dateMismatches" -> Json.Arr(Seq(Json.Obj(Seq(
+          "catalogDay" -> Json.Str("2010/07/19"),
+          "filename" -> Json.Str("8888.jpg"),
+          "archiveDay" -> Json.Str("2010/07/18"),
+          "stem" -> Json.Str("8888")
+        ))))
       ))),
       "locate" -> Seq(
         Json.Obj(Seq(
@@ -1406,6 +1412,34 @@ class CliTest extends AnyFlatSpec, Matchers:
         "key" -> Json.Str("k1")
       ))))
     ))).isDefined shouldBe true
+    val matchedSchema: Json = tools.find(_.name == "match").flatMap(_.outputSchema).getOrElse(fail("match"))
+    def matchWith(element: Json): Json = Json.Obj(Seq(
+      "id" -> Json.Str("a1"),
+      "matched" -> Json.Arr(Seq(Json.Obj(Seq(
+        "day" -> Json.Str("2010/07/19"),
+        "stem" -> Json.Str("2412")
+      )))),
+      "unmatched" -> Json.Arr(Seq(Json.Str("k9"))),
+      "dateMismatches" -> Json.Arr(Seq(element))
+    ))
+    outputMismatch(matchedSchema, matchWith(Json.Obj(Seq(
+      "catalogDay" -> Json.Str("2010/07/19"),
+      "filename" -> Json.Str("8888.jpg"),
+      "archiveDay" -> Json.Str("2010/07/18")
+    )))).isDefined shouldBe true
+    outputMismatch(matchedSchema, matchWith(Json.Obj(Seq(
+      "catalogDay" -> Json.Str("2010/07/19"),
+      "filename" -> Json.Str("8888.jpg"),
+      "archiveDay" -> Json.Str("2010/07/18"),
+      "stem" -> Json.Str("8888"),
+      "extra" -> Json.Str("no")
+    )))).isDefined shouldBe true
+    outputMismatch(matchedSchema, matchWith(Json.Obj(Seq(
+      "catalogDay" -> Json.Null,
+      "filename" -> Json.Str("8888.jpg"),
+      "archiveDay" -> Json.Str("2010/07/18"),
+      "stem" -> Json.Str("8888")
+    )))).isDefined shouldBe true
     val locate: Json = tools.find(_.name == "locate").flatMap(_.outputSchema).getOrElse(fail("locate"))
     outputMismatch(locate, Json.Obj(Seq(
       "day" -> Json.Str("2010/07/19"),

@@ -1777,9 +1777,18 @@ object Cli:
         ),
         Seq("day", "stem")
       )),
-      "unmatched" -> mcpStringArraySchema
+      "unmatched" -> mcpStringArraySchema,
+      "dateMismatches" -> mcpArraySchema(mcpObjectSchema(
+        Seq(
+          "catalogDay" -> mcpJsonType("string"),
+          "filename" -> mcpJsonType("string"),
+          "archiveDay" -> mcpJsonType("string"),
+          "stem" -> mcpJsonType("string")
+        ),
+        Seq("catalogDay", "filename", "archiveDay", "stem")
+      ))
     ),
-    Seq("id", "matched", "unmatched")
+    Seq("id", "matched", "unmatched", "dateMismatches")
   )
 
   private val mcpLocateOutputSchema: Json = mcpObjectSchema(

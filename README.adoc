@@ -233,6 +233,7 @@ Other people's downloadable items stay on `download-item`, which this command do
 It does not call Google.
 It prints `file <day> <staged-name> <archive-name>` or `keep <staged-path> <reason>`.
 A real run adds `wrote <day>/<archive-name>` for each file it files.
+An adjacent-day resolve prints `date-mismatch`, does not create a directory, and adds no `wrote` line.
 `--dry-run` prints those actions and writes nothing.
 The command runs in the calling process.
 It is not an MCP tool.
@@ -264,6 +265,8 @@ A line is the album title, the date, the filename, and the uploader.
 `photo agent items [--id <id>] <album>` lists that album's item and unset rows.
 The album is an exact catalog title.
 `photo agent match [--id <id>] <album>` matches those items to local stems and writes nothing.
+A stem found only on the previous or next civil day is a date mismatch, not a match and not a missing item.
+The line is `date-mismatch <catalog-day> <filename> <archive-day> <stem>`.
 `photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines and writes nothing.
 `photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] <album>` writes one external album
 file.
@@ -288,6 +291,7 @@ A `.MP` or `.PORTRAIT` tail stays in the stem.
 Extension case is ignored.
 Stem case stays exact.
 The trailing `v` on a video that shares a stem with a still is the rule match already applies.
+A stem on the previous or next day is not a missing line, and a stem found only further away still is.
 Unset lines and auto-add albums are skipped.
 An item date of `-` is listed with that date and is not looked up in a folder.
 Other people's items are listed with the uploader.

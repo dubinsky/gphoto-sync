@@ -25,6 +25,7 @@ object FileDownloads:
   private enum Action:
     case Filing(staged: File, day: String, stagedName: String, archiveName: String, destination: File)
     case Keep(relative: String, reason: String)
+    case DateMismatch(catalogDay: String, filename: String, hits: Seq[(String, String)])
 
   private def plan(archive: File): Seq[Action] =
     val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
@@ -42,18 +43,21 @@ object FileDownloads:
 
   private def perform(actions: Seq[Action], dryRun: Boolean): Unit =
     actions.foreach: action =>
-      Transcript.println(lineOf(action))
+      linesOf(action).foreach(Transcript.println)
       action match
         case Action.Filing(staged, day, _, archiveName, destination) if !dryRun =>
           if commit(staged, destination) then Transcript.println(s"wrote $day/$archiveName")
           else Transcript.println(s"keep $day/${staged.getName} $archiveName already exists")
         case _ => ()
 
-  private def lineOf(action: Action): String = action match
+  private def linesOf(action: Action): Seq[String] = action match
     case Action.Filing(_, day, stagedName, archiveName, _) =>
-      s"file $day $stagedName $archiveName"
+      Seq(s"file $day $stagedName $archiveName")
     case Action.Keep(relative, reason) =>
-      s"keep $relative $reason"
+      Seq(s"keep $relative $reason")
+    case Action.DateMismatch(catalogDay, filename, hits) =>
+      hits.map: (archiveDay, stem) =>
+        s"date-mismatch $catalogDay $filename $archiveDay $stem"
 
   // One plan per day, on the day files plus every stand-in, so a still and a video staged together
   // gain the same trailing v that repair --names would. The stand-in is a name in the day directory:
@@ -70,12 +74,18 @@ object FileDownloads:
       else
         try Right(Pictures.plan(existing ++ good.map(_._2)))
         catch case e: IllegalArgumentException => Left(e.getMessage)
+    val onDay: Set[String] = planned match
+      case Right(rows) =>
+        val standIns: Seq[File] = good.map(_._2)
+        rows.filterNot(row => standIns.exists(_ eq row.file)).map(_.stem).toSet
+      case Left(_) =>
+        Set.empty
     probed.map:
       case Left(keep) => keep
       case Right((item, standIn)) =>
         planned match
           case Left(message) => Action.Keep(item.relative, message)
-          case Right(rows) => actionFor(day, dayDir, item, standIn, rows)
+          case Right(rows) => actionFor(day, dayDir, onDay, item, standIn, rows)
 
   // plannedFile throws before a row exists. Keep that download and plan the rest of the day.
   private def standInProblem(standIn: File): Option[String] =
@@ -87,6 +97,7 @@ object FileDownloads:
   private def actionFor(
     day: String,
     dayDir: File,
+    onDay: Set[String],
     item: Staged.Dated,
     standIn: File,
     rows: Seq[Pictures.Planned]
@@ -101,7 +112,32 @@ object FileDownloads:
       case Some(row) if File(dayDir, row.finalName).exists =>
         Action.Keep(item.relative, s"${row.finalName} already exists")
       case Some(row) =>
-        Action.Filing(item.file, day, item.file.getName, row.finalName, File(dayDir, row.finalName))
+        val hits: Seq[(String, String)] =
+          if onDay.contains(row.stem) then Seq.empty else adjacentHits(day, item.file.getName)
+        if hits.isEmpty then
+          Action.Filing(item.file, day, item.file.getName, row.finalName, File(dayDir, row.finalName))
+        else
+          val catalog: LocalDate = LocalDate.parse(day.replace('/', '-'))
+          Action.DateMismatch(Title.dayText(catalog), item.file.getName, hits)
+
+  // Previous day, then next. loadGrouped does not create a missing neighbor.
+  private def adjacentHits(day: String, filename: String): Seq[(String, String)] =
+    val catalog: LocalDate = LocalDate.parse(day.replace('/', '-'))
+    val (stem, extension) = Files.splitOnLast(filename, '.')
+    Seq(catalog.minusDays(1), catalog.plusDays(1)).flatMap: neighbor =>
+      AgentCommands.resolve(groupedOn(neighbor), stem, extension).map: local =>
+        Title.dayText(neighbor) -> local
+
+  // A neighbor Pictures.plan rejects is not a hit, and must not abort the other days.
+  private def groupedOn(date: LocalDate): Map[String, Set[String]] =
+    val session: Session = DirectoryIndex.now
+    try
+      val (loaded, grouped, _) =
+        AgentCommands.loadGrouped(session, AgentCommands.civilDay(session.root, date))
+      if loaded ne session then DirectoryIndex.replace(loaded)
+      grouped.toMap
+    catch case _: IllegalArgumentException =>
+      Map.empty
 
   // commitFile moves with REPLACE_EXISTING and would overwrite an archive original.
   private def commit(staged: File, destination: File): Boolean =
