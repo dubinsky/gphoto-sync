@@ -1263,6 +1263,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           (_, _) => fail("upload-item was forwarded")
         )
         uploaded should include ("upload-item runs in the calling process")
+        val (_, created) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","create-album","--title","Probe"]}""",
+          (_, _) => fail("create-album was forwarded")
+        )
+        created should include ("create-album runs in the calling process")
         Refresh.openAct = _ =>
           new RenameFake((_, _) => (), onDescription = (_, text) =>
             if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
@@ -3060,6 +3066,281 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
+  "create-album" should "refuse a title before Chrome opens" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbKeep\t0\tKeep Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          called = true
+          new RenameFake((_, _) => (), onCreate = _ => fail("opened"))
+        usage(session, "agent", "create-album") shouldBe "missing title"
+        usage(session, "agent", "create-album", "--title", "") shouldBe "empty title"
+        usage(session, "agent", "create-album", "--title", "Pro\tbe") shouldBe "title has a tab or newline"
+        usage(session, "agent", "create-album", "--title", "Pro\nbe") shouldBe "title has a tab or newline"
+        usage(session, "agent", "create-album", "--title", "Pro\rbe") shouldBe "title has a tab or newline"
+        called shouldBe false
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+        tomls(archive) shouldBe Seq.empty[String]
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tProbe")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onCreate = _ => fail("opened"))
+        usage(session, "agent", "create-album", "--title", "Probe") shouldBe
+          "album titled \"Probe\" already exists"
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbOne\t0\tProbe",
+        "album\talbTwo\t0\tProbe"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onCreate = _ => fail("opened"))
+        usage(session, "agent", "create-album", "--title", "Probe") shouldBe
+          "more than one album titled \"Probe\""
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "copy the other block and append the new card" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbOld\t1\tKeep Title",
+        "owner\talbOld\tAda",
+        "item\talbOld\tkeep.jpg\t2010-08-01\tkeyKeep\t-"
+      )
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onCreate = title =>
+            title shouldBe "Probe"
+            (
+              Seq(
+                AlbumCard("albOld", "Renamed", "9", "x", "y"),
+                AlbumCard("albNew", "Probe", "0", "auth", "leaf")
+              ),
+              Some(blankAlbum("albNew", 0, "Probe"))
+            )
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "create-album \"Probe\"\n"
+            text should not include ("albNew")
+            text should not include ("albOld")
+            field(value, "action") shouldBe Json.Str("create-album")
+            field(value, "title") shouldBe Json.Str("Probe")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("albNew")
+            field(value, "itemKey") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(
+          "album\talbOld\t1\tKeep Title",
+          "owner\talbOld\tAda",
+          "item\talbOld\tkeep.jpg\t2010-08-01\tkeyKeep\t-",
+          "album\talbNew\t0\tProbe"
+        )
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        File(places.directory, "status.txt").exists shouldBe false
+        File(places.directory, "albums.tsv").exists shouldBe false
+        File(places.directory, "parts").exists shouldBe false
+        tomls(archive) shouldBe Seq.empty[String]
+        closed shouldBe true
+        released(places)
+
+  it should "fail one-click when Create album was not clicked" in :
+    createMiss(confirmed = false, detail = "Create album is absent", recovery = "one-click")
+
+  it should "stay refresh-only when the click already happened" in :
+    createMiss(confirmed = true, detail = "Done is absent", recovery = "refresh-only")
+
+  it should "stay one-click when create throws before it returns" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onCreate = _ => throw IllegalStateException("editor missed"))
+        val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            text should include ("editor missed")
+            text should not include ("refresh-only")
+            text should not include ("albOld")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "albumId") shouldBe Json.Str("")
+            field(value, "itemKey") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+        tomls(archive) shouldBe Seq.empty[String]
+
+  it should "stay refresh-only when the live card is missing" in :
+    createCards(
+      Seq(AlbumCard("albOld", "Keep Title", "9", "", "")),
+      None,
+      "named card is missing"
+    )
+
+  it should "stay refresh-only when the live title is ambiguous" in :
+    createCards(
+      Seq(
+        AlbumCard("albNew", "Probe", "0", "", ""),
+        AlbumCard("albOther", "Probe", "0", "", "")
+      ),
+      None,
+      "ambiguous title"
+    )
+
+  it should "leave the live catalog when the read count disagrees" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onCreate = _ =>
+            (
+              Seq(
+                AlbumCard("albOld", "Keep Title", "0", "", ""),
+                AlbumCard("albNew", "Probe", "0", "", "")
+              ),
+              Some(blankAlbum(
+                "albNew",
+                0,
+                "Probe",
+                Seq(Catalog.Item("pic.jpg", None, "keyPic", None))
+              ))
+            )
+          )
+        val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include ("item count does not equal count")
+            text should not include ("albNew")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").isFile shouldBe true
+        places.directory.exists shouldBe false
+        released(places)
+
+  it should "report already running without opening the browser" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        places.directory.mkdirs()
+        JFiles.writeString(File(places.directory, "status.txt").toPath, "phase=items\nAF1QipBusy\n")
+        Refresh.claim(places.lock) match
+          case Refresh.Claim.Owned(channel, lock) =>
+            try
+              Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
+              val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
+              result match
+                case Result.Failed(text, value, message) =>
+                  message shouldBe "already running"
+                  Cli.processCode(result) shouldBe 2
+                  text should not include ("AF1Qip")
+                  value shouldBe Json.Null
+                case other =>
+                  fail(other.toString)
+              JFiles.readString(catalogFile.toPath) shouldBe catalog
+            finally
+              Refresh.release(channel, lock)
+          case Refresh.Claim.Busy =>
+            fail("lock was already held")
+
+  private def createMiss(confirmed: Boolean, detail: String, recovery: String): Unit =
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onCreate = _ =>
+            throw new Refresh.ActMiss(detail, confirmed)
+          )
+        val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("failed create-album")
+            text should include ("album \"Probe\"")
+            text should include ("step Create album, then Edit album name, Done")
+            text should include (s"recovery $recovery")
+            text should include ("catalog unchanged")
+            text should include (detail)
+            text should not include ("albOld")
+            field(value, "action") shouldBe Json.Str("create-album")
+            field(value, "title") shouldBe Json.Str("Probe")
+            field(value, "recovery") shouldBe Json.Str(recovery)
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("")
+            field(value, "itemKey") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        places.directory.exists shouldBe false
+        tomls(archive) shouldBe Seq.empty[String]
+        released(places)
+
+  private def createCards(
+    cards: Seq[AlbumCard],
+    read: Option[Catalog.Album],
+    detail: String
+  ): Unit =
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onCreate = _ => (cards, read))
+        val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include (detail)
+            text should not include ("one-click")
+            text should not include ("albOld")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        places.directory.exists shouldBe false
+        released(places)
+
+  private def blankAlbum(
+    id: String,
+    count: Int,
+    title: String,
+    items: Seq[Catalog.Item] = Seq.empty
+  ): Catalog.Album =
+    Catalog.Album(id, count, title, None, false, None, items, Seq.empty)
+
   private def uploadRefuse(
     lines: Seq[String],
     message: String,
@@ -3300,7 +3581,9 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
     onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
     onUpload: (Catalog.Album, File, String) => Catalog.Item = (_, _, _) =>
-      throw IllegalStateException("upload")
+      throw IllegalStateException("upload"),
+    onCreate: String => (Seq[AlbumCard], Option[Catalog.Album]) = _ =>
+      throw IllegalStateException("create")
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -3316,6 +3599,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     def trash(album: Catalog.Album, item: Catalog.Item): Unit = onTrash(album, item)
     def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item =
       onUpload(destination, file, current)
+    def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) = onCreate(title)
 
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile

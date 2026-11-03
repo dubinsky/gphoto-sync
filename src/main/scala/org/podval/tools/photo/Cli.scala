@@ -119,6 +119,7 @@ object Cli:
     dest: Option[String],
     destId: Option[String]
   ) extends Parsed
+  private[photo] final case class CreateAlbumArgs(title: Option[String]) extends Parsed
   private[photo] case object AgentDriftArgs extends Parsed
   private[photo] case object AgentMissingArgs extends Parsed
 
@@ -357,6 +358,7 @@ object Cli:
     case _: MoveItemArgs => true
     case _: DeleteItemArgs => true
     case _: UploadItemArgs => true
+    case _: CreateAlbumArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -392,6 +394,7 @@ object Cli:
     case _: MoveItemArgs => "move-item"
     case _: DeleteItemArgs => "delete-item"
     case _: UploadItemArgs => "upload-item"
+    case _: CreateAlbumArgs => "create-album"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
@@ -405,6 +408,7 @@ object Cli:
     case _: MoveItemArgs => true
     case _: DeleteItemArgs => true
     case _: UploadItemArgs => true
+    case _: CreateAlbumArgs => true
     case _ => false
 
   private def remoteStep(
@@ -686,6 +690,8 @@ object Cli:
       AgentDelete(title, item, current, id)
     case UploadItemArgs(path, dest, destId) =>
       AgentUpload(path, dest, destId)
+    case CreateAlbumArgs(title) =>
+      AgentCreate(title)
     case AgentDriftArgs =>
       AgentDrift
     case AgentMissingArgs =>
@@ -1350,6 +1356,15 @@ object Cli:
       )
     ),
     Command(
+      name = "create-album",
+      help = "create an album",
+      positionals = Nil,
+      flags = List(
+        Flag("title", None, TextKind, "album title")
+      ),
+      build = (values, _) => CreateAlbumArgs(values.texts.get("title"))
+    ),
+    Command(
       name = "drift",
       help = "report create, update, gone, pending, pending-rename, and skipped",
       positionals = Nil,
@@ -1369,7 +1384,7 @@ object Cli:
   private val mcpToolNames: Set[String] = Set(
     "stems", "catalog", "items", "match", "include", "rename-album",
     "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-    "move-item", "delete-item", "upload-item", "drift", "missing"
+    "move-item", "delete-item", "upload-item", "create-album", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1416,6 +1431,7 @@ object Cli:
       else if command.name == "remove-from-album" || command.name == "delete-item" then
         List("title", "item", "current")
       else if command.name == "upload-item" then List("path", "dest")
+      else if command.name == "create-album" then List("title")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
     McpTool(command.name, mcpDescription(command), params, required)

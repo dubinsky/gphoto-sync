@@ -357,6 +357,48 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       case error: Exception =>
         throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
 
+  def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(albumsUrl)
+      // The plus menu is a different control. An absent button is not a reason to open it.
+      if !visibleButton("Create album") then
+        throw Refresh.ActMiss("Create album is absent", confirmed = false)
+      val button: Locator = page.getByRole(
+        AriaRole.BUTTON,
+        new Page.GetByRoleOptions().setName("Create album").setExact(true)
+      )
+      // The album exists as soon as this click returns, even if Done never runs.
+      confirmed = true
+      click(button.first())
+      val field: Locator = page.getByRole(
+        AriaRole.TEXTBOX,
+        new Page.GetByRoleOptions().setName("Edit album name").setExact(true)
+      )
+      // awaitCount marks the miss unconfirmed. This click already created the album.
+      awaitEditor(field, "Edit album name is absent")
+      field.first().fill(title)
+      val done: Locator = page.getByRole(
+        AriaRole.BUTTON,
+        new Page.GetByRoleOptions().setName("Done").setExact(true)
+      )
+      awaitEditor(done, "Done is absent")
+      click(done.first())
+      // The live title is the albums-list card. The textarea just filled is not that check.
+      val cards: Seq[AlbumCard] = albumCards()
+      val matches: Seq[AlbumCard] = cards.filter(_.title == title)
+      val read: Option[Catalog.Album] =
+        if matches.lengthIs == 1 then Some(readAlbum(matches.head)) else None
+      (cards, read)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
   // Delete forever and Empty trash are not this command. Remove and New album are not either.
   private def openTrash(): Unit =
     val button: Locator = page.locator("[aria-label=\"Move to trash\"]")
@@ -660,6 +702,12 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       val live: Option[String] = albumCards().find(_.id == albumId).map(_.title)
       if live.contains(updated) then ()
       else throw Refresh.ActMiss("live title differs", confirmed = true)
+
+  private def awaitEditor(locator: Locator, absent: String): Unit =
+    try awaitCount(locator, System.currentTimeMillis + 20000L, absent)
+    catch case miss: Refresh.ActMiss =>
+      val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse(absent)
+      throw Refresh.ActMiss(detail, confirmed = true)
 
   @tailrec
   private def awaitCount(locator: Locator, deadline: Long, absent: String): Unit =

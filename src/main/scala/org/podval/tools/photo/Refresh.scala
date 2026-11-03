@@ -32,6 +32,7 @@ private[photo] trait PhotosAct extends PhotosUi:
   def takeOut(album: Catalog.Album, item: Catalog.Item): Unit
   def trash(album: Catalog.Album, item: Catalog.Item): Unit
   def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item
+  def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album])
 
 final class Refresh(args: Cli.RefreshArgs) extends Operation:
   def execute(session: Session): (Session, Result) =
@@ -458,7 +459,7 @@ object Refresh:
       "count" -> Json.Long(count)
     ))
 
-  private def lineOf(card: AlbumCard): String =
+  private[photo] def lineOf(card: AlbumCard): String =
     Seq(card.title, card.countText, card.id, card.auth, card.leaves).mkString("\t")
 
   private[photo] def cardOf(line: String): AlbumCard =

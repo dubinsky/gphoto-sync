@@ -170,6 +170,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       Cli.Usage("use photo agent upload-item")
     Cli.parse(List("agent", "request", "upload-item", "--help")) shouldBe
       Cli.Usage("use photo agent upload-item")
+    Cli.parse(List("agent", "create-album", "--title", "Probe")) shouldBe
+      Cli.Run(Cli.CreateAlbumArgs(Some("Probe")))
     Cli.requestCommandNames shouldBe Nil
     Cli.parse(List(
       "agent", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello"
@@ -418,6 +420,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |move-item  move an item to another album
         |delete-item  delete an item
         |upload-item  upload one archive file into an album
+        |create-album  create an album
         |drift  report create, update, gone, pending, pending-rename, and skipped
         |missing  list catalog items absent from the day folder""".stripMargin
     helpOf("agent", "-h") shouldBe agent
@@ -431,9 +434,11 @@ class CliTest extends AnyFlatSpec, Matchers:
     agent should include ("move-item  move an item to another album")
     agent should include ("delete-item  delete an item")
     agent should include ("upload-item  upload one archive file into an album")
+    agent should include ("create-album  create an album")
     helpOf("agent", "request", "--help") shouldBe "request  redirect that does not append\n"
     helpOf("agent", "request", "--help") should not include ("delete-item")
     helpOf("agent", "request", "--help") should not include ("upload-item")
+    helpOf("agent", "request", "--help") should not include ("create-album")
     helpOf("agent", "request", "--help") should not include ("move-item")
     helpOf("agent", "request", "--help") should not include ("download-item")
     Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
@@ -537,6 +542,14 @@ class CliTest extends AnyFlatSpec, Matchers:
         |Flags:
         |--dest  text  destination album title
         |--dest-id  text  destination album id""".stripMargin
+    helpOf("agent", "create-album", "--help") shouldBe
+      """create-album  create an album
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--title  text  album title""".stripMargin
     helpOf("agent", "album-file", "--help") should include ("--id  text  catalog album id")
     helpOf("agent", "album-file", "--help") should not include ("--no-request")
     helpOf("agent", "include", "--help") shouldBe
@@ -635,6 +648,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "request", "delete-item", "--help") -> "use photo agent delete-item",
       List("agent", "request", "upload-item") -> "use photo agent upload-item",
       List("agent", "request", "upload-item", "--help") -> "use photo agent upload-item",
+      List("agent", "create-album", "--title") -> "missing value for '--title'",
       List("agent", "album-file", "--no-request", "2010/07") -> "unknown option '--no-request'",
       List("agent", "request", "--album", "a1", "rename-album") -> "unknown command '--album'",
       List("agent", "requests", "x") -> "unknown command 'requests'",
@@ -733,7 +747,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     tools.map(_.name) shouldBe List(
       "stems", "catalog", "items", "match", "include", "rename-album",
       "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-      "move-item", "delete-item", "upload-item", "drift", "missing"
+      "move-item", "delete-item", "upload-item", "create-album", "drift", "missing"
     )
     List(
       "album-file",
@@ -770,6 +784,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "move-item" -> described("move an item to another album", "move-item", ambiguous = true),
       "delete-item" -> described("delete an item", "delete-item", ambiguous = true),
       "upload-item" -> described("upload one archive file into an album", "upload-item", ambiguous = true),
+      "create-album" -> described("create an album", "create-album", ambiguous = false),
       "drift" -> described(
         "report create, update, gone, pending, pending-rename, and skipped",
         "drift",
@@ -838,6 +853,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         "dest-id" -> mcpStringSchema,
         "path" -> mcpStringSchema
       ),
+      "create-album" -> Seq("title" -> mcpStringSchema),
       "drift" -> Seq.empty,
       "missing" -> Seq.empty
     )
@@ -856,6 +872,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "move-item" -> Seq("title", "item", "current", "dest"),
       "delete-item" -> Seq("title", "item", "current"),
       "upload-item" -> Seq("path", "dest"),
+      "create-album" -> Seq("title"),
       "drift" -> Seq.empty,
       "missing" -> Seq.empty
     )
@@ -950,6 +967,9 @@ class CliTest extends AnyFlatSpec, Matchers:
     )
     Cli.parse(uploadArgv, Cli.Front.Serve) shouldBe
       Cli.Run(Cli.UploadItemArgs(Some("2010/07/01/a.jpg"), Some("Trip"), Some("a2")))
+    val createArgv: List[String] = mcpArgv("create-album", Seq("title" -> Json.Str("Probe")))
+    createArgv shouldBe List("agent", "create-album", "--title", "Probe")
+    Cli.parse(createArgv, Cli.Front.Serve) shouldBe Cli.Run(Cli.CreateAlbumArgs(Some("Probe")))
 
     Cli.parse(mcpArgv("drift", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentDriftArgs)
     Cli.parse(mcpArgv("missing", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMissingArgs)

@@ -235,6 +235,14 @@ private[photo] final class AgentUpload(
       AgentCommands.catching(loaded):
         AgentCommands.uploadItem(loaded, albums, wantedPath, destTitle, destId)
 
+private[photo] final class AgentCreate(title: Option[String]) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wanted: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.createAlbum(loaded, albums, wanted)
+
 private[photo] object AgentDrift extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentCommands.catching(session):
@@ -527,6 +535,7 @@ private[photo] object AgentCommands:
   private val RemoveStep: String = "More options, then Remove from album, then Remove"
   private val TrashStep: String = "Move to trash"
   private val UploadStep: String = "Add photos or Select photos, then Select from computer"
+  private val CreateStep: String = "Create album, then Edit album name, Done"
 
   def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     withLock(session, album.title)(heldRename(session, album, updated))
@@ -646,6 +655,10 @@ private[photo] object AgentCommands:
     val destination: Catalog.Album = select(albums, destTitle, destId)
     val loaded: Session = refuseUpload(session, albums, destination, day, stem, extension)
     withLock(loaded, destination.title)(heldUpload(loaded, pathText, destination.id))
+
+  def createAlbum(session: Session, albums: Seq[Catalog.Album], title: String): (Session, Result) =
+    acceptCreate(title, albums)
+    withLock(session, title)(heldCreate(session, title))
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -1089,6 +1102,65 @@ private[photo] object AgentCommands:
         catch case _: Exception => ()
 
   // The reread stays outside the catch. A refusal here is usage, and Chrome stays closed.
+  private def heldCreate(session: Session, title: String): (Session, Result) =
+    rereadCreate(session, title)
+    var ui: PhotosAct = null
+    var confirmed = false
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      val (cards, read) = ui.createAlbum(title)
+      confirmed = true
+      val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
+      val live: File = File(directory, "catalog.txt")
+      val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
+      val stored: Seq[Catalog.Album] = Catalog.read(live)
+      val lines: Seq[String] = cards.map(Refresh.lineOf)
+      val reads: Map[String, Catalog.Album] = read.toSeq.map(album => album.id -> album).toMap
+      RefreshPlan.plan(
+        lines,
+        stored,
+        RefreshPlan.Mode.Album(Seq(title)),
+        allowShrink = false,
+        reads,
+        source
+      ) match
+        case Left(message) =>
+          createFailed(session, title, "refresh-only", message)
+        case Right(prepared) =>
+          RefreshPlan.publish(directory, prepared) match
+            case Left(message) =>
+              createFailed(session, title, "refresh-only", message)
+            case Right(()) =>
+              val id: String = prepared.albums.find(_.title == title).fold("")(_.id)
+              createOk(session.copy(catalogCache = None), title, id)
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("create-album failed")
+        createFailed(session, title, recovery, detail)
+      case error: Exception =>
+        val recovery: String = if confirmed then "refresh-only" else "one-click"
+        createFailed(session, title, recovery, Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
+  private def rereadCreate(session: Session, title: String): Unit =
+    val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    acceptCreate(title, Catalog.read(catalog))
+
+  private def acceptCreate(title: String, albums: Seq[Catalog.Album]): Unit =
+    if title.isEmpty then throw IllegalArgumentException("empty title")
+    else if title.exists(ch => ch == '\t' || ch == '\n' || ch == '\r') then
+      throw IllegalArgumentException("title has a tab or newline")
+    else albums.filter(_.title == title) match
+      case Seq() => ()
+      case Seq(_) => throw IllegalArgumentException(s"album titled ${Album.quote(title)} already exists")
+      case _ => throw IllegalArgumentException(s"more than one album titled ${Album.quote(title)}")
+
+  // The reread stays outside the catch. A refusal here is usage, and Chrome stays closed.
   private def heldUpload(session: Session, pathText: String, destinationId: String): (Session, Result) =
     val (destination, file, name) = rereadUpload(session, pathText, destinationId)
     var ui: PhotosAct = null
@@ -1373,6 +1445,43 @@ private[photo] object AgentCommands:
       recovery,
       detail
     )
+
+  private def createOk(session: Session, title: String, id: String): (Session, Result) =
+    val text: String = PlaywrightPhotosUi.redactSecrets(s"create-album ${Album.quote(title)}\n", title)
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("create-album"),
+      "title" -> Json.Str(title),
+      "catalog" -> Json.Str("updated"),
+      "albumId" -> Json.Str(id),
+      "itemKey" -> Json.Str("")
+    ))
+    (session, Result.Ok(text, value))
+
+  private def createFailed(
+    session: Session,
+    title: String,
+    recovery: String,
+    detail: String
+  ): (Session, Result) =
+    val shown: String = collapsedText(detail, "create-album failed")
+    val text: String =
+      s"""failed create-album
+         |album ${Album.quote(title)}
+         |step $CreateStep
+         |recovery $recovery
+         |catalog unchanged
+         |$shown
+         |""".stripMargin
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("create-album"),
+      "title" -> Json.Str(title),
+      "step" -> Json.Str(CreateStep),
+      "recovery" -> Json.Str(recovery),
+      "catalog" -> Json.Str("unchanged"),
+      "albumId" -> Json.Str(""),
+      "itemKey" -> Json.Str("")
+    ))
+    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, title), value, Refresh.MutationFailed))
 
   private def moveOk(
     session: Session,
