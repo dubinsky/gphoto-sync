@@ -9,7 +9,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.SeqHasAsJava
 
-// Finds one removable camera volume and copies its DCIM picture files flat into .upload.
 final case class DiscoverCard(dryRun: Boolean) extends Operation:
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
@@ -48,7 +47,7 @@ object Card:
             printRows(rows)
             None
           else
-            mountAndReread(one.device, lsblk, mount)
+            mountAndReread(one.path, lsblk, mount)
 
   private[photo] def copy(
     session: Session,
@@ -62,6 +61,7 @@ object Card:
       case Some(text) =>
         copyTree(upload, File(text), dryRun, text)
       case None =>
+        // A copy dry-run must list DCIM, so discovery is not dry-run. copyTree still gets the caller's dryRun.
         discover(dryRun = false, lsblk, mount) match
           case Some(root) =>
             copyTree(upload, root, dryRun, root.getPath)
@@ -83,7 +83,7 @@ object Card:
         throw IllegalArgumentException(message)
       case None =>
         rows.collectFirst:
-          case row: Row.Printed if row.device == device => row
+          case row: Row.Printed if row.path == device => row
         match
           case Some(row) if row.dcim == "yes" =>
             printRows(rows)
@@ -92,7 +92,7 @@ object Card:
             printRows(rows)
             throw IllegalArgumentException("no memory card")
           case _ =>
-            printRows(rows.collect { case row: Row.Printed if row.device != device => row })
+            printRows(rows.collect { case row: Row.Printed if row.path != device => row })
             throw IllegalArgumentException(mountFailed(device, stderr))
 
   private def rejectOrContinue(rows: Seq[Row]): Option[String] =
@@ -157,11 +157,13 @@ object Card:
       case Json.Str("1") => true
       case _ => false
     if path.isDefined && fstype.isDefined && removable then
-      Some(Volume(path.get, labelOf(obj), fstype.get.toLowerCase(java.util.Locale.ROOT), mountsOf(obj)))
+      Some(Volume(
+        path.get,
+        stringField(obj, "label").getOrElse(""),
+        fstype.get.toLowerCase(java.util.Locale.ROOT),
+        mountsOf(obj)
+      ))
     else None
-
-  private def labelOf(obj: Json.Obj): String =
-    stringField(obj, "label").getOrElse("")
 
   private def mountsOf(obj: Json.Obj): Seq[String] =
     field(obj, "mountpoints") match
@@ -241,7 +243,10 @@ object Card:
 
   // File.isDirectory follows links. Files.list uses it, so this walk does not.
   private def entriesUnder(parentRel: String, directory: File, enter: Boolean): Seq[Entry] =
-    listing(directory).flatMap: child =>
+    val children: Seq[File] = Option(directory.listFiles).map(_.toSeq).getOrElse(
+      throw IllegalArgumentException(s"not a directory: ${directory.getPath}")
+    )
+    children.flatMap: child =>
       val name: String = child.getName
       if name.startsWith(".") then Seq.empty
       else
@@ -253,11 +258,6 @@ object Card:
         else if NFiles.isRegularFile(child.toPath, LinkOption.NOFOLLOW_LINKS) then
           Seq(Entry.Regular(child, rel))
         else Seq(Entry.Irregular(rel))
-
-  private def listing(directory: File): Seq[File] =
-    Option(directory.listFiles).map(_.toSeq).getOrElse(
-      throw IllegalArgumentException(s"not a directory: ${directory.getPath}")
-    )
 
   private def place(
     upload: File,
@@ -302,10 +302,15 @@ object Card:
     if exists && !NFiles.isDirectory(path, LinkOption.NOFOLLOW_LINKS) then
       throw IllegalArgumentException(".upload is not a directory")
     if !dryRun && exists then
-      Option(upload.listFiles).toSeq.flatten.foreach: file =>
+      val children: Seq[File] = Option(upload.listFiles).map(_.toSeq).getOrElse(
+        throw IllegalArgumentException(".upload is not a directory")
+      )
+      children.foreach: file =>
         val name: String = file.getName
         if name.startsWith(".card-") && name.endsWith(".partial") then
-          NFiles.deleteIfExists(file.toPath)
+          try NFiles.deleteIfExists(file.toPath)
+          catch case _: IOException =>
+            throw IllegalArgumentException(".upload is not a directory")
 
   private def publish(upload: File, from: File, destination: File, rel: String): Unit =
     Files.mkDirs(upload)
@@ -387,10 +392,6 @@ object Card:
   private enum Row:
     case Rejected(path: String, message: String)
     case Printed(path: String, dcim: String, line: String, root: Option[File])
-
-    def device: String = this match
-      case Rejected(path, _) => path
-      case Printed(path, _, _, _) => path
 
   private enum Entry:
     case Regular(file: File, relative: String)

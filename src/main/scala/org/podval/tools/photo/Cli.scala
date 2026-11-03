@@ -875,10 +875,9 @@ object Cli:
         List(shellLine, serveLine, mcpLine)
       case Front.Shell | Front.Serve =>
         Nil
-    val commandLines: List[String] = commands.map(lineOf)
-    val (beforeLogin, fromLogin) = commandLines.span(!_.startsWith("login "))
+    val (beforeLogin, fromLogin) = commands.span(_.name != "login")
     val lines: List[String] =
-      beforeLogin ++ List(cardLine) ++ fromLogin ++ List(lineOf(helpCommand)) ++
+      beforeLogin.map(lineOf) ++ List(cardLine) ++ fromLogin.map(lineOf) ++ List(lineOf(helpCommand)) ++
         frontLines ++
         List(agentLine) ++
         sessionCommands.map(lineOf)

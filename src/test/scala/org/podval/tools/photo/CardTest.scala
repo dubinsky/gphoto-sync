@@ -278,6 +278,17 @@ class CardTest extends AnyFlatSpec, Matchers:
         File(upload, "NOTE.TXT").exists shouldBe false
         upload.isDirectory shouldBe true
 
+    withTemp: archive =>
+      withTemp: card =>
+        write(card, "DCIM/100CANON/IMG_0001.JPG", "pic")
+        val upload: File = File(archive, ".upload")
+        val stuck: File = write(upload, ".card-left.partial/stuck", "x")
+        val session: Session = sessionFor(archive)
+        usage(session, card.getPath) shouldBe ".upload is not a directory"
+        read(stuck) shouldBe "x"
+        read(File(card, "DCIM/100CANON/IMG_0001.JPG")) shouldBe "pic"
+        File(upload, "IMG_0001.JPG").exists shouldBe false
+
   it should "reject a path that is not one real DCIM root, and a non-directory .upload" in :
     withTemp: archive =>
       withTemp: card =>
