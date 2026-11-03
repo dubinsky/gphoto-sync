@@ -268,6 +268,11 @@ An adjacent-day resolve prints `date-mismatch`, does not create a directory, and
 The command runs in the calling process.
 It is not an MCP tool.
 
+`photo web` binds `127.0.0.1:8765`, edits local include lists, reads `catalog.txt`, and does not publish, sync, refresh,
+push, or copy a card.
+The command runs in the calling process.
+It is not an MCP tool.
+
 `photo card` prints one removable `vfat` or `exfat` volume.
 It mounts that volume read-only when it is unmounted and `--dry-run` was not passed.
 It does not copy.
@@ -365,14 +370,14 @@ Flags precede positionals in `argv`.
 `text` is the human output.
 `value` is the command's JSON value, or `null`.
 A failure puts the usage line in `error` and does not write a second line to stderr.
-`cd`, `pwd`, `exit`, `photo refresh`, `photo reconcile`, `photo file`, `photo card`, and `photo push` are usage on the
-socket.
+`cd`, `pwd`, `exit`, `photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, and `photo web` are
+usage on the socket.
 `photo serve stop` asks that process to exit between commands.
 It does not preempt a command already running.
 
 `photo shell` keeps `cd`, `pwd`, and `exit` in the shell.
 It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
-`photo refresh`, `photo reconcile`, `photo file`, `photo card`, and `photo push` stay in the shell process.
+`photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, and `photo web` stay in the shell process.
 Other commands go to the socket.
 Path arguments are archive-root paths.
 `agent include` paths are sent unchanged.
@@ -381,8 +386,8 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 
 A one-shot uses the socket when it is up and `archive` matches.
 It runs in this process when the lock is free.
-`photo refresh`, `photo reconcile`, `photo file`, `photo card`, and `photo push` run in this process even when the
-socket is up.
+`photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, and `photo web` run in this process even
+when the socket is up.
 A one-shot does not start `photo serve`.
 A mismatch names both paths and does not run in this process.
 
@@ -396,7 +401,7 @@ Tools are `agent stems`, `agent years`, `agent months`, `agent days`, `agent cla
 `agent download-item`, `agent add-to-album`, `agent remove-from-album`, `agent move-item`, `agent delete-item`,
 `agent upload-item`, `agent create-album`, `agent delete-album`, `agent drift`, and `agent missing`.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
-Album files, repair, publish, sync, refresh, reconcile, file, and card are not tools.
+Album files, repair, publish, sync, refresh, reconcile, file, card, and web are not tools.
 Tool JSON may contain album ids and item keys.
 Chat should not.
 The user adds the server.

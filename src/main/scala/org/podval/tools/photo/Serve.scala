@@ -842,7 +842,7 @@ private[photo] object Serve:
     ownerPath = null
   }
 
-  private def prepare(runtime: File): Unit =
+  private[photo] def prepare(runtime: File): Unit =
     val path = runtime.toPath
     java.nio.file.Files.createDirectories(path)
     java.nio.file.Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(directoryMode))

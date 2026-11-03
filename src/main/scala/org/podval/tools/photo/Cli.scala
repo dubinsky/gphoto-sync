@@ -41,6 +41,7 @@ object Cli:
   private[photo] final case class PushArgs(dryRun: Boolean) extends Parsed
   private[photo] final case class CardDiscover(dryRun: Boolean) extends Parsed
   private[photo] final case class CardCopy(dryRun: Boolean, path: Option[String]) extends Parsed
+  private[photo] final case class WebArgs(port: Int) extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -337,7 +338,7 @@ object Cli:
     case CdArgs(_) | PwdArgs | ExitArgs => true
     case _ => false
 
-  // Every real arm is listed. Refresh, reconcile, file, push, and card stay off the serve thread.
+  // Every real arm is listed. Refresh, reconcile, file, push, card, and web stay off the serve thread.
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
     case _: RefreshArgs => true
     case _: ReconcileArgs => true
@@ -356,6 +357,7 @@ object Cli:
     case _: UploadItemArgs => true
     case _: CreateAlbumArgs => true
     case _: DeleteAlbumArgs => true
+    case _: WebArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -390,6 +392,7 @@ object Cli:
     case _: PushArgs => "push"
     case _: CardDiscover => "card"
     case _: CardCopy => "card"
+    case _: WebArgs => "web"
     case _: RenameAlbumArgs => "rename-album"
     case _: SetDescriptionArgs => "set-description"
     case _: SetDateArgs => "set-date"
@@ -403,7 +406,7 @@ object Cli:
     case _: DeleteAlbumArgs => "delete-album"
     case _ => "command"
 
-  // Refresh, reconcile, file, push, and card stay off this branch.
+  // Refresh, reconcile, file, push, card, and web stay off this branch.
   private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
     case _: RenameAlbumArgs => true
     case _: SetDescriptionArgs => true
@@ -664,6 +667,8 @@ object Cli:
       DiscoverCard(dryRun)
     case CardCopy(dryRun, path) =>
       CopyCard(dryRun, path)
+    case WebArgs(port) =>
+      Web(port)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -728,11 +733,26 @@ object Cli:
     if command.name == "help" then helpText(positionals, front)
     else if command.name == "refresh" && bool(values, "full") && values.repeats.get("album").exists(_.nonEmpty) then
       Usage("cannot combine '--full' and '--album'")
+    else if command.name == "web" then
+      webPort(values.texts.get("port")) match
+        case Left(message) => Usage(message)
+        case Right(port) => Run(WebArgs(port))
     else command.build(values, positionals) match
       case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
         Usage("missing repair action")
       case other =>
         Run(other)
+
+  // A non-integer, 0, and anything outside 1..65535 are the same usage error.
+  private def webPort(raw: Option[String]): Either[String, Int] =
+    val message: String = "port must be 1 to 65535"
+    raw match
+      case None =>
+        Right(Web.defaultPort)
+      case Some(text) =>
+        val digits: Boolean = text.nonEmpty && text.length <= 10 && text.forall(_.isDigit)
+        val port: Long = if digits then text.toLong else 0L
+        if digits && port >= 1L && port <= 65535L then Right(port.toInt) else Left(message)
 
   private def helpText(positionals: List[String], front: Front): Outcome = positionals match
     case Nil =>
@@ -1172,6 +1192,18 @@ object Cli:
         Flag("dry-run", None, BooleanKind, "print the actions and write nothing")
       ),
       build = (values, _) => FileArgs(bool(values, "dry-run"))
+    ),
+    Command(
+      name = "web",
+      help = "edit album membership on 127.0.0.1",
+      positionals = Nil,
+      flags = List(
+        Flag("port", None, TextKind, s"loopback port; default ${Web.defaultPort}")
+      ),
+      build = (values, _) =>
+        webPort(values.texts.get("port")) match
+          case Right(port) => WebArgs(port)
+          case Left(message) => throw IllegalArgumentException(message)
     ),
     Command(
       name = "login",

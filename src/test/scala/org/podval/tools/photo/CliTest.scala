@@ -262,6 +262,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |refresh  refresh the Google Photos catalog from Chrome
         |reconcile  link catalog albums to local album files
         |file  file staged downloads into civil day folders
+        |web  edit album membership on 127.0.0.1
         |card  find a camera card or copy it into .upload
         |login  log in to Google Photos
         |status  show Google Photos login status
@@ -375,6 +376,17 @@ class CliTest extends AnyFlatSpec, Matchers:
         |Flags:
         |--dry-run  boolean  print the plan and do not open Chrome""".stripMargin
     helpOf("push", "-h") shouldBe helpOf("push", "--help")
+
+    helpOf("web", "--help") shouldBe
+      """web  edit album membership on 127.0.0.1
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--port  text  loopback port; default 8765""".stripMargin
+    helpOf("web", "-h") shouldBe helpOf("web", "--help")
+    helpOf("help", "web") shouldBe helpOf("web", "--help")
 
     helpOf("help", "card") shouldBe
       """card  find a camera card or copy it into .upload

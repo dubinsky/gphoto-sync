@@ -255,7 +255,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         case other => fail(other.toString)
       help.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
         "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
-        "card", "login", "status", "logout", "help", "agent"
+        "web", "card", "login", "status", "logout", "help", "agent"
       )
       help should not include ("shell  start a session")
       help should not include ("serve  answer one JSON command per line")
@@ -263,6 +263,16 @@ class ServeTest extends AnyFlatSpec, Matchers:
       val (_, line) = Cli.serveResponse(session, """{"argv":["help"]}""")
       line.exists(_ == '\n') shouldBe false
       line shouldBe rendered(session, ok = true, text = Some(help + "\n"), value = Some(Json.Null))
+
+  it should "refuse web on the socket" in :
+    prepared: (_, session) =>
+      val (_, line) = Cli.serveResponse(
+        session,
+        """{"argv":["web","--port","9"]}""",
+        (_, _) => fail("web was forwarded")
+      )
+      line shouldBe usage(session, "web runs in the calling process")
+      line should include ("\"ok\":false")
 
   it should "reject shell and serve inside serve" in :
     prepared: (_, session) =>
