@@ -389,6 +389,49 @@ class ApplyRequestsTest extends AnyFlatSpec, Matchers:
         read(requests) shouldBe before
         outcomes(archive).exists shouldBe false
 
+  it should "classify a source unset as skip and not click" in :
+    withArchive: archive =>
+      writeCatalog(
+        archive,
+        "album\tidSrc\t1\tUnset Source",
+        "error\tidSrc\t1\t1\t1",
+        "unset\tidSrc\t-\tkeyUnset\t-",
+        "album\tidDst\t1\tDest Title",
+        "item\tidDst\tpic.jpg\t-\tkeyOther\t-",
+        "album\tidAlone\t1\tUnset Alone",
+        "error\tidAlone\t1\t1\t1",
+        "unset\tidAlone\t-\tkeyAlone\t-",
+        "album\tidEmpty\t0\tEmpty Dest"
+      )
+      val requests: File = writeRequests(
+        archive,
+        request("r1", "move-item", "idSrc", "keyUnset", "pic.jpg", "idDst"),
+        request("r2", "move-item", "idAlone", "keyAlone", "pic.jpg", "idEmpty")
+      )
+      val before: String = read(requests)
+      withSeams(archive): (session, places) =>
+        var opened: Int = 0
+        Refresh.openAct = _ =>
+          opened += 1
+          new Clicker()
+        val text: String = shown(
+          exec(session, "agent", "apply-requests"),
+          "idSrc", "keyUnset", "idDst", "keyOther", "idAlone", "keyAlone", "idEmpty"
+        )
+        text shouldBe
+          """r1 move-item skip "pic.jpg"
+            |r2 move-item skip "pic.jpg"
+            |""".stripMargin
+        shown(
+          exec(session, "agent", "apply-requests", "--apply"),
+          "idSrc", "keyUnset", "idDst", "keyOther", "idAlone", "keyAlone", "idEmpty"
+        ) shouldBe text
+        opened shouldBe 0
+        places.lock.exists shouldBe false
+        read(requests) shouldBe before
+        outcomes(archive).exists shouldBe false
+        results(archive).exists shouldBe false
+
   it should "reject a bad outcomes file before Chrome even when nothing would click" in :
     val cases: Seq[(String, String, Boolean)] = Seq(
       ("", "outcomes are not version 1", false),

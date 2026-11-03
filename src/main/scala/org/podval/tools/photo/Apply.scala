@@ -7,7 +7,7 @@ private[photo] final class AgentApply(perform: Boolean) extends Operation:
   override def execute(session: Session): (Session, Result) =
     try AgentCommands.catching(session)(Apply.execute(session, perform))
     catch case failed: Outcomes.AppendFailed =>
-      (session, Result.Usage(Operation.messageOf(failed)))
+      (session, Result.Usage(failed.getMessage))
 
 private[photo] object Apply:
   enum Kind(val wire: String) derives CanEqual:
@@ -40,7 +40,6 @@ private[photo] object Apply:
       val (loaded, _) = session.loadCatalog
       applyAll(loaded, outcomesFile, rows)
 
-  // The CLI calls these functions after select. albumId, itemKey, current, and new come from the row.
   def run(session: Session, row: Requests.Row, albums: Seq[Catalog.Album]): (Session, Result) =
     val previous: Result => Unit = AgentCommands.afterHeld
     AgentCommands.afterHeld = result => record(session, row, result)
@@ -145,8 +144,6 @@ private[photo] object Apply:
           case Result.Failed(_, _, _) =>
             (session, lines :+ Shown(row, Kind.NeedsAgent, label(row, albums, Kind.NeedsAgent)), Pace.Stop)
       catch
-        case failed: Outcomes.AppendFailed =>
-          throw failed
         case _: (IllegalArgumentException | IllegalStateException) =>
           (session, lines :+ Shown(row, Kind.Skip, label(row, albums, Kind.Skip)), Pace.Go)
 
@@ -233,10 +230,12 @@ private[photo] object Apply:
             Kind.Skip
 
   private def moved(row: Requests.Row, albums: Seq[Catalog.Album]): Kind =
-    val sourceHas: Boolean = albums.find(_.id == row.albumId).exists(_.items.exists(_.key == row.itemKey))
+    val source: Option[Catalog.Album] = albums.find(_.id == row.albumId)
+    val onItem: Boolean = source.exists(_.items.exists(_.key == row.itemKey))
+    val onUnset: Boolean = source.exists(_.unsets.exists(_.key == row.itemKey))
     val names: Int = albums.find(_.id == row.`new`).toSeq.flatMap(_.items).count(_.filename == row.current)
-    if !sourceHas && names == 1 then Kind.Satisfied
-    else if sourceHas && names == 0 then Kind.Click
+    if !onItem && !onUnset && names == 1 then Kind.Satisfied
+    else if onItem && names == 0 then Kind.Click
     else Kind.Skip
 
   private def items(albums: Seq[Catalog.Album], key: String): Seq[Catalog.Item] =

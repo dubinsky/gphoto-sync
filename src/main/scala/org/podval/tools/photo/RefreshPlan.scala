@@ -325,7 +325,6 @@ object RefreshPlan:
       case _ => got == found.cards.map(_.id).toSet
     if ok then Right(()) else Left("album set")
 
-  // Tests fail the second rename. The default move is the one publish uses.
   private[photo] var moveReplacing: (File, File) => Unit = (from, to) =>
     NFiles.move(
       from.toPath,

@@ -59,8 +59,6 @@ object Outcomes:
             commit(channel, id, status)
         finally channel.close()
     catch
-      case failed: AppendFailed =>
-        throw failed
       case error: Exception =>
         throw AppendFailed(Operation.messageOf(error))
 

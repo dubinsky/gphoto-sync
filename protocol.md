@@ -952,7 +952,7 @@ The column tables, the version lines, and Catalog updates describe the old row s
 The script is not a reader and is not the applier.
 The script does not apply the batch.
 
-`archive/.gphoto-sync/requests.tsv` is written by the program.
+`archive/.gphoto-sync/requests.tsv` is a legacy file the program no longer writes.
 `photo agent apply-requests` reads `requests.tsv` and does not write `requests.tsv`.
 `photo agent apply-requests` does not delete `requests.tsv`.
 Do not create `requests.tsv` empty.
