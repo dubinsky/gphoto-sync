@@ -33,7 +33,7 @@ object RefreshPlan:
   // Raw albums-list rows are title, count, id, auth, leaves. read.mjs refuses any other width.
   private val Columns: Int = 5
   // Backstop only. Not a comparison with the stored album count. 250 is accepted.
-  private val Floor: Int = 250
+  private[photo] val Floor: Int = 250
   private val Header: String = "# gphoto-catalog 2"
   private val LiveName: String = "catalog.txt"
   private val PartialName: String = "catalog.txt.partial"

@@ -71,7 +71,7 @@ class McpTest extends AnyFlatSpec, Matchers:
         toolNames(field(listed, "tools")) shouldBe Seq(
           "stems", "catalog", "items", "match", "include", "rename-album",
           "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-          "move-item", "delete-item", "upload-item", "create-album", "drift", "missing"
+          "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
         )
         val ping: String = driver.round("""{"jsonrpc":"2.0","id":"p","method":"ping"}""")
         field(parsed(ping), "id") shouldBe Json.Str("p")
@@ -475,6 +475,8 @@ class McpTest extends AnyFlatSpec, Matchers:
                 throw IllegalStateException("upload")
               def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) =
                 throw IllegalStateException("create")
+              def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] =
+                throw IllegalStateException("delete-album")
           val badLine: String = driver.round(callLine(
             Json.Long(2),
             "rename-album",
@@ -511,6 +513,8 @@ class McpTest extends AnyFlatSpec, Matchers:
                 throw IllegalStateException("upload")
               def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) =
                 throw IllegalStateException("create")
+              def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] =
+                throw IllegalStateException("delete-album")
           val okResult: Json = assertToolOk(driver.round(callLine(
             Json.Long(3),
             "rename-album",

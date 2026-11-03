@@ -1269,6 +1269,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           (_, _) => fail("create-album was forwarded")
         )
         created should include ("create-album runs in the calling process")
+        val (_, deletedAlbum) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","delete-album","--title","Probe"]}""",
+          (_, _) => fail("delete-album was forwarded")
+        )
+        deletedAlbum should include ("delete-album runs in the calling process")
         Refresh.openAct = _ =>
           new RenameFake((_, _) => (), onDescription = (_, text) =>
             if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
@@ -3269,6 +3275,272 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
+  "delete-album" should "refuse before Chrome opens" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          called = true
+          new RenameFake((_, _) => (), onDelete = _ => fail("opened"))
+        usage(session, "agent", "delete-album") shouldBe "missing title"
+        usage(session, "agent", "delete-album", "--title", "Missing") shouldBe
+          "no album titled \"Missing\""
+        called shouldBe false
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbOld\t0\tKeep Title",
+        "owner\talbOld\tAda"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDelete = _ => fail("opened"))
+        usage(session, "agent", "delete-album", "--title", "Keep Title") shouldBe "no owner line"
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbOld\t0\tKeep Title",
+        "auto-add\talbOld"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDelete = _ => fail("opened"))
+        usage(session, "agent", "delete-album", "--title", "Keep Title") shouldBe "album is auto-add"
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbOne\t0\tKeep Title",
+        "album\talbTwo\t0\tKeep Title"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDelete = _ => fail("opened"))
+        usage(session, "agent", "delete-album", "--title", "Keep Title") shouldBe
+          "more than one album titled \"Keep Title\""
+        usage(session, "agent", "delete-album", "--title", "Keep Title", "--id", "albMissing") shouldBe
+          "catalog title does not match"
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "copy the other blocks when the sweep is the stored ids minus this one" in :
+    withArchive: archive =>
+      val lines: Seq[String] = survivorLines ++ deletedLines
+      val catalogFile: File = writeCatalog(archive, lines*)
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDelete = album =>
+            album.id shouldBe "albDel"
+            album.title shouldBe "Gone Title"
+            mutatedCards(survivorIds)
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "delete-album \"Gone Title\"\n"
+            text should not include ("albDel")
+            text should not include ("alb001")
+            field(value, "action") shouldBe Json.Str("delete-album")
+            field(value, "title") shouldBe Json.Str("Gone Title")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("albDel")
+            field(value, "itemKey") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(survivorLines*)
+        JFiles.readString(catalogFile.toPath) should not include ("albDel")
+        JFiles.readString(catalogFile.toPath) should include ("owner\talb001\tAda")
+        JFiles.readString(catalogFile.toPath) should include ("Title alb001")
+        JFiles.readString(catalogFile.toPath) should not include ("Nope")
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        places.directory.exists shouldBe false
+        File(places.directory, "status.txt").exists shouldBe false
+        File(places.directory, "albums.tsv").exists shouldBe false
+        tomls(archive) shouldBe Seq.empty[String]
+        closed shouldBe true
+        released(places)
+
+  it should "publish nothing when a second stored id is missing" in :
+    deleteSweep(
+      survivorLines ++ deletedLines ++ Seq("album\talbMiss\t0\tMissed Title"),
+      mutatedCards(survivorIds),
+      "album set"
+    )
+
+  it should "publish nothing when the sweep is under 250" in :
+    deleteSweep(
+      Seq(
+        "album\talbKeep\t1\tKeep Title",
+        "owner\talbKeep\tAda",
+        "item\talbKeep\tkeep.jpg\t2010-08-01\tkeyKeep\t-"
+      ) ++ deletedLines,
+      Seq(AlbumCard("albKeep", "Nope", "9", "", "")),
+      "rows < 250"
+    )
+
+  it should "publish nothing when the sweep has an extra card" in :
+    deleteSweep(
+      survivorLines ++ deletedLines,
+      mutatedCards(survivorIds) :+ AlbumCard("albExtra", "Extra", "1", "", ""),
+      "album set"
+    )
+
+  it should "publish nothing when the deleted id is still listed" in :
+    deleteSweep(
+      survivorLines ++ deletedLines,
+      mutatedCards(survivorIds) :+ AlbumCard("albDel", "Gone Title", "2", "", ""),
+      "album set"
+    )
+
+  it should "fail one-click when Delete was not clicked" in :
+    deleteMiss(confirmed = false, detail = "Delete album is absent", recovery = "one-click")
+
+  it should "stay refresh-only when the delete click already happened" in :
+    deleteMiss(confirmed = true, detail = "rows < 250", recovery = "refresh-only", cards = Some(Seq(
+      AlbumCard("albKeep", "Keep Title", "0", "", "")
+    )))
+
+  it should "stay one-click when delete throws before it returns" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDel\t0\tGone Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDelete = _ => throw IllegalStateException("menu missed"))
+        val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            text should include ("menu missed")
+            text should not include ("refresh-only")
+            text should not include ("albDel")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "albumId") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "report already running without opening the browser" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDel\t0\tGone Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        places.directory.mkdirs()
+        JFiles.writeString(File(places.directory, "status.txt").toPath, "phase=items\nAF1QipBusy\n")
+        Refresh.claim(places.lock) match
+          case Refresh.Claim.Owned(channel, lock) =>
+            try
+              Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
+              val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
+              result match
+                case Result.Failed(text, value, message) =>
+                  message shouldBe "already running"
+                  Cli.processCode(result) shouldBe 2
+                  text should not include ("AF1Qip")
+                  value shouldBe Json.Null
+                case other =>
+                  fail(other.toString)
+              JFiles.readString(catalogFile.toPath) shouldBe catalog
+            finally
+              Refresh.release(channel, lock)
+          case Refresh.Claim.Busy =>
+            fail("lock was already held")
+
+  private def deleteMiss(
+    confirmed: Boolean,
+    detail: String,
+    recovery: String,
+    cards: Option[Seq[AlbumCard]] = None
+  ): Unit =
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDel\t0\tGone Title")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDelete = _ =>
+            cards match
+              case Some(found) => found
+              case None => throw new Refresh.ActMiss(detail, confirmed)
+          )
+        val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("failed delete-album")
+            text should include ("album \"Gone Title\"")
+            text should include ("step More options, then Delete album, then Delete")
+            text should include (s"recovery $recovery")
+            text should include ("catalog unchanged")
+            text should include (detail)
+            text should not include ("albDel")
+            field(value, "action") shouldBe Json.Str("delete-album")
+            field(value, "recovery") shouldBe Json.Str(recovery)
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("")
+            field(value, "itemKey") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+        released(places)
+
+  private def deleteSweep(lines: Seq[String], cards: Seq[AlbumCard], detail: String): Unit =
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, lines*)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onDelete = _ => cards)
+        val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include (detail)
+            text should not include ("albDel")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+            field(value, "albumId") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        places.directory.exists shouldBe false
+        released(places)
+
+  private val survivorIds: Seq[String] = (1 to 250).map(i => f"alb$i%03d")
+
+  private def survivorLines: Seq[String] =
+    val head: Seq[String] = Seq(
+      "album\talb001\t1\tTitle alb001",
+      "owner\talb001\tAda",
+      "item\talb001\tkeep.jpg\t2010-08-01\tkeyKeep\t-"
+    )
+    val rest: Seq[String] = survivorIds.drop(1).map(id => s"album\t$id\t0\tTitle $id")
+    head ++ rest
+
+  private def deletedLines: Seq[String] = Seq(
+    "album\talbDel\t2\tGone Title",
+    "item\talbDel\tpic.jpg\t2010-07-01\tkeyPic\t-",
+    "item\talbDel\tother.jpg\t2010-07-02\tkeyOther\t-"
+  )
+
+  private def mutatedCards(ids: Seq[String]): Seq[AlbumCard] =
+    ids.map(id => AlbumCard(id, "Nope", "9", "auth", "leaf"))
+
   private def createMiss(confirmed: Boolean, detail: String, recovery: String): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
@@ -3583,7 +3855,9 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     onUpload: (Catalog.Album, File, String) => Catalog.Item = (_, _, _) =>
       throw IllegalStateException("upload"),
     onCreate: String => (Seq[AlbumCard], Option[Catalog.Album]) = _ =>
-      throw IllegalStateException("create")
+      throw IllegalStateException("create"),
+    onDelete: Catalog.Album => Seq[AlbumCard] = _ =>
+      throw IllegalStateException("delete-album")
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -3600,6 +3874,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item =
       onUpload(destination, file, current)
     def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) = onCreate(title)
+    def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] = onDelete(album)
 
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile

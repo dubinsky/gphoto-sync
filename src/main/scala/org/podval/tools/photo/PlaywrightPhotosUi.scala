@@ -399,6 +399,33 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       case error: Exception =>
         throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
 
+  def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/album/${album.id}")
+      clickMore()
+      val menu: Locator = menuItem("Delete album")
+      awaitCount(menu, System.currentTimeMillis + 20000L, "Delete album is absent")
+      click(menu.first())
+      val dialog: Locator = awaitAlbumDelete(System.currentTimeMillis + 20000L)
+      val button: Locator = dialog.getByRole(
+        AriaRole.BUTTON,
+        new Locator.GetByRoleOptions().setName("Delete").setExact(true)
+      )
+      if button.count() == 0 then throw Refresh.ActMiss("Delete is absent", confirmed = false)
+      // Keep album is the other button. This click is the delete.
+      confirmed = true
+      click(button.first())
+      albumCards()
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
   // Delete forever and Empty trash are not this command. Remove and New album are not either.
   private def openTrash(): Unit =
     val button: Locator = page.locator("[aria-label=\"Move to trash\"]")
@@ -477,6 +504,29 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
           case None =>
             Thread.sleep(300)
             awaitRemove(deadline)
+
+  @tailrec
+  private def awaitAlbumDelete(deadline: Long): Locator =
+    visibleDialog match
+      case None if System.currentTimeMillis >= deadline =>
+        throw Refresh.ActMiss("Delete is absent", confirmed = false)
+      case None =>
+        Thread.sleep(300)
+        awaitAlbumDelete(deadline)
+      case Some(dialog) =>
+        val buttons: Seq[String] = dialogButtons(dialog)
+        // Delete forever, Empty trash, and Move to trash stay unclicked even when Delete is also listed.
+        if buttons.exists(refusedButton) then
+          throw Refresh.ActMiss("refused dialog", confirmed = false)
+        val named: Set[String] = buttons.map(_.trim).toSet
+        val text: String = dialogText(dialog)
+        if named.contains("Delete") && named.contains("Keep album") && text.contains("remain in Google Photos") then
+          dialog
+        else if System.currentTimeMillis >= deadline then
+          throw Refresh.ActMiss("Delete is absent", confirmed = false)
+        else
+          Thread.sleep(300)
+          awaitAlbumDelete(deadline)
 
   private def visibleDialog: Option[Locator] =
     val found: Locator = page.locator("[role=\"dialog\"], [role=\"alertdialog\"]")

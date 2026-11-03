@@ -243,6 +243,14 @@ private[photo] final class AgentCreate(title: Option[String]) extends Operation:
       AgentCommands.catching(loaded):
         AgentCommands.createAlbum(loaded, albums, wanted)
 
+private[photo] final class AgentDeleteAlbum(title: Option[String], id: Option[String]) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wanted: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.deleteAlbum(loaded, albums, wanted, id)
+
 private[photo] object AgentDrift extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentCommands.catching(session):
@@ -536,6 +544,7 @@ private[photo] object AgentCommands:
   private val TrashStep: String = "Move to trash"
   private val UploadStep: String = "Add photos or Select photos, then Select from computer"
   private val CreateStep: String = "Create album, then Edit album name, Done"
+  private val DeleteAlbumStep: String = "More options, then Delete album, then Delete"
 
   def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     withLock(session, album.title)(heldRename(session, album, updated))
@@ -659,6 +668,16 @@ private[photo] object AgentCommands:
   def createAlbum(session: Session, albums: Seq[Catalog.Album], title: String): (Session, Result) =
     acceptCreate(title, albums)
     withLock(session, title)(heldCreate(session, title))
+
+  def deleteAlbum(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    title: String,
+    id: Option[String]
+  ): (Session, Result) =
+    val album: Catalog.Album = select(albums, title, id)
+    acceptAlbumDelete(album)
+    withLock(session, album.title)(heldDeleteAlbum(session, album.id))
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -1151,6 +1170,99 @@ private[photo] object AgentCommands:
     val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     acceptCreate(title, Catalog.read(catalog))
 
+  // The reread stays outside the catch. A refusal here is usage, and Chrome stays closed.
+  private def heldDeleteAlbum(session: Session, albumId: String): (Session, Result) =
+    val album: Catalog.Album = rereadAlbumDelete(session, albumId)
+    var ui: PhotosAct = null
+    var confirmed = false
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      val cards: Seq[AlbumCard] = ui.deleteAlbum(album)
+      confirmed = true
+      omitAlbum(session, album.id, cards) match
+        case Left(message) =>
+          deleteAlbumFailed(session, album, "refresh-only", message)
+        case Right(next) =>
+          deleteAlbumOk(next, album)
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("delete-album failed")
+        deleteAlbumFailed(session, album, recovery, detail)
+      case error: Exception =>
+        val recovery: String = if confirmed then "refresh-only" else "one-click"
+        deleteAlbumFailed(session, album, recovery, Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
+  private def rereadAlbumDelete(session: Session, albumId: String): Catalog.Album =
+    val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val album: Catalog.Album = Catalog.read(catalog).find(_.id == albumId).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    acceptAlbumDelete(album)
+    album
+
+  private def acceptAlbumDelete(album: Catalog.Album): Unit =
+    if album.owner.isDefined then throw IllegalArgumentException("no owner line")
+    if album.autoAdd then throw IllegalArgumentException("album is auto-add")
+
+  // A short list can be a truncated scroll. 250 cards is the refresh backstop, and the set has to be
+  // exactly every stored id except this one. Counts and titles on those cards are not a rewrite.
+  private def omitAlbum(session: Session, deletedId: String, cards: Seq[AlbumCard]): Either[String, Session] =
+    try
+      val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
+      val live: File = File(directory, "catalog.txt")
+      val partial: File = File(directory, "catalog.txt.partial")
+      val previous: File = File(directory, "catalog.txt.previous")
+      val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
+      val stored: Seq[Catalog.Album] = Catalog.read(live)
+      if cards.length < RefreshPlan.Floor then Left("rows < 250")
+      else
+        val cardIds: Set[String] = cards.map(_.id).toSet
+        val wanted: Set[String] = stored.map(_.id).toSet - deletedId
+        if cardIds != wanted then Left("album set")
+        else
+          val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
+          val survivors: Seq[Catalog.Album] = stored.filter(_.id != deletedId)
+          val groups: Either[String, Seq[Seq[String]]] =
+            survivors.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+              case (Left(message), _) => Left(message)
+              case (Right(acc), album) =>
+                blocks.get(album.id) match
+                  case Some(lines) => Right(acc :+ lines)
+                  case None => Left("missing album block")
+          groups.flatMap: lines =>
+            try
+              Files.write(RefreshPlan.renderLines(lines), partial)
+              Right(())
+            catch case error: Exception =>
+              Left(Operation.messageOf(error))
+          .flatMap(_ => omitCheck(partial, deletedId, survivors, blocks))
+          .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+          .map(_ => session.copy(catalogCache = None))
+    catch
+      case error: Exception =>
+        Left(Operation.messageOf(error))
+
+  private def omitCheck(
+    partial: File,
+    deletedId: String,
+    survivors: Seq[Catalog.Album],
+    blocks: Map[String, Seq[String]]
+  ): Either[String, Unit] =
+    RefreshPlan.checkRetitle(partial).flatMap: _ =>
+      val written: String = JFiles.readString(partial.toPath, StandardCharsets.UTF_8)
+      val again: Map[String, Seq[String]] = RefreshPlan.blocksOf(written)
+      val read: Seq[Catalog.Album] = Catalog.read(partial)
+      if read.exists(_.id == deletedId) then Left("deleted id remains")
+      else if read.map(_.id).toSet != survivors.map(_.id).toSet then Left("album set")
+      else if survivors.exists(album => again.get(album.id) != blocks.get(album.id)) then Left("block differs")
+      else Right(())
+
   private def acceptCreate(title: String, albums: Seq[Catalog.Album]): Unit =
     if title.isEmpty then throw IllegalArgumentException("empty title")
     else if title.exists(ch => ch == '\t' || ch == '\n' || ch == '\r') then
@@ -1482,6 +1594,43 @@ private[photo] object AgentCommands:
       "itemKey" -> Json.Str("")
     ))
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, title), value, Refresh.MutationFailed))
+
+  private def deleteAlbumOk(session: Session, album: Catalog.Album): (Session, Result) =
+    val text: String = PlaywrightPhotosUi.redactSecrets(s"delete-album ${Album.quote(album.title)}\n", album.title)
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("delete-album"),
+      "title" -> Json.Str(album.title),
+      "catalog" -> Json.Str("updated"),
+      "albumId" -> Json.Str(album.id),
+      "itemKey" -> Json.Str("")
+    ))
+    (session, Result.Ok(text, value))
+
+  private def deleteAlbumFailed(
+    session: Session,
+    album: Catalog.Album,
+    recovery: String,
+    detail: String
+  ): (Session, Result) =
+    val shown: String = collapsedText(detail, "delete-album failed")
+    val text: String =
+      s"""failed delete-album
+         |album ${Album.quote(album.title)}
+         |step $DeleteAlbumStep
+         |recovery $recovery
+         |catalog unchanged
+         |$shown
+         |""".stripMargin
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("delete-album"),
+      "title" -> Json.Str(album.title),
+      "step" -> Json.Str(DeleteAlbumStep),
+      "recovery" -> Json.Str(recovery),
+      "catalog" -> Json.Str("unchanged"),
+      "albumId" -> Json.Str(""),
+      "itemKey" -> Json.Str("")
+    ))
+    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
   private def moveOk(
     session: Session,

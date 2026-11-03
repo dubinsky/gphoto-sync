@@ -13,7 +13,7 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Album files — match, the album file, reconcile, and filing.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
   `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
-  `photo agent delete-item`, `photo agent upload-item`, and `photo agent create-album`.
+  `photo agent delete-item`, `photo agent upload-item`, `photo agent create-album`, and `photo agent delete-album`.
 
 ## Files
 
@@ -46,6 +46,11 @@ When the confirm ran and the key is still present, `catalog.txt` stays byte-iden
 `photo agent create-album` adds the new album `RefreshPlan.publish` writes for that card and otherwise leaves
 `catalog.txt` byte-identical.
 It does not write an album toml.
+`photo agent delete-album` omits that album's block when the live card list has at least 250 cards and those ids are
+exactly the stored ids minus the deleted id.
+Otherwise it leaves `catalog.txt` byte-identical.
+It copies every other block and does not retitle or recount.
+It does not trash library items.
 `photo reconcile` reads and writes `album-links.tsv`.
 `photo refresh` does not write that file.
 `photo agent download-item` stages that original in `.download/`, as Download describes.
@@ -62,6 +67,7 @@ It does not write an album toml.
 `photo agent delete-item` moves one library item to Google Photos trash.
 `photo agent upload-item` uploads one archive file into an existing album.
 `photo agent create-album` creates an empty album.
+`photo agent delete-album` deletes an album and leaves its photos and videos in the library.
 `photo publish` and `photo sync` still change Google Photos.
 
 `catalog.txt.partial` and `catalog.txt.previous` exist only while a catalog rewrite is published.
@@ -937,6 +943,7 @@ Stdout has no album id and no item key.
 
 `photo agent upload-item` uploads one archive file into an existing album, as Upload describes.
 `photo agent create-album` creates an empty album, as Create describes.
+`photo agent delete-album` deletes an album and leaves library items, as Delete album describes.
 `photo agent delete-item` moves one library item to Google Photos trash, as Delete describes.
 `--title` names the album.
 `--id` is required when more than one album has that title, and it must match.
@@ -1122,6 +1129,41 @@ When the confirm ran and the source key is still present, `catalog.txt` stays by
 `photo agent delete-item` does not change the archive or `.download/`.
 `photo agent delete-item` does not trash any other item, including an `IMG_` re-encode copy.
 
+### Delete album
+
+`photo agent delete-album` deletes an album and leaves its photos and videos in the library.
+`--title` names the album.
+`--id` is required when more than one album has that title, and it must match.
+The command is the confirmation.
+There is no confirmation file and no `--yes`.
+Before Chrome opens, the album has no `owner` line and it is not `auto-add`.
+A refusal is usage.
+Chrome stays closed and `catalog.txt` stays byte-identical.
+The command does not enqueue `delete-item`.
+The command opens the album.
+The control is More options, then the menuitem whose accessible name is `Delete album`.
+The dialog's buttons are `Keep album` and `Delete`.
+The confirm button's accessible name is `Delete`.
+The command clicks it only when the other button is `Keep album` and the dialog text contains "remain in Google Photos".
+`photo agent delete-album` does not click Delete forever or Empty trash.
+`photo agent delete-album` does not click a button whose name starts with Move to trash.
+Those buttons stay unclicked even when `Delete` is also listed.
+`photo agent delete-album` does not trash the album's members and does not empty trash.
+A miss before the `Delete` click is one-click.
+After that click, the command reads `albumCards` in memory.
+It does not call `readAlbum`.
+It does not call `RefreshPlan.plan` or `RefreshPlan.publish`.
+It does not call `Refresh.work`, `Refresh.run`, or `wipe`.
+It does not write `status.txt`, `albums.tsv`, or `parts/`.
+It publishes only when that card list has at least 250 cards and the card id set is exactly the stored ids minus the
+deleted id.
+The new catalog is the header plus every other album's source block, in stored order.
+A survivor card whose count or title differs is still copied.
+The command does not apply `Add`, `CountChange`, or `Retitle`.
+Any other card list leaves `catalog.txt` byte-identical, and recovery is refresh-only.
+The operator then runs `photo refresh`.
+Do not invent or guess a `batchexecute` RPC for this.
+
 ### Process
 
 `photo agent rename-album` is the applier for an album rename.
@@ -1134,3 +1176,4 @@ When the confirm ran and the source key is still present, `catalog.txt` stays by
 `photo agent delete-item` is the applier for moving one library item to trash.
 `photo agent upload-item` is the applier for uploading one archive file into an existing album.
 `photo agent create-album` is the applier for creating an empty album.
+`photo agent delete-album` is the applier for deleting an album.
