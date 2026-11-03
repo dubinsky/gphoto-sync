@@ -436,32 +436,14 @@ Cron is out of scope.
 
 == TODO
 
-- do not blink Chrome on Hyprland
+- packaging/publishing/installation/setup/documentstion
 
-- remove Google Photos API support?
-
-More operations are needed than what we already have to manipulate local archive:
-
-- delete album
-- create album with date range and/or name (at least one must be present)
-- change album name
-- include/exclude an item in an album (potentially changing its date expression)
-- anything else?
-
-- `lsd` should be equivalent to `lsd .`
-- tab completion
-- more regular/orthogonal/Linux-like user commands
-
-Some compound operations on the local archive seem to make sense, especially for the - soon to become reality - webapp:
-
-- move an item from an album into a month album (creating it as needed)
-- reverse
-
-- dates: dater; date in TOML file rules
+- if we keep Google Photos API support and use it for item upload from local archive - why do we need "create album" via Google Photos UI?
 
 - fix day and date-range albums: split, merge, month...
 
-- CLI get pictures from a memory card
-- CLI webapp
-- CLI packaging/publishing
+- running without Hyprland
+
+- running on non-Linux?
+
 
