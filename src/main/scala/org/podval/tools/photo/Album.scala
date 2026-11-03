@@ -144,12 +144,16 @@ object Album:
       changes.foreach: (file, include) =>
         putInclude(file, include)
 
-  def splitPath(path: String): (LocalDate, String) =
+  def picturePath(path: String): Option[(LocalDate, String)] =
     path.split('/').filter(_.nonEmpty).toSeq match
-      case Seq(year, month, day, stem) if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
-        (LocalDate.of(year.toInt, month.toInt, day.toInt), stem)
+      case Seq(year, month, day, stem)
+          if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
+        Some((LocalDate.of(year.toInt, month.toInt, day.toInt), stem))
       case _ =>
-        throw IllegalArgumentException(s"not a picture path: $path")
+        None
+
+  def splitPath(path: String): (LocalDate, String) =
+    picturePath(path).getOrElse(throw IllegalArgumentException(s"not a picture path: $path"))
 
   private def sameEntries(left: Seq[Include.Entry], right: Seq[Include.Entry]): Boolean =
     left.map(Include.render).equals(right.map(Include.render))

@@ -4,7 +4,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.awt.image.BufferedImage
 import java.io.File
-import java.nio.file.Files as JFiles
+import java.nio.file.{FileAlreadyExistsException, Files as JFiles}
 import java.time.{LocalDateTime, ZoneId}
 import javax.imageio.ImageIO
 
@@ -203,6 +203,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       val out: String = capture(run(root, "2009/06/12", days = true))
       picture.exists shouldBe false
       File(originals, "2009/06/11/3404.jpg").isFile shouldBe true
+      File(originals, "2009/06/12").exists shouldBe false
       out should include ("/2009/06/11")
 
   it should "not let a compact filename override DateTimeOriginal" in :
@@ -296,6 +297,248 @@ class RepairTest extends AnyFlatSpec, Matchers:
         case Result.Failed(text, _, message) => fail(s"$message\n$text")
         case Result.Usage(message) => fail(message)
 
+  it should "file an inbox jpeg on the civil day and leave the curated include" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val best: String = "include = [\"2009/03/10 2412\"]\n"
+      JFiles.writeString(File(originals, "Best.toml").toPath, best)
+      val picture: File = File(originals, ".upload/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      val destination: File = File(originals, "2009/06/11/3404.jpg")
+      val out: String = capture(run(root, ".upload", days = true))
+      picture.exists shouldBe false
+      destination.isFile shouldBe true
+      File(originals, ".upload").isDirectory shouldBe true
+      JFiles.readString(File(originals, "Best.toml").toPath) shouldBe best
+      out should include ("moving /.upload/3404 to /2009/06/11")
+      out should include (".upload/3404.jpg to ")
+      out should include ("/2009/06/11/3404.jpg")
+      out should not include ("keep")
+
+  it should "print the inbox move and write nothing on a dry run" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, ".upload/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      val out: String = capture(run(root, ".upload", days = true, dryRun = true))
+      picture.isFile shouldBe true
+      File(originals, "2009/06/11/3404.jpg").exists shouldBe false
+      out.linesIterator.map(_.trim).filter(_.nonEmpty).toSeq shouldBe
+        Seq("moving /.upload/3404 to /2009/06/11")
+
+  it should "keep an inbox picture when any destination file already exists" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, ".upload/3404.jpg")
+      val sidecar: File = File(originals, ".upload/3404.toml")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      JFiles.writeString(sidecar.toPath, "\n")
+      val occupied: File = File(originals, "2009/06/11/3404.toml")
+      occupied.getParentFile.mkdirs()
+      occupied.createNewFile()
+      def kept(dryRun: Boolean): String =
+        val out: String = capture(run(root, ".upload", days = true, dryRun = dryRun))
+        picture.isFile shouldBe true
+        sidecar.isFile shouldBe true
+        occupied.isFile shouldBe true
+        File(originals, "2009/06/11/3404.jpg").exists shouldBe false
+        File(originals, ".upload").isDirectory shouldBe true
+        out
+      val dry: String = kept(true)
+      val real: String = kept(false)
+      dry should include ("keep /.upload/3404 /2009/06/11 already exists")
+      real should include ("keep /.upload/3404 /2009/06/11 already exists")
+      dry should not include ("moving")
+      real should not include ("moving")
+
+  it should "put every extension back when the inbox link loses the name" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val first: File = File(originals, ".upload/3404.jpg")
+      val sidecar: File = File(originals, ".upload/3404.toml")
+      val second: File = File(originals, ".upload/3405.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", first)
+      JFiles.writeString(sidecar.toPath, "\n")
+      copyFixture("/dates/evening-no-offset.jpg", second)
+      val firstLength: Long = first.length
+      var calls: Int = 0
+      val out: String = capture(run(
+        root,
+        ".upload",
+        days = true,
+        link = (partial, destination) =>
+          calls += 1
+          if calls == 2 then throw FileAlreadyExistsException(destination.getPath)
+          else FileDownloads.linkPartial(partial, destination)
+      ))
+      calls shouldBe 3
+      first.isFile shouldBe true
+      first.length shouldBe firstLength
+      sidecar.isFile shouldBe true
+      second.exists shouldBe false
+      File(originals, "2009/06/11/3405.jpg").isFile shouldBe true
+      File(originals, "2009/06/11/3404.jpg").exists shouldBe false
+      File(originals, "2009/06/11/3404.toml").exists shouldBe false
+      val dayNames: Seq[String] =
+        Option(File(originals, "2009/06/11").list).map(_.toSeq).getOrElse(Seq.empty)
+      dayNames.exists(_.startsWith(".inbox-")) shouldBe false
+      out should include ("keep /.upload/3404 /2009/06/11 already exists")
+      out should include ("moving /.upload/3405 to /2009/06/11")
+      out should include (".upload/3405.jpg to ")
+      out should not include ("moving /.upload/3404")
+      out should not include (".upload/3404.jpg to ")
+      out should not include (".upload/3404.toml to ")
+
+  it should "put every extension back and stop when the inbox link fails another way" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, ".upload/3404.jpg")
+      val sidecar: File = File(originals, ".upload/3404.toml")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      JFiles.writeString(sidecar.toPath, "\n")
+      var calls: Int = 0
+      val (out, thrown) = Transcript.collect(run(
+        root,
+        ".upload",
+        days = true,
+        link = (partial, destination) =>
+          calls += 1
+          if calls == 2 then throw RuntimeException("boom")
+          else FileDownloads.linkPartial(partial, destination)
+      ))
+      calls shouldBe 2
+      thrown.get.getMessage shouldBe "boom"
+      picture.isFile shouldBe true
+      sidecar.isFile shouldBe true
+      File(originals, "2009/06/11/3404.jpg").exists shouldBe false
+      File(originals, "2009/06/11/3404.toml").exists shouldBe false
+      out should not include ("keep")
+      out should not include ("moving")
+
+  it should "print the disagreement line for an inbox sidecar and not move" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, ".upload/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      JFiles.writeString(
+        File(originals, ".upload/3404.toml").toPath,
+        "timestamp = \"2011-06-29T09:45:00\"\ndate = 2011-06-30\n"
+      )
+      val out: String = capture(run(root, ".upload", days = true))
+      picture.isFile shouldBe true
+      File(originals, "2011/06/29/3404.jpg").exists shouldBe false
+      File(originals, "2011/06/30/3404.jpg").exists shouldBe false
+      out should include (
+        "DATE DISAGREES WITH TIMESTAMP /.upload/3404 timestamp=2011-06-29T09:45 date=2011-06-30"
+      )
+      out should not include ("moving")
+      out should not include ("keep")
+
+  it should "leave an orphan THM in .upload" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val thm: File = File(originals, ".upload/1003.THM")
+      thm.getParentFile.mkdirs()
+      thm.createNewFile()
+      val out: String = capture(run(root, ".upload", names = true, days = true))
+      thm.isFile shouldBe true
+      out should include (s"$thm: NOT RENAMED; 1003 has no picture file")
+      out should not include ("moving")
+
+  it should "move an inbox partial back and then file it" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val partial: File = File(originals, "2010/01/02/.inbox-2412.jpg.partial")
+      copyFixture("/dates/evening-no-offset.jpg", partial)
+      File(originals, ".upload").mkdirs()
+      val out: String = capture(run(root, ".upload", days = true))
+      partial.exists shouldBe false
+      File(originals, ".upload/2412.jpg").exists shouldBe false
+      File(originals, "2009/06/11/2412.jpg").isFile shouldBe true
+      File(originals, ".upload").isDirectory shouldBe true
+      out should include ("moving /.upload/2412 to /2009/06/11")
+
+  it should "leave an inbox partial in place on a dry run" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val partial: File = File(originals, "2010/01/02/.inbox-2412.jpg.partial")
+      copyFixture("/dates/evening-no-offset.jpg", partial)
+      File(originals, ".upload").mkdirs()
+      val out: String = capture(run(root, ".upload", days = true, dryRun = true))
+      partial.isFile shouldBe true
+      File(originals, ".upload/2412.jpg").exists shouldBe false
+      File(originals, "2009/06/11/2412.jpg").exists shouldBe false
+      out should not include ("moving")
+
+  it should "delete an inbox partial that is already the day file" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val dayFile: File = File(originals, "2009/06/11/2412.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", dayFile)
+      val partial: File = File(dayFile.getParentFile, ".inbox-2412.jpg.partial")
+      JFiles.createLink(partial.toPath, dayFile.toPath)
+      File(originals, ".upload").mkdirs()
+      val out: String = capture(run(root, "", days = true))
+      partial.exists shouldBe false
+      dayFile.isFile shouldBe true
+      File(originals, ".upload/2412.jpg").exists shouldBe false
+      out should not include ("moving")
+
+  it should "refuse a leftover inbox partial that is not the day file" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val dayFile: File = File(originals, "2009/06/11/2412.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", dayFile)
+      val partial: File = File(dayFile.getParentFile, ".inbox-2412.jpg.partial")
+      JFiles.writeString(partial.toPath, "other")
+      File(originals, ".upload").mkdirs()
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        run(root, ".upload", days = true)
+      caught.getMessage shouldBe "leftover inbox partial: .inbox-2412.jpg.partial"
+      partial.isFile shouldBe true
+      dayFile.isFile shouldBe true
+      File(originals, ".upload/2412.jpg").exists shouldBe false
+
+  it should "refuse a leftover inbox partial when .upload already has the file" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val uploadFile: File = File(originals, ".upload/2412.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", uploadFile)
+      val partial: File = File(originals, "2010/01/02/.inbox-2412.jpg.partial")
+      partial.getParentFile.mkdirs()
+      JFiles.writeString(partial.toPath, "other")
+      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        run(root, ".upload", days = true)
+      caught.getMessage shouldBe "leftover inbox partial: .inbox-2412.jpg.partial"
+      partial.isFile shouldBe true
+      uploadFile.isFile shouldBe true
+      File(originals, "2009/06/11/2412.jpg").exists shouldBe false
+
+  it should "not restore an inbox partial when the path is a year" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val partial: File = File(originals, "2009/06/12/.inbox-2412.jpg.partial")
+      copyFixture("/dates/evening-no-offset.jpg", partial)
+      File(originals, ".upload").mkdirs()
+      val out: String = capture(run(root, "2009", days = true))
+      partial.isFile shouldBe true
+      File(originals, ".upload/2412.jpg").exists shouldBe false
+      out should not include ("moving")
+
+  it should "throw when a day-folder destination exists and not print keep" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/12/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      val destination: File = File(originals, "2009/06/11/3404.jpg")
+      destination.getParentFile.mkdirs()
+      destination.createNewFile()
+      val (out, thrown) = Transcript.collect(run(root, "2009/06/12", days = true))
+      thrown.get shouldBe a [FileAlreadyExistsException]
+      picture.isFile shouldBe true
+      destination.isFile shouldBe true
+      out should not include ("keep")
+
   private def run(
     root: Root,
     path: String,
@@ -305,7 +548,8 @@ class RepairTest extends AnyFlatSpec, Matchers:
     days: Boolean = false,
     dryRun: Boolean = false,
     generate: Picture => Unit = _ => (),
-    setTimestamp: (Picture, String, java.time.Instant) => Unit = (_, _, _) => ()
+    setTimestamp: (Picture, String, java.time.Instant) => Unit = (_, _, _) => (),
+    link: (File, File) => Unit = FileDownloads.linkPartial
   ): Unit =
     Repair.run(
       root.parse(path),
@@ -315,7 +559,8 @@ class RepairTest extends AnyFlatSpec, Matchers:
       days = days,
       dryRun = dryRun,
       generate = generate,
-      setTimestamp = setTimestamp
+      setTimestamp = setTimestamp,
+      link = link
     )
 
   private def capture(body: => Unit): String =

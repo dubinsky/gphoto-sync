@@ -276,6 +276,7 @@ With no path it uses the same discovery.
 `photo card copy --dry-run` mounts when the volume is unmounted, prints `copy` and `keep` lines, and writes nothing.
 A path is the directory that contains `DCIM` and skips discovery.
 Filing is `photo repair .upload --names --days`.
+The day is the civil day already stored in `PictureAudit.dayShouldBe`, and this command does not define a second rule.
 A filed stem is claimed when `Include.claims` matches that folder day.
 `include = all` does that inside the album span.
 `include = all except` does not claim an excepted stem.
