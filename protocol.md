@@ -11,6 +11,7 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Album links — the `album-links.tsv` grammar.
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
+- Push — `photo push`.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
   `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
   `photo agent delete-item`, `photo agent upload-item`, `photo agent create-album`, and `photo agent delete-album`.
@@ -51,6 +52,7 @@ exactly the stored ids minus the deleted id.
 Otherwise it leaves `catalog.txt` byte-identical.
 It copies every other block and does not retitle or recount.
 It does not trash library items.
+`photo push` rewrites `catalog.txt` for each action that publishes, as Push describes.
 `photo reconcile` reads and writes `album-links.tsv`.
 `photo refresh` does not write that file.
 `photo agent download-item` stages that original in `.download/`, as Download describes.
@@ -68,6 +70,7 @@ It does not trash library items.
 `photo agent upload-item` uploads one archive file into an existing album.
 `photo agent create-album` creates an empty album.
 `photo agent delete-album` deletes an album and leaves its photos and videos in the library.
+`photo push` changes Google Photos for external albums, as Push describes.
 `photo publish` and `photo sync` still change Google Photos.
 
 `catalog.txt.partial` and `catalog.txt.previous` exist only while a catalog rewrite is published.
@@ -785,6 +788,62 @@ Items in no album are out of scope.
 This command does not download and does not call Google.
 Other people's items that the Download control can fetch stay on `photo agent download-item`.
 `--dry-run` prints the actions and writes nothing.
+
+## Push
+
+`photo push` edits external albums through the Photos UI.
+It is not part of `photo publish`.
+It does not create a Library API album, does not write `google-album-id`, and does not call `batchCreate`.
+
+An album file with `external = true` and no `owner` line is in scope.
+An `owner` line is skipped.
+An app-created album stays on `photo publish` and `photo sync`.
+A file with no `album-links.tsv` row is skipped.
+A link whose album is absent from the catalog is skipped.
+A catalog album with an `owner` line, `auto-add`, or unread names is skipped.
+Album order is the archive-relative path, compared as UTF-8 bytes, then the title.
+
+For one album, the day folders are the album span.
+A curated album has no span, so the days are the days named by `include`.
+The include lines expand to the desired day and stem pairs.
+An excepted stem is not in that set.
+Catalog items match local stems by the gather rules: an exact stem, then one leading prefix.
+A desired pair that gather did not hit is a file with no catalog item.
+
+An excepted stem that is an item in this album is `remove-from-album`.
+It is not `delete-item` and it is not an upload.
+A catalog item that gather matches to a desired pair, and that is not already an item in this album, is `add-to-album`
+from the album that holds the key.
+When more than one album holds that key, the source is the first of those albums in catalog order.
+A desired pair that is already an item in this album is a no-op.
+A desired pair with no catalog item, and whose sidecar has a non-empty `google-media-item-id` or `already-in-google`
+true, is not an upload.
+A desired pair with no catalog item and no such sidecar mark is `upload-item` of the archive file.
+The file is `jpg`, `jpeg`, `mov`, `mp4`, `avi`, or `3gp`.
+RAW, `heic`, `png`, and `webp` stay local and are not an upload line.
+
+Inside one album the order is remove, then add, then upload.
+The run finishes one album before the next.
+`--dry-run` prints that plan and does not take the refresh lock and does not open Chrome.
+A line is `remove`, `add`, or `upload`.
+The fields are quoted.
+The line has no catalog id and no item key.
+
+A real run takes one refresh lock and one browser.
+It calls `takeOut`, `putInAlbum`, and the upload function.
+It does not shell out to `photo agent`.
+Each clean success publishes before the next action.
+On failure, stop.
+That action leaves `catalog.txt` byte-identical.
+Earlier actions in the run may already have published.
+The failure says `catalog unchanged` when this run published nothing, and `catalog updated` when an earlier action
+already published.
+Recovery is one-click when the confirm did not run, and refresh-only when it did.
+The operator refreshes the named titles and runs `photo push` again.
+The next run plans from the new catalog.
+It does not retry a refresh-only step by clicking it.
+The command does not write an album toml, `status.txt`, `albums.tsv`, or `parts/`.
+Do not invent or guess a `batchexecute` RPC for this.
 
 ## Requests
 

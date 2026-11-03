@@ -38,6 +38,7 @@ object Cli:
   ) extends Parsed
   private[photo] final case class ReconcileArgs(dryRun: Boolean, delete: Boolean) extends Parsed
   private[photo] final case class FileArgs(dryRun: Boolean) extends Parsed
+  private[photo] final case class PushArgs(dryRun: Boolean) extends Parsed
   private[photo] final case class RepairArgs(
     path: String,
     names: Boolean,
@@ -345,11 +346,12 @@ object Cli:
     case CdArgs(_) | PwdArgs | ExitArgs => true
     case _ => false
 
-  // Every real arm is listed. Refresh, reconcile, and file stay off the serve thread.
+  // Every real arm is listed. Refresh, reconcile, file, and push stay off the serve thread.
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
     case _: RefreshArgs => true
     case _: ReconcileArgs => true
     case _: FileArgs => true
+    case _: PushArgs => true
     case _: RenameAlbumArgs => true
     case _: SetDescriptionArgs => true
     case _: SetDateArgs => true
@@ -387,6 +389,7 @@ object Cli:
     case _: RefreshArgs => "refresh"
     case _: ReconcileArgs => "reconcile"
     case _: FileArgs => "file"
+    case _: PushArgs => "push"
     case _: RenameAlbumArgs => "rename-album"
     case _: SetDescriptionArgs => "set-description"
     case _: SetDateArgs => "set-date"
@@ -400,7 +403,7 @@ object Cli:
     case _: DeleteAlbumArgs => "delete-album"
     case _ => "command"
 
-  // Refresh, reconcile, and file stay off this branch.
+  // Refresh, reconcile, file, and push stay off this branch.
   private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
     case _: RenameAlbumArgs => true
     case _: SetDescriptionArgs => true
@@ -653,6 +656,8 @@ object Cli:
       Reconcile(args)
     case FileArgs(dryRun) =>
       FileDownloads(dryRun)
+    case PushArgs(dryRun) =>
+      Push(dryRun)
     case LoginArgs => Login
     case StatusArgs => Status
     case LogoutArgs => Logout
@@ -1090,6 +1095,15 @@ object Cli:
         recursive = bool(values, "recursive"),
         dryRun = bool(values, "dry-run")
       )
+    ),
+    Command(
+      name = "push",
+      help = "push external albums",
+      positionals = Nil,
+      flags = List(
+        Flag("dry-run", None, BooleanKind, "print the plan and do not open Chrome")
+      ),
+      build = (values, _) => PushArgs(bool(values, "dry-run"))
     ),
     Command(
       name = "refresh",

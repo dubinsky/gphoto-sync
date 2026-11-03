@@ -235,6 +235,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |albums  list album claims
         |publish  publish albums to Google Photos
         |sync  sync album removals into local except lists
+        |push  push external albums
         |refresh  refresh the Google Photos catalog from Chrome
         |reconcile  link catalog albums to local album files
         |file  file staged downloads into civil day folders
@@ -340,6 +341,16 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--recursive  boolean  required for a year or the archive root
         |--dry-run  boolean  read Google, print except and remove lines, and do not write""".stripMargin
     helpOf("sync", "-h") shouldBe helpOf("sync", "--help")
+
+    helpOf("push", "--help") shouldBe
+      """push  push external albums
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--dry-run  boolean  print the plan and do not open Chrome""".stripMargin
+    helpOf("push", "-h") shouldBe helpOf("push", "--help")
 
     helpOf("login", "--help") shouldBe
       """login  log in to Google Photos
@@ -769,7 +780,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "requests",
       "results",
       "apply-requests",
-      "repair", "publish", "sync", "refresh", "reconcile", "file", "set-metadata",
+      "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "set-metadata",
       "login", "status", "logout",
       "ls", "lsd", "albums",
       "help", "cd", "pwd", "exit",

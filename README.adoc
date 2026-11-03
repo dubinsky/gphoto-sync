@@ -169,6 +169,29 @@ A year or the archive root requires `--recursive`.
 An except line is `except`, the album title, and the stem in quotes.
 A remove line is `remove`, the album title, and the stem in quotes.
 
+`photo push` edits external albums through the Photos UI.
+An album file with `external = true` and no `owner` line is in scope.
+An `owner` line is skipped.
+App-created albums stay on `photo publish` and `photo sync`.
+The album order is the archive-relative path, in byte order, then the title.
+For one album the actions are remove, then add, then upload, and one album finishes before the next.
+An excepted stem is removed from the album.
+It is not uploaded and it is not deleted from the library.
+A catalog item that gather matches, and that is not already in the album, is added from the album that holds it.
+An archive file with no catalog item and no `google-media-item-id` or `already-in-google` is uploaded.
+RAW, `heic`, `png`, and `webp` stay local.
+The run takes one refresh lock and one browser.
+Each clean action publishes before the next.
+On failure, stop.
+That action leaves `catalog.txt` byte-identical.
+Earlier actions may already have published.
+The operator refreshes the named titles and runs `photo push` again.
+`--dry-run` prints the plan and does not take the lock and does not open Chrome.
+A line is `remove`, `add`, or `upload`, the fields are quoted, and the line has no catalog id.
+The command is not part of `photo publish`.
+It is not an MCP tool.
+The command runs in the calling process.
+
 `photo refresh` reads the signed-in Chrome profile and rewrites `catalog.txt`.
 The default is incremental.
 It item-reads an album that is new or whose card count changed, and it does not item-read a stored auto-add album.
@@ -274,13 +297,13 @@ Flags precede positionals in `argv`.
 `text` is the human output.
 `value` is the command's JSON value, or `null`.
 A failure puts the usage line in `error` and does not write a second line to stderr.
-`cd`, `pwd`, `exit`, `photo refresh`, `photo reconcile`, and `photo file` are usage on the socket.
+`cd`, `pwd`, `exit`, `photo refresh`, `photo reconcile`, `photo file`, and `photo push` are usage on the socket.
 `photo serve stop` asks that process to exit between commands.
 It does not preempt a command already running.
 
 `photo shell` keeps `cd`, `pwd`, and `exit` in the shell.
 It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
-`photo refresh`, `photo reconcile`, and `photo file` stay in the shell process.
+`photo refresh`, `photo reconcile`, `photo file`, and `photo push` stay in the shell process.
 Other commands go to the socket.
 Path arguments are archive-root paths.
 `agent include` paths are sent unchanged.
@@ -289,7 +312,7 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 
 A one-shot uses the socket when it is up and `archive` matches.
 It runs in this process when the lock is free.
-`photo refresh`, `photo reconcile`, and `photo file` run in this process even when the socket is up.
+`photo refresh`, `photo reconcile`, `photo file`, and `photo push` run in this process even when the socket is up.
 A one-shot does not start `photo serve`.
 A mismatch names both paths and does not run in this process.
 

@@ -679,6 +679,13 @@ private[photo] object AgentCommands:
     acceptAlbumDelete(album)
     withLock(session, album.title)(heldDeleteAlbum(session, album.id))
 
+  // claim is not reentrant, and each row has to publish before the next click.
+  // One push holds the lock and the browser. The public commands still take both themselves.
+  private[photo] def push(session: Session, dryRun: Boolean): (Session, Result) =
+    val (ready, actions) = planPush(session)
+    if dryRun || actions.isEmpty then (ready, Result.Ok(pushText(actions), Json.Null))
+    else withLock(ready, actions.head.shownTitle)(runPush(ready, actions))
+
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
     Refresh.claim(places.lock) match
@@ -987,16 +994,9 @@ private[photo] object AgentCommands:
         throw Refresh.ActMiss("New album is not a destination", confirmed = false)
       // A notice would write status.txt and drop a crashed refresh's resume phase.
       ui = Refresh.openAct(_ => ())
-      val read: Catalog.Item = ui.putInAlbum(item, destination, current)
-      val line: Catalog.Item = Catalog.Item(
-        current,
-        read.date.orElse(item.date),
-        read.key,
-        read.uploader.orElse(item.uploader)
-      )
-      publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))) match
-        case Right(next) =>
-          addOk(next, destination, current, line.key, "add-to-album")
+      commitPut(ui, session, item, destination, current) match
+        case Right(done) =>
+          addOk(done.session, destination, current, done.key, "add-to-album")
         case Left(message) =>
           itemFailed(session, source, item, "add-to-album", AddStep, "refresh-only", message)
     catch
@@ -1022,8 +1022,7 @@ private[photo] object AgentCommands:
     try
       // A notice would write status.txt and drop a crashed refresh's resume phase.
       ui = Refresh.openAct(_ => ())
-      ui.takeOut(album, item)
-      publishAlbum(session, Seq(album.id -> (next => revisedTake(next, item)))) match
+      commitTake(ui, session, album, item) match
         case Right(next) =>
           itemOk(next, album, item, "remove-from-album", "updated")
         case Left(message) =>
@@ -1279,11 +1278,9 @@ private[photo] object AgentCommands:
     try
       // A notice would write status.txt and drop a crashed refresh's resume phase.
       ui = Refresh.openAct(_ => ())
-      val read: Catalog.Item = ui.uploadItem(destination, file, name)
-      val line: Catalog.Item = Catalog.Item(name, read.date, read.key, read.uploader)
-      publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))) match
-        case Right(next) =>
-          addOk(next, destination, name, line.key, "upload-item")
+      commitUpload(ui, session, destination, file, name) match
+        case Right(done) =>
+          addOk(done.session, destination, name, done.key, "upload-item")
         case Left(message) =>
           uploadFailed(session, destination, name, "refresh-only", message)
     catch
@@ -1297,6 +1294,329 @@ private[photo] object AgentCommands:
       if ui != null then
         try ui.close()
         catch case _: Exception => ()
+
+  private final case class Committed(session: Session, key: String)
+
+  private def commitPut(
+    ui: PhotosAct,
+    session: Session,
+    item: Catalog.Item,
+    destination: Catalog.Album,
+    current: String
+  ): Either[String, Committed] =
+    val read: Catalog.Item = ui.putInAlbum(item, destination, current)
+    val line: Catalog.Item = Catalog.Item(
+      current,
+      read.date.orElse(item.date),
+      read.key,
+      read.uploader.orElse(item.uploader)
+    )
+    publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))).map: next =>
+      Committed(next, line.key)
+
+  private def commitTake(
+    ui: PhotosAct,
+    session: Session,
+    album: Catalog.Album,
+    item: Catalog.Item
+  ): Either[String, Session] =
+    ui.takeOut(album, item)
+    publishAlbum(session, Seq(album.id -> (next => revisedTake(next, item))))
+
+  private def commitUpload(
+    ui: PhotosAct,
+    session: Session,
+    destination: Catalog.Album,
+    file: File,
+    name: String
+  ): Either[String, Committed] =
+    val read: Catalog.Item = ui.uploadItem(destination, file, name)
+    val line: Catalog.Item = Catalog.Item(name, read.date, read.key, read.uploader)
+    publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))).map: next =>
+      Committed(next, line.key)
+
+  private enum PushAction:
+    case Remove(albumId: String, key: String, current: String, albumTitle: String, filename: String)
+    case Add(
+      sourceId: String,
+      key: String,
+      current: String,
+      destinationId: String,
+      albumTitle: String,
+      filename: String,
+      sourceTitle: String
+    )
+    case Upload(destinationId: String, pathText: String, albumTitle: String, relative: String)
+
+    def line: String = this match
+      case Remove(_, _, _, albumTitle, filename) =>
+        s"remove ${Album.quote(albumTitle)} ${Album.quote(filename)}"
+      case Add(_, _, _, _, albumTitle, filename, sourceTitle) =>
+        s"add ${Album.quote(albumTitle)} ${Album.quote(filename)} from ${Album.quote(sourceTitle)}"
+      case Upload(_, _, albumTitle, relative) =>
+        s"upload ${Album.quote(albumTitle)} ${Album.quote(relative)}"
+
+    def stepName: String = this match
+      case _: Remove => RemoveStep
+      case _: Add => AddStep
+      case _: Upload => UploadStep
+
+    def shownTitle: String = this match
+      case Remove(_, _, _, albumTitle, _) => albumTitle
+      case Add(_, _, _, _, albumTitle, _, _) => albumTitle
+      case Upload(_, _, albumTitle, _) => albumTitle
+
+  private final case class PushStop(
+    line: String,
+    step: String,
+    recovery: String,
+    detail: String,
+    title: String
+  )
+
+  private final case class PushRow(path: String, fileAlbum: Album, catalog: Catalog.Album)
+
+  private final case class PushDay(
+    directory: File,
+    grouped: Map[String, Set[String]],
+    sidecars: Map[String, Metadata]
+  ):
+    def stems: Set[String] = grouped.keySet
+
+  // Dry-run prints this sequence. A later album is not replanned after an earlier publish.
+  private def planPush(session: Session): (Session, Seq[PushAction]) =
+    val archive: File = session.root.configuration.archive
+    val catalogFile: File = File(File(archive, ".gphoto-sync"), "catalog.txt")
+    val stored: Seq[Catalog.Album] = Catalog.read(catalogFile)
+    val links: Map[String, String] = AlbumLinks.read(archive).map(row => row.path -> row.id).toMap
+    val chosen: Seq[PushRow] = Archive.scan(archive).albums.flatMap: loaded =>
+      val path: String = Album.relative(archive, loaded.file)
+      // No link means there is no album page to open. Owner, auto-add, and unread names are the
+      // item-command refusals, so one such album does not fail the others.
+      if !loaded.album.external || loaded.album.owner.isDefined then None
+      else links.get(path).flatMap: id =>
+        stored.find(_.id == id).filterNot(pushSkipped).map(album => PushRow(path, loaded.album, album))
+    val ordered: Seq[PushRow] =
+      chosen.sortBy(row => (utf8Key(row.path), utf8Key(row.catalog.title)))
+    ordered.foldLeft((session, Seq.empty[PushAction])):
+      case ((current, acc), row) =>
+        val (next, planned) = planAlbum(current, row, stored)
+        (next, acc ++ planned)
+
+  private def pushSkipped(album: Catalog.Album): Boolean =
+    album.owner.isDefined ||
+      album.autoAdd ||
+      album.error.exists(_.nameFailures > 0) ||
+      album.unsets.nonEmpty
+
+  private def planAlbum(
+    session: Session,
+    row: PushRow,
+    stored: Seq[Catalog.Album]
+  ): (Session, Seq[PushAction]) =
+    val (ready, facts) = pushDays(row.fileAlbum).foldLeft((session, Map.empty[LocalDate, PushDay])):
+      case ((current, acc), day) =>
+        val civil: Day = civilDay(current.root, day)
+        val (next, grouped, sidecars) = loadGrouped(current, civil, readSidecars = true)
+        (next, acc.updated(day, PushDay(civil.directory, grouped.toMap, sidecars)))
+    val universe: Map[LocalDate, Set[String]] =
+      facts.iterator.map((day, fact) => day -> fact.stems).toMap
+    val desired: Set[(LocalDate, String)] =
+      row.fileAlbum.include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
+        acc ++ Include.expand(row.fileAlbum.span, entry, universe)
+    val hits: Map[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]] =
+      stored.foldLeft(Map.empty[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]]): (acc, album) =>
+        album.items.foldLeft(acc): (inner, item) =>
+          pushStem(facts, item) match
+            case None => inner
+            case Some(pair) =>
+              inner.updated(pair, inner.getOrElse(pair, Seq.empty) :+ (album -> item))
+    val removes: Seq[PushAction] = pushRemoves(row, facts)
+    val adds: Seq[PushAction] = pushAdds(row, desired, hits)
+    val uploads: Seq[PushAction] = pushUploads(ready, row, desired, facts, hits)
+    (ready, removes ++ adds ++ uploads)
+
+  private def pushRemoves(row: PushRow, facts: Map[LocalDate, PushDay]): Seq[PushAction] =
+    row.catalog.items.flatMap: item =>
+      val (raw, _) = Files.splitOnLast(item.filename, '.')
+      val stem: String = pushStem(facts, item).map(_._2).getOrElse(Pictures.dropOnePrefix(raw))
+      val excepted: Boolean =
+        item.date.exists(day => row.fileAlbum.positive(day, stem) && !row.fileAlbum.claims(day, stem))
+      Option.when(excepted)(item)
+    .sortBy(item => (utf8Key(item.filename), utf8Key(item.key)))
+    .map: item =>
+      PushAction.Remove(row.catalog.id, item.key, item.filename, row.catalog.title, item.filename)
+
+  private def pushAdds(
+    row: PushRow,
+    desired: Set[(LocalDate, String)],
+    hits: Map[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]]
+  ): Seq[PushAction] =
+    desired.toSeq.flatMap: pair =>
+      val holders: Seq[(Catalog.Album, Catalog.Item)] = hits.getOrElse(pair, Seq.empty)
+      if holders.exists(_._1.id == row.catalog.id) then Seq.empty
+      else
+        holders.map(_._2.key).distinct.flatMap: key =>
+          holders.find((album, item) => item.key == key && album.id != row.catalog.id).map: (album, item) =>
+            PushAction.Add(
+              album.id,
+              item.key,
+              item.filename,
+              row.catalog.id,
+              row.catalog.title,
+              item.filename,
+              album.title
+            )
+    .sortBy:
+      case action: PushAction.Add =>
+        (utf8Key(action.filename), utf8Key(action.sourceTitle), utf8Key(action.key))
+      case _ =>
+        (Seq.empty[Int], Seq.empty[Int], Seq.empty[Int])
+
+  private def pushUploads(
+    session: Session,
+    row: PushRow,
+    desired: Set[(LocalDate, String)],
+    facts: Map[LocalDate, PushDay],
+    hits: Map[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]]
+  ): Seq[PushAction] =
+    val archive: File = session.root.configuration.archive
+    desired.toSeq.flatMap: (day, stem) =>
+      if hits.contains(day -> stem) then None
+      else facts.get(day).flatMap: fact =>
+        val metadata: Metadata = fact.sidecars.getOrElse(stem, Metadata.default)
+        // The Library API already recorded this file. A second upload would be another library copy.
+        val marked: Boolean =
+          metadata.`google-media-item-id`.exists(_.nonEmpty) || metadata.`already-in-google`.contains(true)
+        if marked then None
+        else pushFile(archive, fact.directory, stem).map: relative =>
+          PushAction.Upload(row.catalog.id, relative, row.catalog.title, relative)
+    .sortBy:
+      case action: PushAction.Upload => utf8Key(action.relative)
+      case _ => Seq.empty
+
+  private def pushFile(archive: File, directory: File, stem: String): Option[String] =
+    val planned: Seq[Pictures.Planned] = Pictures.plan(Files.listFiles(directory)).filter: row =>
+      !row.omitted && row.stem == stem && Publish.uploadable.contains(row.extension)
+    val literal: Option[Pictures.Planned] =
+      Publish.uploadable.flatMap(ext => planned.find(row => row.literal && row.extension == ext)).headOption
+    val fallback: Option[Pictures.Planned] =
+      Publish.uploadable.flatMap(ext => planned.find(_.extension == ext)).headOption
+    literal.orElse(fallback).map(row => Album.relative(archive, row.file))
+
+  private def pushStem(
+    facts: Map[LocalDate, PushDay],
+    item: Catalog.Item
+  ): Option[(LocalDate, String)] =
+    item.date.flatMap: day =>
+      facts.get(day).flatMap: fact =>
+        val (stem, extension) = Files.splitOnLast(item.filename, '.')
+        resolve(fact.grouped, stem, extension).map(local => day -> local)
+
+  private def pushDays(album: Album): Seq[LocalDate] =
+    album.span match
+      case Some(span) => eachDay(span)
+      case None => album.include.flatMap(pushEntryDays).distinct.sorted
+
+  private def pushEntryDays(entry: Include.Entry): Seq[LocalDate] = entry match
+    case Include.Entry.All(_) => Seq.empty
+    case Include.Entry.Dates(span, _, _) => eachDay(span)
+
+  // Unsigned UTF-8 bytes. Java String order is UTF-16, which disagrees past U+007F.
+  private given Ordering[Seq[Int]] = scala.math.Ordering.Implicits.seqOrdering
+
+  private def utf8Key(text: String): Seq[Int] =
+    text.getBytes(StandardCharsets.UTF_8).toSeq.map(byte => byte & 0xff)
+
+  private def runPush(session: Session, actions: Seq[PushAction]): (Session, Result) =
+    var ui: PhotosAct = null
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      val opened: PhotosAct = ui
+      val outcome: Either[(Session, Result), (Session, Seq[String])] =
+        actions.foldLeft[Either[(Session, Result), (Session, Seq[String])]](Right(session -> Seq.empty)):
+          case (left @ Left(_), _) => left
+          case (Right((current, done)), action) =>
+            applyPush(opened, current, action) match
+              case Right((next, line)) => Right(next -> (done :+ line))
+              case Left(stop) => Left(pushFailed(current, done, stop))
+      outcome match
+        case Left(done) => done
+        case Right((current, done)) =>
+          (current, Result.Ok(pushText(done, actions.head.shownTitle), Json.Null))
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("push failed")
+        val head: PushAction = actions.head
+        pushFailed(session, Seq.empty, PushStop(head.line, head.stepName, recovery, detail, head.shownTitle))
+      case error: Exception =>
+        val head: PushAction = actions.head
+        pushFailed(
+          session,
+          Seq.empty,
+          PushStop(head.line, head.stepName, "one-click", Operation.messageOf(error), head.shownTitle)
+        )
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
+  private def applyPush(
+    ui: PhotosAct,
+    session: Session,
+    action: PushAction
+  ): Either[PushStop, (Session, String)] =
+    try
+      action match
+        case remove: PushAction.Remove =>
+          val (album, item) = rereadTake(session, remove.albumId, remove.key, remove.current)
+          commitTake(ui, session, album, item) match
+            case Right(next) => Right(next -> remove.line)
+            case Left(message) => Left(stopped(remove, "refresh-only", message))
+        case add: PushAction.Add =>
+          val (_, item, destination) = rereadAdd(session, add.sourceId, add.key, add.current, add.destinationId)
+          if destination.title == "New album" then
+            throw Refresh.ActMiss("New album is not a destination", confirmed = false)
+          commitPut(ui, session, item, destination, add.current) match
+            case Right(done) => Right(done.session -> add.line)
+            case Left(message) => Left(stopped(add, "refresh-only", message))
+        case upload: PushAction.Upload =>
+          val (destination, file, name) = rereadUpload(session, upload.pathText, upload.destinationId)
+          commitUpload(ui, session, destination, file, name) match
+            case Right(done) => Right(done.session -> upload.line)
+            case Left(message) => Left(stopped(upload, "refresh-only", message))
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("push failed")
+        Left(stopped(action, recovery, detail))
+      case error: Exception =>
+        Left(stopped(action, "one-click", Operation.messageOf(error)))
+
+  private def stopped(action: PushAction, recovery: String, detail: String): PushStop =
+    PushStop(action.line, action.stepName, recovery, detail, action.shownTitle)
+
+  private def pushFailed(session: Session, done: Seq[String], stop: PushStop): (Session, Result) =
+    val shown: String = collapsedText(stop.detail, "push failed")
+    val catalog: String = if done.nonEmpty then "updated" else "unchanged"
+    val rows: Seq[String] = done ++ Seq(
+      "failed push",
+      stop.line,
+      s"step ${stop.step}",
+      s"recovery ${stop.recovery}",
+      s"catalog $catalog",
+      shown
+    ).filter(_.nonEmpty)
+    val text: String = PlaywrightPhotosUi.redactSecrets(rows.mkString("", "\n", "\n"), stop.title)
+    (session, Result.Failed(text, Json.Null, Refresh.MutationFailed))
+
+  private def pushText(actions: Seq[PushAction]): String =
+    pushText(actions.map(_.line), actions.headOption.fold("")(_.shownTitle))
+
+  private def pushText(lines: Seq[String], title: String): String =
+    PlaywrightPhotosUi.redactSecrets(textOf(lines), title)
 
   private def rereadAdd(
     session: Session,
