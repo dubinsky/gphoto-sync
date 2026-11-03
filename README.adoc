@@ -170,7 +170,9 @@ It rewrites `JPG` to `jpg`, `CR2` to `cr2`, and `Mp4` to `mp4`.
 It lowercases `JPEG` to `jpeg` and does not produce `jpg`.
 `--raw` makes a JPEG from RAW with dcraw when no normal image exists and `bad-raw` is not set.
 `--timestamps` sets file mtimes from the assessed instant.
-`--days` moves a picture into the assessed day folder, rewriting curated include paths before any file moves.
+`--days` moves a picture into the assessed day folder.
+A day-folder source still rewrites curated include paths before any of its files move, and a source that is not
+`YYYY/MM/DD/stem` does not.
 The steps run in that order, and each later step sees the files written by the earlier ones.
 `--dry-run` prints those actions and writes nothing.
 
