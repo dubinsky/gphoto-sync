@@ -230,10 +230,32 @@ class PushTest extends AnyFlatSpec, Matchers:
   it should "refuse a missing catalog before Chrome opens" in :
     withArchive: archive =>
       withPlaces(archive): (session, _, opens) =>
-        val thrown: IllegalArgumentException = intercept[IllegalArgumentException]:
-          run(session, "push")
-        thrown.getMessage shouldBe "catalog is absent"
+        run(session, "push") shouldBe Result.Usage("catalog is absent")
         opens() shouldBe 0
+
+  it should "upload a video beside its still without using the still's catalog row" in :
+    withArchive: archive =>
+      write(archive, "Best.toml", external("2010/07/02 1000v"))
+      write(archive, "2010/07/02/1000.jpg", "pic")
+      write(archive, "2010/07/02/1000.toml", "google-media-item-id = \"library-id\"\n")
+      write(archive, "2010/07/02/VID_1000.mp4", "vid")
+      writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource",
+        "item\talbSrc\t1000.jpg\t2010-07-02\tkeyStill\t-",
+        "album\talbBest\t0\tBest"
+      )
+      writeLinks(archive, "albBest\tBest.toml")
+      val calls: ListBuffer[String] = ListBuffer.empty
+      withPlaces(archive, act(calls)): (session, _, opens) =>
+        ok(run(session, "push")) shouldBe
+          """upload "Best" "2010/07/02/VID_1000.mp4"
+            |""".stripMargin
+        opens() shouldBe 1
+        calls.toSeq shouldBe Seq("upload VID_1000.mp4")
+        val albums: Seq[Catalog.Album] = Catalog.read(File(archive, ".gphoto-sync/catalog.txt"))
+        albums.find(_.id == "albBest").get.items.map(_.filename) shouldBe Seq("VID_1000.mp4")
+        albums.find(_.id == "albSrc").get.items.map(_.filename) shouldBe Seq("1000.jpg")
 
   private def external(include: String): String =
     s"external = true\ninclude = ['$include']\n"

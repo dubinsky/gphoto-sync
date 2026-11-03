@@ -682,9 +682,15 @@ private[photo] object AgentCommands:
   // claim is not reentrant, and each row has to publish before the next click.
   // One push holds the lock and the browser. The public commands still take both themselves.
   private[photo] def push(session: Session, dryRun: Boolean): (Session, Result) =
-    val (ready, actions) = planPush(session)
-    if dryRun || actions.isEmpty then (ready, Result.Ok(pushText(actions), Json.Null))
-    else withLock(ready, actions.head.shownTitle)(runPush(ready, actions))
+    val planned: Either[(Session, Result), (Session, Seq[PushAction])] =
+      try Right(planPush(session))
+      catch case error: IllegalArgumentException =>
+        Left((session, Result.Usage(Operation.messageOf(error))))
+    planned match
+      case Left(done) => done
+      case Right((ready, actions)) =>
+        if dryRun || actions.isEmpty then (ready, Result.Ok(pushText(actions), Json.Null))
+        else withLock(ready, actions.head.shownTitle)(runPush(ready, actions))
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -1336,25 +1342,24 @@ private[photo] object AgentCommands:
       Committed(next, line.key)
 
   private enum PushAction:
-    case Remove(albumId: String, key: String, current: String, albumTitle: String, filename: String)
+    case Remove(albumId: String, key: String, current: String, albumTitle: String)
     case Add(
       sourceId: String,
       key: String,
       current: String,
       destinationId: String,
       albumTitle: String,
-      filename: String,
       sourceTitle: String
     )
-    case Upload(destinationId: String, pathText: String, albumTitle: String, relative: String)
+    case Upload(destinationId: String, pathText: String, albumTitle: String)
 
     def line: String = this match
-      case Remove(_, _, _, albumTitle, filename) =>
-        s"remove ${Album.quote(albumTitle)} ${Album.quote(filename)}"
-      case Add(_, _, _, _, albumTitle, filename, sourceTitle) =>
-        s"add ${Album.quote(albumTitle)} ${Album.quote(filename)} from ${Album.quote(sourceTitle)}"
-      case Upload(_, _, albumTitle, relative) =>
-        s"upload ${Album.quote(albumTitle)} ${Album.quote(relative)}"
+      case Remove(_, _, current, albumTitle) =>
+        s"remove ${Album.quote(albumTitle)} ${Album.quote(current)}"
+      case Add(_, _, current, _, albumTitle, sourceTitle) =>
+        s"add ${Album.quote(albumTitle)} ${Album.quote(current)} from ${Album.quote(sourceTitle)}"
+      case Upload(_, pathText, albumTitle) =>
+        s"upload ${Album.quote(albumTitle)} ${Album.quote(pathText)}"
 
     def stepName: String = this match
       case _: Remove => RemoveStep
@@ -1362,9 +1367,9 @@ private[photo] object AgentCommands:
       case _: Upload => UploadStep
 
     def shownTitle: String = this match
-      case Remove(_, _, _, albumTitle, _) => albumTitle
-      case Add(_, _, _, _, albumTitle, _, _) => albumTitle
-      case Upload(_, _, albumTitle, _) => albumTitle
+      case Remove(_, _, _, albumTitle) => albumTitle
+      case Add(_, _, _, _, albumTitle, _) => albumTitle
+      case Upload(_, _, albumTitle) => albumTitle
 
   private final case class PushStop(
     line: String,
@@ -1380,10 +1385,9 @@ private[photo] object AgentCommands:
     directory: File,
     grouped: Map[String, Set[String]],
     sidecars: Map[String, Metadata]
-  ):
-    def stems: Set[String] = grouped.keySet
+  )
 
-  // Dry-run prints this sequence. A later album is not replanned after an earlier publish.
+  // A later album is not replanned after an earlier publish.
   private def planPush(session: Session): (Session, Seq[PushAction]) =
     val archive: File = session.root.configuration.archive
     val catalogFile: File = File(File(archive, ".gphoto-sync"), "catalog.txt")
@@ -1420,7 +1424,7 @@ private[photo] object AgentCommands:
         val (next, grouped, sidecars) = loadGrouped(current, civil, readSidecars = true)
         (next, acc.updated(day, PushDay(civil.directory, grouped.toMap, sidecars)))
     val universe: Map[LocalDate, Set[String]] =
-      facts.iterator.map((day, fact) => day -> fact.stems).toMap
+      facts.iterator.map((day, fact) => day -> fact.grouped.keySet).toMap
     val desired: Set[(LocalDate, String)] =
       row.fileAlbum.include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
         acc ++ Include.expand(row.fileAlbum.span, entry, universe)
@@ -1445,7 +1449,7 @@ private[photo] object AgentCommands:
       Option.when(excepted)(item)
     .sortBy(item => (utf8Key(item.filename), utf8Key(item.key)))
     .map: item =>
-      PushAction.Remove(row.catalog.id, item.key, item.filename, row.catalog.title, item.filename)
+      PushAction.Remove(row.catalog.id, item.key, item.filename, row.catalog.title)
 
   private def pushAdds(
     row: PushRow,
@@ -1464,12 +1468,11 @@ private[photo] object AgentCommands:
               item.filename,
               row.catalog.id,
               row.catalog.title,
-              item.filename,
               album.title
             )
     .sortBy:
       case action: PushAction.Add =>
-        (utf8Key(action.filename), utf8Key(action.sourceTitle), utf8Key(action.key))
+        (utf8Key(action.current), utf8Key(action.sourceTitle), utf8Key(action.key))
       case _ =>
         (Seq.empty[Int], Seq.empty[Int], Seq.empty[Int])
 
@@ -1490,9 +1493,9 @@ private[photo] object AgentCommands:
           metadata.`google-media-item-id`.exists(_.nonEmpty) || metadata.`already-in-google`.contains(true)
         if marked then None
         else pushFile(archive, fact.directory, stem).map: relative =>
-          PushAction.Upload(row.catalog.id, relative, row.catalog.title, relative)
+          PushAction.Upload(row.catalog.id, relative, row.catalog.title)
     .sortBy:
-      case action: PushAction.Upload => utf8Key(action.relative)
+      case action: PushAction.Upload => utf8Key(action.pathText)
       case _ => Seq.empty
 
   private def pushFile(archive: File, directory: File, stem: String): Option[String] =
