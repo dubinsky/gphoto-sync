@@ -117,6 +117,10 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("logout")) shouldBe Cli.Run(Cli.LogoutArgs)
 
     Cli.parse(List("agent", "stems", "2010/07/19")) shouldBe Cli.Run(Cli.AgentStemsArgs("2010/07/19"))
+    Cli.parse(List("agent", "years")) shouldBe Cli.Run(Cli.AgentYearsArgs)
+    Cli.parse(List("agent", "months", "2010")) shouldBe Cli.Run(Cli.AgentMonthsArgs("2010"))
+    Cli.parse(List("agent", "days", "2010/07")) shouldBe Cli.Run(Cli.AgentDaysArgs("2010/07"))
+    Cli.parse(List("agent", "claims", "2010/07/19")) shouldBe Cli.Run(Cli.AgentClaimsArgs("2010/07/19"))
     Cli.parse(List("agent", "catalog")) shouldBe Cli.Run(Cli.AgentCatalogArgs)
     Cli.parse(List("agent", "items", "--id", "a1", "2010/07")) shouldBe
       Cli.Run(Cli.AgentItemsArgs(Some("a1"), "2010/07"))
@@ -418,6 +422,10 @@ class CliTest extends AnyFlatSpec, Matchers:
       """agent  query the catalog and the archive
         |
         |stems  list one day's grouped stems
+        |years  list archive years
+        |months  list the months of one year
+        |days  list the days of one month
+        |claims  list album claims for one day
         |catalog  list catalog albums
         |items  list catalog items for one album
         |match  match catalog items to local stems
@@ -653,6 +661,10 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "include", "2010/07/19/2412", "--span", "2010/07") -> "extra argument '--span'",
       List("agent", "stems", "2010/07/19", "--long") -> "extra argument '--long'",
       List("agent", "stems") -> "missing day",
+      List("agent", "months") -> "missing year",
+      List("agent", "days") -> "missing month",
+      List("agent", "claims") -> "missing path",
+      List("agent", "years", "2010") -> "extra argument '2010'",
       List("agent", "items") -> "missing album",
       List("agent", "match") -> "missing album",
       List("agent", "catalog", "June") -> "extra argument 'June'",
@@ -770,7 +782,7 @@ class CliTest extends AnyFlatSpec, Matchers:
   "mcpTools" should "derive the query commands and the in-process writes, and reject everything else" in :
     val tools: List[Cli.McpTool] = Cli.mcpTools
     tools.map(_.name) shouldBe List(
-      "stems", "catalog", "items", "match", "include", "rename-album",
+      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "rename-album",
       "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
       "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
     )
@@ -796,6 +808,10 @@ class CliTest extends AnyFlatSpec, Matchers:
       if ambiguous then s"$base $passId" else base
     val descriptions: Map[String, String] = Map(
       "stems" -> described("list one day's grouped stems", "stems", ambiguous = false),
+      "years" -> described("list archive years", "years", ambiguous = false),
+      "months" -> described("list the months of one year", "months", ambiguous = false),
+      "days" -> described("list the days of one month", "days", ambiguous = false),
+      "claims" -> described("list album claims for one day", "claims", ambiguous = false),
       "catalog" -> described("list catalog albums", "catalog", ambiguous = false),
       "items" -> described("list catalog items for one album", "items", ambiguous = true),
       "match" -> described("match catalog items to local stems", "match", ambiguous = true),
@@ -820,6 +836,10 @@ class CliTest extends AnyFlatSpec, Matchers:
     )
     val properties: Map[String, Seq[(String, Json)]] = Map(
       "stems" -> Seq("day" -> mcpStringSchema),
+      "years" -> Seq.empty,
+      "months" -> Seq("year" -> mcpStringSchema),
+      "days" -> Seq("month" -> mcpStringSchema),
+      "claims" -> Seq("path" -> mcpStringSchema),
       "catalog" -> Seq.empty,
       "items" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
       "match" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
@@ -886,6 +906,10 @@ class CliTest extends AnyFlatSpec, Matchers:
     )
     val required: Map[String, Seq[String]] = Map(
       "stems" -> Seq("day"),
+      "years" -> Seq.empty,
+      "months" -> Seq("year"),
+      "days" -> Seq("month"),
+      "claims" -> Seq("path"),
       "catalog" -> Seq.empty,
       "items" -> Seq("album"),
       "match" -> Seq("album"),
@@ -922,6 +946,19 @@ class CliTest extends AnyFlatSpec, Matchers:
     val stems: List[String] = mcpArgv("stems", Seq("day" -> Json.Str("2010/07/19")))
     stems shouldBe List("agent", "stems", "2010/07/19")
     Cli.parse(stems, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentStemsArgs("2010/07/19"))
+
+    val years: List[String] = mcpArgv("years", Seq.empty)
+    years shouldBe List("agent", "years")
+    Cli.parse(years, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentYearsArgs)
+    val months: List[String] = mcpArgv("months", Seq("year" -> Json.Str("2010")))
+    months shouldBe List("agent", "months", "2010")
+    Cli.parse(months, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMonthsArgs("2010"))
+    val days: List[String] = mcpArgv("days", Seq("month" -> Json.Str("2010/07")))
+    days shouldBe List("agent", "days", "2010/07")
+    Cli.parse(days, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentDaysArgs("2010/07"))
+    val claims: List[String] = mcpArgv("claims", Seq("path" -> Json.Str("2010/07/19")))
+    claims shouldBe List("agent", "claims", "2010/07/19")
+    Cli.parse(claims, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentClaimsArgs("2010/07/19"))
 
     val catalog: List[String] = mcpArgv("catalog", Seq.empty)
     catalog shouldBe List("agent", "catalog")
@@ -1058,7 +1095,7 @@ class CliTest extends AnyFlatSpec, Matchers:
   "mcpTools" should "mark reads read-only and accept the values those commands emit" in :
     val tools: List[Cli.McpTool] = Cli.mcpTools
     Cli.mcpReadOnly shouldBe Set(
-      "stems", "catalog", "items", "match", "include", "drift", "missing"
+      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "drift", "missing"
     )
     List(
       "rename-album", "set-description", "set-date", "download-item", "add-to-album",
@@ -1107,6 +1144,61 @@ class CliTest extends AnyFlatSpec, Matchers:
           ))
         ))
       ))),
+      "years" -> Seq(
+        Json.Obj(Seq("years" -> Json.Arr(Seq(Json.Str("2009"), Json.Str("2010"))))),
+        Json.Obj(Seq("years" -> Json.Arr(Seq.empty)))
+      ),
+      "months" -> Seq(
+        Json.Obj(Seq(
+          "year" -> Json.Str("2010"),
+          "present" -> Json.Bool(true),
+          "months" -> Json.Arr(Seq(Json.Str("2010/07"), Json.Str("2010/08")))
+        )),
+        Json.Obj(Seq(
+          "year" -> Json.Str("2099"),
+          "present" -> Json.Bool(false),
+          "months" -> Json.Arr(Seq.empty)
+        ))
+      ),
+      "days" -> Seq(
+        Json.Obj(Seq(
+          "month" -> Json.Str("2010/07"),
+          "present" -> Json.Bool(true),
+          "days" -> Json.Arr(Seq(Json.Str("2010/07/19"), Json.Str("2010/07/20")))
+        )),
+        Json.Obj(Seq(
+          "month" -> Json.Str("2010/07"),
+          "present" -> Json.Bool(false),
+          "days" -> Json.Arr(Seq.empty)
+        ))
+      ),
+      "claims" -> Seq(
+        Json.Obj(Seq(
+          "path" -> Json.Str("2010/07/19"),
+          "present" -> Json.Bool(true),
+          "claims" -> Json.Arr(Seq(Json.Obj(Seq(
+            "path" -> Json.Str("2010/07/19/2412"),
+            "stem" -> Json.Str("2412"),
+            "albums" -> Json.Arr(Seq(Json.Str("2010/07/19/Party"), Json.Str("Best"))),
+            "excludedOnly" -> Json.Bool(false)
+          ))))
+        )),
+        Json.Obj(Seq(
+          "path" -> Json.Str("2010/07/19"),
+          "present" -> Json.Bool(true),
+          "claims" -> Json.Arr(Seq(Json.Obj(Seq(
+            "path" -> Json.Str("2010/07/19/2413"),
+            "stem" -> Json.Str("2413"),
+            "albums" -> Json.Arr(Seq.empty),
+            "excludedOnly" -> Json.Bool(true)
+          ))))
+        )),
+        Json.Obj(Seq(
+          "path" -> Json.Str("2099/01/01"),
+          "present" -> Json.Bool(false),
+          "claims" -> Json.Arr(Seq.empty)
+        ))
+      ),
       "catalog" -> Seq(Json.Obj(Seq(
         "albums" -> Json.Arr(Seq(
           Json.Obj(Seq(

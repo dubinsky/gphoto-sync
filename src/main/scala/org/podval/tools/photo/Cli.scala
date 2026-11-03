@@ -54,6 +54,10 @@ object Cli:
   private[photo] case object PwdArgs extends Parsed
   private[photo] case object ExitArgs extends Parsed
   private[photo] final case class AgentStemsArgs(day: String) extends Parsed
+  private[photo] case object AgentYearsArgs extends Parsed
+  private[photo] final case class AgentMonthsArgs(year: String) extends Parsed
+  private[photo] final case class AgentDaysArgs(month: String) extends Parsed
+  private[photo] final case class AgentClaimsArgs(path: String) extends Parsed
   private[photo] case object AgentCatalogArgs extends Parsed
   private[photo] final case class AgentItemsArgs(id: Option[String], album: String) extends Parsed
   private[photo] final case class AgentMatchArgs(id: Option[String], album: String) extends Parsed
@@ -377,6 +381,10 @@ object Cli:
     case PwdArgs => false
     case ExitArgs => false
     case _: AgentStemsArgs => false
+    case AgentYearsArgs => false
+    case _: AgentMonthsArgs => false
+    case _: AgentDaysArgs => false
+    case _: AgentClaimsArgs => false
     case AgentCatalogArgs => false
     case _: AgentItemsArgs => false
     case _: AgentMatchArgs => false
@@ -671,6 +679,14 @@ object Cli:
       Exit
     case AgentStemsArgs(day) =>
       AgentStems(day)
+    case AgentYearsArgs =>
+      AgentYears
+    case AgentMonthsArgs(year) =>
+      AgentMonths(year)
+    case AgentDaysArgs(month) =>
+      AgentDays(month)
+    case AgentClaimsArgs(path) =>
+      AgentClaims(path)
     case AgentCatalogArgs =>
       AgentCatalog
     case AgentItemsArgs(id, album) =>
@@ -1176,6 +1192,34 @@ object Cli:
       build = (_, args) => AgentStemsArgs(args.head)
     ),
     Command(
+      name = "years",
+      help = "list archive years",
+      positionals = Nil,
+      flags = Nil,
+      build = (_, _) => AgentYearsArgs
+    ),
+    Command(
+      name = "months",
+      help = "list the months of one year",
+      positionals = List(Required("year", path = true)),
+      flags = Nil,
+      build = (_, args) => AgentMonthsArgs(args.head)
+    ),
+    Command(
+      name = "days",
+      help = "list the days of one month",
+      positionals = List(Required("month", path = true)),
+      flags = Nil,
+      build = (_, args) => AgentDaysArgs(args.head)
+    ),
+    Command(
+      name = "claims",
+      help = "list album claims for one day",
+      positionals = List(Required("path", path = true)),
+      flags = Nil,
+      build = (_, args) => AgentClaimsArgs(args.head)
+    ),
+    Command(
       name = "catalog",
       help = "list catalog albums",
       positionals = Nil,
@@ -1412,14 +1456,14 @@ object Cli:
 
   // Order is agentCommands order. Membership is this set.
   private val mcpToolNames: Set[String] = Set(
-    "stems", "catalog", "items", "match", "include", "rename-album",
+    "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "rename-album",
     "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
     "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
   )
 
   // Reads only. A name here has an output schema. Writes stay out, so both hints stay unset.
   private[photo] val mcpReadOnly: Set[String] = Set(
-    "stems", "catalog", "items", "match", "include", "drift", "missing"
+    "stems", "years", "months", "days", "claims", "catalog", "items", "match", "include", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1476,6 +1520,10 @@ object Cli:
       if !readOnly then None
       else Some(command.name match
         case "stems" => mcpStemsOutputSchema
+        case "years" => mcpYearsOutputSchema
+        case "months" => mcpMonthsOutputSchema
+        case "days" => mcpDaysOutputSchema
+        case "claims" => mcpClaimsOutputSchema
         case "catalog" => mcpCatalogOutputSchema
         case "items" => mcpItemsOutputSchema
         case "match" => mcpMatchOutputSchema
@@ -1611,6 +1659,48 @@ object Cli:
       ))
     ),
     Seq("day", "stems")
+  )
+
+  private val mcpYearsOutputSchema: Json = mcpObjectSchema(
+    Seq("years" -> mcpStringArraySchema),
+    Seq("years")
+  )
+
+  private val mcpMonthsOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "year" -> mcpJsonType("string"),
+      "present" -> mcpJsonType("boolean"),
+      "months" -> mcpStringArraySchema
+    ),
+    Seq("year", "present", "months")
+  )
+
+  private val mcpDaysOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "month" -> mcpJsonType("string"),
+      "present" -> mcpJsonType("boolean"),
+      "days" -> mcpStringArraySchema
+    ),
+    Seq("month", "present", "days")
+  )
+
+  private val mcpClaimOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "path" -> mcpJsonType("string"),
+      "stem" -> mcpJsonType("string"),
+      "albums" -> mcpStringArraySchema,
+      "excludedOnly" -> mcpJsonType("boolean")
+    ),
+    Seq("path", "stem", "albums", "excludedOnly")
+  )
+
+  private val mcpClaimsOutputSchema: Json = mcpObjectSchema(
+    Seq(
+      "path" -> mcpJsonType("string"),
+      "present" -> mcpJsonType("boolean"),
+      "claims" -> mcpArraySchema(mcpClaimOutputSchema)
+    ),
+    Seq("path", "present", "claims")
   )
 
   private val mcpCatalogOutputSchema: Json = mcpObjectSchema(

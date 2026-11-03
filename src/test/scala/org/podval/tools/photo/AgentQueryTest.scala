@@ -476,6 +476,252 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       loaded.cached(day).isDefined shouldBe true
       loaded.cached(File(archive, "2010/07/20")).isEmpty shouldBe true
 
+  "agent years" should "list year names and skip dot directories" in :
+    withArchive: archive =>
+      val missing: File = File(archive, "absent")
+      val (untouched, empty) = exec(Session(rootFor(missing)), "agent", "years")
+      empty shouldBe Result.Ok("", Json.Obj(Seq("years" -> Json.Arr(Seq.empty))))
+      untouched.index.isEmpty shouldBe true
+      untouched.catalogCache.isEmpty shouldBe true
+
+      val (bare, none) = exec(Session(rootFor(archive)), "agent", "years")
+      none shouldBe Result.Ok("", Json.Obj(Seq("years" -> Json.Arr(Seq.empty))))
+      bare.index.isEmpty shouldBe true
+
+      File(archive, ".upload/card").getParentFile.mkdirs()
+      touch(File(archive, ".upload"), "card.jpg")
+      File(archive, ".secret").mkdirs()
+      JFiles.writeString(File(archive, "AGENTS.md").toPath, "notes\n")
+      JFiles.writeString(File(archive, "Best.toml").toPath, "include = [\"all\"]\n")
+      touch(File(archive, "2010/08"), "2412.jpg")
+      touch(File(archive, "2009/03"), "0001.jpg")
+      val (listed, years) = exec(bare, "agent", "years")
+      years shouldBe Result.Ok(
+        "2009\n2010\n",
+        Json.Obj(Seq("years" -> Json.Arr(Seq(Json.Str("2009"), Json.Str("2010")))))
+      )
+      listed.index.isEmpty shouldBe true
+      listed.catalogCache.isEmpty shouldBe true
+      listed.cached(File(archive, "2010")).isEmpty shouldBe true
+      noRequests(archive)
+
+      JFiles.writeString(File(archive, "readme.txt").toPath, "stray\n")
+      exec(listed, "agent", "years")._2 match
+        case Result.Usage(message) => message should include ("readme.txt")
+        case other => fail(other.toString)
+
+  "agent months" should "list one year and reject anything else" in :
+    withArchive: archive =>
+      touch(File(archive, "2010/08"), "2412.jpg")
+      touch(File(archive, "2010/07"), "0001.jpg")
+      val session: Session = Session(rootFor(archive))
+      val (listed, months) = exec(session, "agent", "months", "2010")
+      listed.index.isEmpty shouldBe true
+      listed.cached(File(archive, "2010")).isEmpty shouldBe true
+      months shouldBe Result.Ok(
+        "2010/07\n2010/08\n",
+        Json.Obj(Seq(
+          "year" -> Json.Str("2010"),
+          "present" -> Json.Bool(true),
+          "months" -> Json.Arr(Seq(Json.Str("2010/07"), Json.Str("2010/08")))
+        ))
+      )
+      JFiles.write(File(archive, "2010/readme.txt").toPath, Array.emptyByteArray)
+      exec(listed, "agent", "months", "2010")._2 match
+        case Result.Usage(message) => message should include ("readme.txt")
+        case other => fail(other.toString)
+
+      val (missing, absent) = exec(session, "agent", "months", "2099")
+      absent shouldBe Result.Ok(
+        "",
+        Json.Obj(Seq(
+          "year" -> Json.Str("2099"),
+          "present" -> Json.Bool(false),
+          "months" -> Json.Arr(Seq.empty)
+        ))
+      )
+      missing.index.isEmpty shouldBe true
+      missing.catalogCache.isEmpty shouldBe true
+      JFiles.write(File(archive, "2011").toPath, Array.emptyByteArray)
+      exec(session, "agent", "months", "2011")._2 match
+        case Result.Usage(message) => message should include ("is not a directory")
+        case other => fail(other.toString)
+      List("2010/07", "2010/07/19", "foo", ".upload", "2412v").foreach: path =>
+        exec(session, "agent", "months", path)._2 shouldBe Result.Usage("not a year")
+      noRequests(archive)
+
+  "agent days" should "list one month and keep an impossible directory name" in :
+    withArchive: archive =>
+      touch(File(archive, "2010/07/20"), "0001.jpg")
+      touch(File(archive, "2010/07/19"), "0002.jpg")
+      File(archive, "2010/02/01").mkdirs()
+      File(archive, "2010/02/31").mkdirs()
+      val session: Session = Session(rootFor(archive))
+      val (listed, days) = exec(session, "agent", "days", "2010/07")
+      listed.index.isEmpty shouldBe true
+      listed.cached(File(archive, "2010/07")).isEmpty shouldBe true
+      days shouldBe Result.Ok(
+        "2010/07/19\n2010/07/20\n",
+        Json.Obj(Seq(
+          "month" -> Json.Str("2010/07"),
+          "present" -> Json.Bool(true),
+          "days" -> Json.Arr(Seq(Json.Str("2010/07/19"), Json.Str("2010/07/20")))
+        ))
+      )
+      exec(session, "agent", "days", "2010/02")._2 shouldBe Result.Ok(
+        "2010/02/01\n2010/02/31\n",
+        Json.Obj(Seq(
+          "month" -> Json.Str("2010/02"),
+          "present" -> Json.Bool(true),
+          "days" -> Json.Arr(Seq(Json.Str("2010/02/01"), Json.Str("2010/02/31")))
+        ))
+      )
+      val (missing, absent) = exec(session, "agent", "days", "2099/01")
+      absent shouldBe Result.Ok(
+        "",
+        Json.Obj(Seq(
+          "month" -> Json.Str("2099/01"),
+          "present" -> Json.Bool(false),
+          "days" -> Json.Arr(Seq.empty)
+        ))
+      )
+      missing.index.isEmpty shouldBe true
+      List("2010", "2010/07/19", "2010/02/31", "foo").foreach: path =>
+        exec(session, "agent", "days", path)._2 shouldBe Result.Usage("not a month")
+      noRequests(archive)
+
+  "agent claims" should "list one day's titles and not scan an empty day" in :
+    withArchive: archive =>
+      val tifDay: File = File(archive, "2010/05/02")
+      touch(tifDay, "2412.tif")
+      val session: Session = Session(rootFor(archive))
+      val (tifSession, tifClaims) = exec(session, "agent", "claims", "2010/05/02")
+      tifClaims shouldBe Result.Ok(
+        "",
+        Json.Obj(Seq(
+          "path" -> Json.Str("2010/05/02"),
+          "present" -> Json.Bool(true),
+          "claims" -> Json.Arr(Seq.empty)
+        ))
+      )
+      tifSession.cached(tifDay).isDefined shouldBe true
+      tifSession.cached(File(archive, "2010")).isEmpty shouldBe true
+      tifSession.cached(archive).isEmpty shouldBe true
+      tifSession.catalogCache.isEmpty shouldBe true
+      exec(tifSession, "agent", "stems", "2010/05/02")._2 match
+        case Result.Ok(text, value) =>
+          text shouldBe ""
+          field(value, "stems") shouldBe Json.Arr(Seq.empty)
+        case other =>
+          fail(other.toString)
+      File(tifDay, "2412.tif").isFile shouldBe true
+
+      val day: File = File(archive, "2010/06/02")
+      touch(day, "2412.jpg")
+      touch(day, "2413.jpg")
+      touch(day, "2414.jpg")
+      writeRaw(
+        archive,
+        "2010/06/02/Party.toml",
+        "include = [\"2010/06/02 2412\"]\ngoogle-title = \"Secret Party\"\n"
+      )
+      writeRaw(
+        archive,
+        "2010/06/02/Except.toml",
+        "include = [\"2010/06/02 2414 except 2414\"]\n"
+      )
+      writeRaw(archive, "Best.toml", "include = [\"2010/06/02 2412\"]\n")
+      writeRaw(
+        archive,
+        "2010/07/19/to-08-23.toml",
+        "include = [\"all\"]\ngoogle-title = \"July trip\"\n"
+      )
+      touch(File(archive, "2010/08/01"), "0002.jpg")
+      writeCatalog(archive, "album\ta1\t0\tUnused")
+
+      val (skipped, missing) = exec(session, "agent", "claims", "2099/01/01")
+      missing shouldBe Result.Ok(
+        "",
+        Json.Obj(Seq(
+          "path" -> Json.Str("2099/01/01"),
+          "present" -> Json.Bool(false),
+          "claims" -> Json.Arr(Seq.empty)
+        ))
+      )
+      skipped.catalogCache.isEmpty shouldBe true
+      skipped.index.isEmpty shouldBe true
+      List("2010", "2010/06", "2010/06/02/2412", "2010/02/31").foreach: path =>
+        exec(session, "agent", "claims", path)._2 shouldBe Result.Usage("not a day")
+
+      val (loaded, claims) = exec(session, "agent", "claims", "2010/06/02")
+      val text: String =
+        """2010/06/02/2412 albums=2010/06/02/Party,Best
+          |2010/06/02/2413 albums=-
+          |2010/06/02/2414 albums=-
+          |""".stripMargin
+      claims shouldBe Result.Ok(text, Json.Obj(Seq(
+        "path" -> Json.Str("2010/06/02"),
+        "present" -> Json.Bool(true),
+        "claims" -> Json.Arr(Seq(
+          claimRow("2010/06/02/2412", "2412", Seq("2010/06/02/Party", "Best"), excludedOnly = false),
+          claimRow("2010/06/02/2413", "2413", Seq.empty, excludedOnly = false),
+          claimRow("2010/06/02/2414", "2414", Seq.empty, excludedOnly = true)
+        ))
+      )))
+      claims match
+        case Result.Ok(shown, value) =>
+          shown should not include ("Secret Party")
+          shown should not include ("google=")
+          value.toString should not include ("Secret Party")
+          value.toString should not include ("google-title")
+          value.toString should not include ("google-album-id")
+        case other =>
+          fail(other.toString)
+      loaded.catalogCache.isEmpty shouldBe true
+
+      val (_, later) = exec(loaded, "agent", "claims", "2010/08/01")
+      later shouldBe Result.Ok(
+        "2010/08/01/0002 albums=2010/07/19-08/23\n",
+        Json.Obj(Seq(
+          "path" -> Json.Str("2010/08/01"),
+          "present" -> Json.Bool(true),
+          "claims" -> Json.Arr(Seq(
+            claimRow("2010/08/01/0002", "0002", Seq("2010/07/19-08/23"), excludedOnly = false)
+          ))
+        ))
+      )
+      later match
+        case Result.Ok(shown, value) =>
+          shown should not include ("July trip")
+          value.toString should not include ("July trip")
+        case other =>
+          fail(other.toString)
+
+      val root: Root = rootFor(archive)
+      val serve: Session = Session(root, PathStyle.Serve, root)
+      val (kept, served) = exec(serve, "agent", "claims", "2010/06/02")
+      served match
+        case Result.Ok(shown, _) => shown shouldBe text
+        case other => fail(other.toString)
+      DirectoryIndex.cursor shouldBe None
+      kept.cached(day).isDefined shouldBe true
+      kept.catalogCache.isEmpty shouldBe true
+      noRequests(archive)
+
+  private def claimRow(path: String, stem: String, albums: Seq[String], excludedOnly: Boolean): Json =
+    Json.Obj(Seq(
+      "path" -> Json.Str(path),
+      "stem" -> Json.Str(stem),
+      "albums" -> Json.Arr(albums.map(Json.Str.apply)),
+      "excludedOnly" -> Json.Bool(excludedOnly)
+    ))
+
+  private def noRequests(archive: File): Unit =
+    File(archive, "requests.tsv").exists shouldBe false
+    File(archive, "results.tsv").exists shouldBe false
+    File(File(archive, ".gphoto-sync"), "requests.tsv").exists shouldBe false
+    File(File(archive, ".gphoto-sync"), "results.tsv").exists shouldBe false
+
   private def emptyMatch(id: String): Json = matchValue(id, Seq.empty, Seq.empty)
 
   private def matchValue(id: String, matched: Seq[(String, String)], unmatched: Seq[String]): Json =

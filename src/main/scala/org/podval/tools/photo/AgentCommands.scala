@@ -27,6 +27,95 @@ private[photo] final class AgentStems(dayText: String) extends Operation:
       ))
       (loaded, Result.Ok(AgentCommands.textOf(rows), value))
 
+private[photo] object AgentYears extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val years: Seq[String] = Year.lsd(session.root).map(year => year.toString.stripPrefix("/"))
+      val value: Json = Json.Obj(Seq("years" -> Json.Arr(years.map(Json.Str.apply))))
+      (session, Result.Ok(AgentCommands.textOf(years), value))
+
+private[photo] final class AgentMonths(yearText: String) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val year: Year =
+        try session.parse(yearText) match
+          case found: Year => found
+          case _ => throw IllegalArgumentException("not a year")
+        catch
+          case _: (NoSuchElementException | DateTimeException | IllegalArgumentException) =>
+            throw IllegalArgumentException("not a year")
+      val present: Boolean = year.directory.isDirectory
+      val months: Seq[String] =
+        if present then year.lsd.map(month => month.toString.stripPrefix("/")) else Seq.empty
+      val value: Json = Json.Obj(Seq(
+        "year" -> Json.Str(year.toString.stripPrefix("/")),
+        "present" -> Json.Bool(present),
+        "months" -> Json.Arr(months.map(Json.Str.apply))
+      ))
+      (session, Result.Ok(AgentCommands.textOf(months), value))
+
+private[photo] final class AgentDays(monthText: String) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val month: Month =
+        try session.parse(monthText) match
+          case found: Month => found
+          case _ => throw IllegalArgumentException("not a month")
+        catch
+          case _: (NoSuchElementException | DateTimeException | IllegalArgumentException) =>
+            throw IllegalArgumentException("not a month")
+      val present: Boolean = month.directory.isDirectory
+      val days: Seq[String] =
+        if present then month.lsd.map(day => day.toString.stripPrefix("/")) else Seq.empty
+      val value: Json = Json.Obj(Seq(
+        "month" -> Json.Str(month.toString.stripPrefix("/")),
+        "present" -> Json.Bool(present),
+        "days" -> Json.Arr(days.map(Json.Str.apply))
+      ))
+      (session, Result.Ok(AgentCommands.textOf(days), value))
+
+private[photo] final class AgentClaims(dayText: String) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val day: Day = AgentCommands.parseDay(session, dayText)
+      if !day.directory.isDirectory then
+        (session, Result.Ok("", claimsValue(day, present = false, Seq.empty)))
+      else
+        val (loaded, grouped, _) = AgentCommands.loadGrouped(session, day, readSidecars = false)
+        val pictureNames: Set[String] = (Extension.normal ++ Extension.raw ++ Extension.image).map(_.name)
+        if !grouped.exists((_, extensions) => extensions.exists(pictureNames.contains)) then
+          (loaded, Result.Ok("", claimsValue(day, present = true, Seq.empty)))
+        else
+          // end restores the caller. A frame left current makes a later scan trust this session.
+          val previous: Option[DirectoryIndex.Frame] = DirectoryIndex.begin(loaded)
+          val scanned: (Session, Archive.Scan) =
+            try
+              val found: Archive.Scan = Archive.scan(loaded.root.configuration.archive)
+              (DirectoryIndex.now, found)
+            finally
+              DirectoryIndex.end(previous)
+          val (edited, scan) = scanned
+          val resolved: Seq[Claims.Resolved] = Claims.resolve(Archive.Scan(
+            scan.albums,
+            scan.pictures.filter(_.folderDay.isEqual(day.date))
+          ))
+          (edited, Result.Ok(AgentCommands.textOf(resolved.map(_.line)), claimsValue(day, present = true, resolved)))
+
+  private def claimsValue(day: Day, present: Boolean, claims: Seq[Claims.Resolved]): Json =
+    Json.Obj(Seq(
+      "path" -> Json.Str(Title.dayText(day.date)),
+      "present" -> Json.Bool(present),
+      "claims" -> Json.Arr(claims.map: claim =>
+        val stem: String = Files.splitOnLast(claim.path, '/')._2.getOrElse(claim.path)
+        Json.Obj(Seq(
+          "path" -> Json.Str(claim.path),
+          "stem" -> Json.Str(stem),
+          "albums" -> Json.Arr(claim.albums.map(Json.Str.apply)),
+          "excludedOnly" -> Json.Bool(claim.excludedOnly)
+        ))
+      )
+    ))
+
 private[photo] object AgentCatalog extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentCommands.catching(session):
