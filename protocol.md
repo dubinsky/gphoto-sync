@@ -12,7 +12,8 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
-  `photo agent download-item`, and the legacy request grammar.
+  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, and the legacy request
+  grammar.
 
 ## Files
 
@@ -26,6 +27,10 @@ There is no config key for that directory.
 `photo agent set-description` does not rewrite `catalog.txt`.
 `photo agent set-date` rewrites that item's date after the `fDcn4b` read shows the calendar day.
 `photo agent download-item` stages one original and does not rewrite `catalog.txt`.
+`photo agent add-to-album` rewrites the destination album only for the clean confirmed key and otherwise leaves
+`catalog.txt` byte-identical.
+`photo agent remove-from-album` rewrites that album only when the source key is gone and otherwise leaves `catalog.txt`
+byte-identical.
 `requests.tsv` is a legacy file that a later command will read.
 It is not a second current path.
 The script does not apply the batch.
@@ -44,6 +49,8 @@ The program reads it.
 `photo agent set-description` changes one item description.
 `photo agent set-date` changes one item's date taken.
 `photo agent download-item` downloads one original and does not change Google Photos.
+`photo agent add-to-album` adds one item to an existing album.
+`photo agent remove-from-album` removes one item from an album.
 `photo publish` and `photo sync` still change Google Photos.
 A request batch is not a refresh.
 
@@ -817,6 +824,66 @@ Google Photos is not changed.
 The command does not replace an archive original.
 `photo file` is still the filer.
 
+`photo agent add-to-album` adds one item to an existing album.
+`--title` names the source album and `--dest` names the destination album.
+`--id` is required when more than one album has the source title, and it must match.
+`--dest-id` is required when more than one album has the destination title, and it must match.
+The source item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
+The destination is a different album.
+Before Chrome opens, the command refuses when the destination has an `owner` line, when the destination is `auto-add`,
+when `name-failures` is greater than 0, or when any `unset` line is present.
+It also refuses when a local day and stem are known for this filename and the destination album file excepts that stem.
+That test is `positive` and not `claims` for the day and stem, the same test Sync uses.
+When no local day and stem are known, that clause does not refuse.
+When the destination has no album file, that clause does not refuse.
+A refusal is usage.
+Chrome stays closed and `catalog.txt` stays byte-identical.
+The command opens the item the way `photo agent download-item` opens it.
+The control is More options, then the menuitem Add to album, then the option whose accessible name equals the
+destination title, exact.
+It does not click New album, Add a title, or Done to create an album.
+When the destination title is New album, the command fails one-click and clicks nothing.
+When the exact destination option is absent, the command fails one-click and clicks nothing else.
+It reads the destination keys with `snAcKc` before that option and again after it.
+It publishes only when the destination key set grew by exactly one key that was absent before and that key's `fDcn4b`
+filename equals `--current`.
+The second `fDcn4b` form is `[itemKey, null, auth]` and it passes the album auth key.
+A timestamp on the first response stays.
+The date and the uploader come from that read when it has them, and otherwise from the source line.
+The filename on the new `item` line is `--current`.
+The destination `count` increases by one.
+When an `error` line is present, `of` becomes the new count and `got` increases by one.
+`name-failures` stays.
+When there is no `error` line, none is written.
+The source album is not edited.
+No `unset` line is written.
+Anything else leaves `catalog.txt` byte-identical.
+A miss before Add to album or before the destination option is one-click.
+After the destination option was clicked, a live read that is not the clean case is refresh-only.
+
+`photo agent remove-from-album` removes one item from an album.
+`--title` names the album.
+`--id` is required when more than one album has that title, and it must match.
+The item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
+The command does not require the uploader to be `-` and does not reject an `owner` line.
+It opens the item the way `photo agent download-item` opens it.
+It does not use the album-grid Select photos path.
+The control is More options, then the menuitem whose name matches Remove from album.
+If a dialog is open, the command reads it before any confirm click.
+Trash, or Delete forever, is not a remove.
+The command does not click that dialog.
+It does not click a button whose name starts with Move to trash, Delete forever, or Empty trash.
+A remove dialog is confirmed with the button whose name matches `^Remove\b`.
+The command reads the source keys after that click.
+It publishes only when that source key is gone.
+That `item` line is removed and `count` decreases by one.
+When an `error` line is present, `of` becomes the new count and `got` decreases by one.
+`name-failures` stays.
+The command does not set `count` to the number of remaining item lines while an `error` line or an `unset` line remains.
+Anything else leaves `catalog.txt` byte-identical.
+A miss before Remove from album or before the Remove button is one-click.
+After the Remove button was clicked, a source key that is still present is refresh-only.
+
 The grammar below is legacy.
 The column tables, the version lines, and Catalog updates describe the old row statuses.
 They stay until a later command reads `requests.tsv`.
@@ -1098,6 +1165,8 @@ It is rewritten for each processed batch.
 `photo agent set-description` is the applier for an item description.
 `photo agent set-date` is the applier for an item date.
 `photo agent download-item` is the applier for a download.
+`photo agent add-to-album` is the applier for adding an item to an existing album.
+`photo agent remove-from-album` is the applier for removing an item from an album.
 The numbered steps are the legacy batch.
 The script does not apply the batch.
 

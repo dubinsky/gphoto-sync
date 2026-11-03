@@ -28,6 +28,8 @@ private[photo] trait PhotosAct extends PhotosUi:
   def setDescription(item: Catalog.Item, text: String): Unit
   def setDate(item: Catalog.Item, local: String): Unit
   def downloadItem(item: Catalog.Item, destination: File): Unit
+  def putInAlbum(item: Catalog.Item, destination: Catalog.Album, current: String): Catalog.Item
+  def takeOut(album: Catalog.Album, item: Catalog.Item): Unit
 
 final class Refresh(args: Cli.RefreshArgs) extends Operation:
   def execute(session: Session): (Session, Result) =

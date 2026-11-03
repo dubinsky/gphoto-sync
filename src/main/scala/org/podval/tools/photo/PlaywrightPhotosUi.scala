@@ -7,7 +7,7 @@ import scala.util.matching.Regex
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as NFiles, Paths}
-import java.time.Month
+import java.time.{LocalDate, Month}
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -190,6 +190,149 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         throw miss
       case error: Exception =>
         throw Refresh.ActMiss(Operation.messageOf(error), confirmed = false)
+
+  def putInAlbum(item: Catalog.Item, destination: Catalog.Album, current: String): Catalog.Item =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/photo/${item.key}")
+      // That option creates an album. This command only picks an existing one.
+      if destination.title == "New album" then
+        throw Refresh.ActMiss("New album is not a destination", confirmed = false)
+      val before: Set[String] = readKeyList(destination.id).toSet
+      clickMore()
+      val add: Locator = menuItem("Add to album")
+      awaitCount(add, System.currentTimeMillis + 20000L, "Add to album is absent")
+      click(add.first())
+      val option: Locator = page.getByRole(
+        AriaRole.OPTION,
+        new Page.GetByRoleOptions().setName(destination.title).setExact(true)
+      )
+      awaitCount(option, System.currentTimeMillis + 20000L, "destination album is absent")
+      confirmed = true
+      click(option.first())
+      val after: Seq[String] = readKeyList(destination.id)
+      val added: Seq[String] = after.filterNot(before.contains)
+      val named: Map[String, Catalog.Item] =
+        if added.lengthIs == 1 then
+          readFact(added.head, destination.id) match
+            case Some(found) => Map(added.head -> found)
+            case None => Map.empty
+        else Map.empty
+      AgentCommands.confirmedAdd(before, after, named, current) match
+        case Some(found) => found
+        case None => throw Refresh.ActMiss("live key differs", confirmed = true)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
+  def takeOut(album: Catalog.Album, item: Catalog.Item): Unit =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/photo/${item.key}")
+      clickMore()
+      val menu: Locator = page.getByRole(
+        AriaRole.MENUITEM,
+        new Page.GetByRoleOptions().setName(java.util.regex.Pattern.compile("Remove from album"))
+      )
+      awaitCount(menu, System.currentTimeMillis + 20000L, "Remove from album is absent")
+      click(menu.last())
+      val name: String = awaitRemove(System.currentTimeMillis + 20000L)
+      val dialog: Locator = visibleDialog.getOrElse(
+        throw Refresh.ActMiss("Remove is absent", confirmed = false)
+      )
+      val buttons: Seq[String] = dialogButtons(dialog)
+      // A trash dialog is not a remove, so it is not clicked.
+      if isTrash(dialogText(dialog), buttons) then
+        throw Refresh.ActMiss("trash dialog", confirmed = false)
+      if !isRemoveButton(name) || !buttons.contains(name) then
+        throw Refresh.ActMiss("Remove is absent", confirmed = false)
+      val button: Locator = dialog.getByRole(
+        AriaRole.BUTTON,
+        new Locator.GetByRoleOptions().setName(name).setExact(true)
+      )
+      if button.count() == 0 then throw Refresh.ActMiss("Remove is absent", confirmed = false)
+      confirmed = true
+      click(button.first())
+      if readKeyList(album.id).contains(item.key) then
+        throw Refresh.ActMiss("source key is present", confirmed = true)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
+  @tailrec
+  private def awaitRemove(deadline: Long): String =
+    visibleDialog match
+      case None if System.currentTimeMillis >= deadline =>
+        throw Refresh.ActMiss("Remove is absent", confirmed = false)
+      case None =>
+        Thread.sleep(300)
+        awaitRemove(deadline)
+      case Some(dialog) =>
+        val buttons: Seq[String] = dialogButtons(dialog)
+        if isTrash(dialogText(dialog), buttons) then
+          throw Refresh.ActMiss("trash dialog", confirmed = false)
+        buttons.find(isRemoveButton) match
+          case Some(name) => name
+          case None if System.currentTimeMillis >= deadline =>
+            throw Refresh.ActMiss("Remove is absent", confirmed = false)
+          case None =>
+            Thread.sleep(300)
+            awaitRemove(deadline)
+
+  private def visibleDialog: Option[Locator] =
+    val found: Locator = page.locator("[role=\"dialog\"], [role=\"alertdialog\"]")
+    if found.count() > 0 && found.first().isVisible then Some(found.first()) else None
+
+  private def dialogText(dialog: Locator): String =
+    Option(dialog.innerText()).getOrElse("")
+
+  private def dialogButtons(dialog: Locator): Seq[String] =
+    dialog.evaluate(dialogButtonsScript) match
+      case text: String => text.split("\n", -1).toSeq.filter(_.nonEmpty)
+      case _ => throw IllegalStateException("dialog read failed")
+
+  private def isTrash(text: String, buttons: Seq[String]): Boolean =
+    val lower: String = text.toLowerCase(java.util.Locale.ROOT)
+    lower.contains("trash") || lower.contains("delete forever") || buttons.exists(refusedButton)
+
+  private def refusedButton(name: String): Boolean =
+    val folded: String = name.toLowerCase(java.util.Locale.ROOT)
+    folded == "delete forever" || folded == "empty trash" || folded.startsWith("move to trash")
+
+  private def isRemoveButton(name: String): Boolean =
+    java.util.regex.Pattern.compile("^Remove\\b").matcher(name).find()
+
+  private def readKeyList(albumId: String): Seq[String] =
+    page.evaluate(albumKeysScript, albumId) match
+      case text: String => text.split("\n", -1).toSeq.filter(_.nonEmpty)
+      case _ => throw IllegalStateException("read failed")
+
+  private def readFact(key: String, albumId: String): Option[Catalog.Item] =
+    page.evaluate(itemFactScript, key + "\t" + albumId) match
+      case text: String if text.isEmpty => None
+      case text: String =>
+        text.split("\t", -1).toSeq match
+          case Seq(filename, date, uploader) if filename.nonEmpty =>
+            Some(Catalog.Item(filename, factDate(date), key, factUploader(uploader)))
+          case _ => None
+      case _ =>
+        throw IllegalStateException("read failed")
+
+  private def factDate(text: String): Option[LocalDate] =
+    if text.isEmpty || text == "-" then None else Some(LocalDate.parse(text))
+
+  private def factUploader(text: String): Option[String] =
+    if text.isEmpty || text == "-" then None else Some(text)
 
   @tailrec
   private def focusDescription(deadline: Long, opened: Boolean): Unit =
@@ -932,4 +1075,157 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       }
       if (ts == null) throw new Error('read failed');
       return new Date(Number(ts) + Number(tz || 0)).toISOString().slice(0, 10);
+    }"""
+
+  private val dialogButtonsScript: String =
+    """(root) => {
+      const names = [];
+      for (const node of root.querySelectorAll('button, [role="button"]')) {
+        const raw = (node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+        if (raw) names.push(raw);
+      }
+      return names.join('\n');
+    }"""
+
+  // A key past the catalog count is still a new key.
+  private val albumKeysScript: String =
+    """async (albumId) => {
+      const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
+      if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      async function rpc(id, args) {
+        const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 30000);
+        try {
+          const r = await fetch('/_/PhotosUi/data/batchexecute?rpcids=' + id + '&bl=' + encodeURIComponent(bl) + '&hl=en&rt=c', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body, signal: ctl.signal, credentials: 'include' });
+          if (!r.ok) throw new Error('http ' + r.status);
+          const txt = (await r.text()).replace(/^\)\]\}'/, '');
+          for (const line of txt.split('\n')) {
+            if (line.includes('wrb.fr')) {
+              try { const a = JSON.parse(line); const row = a.find(x => x && x[0] === 'wrb.fr'); if (row) return row[2]; } catch (e) {}
+            }
+          }
+          throw new Error('no wrb');
+        } finally { clearTimeout(t); }
+      }
+      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+      function albumAuth(id) {
+        const here = new URL(location.href);
+        const own = here.pathname.match(/\/share\/(AF1Qip[^/?#]+)/);
+        if (own && own[1] === id) {
+          const key = here.searchParams.get('key');
+          if (key) return key;
+        }
+        for (const a of document.querySelectorAll('a[href*="/share/"]')) {
+          const u = new URL(a.href, location.href);
+          const m = u.pathname.match(/\/share\/(AF1Qip[^/?#]+)/);
+          if (!m || m[1] !== id) continue;
+          const found = u.searchParams.get('key');
+          if (found) return found;
+        }
+        return null;
+      }
+      const okThumb = u => typeof u === 'string' && (u.startsWith('https://photos.fife.usercontent.google.com/') || u.startsWith('https://lh3.googleusercontent.com/pw/'));
+      const auth = albumAuth(albumId);
+      const items = [], seen = new Set();
+      let d = JSON.parse(await retry(() => rpc('snAcKc', [albumId, null, null, auth])));
+      let tok = null, empty = 0, pages = 0;
+      while (true) {
+        const before = items.length;
+        for (const it of (d && d[1]) || []) {
+          if (Array.isArray(it) && typeof it[0] === 'string' && it[0].startsWith('AF1Qip') && Array.isArray(it[1]) && okThumb(it[1][0]) && !seen.has(it[0])) {
+            seen.add(it[0]);
+            items.push(it[0]);
+          }
+        }
+        empty = items.length === before ? empty + 1 : 0;
+        pages++;
+        const nt = d && d[2];
+        if (!nt || nt === tok || empty >= 3 || pages > 500) break;
+        tok = nt;
+        d = JSON.parse(await retry(() => rpc('snAcKc', [albumId, tok, null, auth])));
+      }
+      return items.join('\n');
+    }"""
+
+  // Same fDcn4b item read as readScript.
+  // A timestamp on the first response stays. The second form needs the album auth key.
+  private val itemFactScript: String =
+    """async (spec) => {
+      const parts = String(spec).split('\t');
+      const key = parts[0];
+      const albumId = parts.length > 1 ? parts[1] : '';
+      const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
+      if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      async function rpc(id, args) {
+        const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 30000);
+        try {
+          const r = await fetch('/_/PhotosUi/data/batchexecute?rpcids=' + id + '&bl=' + encodeURIComponent(bl) + '&hl=en&rt=c', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body, signal: ctl.signal, credentials: 'include' });
+          if (!r.ok) throw new Error('http ' + r.status);
+          const txt = (await r.text()).replace(/^\)\]\}'/, '');
+          for (const line of txt.split('\n')) {
+            if (line.includes('wrb.fr')) {
+              try { const a = JSON.parse(line); const row = a.find(x => x && x[0] === 'wrb.fr'); if (row) return row[2]; } catch (e) {}
+            }
+          }
+          throw new Error('no wrb');
+        } finally { clearTimeout(t); }
+      }
+      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+      function albumAuth(id) {
+        const here = new URL(location.href);
+        const own = here.pathname.match(/\/share\/(AF1Qip[^/?#]+)/);
+        if (own && own[1] === id) {
+          const key = here.searchParams.get('key');
+          if (key) return key;
+        }
+        for (const a of document.querySelectorAll('a[href*="/share/"]')) {
+          const u = new URL(a.href, location.href);
+          const m = u.pathname.match(/\/share\/(AF1Qip[^/?#]+)/);
+          if (!m || m[1] !== id) continue;
+          const found = u.searchParams.get('key');
+          if (found) return found;
+        }
+        return null;
+      }
+      const sp = s => String(s).replace(/[\t\n\r]/g, ' ');
+      let r0 = null, firstTs = null, firstTz = null;
+      try {
+        const raw = await retry(() => rpc('fDcn4b', [key, 1, null, null, 1]));
+        const v = raw && JSON.parse(raw);
+        r0 = v && v[0];
+        if (r0 && r0[3] != null) firstTs = r0[3];
+        if (r0 && r0[4] != null) firstTz = r0[4];
+      } catch (e) {}
+      let fn = r0 && typeof r0[2] === 'string' && r0[2] !== '' ? r0[2] : null;
+      if (fn === null) {
+        const auth = albumAuth(albumId);
+        if (auth) {
+          try {
+            const raw = await retry(() => rpc('fDcn4b', [key, null, auth]));
+            const v = raw && JSON.parse(raw);
+            const next = v && v[0];
+            if (next) {
+              if (next[3] == null && firstTs != null) next[3] = firstTs;
+              if (next[4] == null && firstTz != null) next[4] = firstTz;
+              r0 = next;
+              fn = typeof next[2] === 'string' && next[2] !== '' ? next[2] : null;
+            }
+          } catch (e) {}
+        }
+      }
+      if (fn === null) return '';
+      const ts = r0 && r0[3] != null ? r0[3] : null;
+      const tz = r0 && r0[4] != null ? r0[4] : 0;
+      const date = ts != null ? new Date(Number(ts) + Number(tz || 0)).toISOString().slice(0, 10) : '-';
+      let up = '-';
+      try {
+        const o = r0 && r0[28];
+        if (o && o[1] != null && ME && String(o[1]) !== ME) up = sp(o[11] && o[11][0] ? o[11][0] : o[1]);
+      } catch (e) {}
+      return sp(fn) + '\t' + date + '\t' + up;
     }"""

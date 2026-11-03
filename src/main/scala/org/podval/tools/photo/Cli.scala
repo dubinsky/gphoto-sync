@@ -86,6 +86,20 @@ object Cli:
     current: Option[String],
     id: Option[String]
   ) extends Parsed
+  private[photo] final case class AddToAlbumArgs(
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    dest: Option[String],
+    id: Option[String],
+    destId: Option[String]
+  ) extends Parsed
+  private[photo] final case class RemoveFromAlbumArgs(
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
+  ) extends Parsed
   private[photo] final case class AgentRequestArgs(
     action: String,
     album: Option[String],
@@ -329,6 +343,8 @@ object Cli:
     case _: SetDescriptionArgs => true
     case _: SetDateArgs => true
     case _: DownloadItemArgs => true
+    case _: AddToAlbumArgs => true
+    case _: RemoveFromAlbumArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -362,6 +378,8 @@ object Cli:
     case _: SetDescriptionArgs => "set-description"
     case _: SetDateArgs => "set-date"
     case _: DownloadItemArgs => "download-item"
+    case _: AddToAlbumArgs => "add-to-album"
+    case _: RemoveFromAlbumArgs => "remove-from-album"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
@@ -370,6 +388,8 @@ object Cli:
     case _: SetDescriptionArgs => true
     case _: SetDateArgs => true
     case _: DownloadItemArgs => true
+    case _: AddToAlbumArgs => true
+    case _: RemoveFromAlbumArgs => true
     case _ => false
 
   private def remoteStep(
@@ -641,6 +661,10 @@ object Cli:
       AgentSetDate(item, current, updated)
     case DownloadItemArgs(title, item, current, id) =>
       AgentDownload(title, item, current, id)
+    case AddToAlbumArgs(title, item, current, dest, id, destId) =>
+      AgentAdd(title, item, current, dest, id, destId)
+    case RemoveFromAlbumArgs(title, item, current, id) =>
+      AgentRemove(title, item, current, id)
     case AgentRequestArgs(action, album, item, current, updated, id) =>
       AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
     case AgentRequestsArgs =>
@@ -1215,6 +1239,44 @@ object Cli:
       )
     ),
     Command(
+      name = "add-to-album",
+      help = "add an item to an album",
+      positionals = Nil,
+      flags = List(
+        Flag("title", None, TextKind, "album title"),
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        Flag("dest", None, TextKind, "destination album title"),
+        albumIdFlag,
+        Flag("dest-id", None, TextKind, "destination album id")
+      ),
+      build = (values, _) => AddToAlbumArgs(
+        values.texts.get("title"),
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("dest"),
+        values.texts.get("id"),
+        values.texts.get("dest-id")
+      )
+    ),
+    Command(
+      name = "remove-from-album",
+      help = "remove an item from an album",
+      positionals = Nil,
+      flags = List(
+        Flag("title", None, TextKind, "album title"),
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        albumIdFlag
+      ),
+      build = (values, _) => RemoveFromAlbumArgs(
+        values.texts.get("title"),
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("id")
+      )
+    ),
+    Command(
       name = "requests",
       help = "list request rows",
       positionals = Nil,
@@ -1247,7 +1309,8 @@ object Cli:
   // Order is agentCommands order. Membership is this set.
   private val mcpToolNames: Set[String] = Set(
     "stems", "catalog", "items", "match", "include", "rename-album",
-    "set-description", "set-date", "download-item", "requests", "results", "drift", "missing"
+    "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
+    "requests", "results", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1289,6 +1352,8 @@ object Cli:
       if command.name == "rename-album" then List("title", "current", "new")
       else if command.name == "set-description" || command.name == "set-date" then List("item", "current", "new")
       else if command.name == "download-item" then List("title", "item", "current")
+      else if command.name == "add-to-album" then List("title", "item", "current", "dest")
+      else if command.name == "remove-from-album" then List("title", "item", "current")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
     McpTool(command.name, mcpDescription(command), params, required)
@@ -1296,7 +1361,8 @@ object Cli:
   private def mcpDescription(command: Command): String =
     val base: String = s"${command.help} (photo agent ${command.name}). $mcpDoNotEcho"
     if command.name == "items" || command.name == "match" || command.name == "rename-album" ||
-      command.name == "download-item"
+      command.name == "download-item" || command.name == "add-to-album" ||
+      command.name == "remove-from-album"
     then
       s"$base $mcpAmbiguousId"
     else base

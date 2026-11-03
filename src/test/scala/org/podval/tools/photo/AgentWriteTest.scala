@@ -843,6 +843,14 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       usage(session, "agent", "download-item") shouldBe "missing title"
       usage(session, "agent", "download-item", "--title", "Bad Names") shouldBe "missing item"
       usage(session, "agent", "download-item", "--title", "Bad Names", "--item", "keyDot") shouldBe "missing current"
+      usage(session, "agent", "add-to-album") shouldBe "missing title"
+      usage(session, "agent", "add-to-album", "--title", "Source Title") shouldBe "missing item"
+      usage(session, "agent", "add-to-album", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
+      usage(session, "agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg") shouldBe
+        "missing dest"
+      usage(session, "agent", "remove-from-album") shouldBe "missing title"
+      usage(session, "agent", "remove-from-album", "--title", "Source Title") shouldBe "missing item"
+      usage(session, "agent", "remove-from-album", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
       File(archive, ".gphoto-sync").exists shouldBe false
 
   "rename-album" should "leave the catalog unchanged when the step throws" in :
@@ -1333,6 +1341,18 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           (_, _) => fail("download-item was forwarded")
         )
         downloaded should include ("download-item runs in the calling process")
+        val (_, added) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","add-to-album","--title","2010/07 ","--item","keyPic","--current","pic.jpg","--dest","Keep Title"]}""",
+          (_, _) => fail("add-to-album was forwarded")
+        )
+        added should include ("add-to-album runs in the calling process")
+        val (_, removed) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","remove-from-album","--title","2010/07 ","--item","keyPic","--current","pic.jpg"]}""",
+          (_, _) => fail("remove-from-album was forwarded")
+        )
+        removed should include ("remove-from-album runs in the calling process")
         Refresh.openAct = _ =>
           new RenameFake((_, _) => (), onDescription = (_, text) =>
             if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
@@ -1602,6 +1622,525 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
+  "confirmedAdd" should "accept only one new key whose filename is current" in :
+    val current: String = "pic.jpg"
+    val hit: Catalog.Item = Catalog.Item(current, Some(LocalDate.of(2011, 1, 2)), "keyNew", Some("Bea"))
+    val wrong: Catalog.Item = Catalog.Item("other.jpg", None, "keyBad", None)
+    val blank: Catalog.Item = Catalog.Item("", None, "keyBlank", None)
+    def shown(before: Set[String], after: Seq[String], named: Map[String, Catalog.Item]): String =
+      AgentCommands.confirmedAdd(before, after, named, current) match
+        case Some(item) => s"${item.key} ${item.filename}"
+        case None => "none"
+    shown(Set("old"), Seq("old", "keyNew"), Map("keyNew" -> hit)) shouldBe "keyNew pic.jpg"
+    shown(Set("old"), Seq("old", "keyNew"), Map.empty) shouldBe "none"
+    shown(Set("old"), Seq("old", "keyBlank"), Map("keyBlank" -> blank)) shouldBe "none"
+    shown(Set.empty, Seq("keyNew", "keyBad"), Map("keyNew" -> hit, "keyBad" -> wrong)) shouldBe "none"
+    shown(Set("old"), Seq("old", "keyBad"), Map("keyBad" -> wrong)) shouldBe "none"
+
+  "add-to-album" should "refuse an owner line before Chrome opens" in :
+    rejectPut(
+      Seq(
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title",
+        "owner\talbDst\tAda"
+      ),
+      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      "destination has an owner"
+    )
+
+  it should "refuse auto-add before Chrome opens" in :
+    rejectPut(
+      Seq(
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title",
+        "auto-add\talbDst"
+      ),
+      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      "destination is auto-add"
+    )
+
+  it should "refuse unread names before Chrome opens" in :
+    rejectPut(
+      Seq(
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t2\tDest Title",
+        "error\talbDst\t1\t2\t1",
+        "unset\talbDst\t2010-07-09\tkeyUnset\t-"
+      ),
+      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      "destination has unread names"
+    )
+
+  it should "refuse an excepted stem before Chrome opens" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      val day: File = File(archive, "2010/07/01")
+      day.mkdirs()
+      JFiles.write(File(day, "pic.jpg").toPath, Array.emptyByteArray)
+      JFiles.writeString(File(archive, "Dest.toml").toPath, "include = [\"2010/07/01 except pic\"]\n")
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onPut = (_, _, _) => fail("opened"))
+        usage(
+          session, "agent", "add-to-album",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest"
+        ) shouldBe "destination excepts \"pic\""
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "refuse the source album before Chrome opens" in :
+    rejectPut(
+      Seq(
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-"
+      ),
+      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Source Title"),
+      "destination is the source album"
+    )
+
+  it should "refuse an ambiguous destination before Chrome opens" in :
+    rejectPut(
+      Seq(
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title",
+        "album\talbDst2\t0\tDest Title"
+      ),
+      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      "more than one album titled \"Dest Title\""
+    )
+
+  it should "not refuse an except when the local file is absent" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      JFiles.writeString(File(archive, "Dest.toml").toPath, "include = [\"2010/07/01 except pic\"]\n")
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (_, _, _) =>
+            called = true
+            throw new Refresh.ActMiss("Add to album is absent", confirmed = false)
+          )
+        val (_, result) = exec(
+          session, "agent", "add-to-album",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest"
+        )
+        called shouldBe true
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            text should not include ("refresh-only")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "fail one-click on New album and click nothing" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tNew album"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onPut = (_, _, _) => fail("opened"))
+        val (_, result) = exec(
+          session, "agent", "add-to-album",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "New album"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery one-click")
+            text should include ("New album is not a destination")
+            text should not include ("refresh-only")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+        released(places)
+
+  it should "write the confirmed destination item and adjust an error line" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\tBea",
+        "album\talbDst\t1\tDest Title",
+        "error\talbDst\t1\t1\t0",
+        "item\talbDst\tkeep.jpg\t2010-07-02\tkeyKeep\tAda",
+        "album\talbKeep\t0\tKeep Title"
+      )
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (item, destination, current) =>
+            current shouldBe "pic.jpg"
+            item.key shouldBe "keyPic"
+            destination.title shouldBe "Dest Title"
+            Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "add-to-album",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+        )
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "add-to-album \"pic.jpg\" \"Dest Title\"\n"
+            text should not include ("albDst")
+            text should not include ("keyNew")
+            text should not include ("keyPic")
+            field(value, "action") shouldBe Json.Str("add-to-album")
+            field(value, "title") shouldBe Json.Str("Dest Title")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("albDst")
+            field(value, "itemKey") shouldBe Json.Str("keyNew")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(
+          "album\talbSrc\t1\tSource Title",
+          "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\tBea",
+          "album\talbDst\t2\tDest Title",
+          "error\talbDst\t2\t2\t0",
+          "item\talbDst\tkeep.jpg\t2010-07-02\tkeyKeep\tAda",
+          "item\talbDst\tpic.jpg\t2011-01-02\tkeyNew\tBea",
+          "album\talbKeep\t0\tKeep Title"
+        )
+        JFiles.readString(catalogFile.toPath) should not include ("unset")
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        requests(archive).exists shouldBe false
+        places.directory.exists shouldBe false
+        File(places.directory, "status.txt").exists shouldBe false
+        File(places.directory, "albums.tsv").exists shouldBe false
+        File(places.directory, "parts").exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "write no error line when the destination has none" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\tBea",
+        "album\talbDst\t0\tDest Title",
+        "album\talbKeep\t0\tKeep Title"
+      )
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (_, _, _) =>
+            Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+          )
+        val (_, result) = exec(
+          session, "agent", "add-to-album",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+        )
+        result match
+          case Result.Ok(text, _) =>
+            text shouldBe "add-to-album \"pic.jpg\" \"Dest Title\"\n"
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(
+          "album\talbSrc\t1\tSource Title",
+          "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\tBea",
+          "album\talbDst\t1\tDest Title",
+          "item\talbDst\tpic.jpg\t2011-01-02\tkeyNew\tBea",
+          "album\talbKeep\t0\tKeep Title"
+        )
+
+  it should "stay refresh-only when the live read is not the clean key" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (_, _, _) =>
+            throw new Refresh.ActMiss("live key differs", confirmed = true)
+          )
+        val (_, result) = exec(
+          session, "agent", "add-to-album",
+          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Keep Title"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include ("live key differs")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) should not include ("unset")
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        places.directory.exists shouldBe false
+
+  it should "report one-click when Add to album is absent" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (_, _, _) =>
+            throw new Refresh.ActMiss("Add to album is absent AF1QipLEAK", confirmed = false)
+          )
+        val (_, result) = exec(
+          session, "agent", "add-to-album",
+          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Keep Title"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text shouldBe
+              """failed add-to-album
+                |filename "pic.jpg"
+                |step More options, then Add to album, then the existing album
+                |recovery one-click
+                |catalog unchanged
+                |Add to album is absent 2010/07 
+                |""".stripMargin
+            text should not include ("AF1Qip")
+            text should not include ("refresh-only")
+            field(value, "step") shouldBe Json.Str("More options, then Add to album, then the existing album")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "albumId") shouldBe Json.Str("alb07")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+
+  it should "leave the catalog unchanged when the new key is already there" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t1\tDest Title",
+        "item\talbDst\tkeep.jpg\t2010-07-02\tkeyNew\t-"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (_, _, _) =>
+            Catalog.Item("pic.jpg", None, "keyNew", None)
+          )
+        val (_, result) = exec(
+          session, "agent", "add-to-album",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+        )
+        result match
+          case Result.Failed(text, _, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("repeated item key")
+            text should include ("catalog unchanged")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+
+  it should "stay refresh-only when the catalog read throws after confirm" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (_, _, _) =>
+            catalogFile.setReadable(false, false)
+            Catalog.Item("pic.jpg", None, "keyNew", None)
+          )
+        try
+          val (_, result) = exec(
+            session, "agent", "add-to-album",
+            "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          )
+          result match
+            case Result.Failed(text, value, message) =>
+              message shouldBe Refresh.MutationFailed
+              text should include ("recovery refresh-only")
+              text should include ("catalog unchanged")
+              field(value, "recovery") shouldBe Json.Str("refresh-only")
+            case other =>
+              fail(other.toString)
+          catalogFile.setReadable(true, false)
+          JFiles.readString(catalogFile.toPath) shouldBe catalog
+          File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        finally
+          catalogFile.setReadable(true, false)
+
+  it should "report already running without opening the browser" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        places.directory.mkdirs()
+        JFiles.writeString(File(places.directory, "status.txt").toPath, "phase=items\nAF1QipBusy\n")
+        Refresh.claim(places.lock) match
+          case Refresh.Claim.Owned(channel, lock) =>
+            try
+              Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
+              val (_, result) = exec(
+                session, "agent", "add-to-album",
+                "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Keep Title"
+              )
+              result match
+                case Result.Failed(text, value, message) =>
+                  message shouldBe Refresh.AlreadyRunning
+                  Cli.processCode(result) shouldBe 2
+                  text should startWith ("already running\n")
+                  text should include ("phase=items")
+                  text should not include ("AF1Qip")
+                  value shouldBe Json.Null
+                case other =>
+                  fail(other.toString)
+              JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+            finally
+              Refresh.release(channel, lock)
+          case Refresh.Claim.Busy =>
+            fail("lock was already held")
+
+  "remove-from-album" should "drop the item and adjust an error line" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbSrc\t2\tSource Title",
+        "owner\talbSrc\tAda",
+        "error\talbSrc\t2\t2\t1",
+        "unset\talbSrc\t2010-07-09\tkeyUnset\t-",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\tBea",
+        "album\talbKeep\t0\tKeep Title"
+      )
+      withAct(archive): (session, places, _) =>
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onTake = (album, item) =>
+            album.id shouldBe "albSrc"
+            item.key shouldBe "keyPic"
+            item.uploader shouldBe Some("Bea")
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "remove-from-album",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "remove-from-album \"pic.jpg\"\n"
+            text should not include ("albSrc")
+            text should not include ("keyPic")
+            field(value, "action") shouldBe Json.Str("remove-from-album")
+            field(value, "title") shouldBe Json.Str("Source Title")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("albSrc")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(
+          "album\talbSrc\t1\tSource Title",
+          "owner\talbSrc\tAda",
+          "error\talbSrc\t1\t1\t1",
+          "unset\talbSrc\t2010-07-09\tkeyUnset\t-",
+          "album\talbKeep\t0\tKeep Title"
+        )
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        requests(archive).exists shouldBe false
+        places.directory.exists shouldBe false
+        closed shouldBe true
+        released(places)
+
+  it should "report one-click and click nothing when the dialog is trash" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onTake = (_, _) =>
+            throw new Refresh.ActMiss("trash dialog", confirmed = false)
+          )
+        val (_, result) = exec(
+          session, "agent", "remove-from-album",
+          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text shouldBe
+              """failed remove-from-album
+                |filename "pic.jpg"
+                |step More options, then Remove from album, then Remove
+                |recovery one-click
+                |catalog unchanged
+                |trash dialog
+                |""".stripMargin
+            text should not include ("refresh-only")
+            field(value, "step") shouldBe Json.Str("More options, then Remove from album, then Remove")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
+  it should "stay refresh-only when the source key is still present" in :
+    withArchive: archive =>
+      val catalog: String = writePair(archive)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onTake = (_, _) =>
+            throw new Refresh.ActMiss("source key is present", confirmed = true)
+          )
+        val (_, result) = exec(
+          session, "agent", "remove-from-album",
+          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include ("source key is present")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+
+  private def catalogBody(lines: String*): String =
+    (Seq("# gphoto-catalog 2") ++ lines).mkString("", "\n", "\n")
+
+  private def rejectPut(lines: Seq[String], args: Seq[String], message: String): Unit =
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, lines*)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onPut = (_, _, _) => fail("opened"))
+        usage(session, args*) shouldBe message
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+
   private val fixtureIds: Seq[String] = Seq(
     "albTrail", "albOwn", "albSrc", "albDst", "albUp", "albShareA", "albShareB", "albOnly", "albBad", "albUnset",
     "keyOwn", "keyPic", "keyUp", "keyShare", "keyOnly", "keyDot", "keyDots", "keySlash", "keyUnset", "goneId"
@@ -1731,7 +2270,10 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     effect: (Catalog.Album, String) => Unit,
     onDescription: (Catalog.Item, String) => Unit = (_, _) => (),
     onDate: (Catalog.Item, String) => Unit = (_, _) => (),
-    onDownload: (Catalog.Item, File) => Unit = (_, _) => ()
+    onDownload: (Catalog.Item, File) => Unit = (_, _) => (),
+    onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (_, _, _) =>
+      throw IllegalStateException("put"),
+    onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => ()
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -1741,6 +2283,9 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     def setDescription(item: Catalog.Item, text: String): Unit = onDescription(item, text)
     def setDate(item: Catalog.Item, local: String): Unit = onDate(item, local)
     def downloadItem(item: Catalog.Item, destination: File): Unit = onDownload(item, destination)
+    def putInAlbum(item: Catalog.Item, destination: Catalog.Album, current: String): Catalog.Item =
+      onPut(item, destination, current)
+    def takeOut(album: Catalog.Album, item: Catalog.Item): Unit = onTake(album, item)
 
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile

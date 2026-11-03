@@ -156,6 +156,39 @@ private[photo] final class AgentDownload(
         AgentCommands.acceptRequest(albums, Requests.Action.DownloadItem, album.id, key, wantedCurrent, "")
         AgentCommands.downloadItem(loaded, album, key, wantedCurrent)
 
+private[photo] final class AgentAdd(
+  title: Option[String],
+  item: Option[String],
+  current: Option[String],
+  dest: Option[String],
+  id: Option[String],
+  destId: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val key: String = item.getOrElse(throw IllegalArgumentException("missing item"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val destTitle: String = dest.getOrElse(throw IllegalArgumentException("missing dest"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.putInAlbum(loaded, albums, wantedTitle, id, key, wantedCurrent, destTitle, destId)
+
+private[photo] final class AgentRemove(
+  title: Option[String],
+  item: Option[String],
+  current: Option[String],
+  id: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val key: String = item.getOrElse(throw IllegalArgumentException("missing item"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.takeOut(loaded, albums, wantedTitle, id, key, wantedCurrent)
+
 private[photo] final class AgentRequest(
   action: Requests.Action,
   album: Option[String],
@@ -469,6 +502,8 @@ private[photo] object AgentCommands:
   private val DescriptionStep: String = "Open info, or the i key, then Add a description"
   private val DateStep: String = "Date taken, then Save, Done, or OK"
   private val DownloadStep: String = "More options, then Download"
+  private val AddStep: String = "More options, then Add to album, then the existing album"
+  private val RemoveStep: String = "More options, then Remove from album, then Remove"
 
   def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     withLock(session, album.title)(heldRename(session, album, updated))
@@ -504,6 +539,41 @@ private[photo] object AgentCommands:
       itemOk(session, album, item, "download-item", "unchanged")
     else
       withLock(session, album.title)(heldDownload(session, album.id, key, current))
+
+  def putInAlbum(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    title: String,
+    id: Option[String],
+    key: String,
+    current: String,
+    destTitle: String,
+    destId: Option[String]
+  ): (Session, Result) =
+    val album: Catalog.Album = select(albums, title, id)
+    val destination: Catalog.Album = select(albums, destTitle, destId)
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    requireCurrent(item.filename, current)
+    if album.id == destination.id then throw IllegalArgumentException("destination is the source album")
+    acceptPut(session, destination, item)
+    withLock(session, album.title)(heldPut(session, album.id, key, current, destination.id))
+
+  def takeOut(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    title: String,
+    id: Option[String],
+    key: String,
+    current: String
+  ): (Session, Result) =
+    val album: Catalog.Album = select(albums, title, id)
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    requireCurrent(item.filename, current)
+    withLock(session, album.title)(heldTake(session, album.id, key, current))
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -797,6 +867,221 @@ private[photo] object AgentCommands:
     catch
       case error: Exception =>
         Left(Operation.messageOf(error))
+
+  private def heldPut(
+    session: Session,
+    sourceId: String,
+    key: String,
+    current: String,
+    destinationId: String
+  ): (Session, Result) =
+    val (source, item, destination) = rereadAdd(session, sourceId, key, current, destinationId)
+    var ui: PhotosAct = null
+    try
+      // That option creates an album, so Chrome stays closed.
+      if destination.title == "New album" then
+        throw Refresh.ActMiss("New album is not a destination", confirmed = false)
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      val read: Catalog.Item = ui.putInAlbum(item, destination, current)
+      val line: Catalog.Item = Catalog.Item(
+        current,
+        read.date.orElse(item.date),
+        read.key,
+        read.uploader.orElse(item.uploader)
+      )
+      publishAlbum(session, destination.id, dest => revisedAdd(dest, line)) match
+        case Right(next) =>
+          addOk(next, destination, current, line.key)
+        case Left(message) =>
+          itemFailed(session, source, item, "add-to-album", AddStep, "refresh-only", message)
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("add-to-album failed")
+        itemFailed(session, source, item, "add-to-album", AddStep, recovery, detail)
+      case error: Exception =>
+        itemFailed(session, source, item, "add-to-album", AddStep, "one-click", Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
+  private def heldTake(
+    session: Session,
+    albumId: String,
+    key: String,
+    current: String
+  ): (Session, Result) =
+    val (album, item) = rereadTake(session, albumId, key, current)
+    var ui: PhotosAct = null
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      ui.takeOut(album, item)
+      publishAlbum(session, album.id, next => revisedTake(next, item)) match
+        case Right(next) =>
+          itemOk(next, album, item, "remove-from-album", "updated")
+        case Left(message) =>
+          itemFailed(session, album, item, "remove-from-album", RemoveStep, "refresh-only", message)
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("remove-from-album failed")
+        itemFailed(session, album, item, "remove-from-album", RemoveStep, recovery, detail)
+      case error: Exception =>
+        itemFailed(session, album, item, "remove-from-album", RemoveStep, "one-click", Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
+  private def rereadAdd(
+    session: Session,
+    sourceId: String,
+    key: String,
+    current: String,
+    destinationId: String
+  ): (Catalog.Album, Catalog.Item, Catalog.Album) =
+    val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val albums: Seq[Catalog.Album] = Catalog.read(file)
+    val source: Catalog.Album = albums.find(_.id == sourceId).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    val destination: Catalog.Album = albums.find(_.id == destinationId).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    val item: Catalog.Item = source.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    requireCurrent(item.filename, current)
+    if source.id == destination.id then throw IllegalArgumentException("destination is the source album")
+    acceptPut(session, destination, item)
+    (source, item, destination)
+
+  private def rereadTake(
+    session: Session,
+    albumId: String,
+    key: String,
+    current: String
+  ): (Catalog.Album, Catalog.Item) =
+    val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val albums: Seq[Catalog.Album] = Catalog.read(file)
+    val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    requireCurrent(item.filename, current)
+    (album, item)
+
+  private def publishAlbum(
+    session: Session,
+    albumId: String,
+    revise: Catalog.Album => Catalog.Album
+  ): Either[String, Session] =
+    try
+      val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
+      val live: File = File(directory, "catalog.txt")
+      val partial: File = File(directory, "catalog.txt.partial")
+      val previous: File = File(directory, "catalog.txt.previous")
+      val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
+      val albums: Seq[Catalog.Album] = Catalog.read(live)
+      if !albums.exists(_.id == albumId) then Left("no such album")
+      else
+        val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
+        val groups: Either[String, Seq[Seq[String]]] =
+          albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+            case (Left(message), _) => Left(message)
+            case (Right(acc), next) =>
+              if next.id == albumId then
+                if !blocks.contains(albumId) then Left("missing album block")
+                else Right(acc :+ RefreshPlan.recordLines(revise(next)))
+              else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
+        groups.flatMap: lines =>
+          try
+            Files.write(RefreshPlan.renderLines(lines), partial)
+            Right(())
+          catch case error: Exception =>
+            Left(Operation.messageOf(error))
+        .flatMap(_ => RefreshPlan.checkRetitle(partial))
+        .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+        .map(_ => session.copy(catalogCache = None))
+    catch
+      case error: Exception =>
+        Left(Operation.messageOf(error))
+
+  private def revisedAdd(next: Catalog.Album, line: Catalog.Item): Catalog.Album =
+    if next.items.exists(_.key == line.key) || next.unsets.exists(_.key == line.key) then
+      throw IllegalArgumentException("repeated item key")
+    val count: Int = next.count + 1
+    next.copy(
+      count = count,
+      error = next.error.map(err => err.copy(of = count, got = err.got + 1)),
+      items = next.items :+ line
+    )
+
+  private def revisedTake(next: Catalog.Album, item: Catalog.Item): Catalog.Album =
+    if !next.items.exists(_.key == item.key) then throw IllegalArgumentException("no such item")
+    val count: Int = next.count - 1
+    next.copy(
+      count = count,
+      error = next.error.map(err => err.copy(of = count, got = err.got - 1)),
+      items = next.items.filterNot(_.key == item.key)
+    )
+
+  private def acceptPut(session: Session, destination: Catalog.Album, item: Catalog.Item): Unit =
+    if destination.owner.isDefined then throw IllegalArgumentException("destination has an owner")
+    if destination.autoAdd then throw IllegalArgumentException("destination is auto-add")
+    if destination.error.exists(_.nameFailures > 0) || destination.unsets.nonEmpty then
+      throw IllegalArgumentException("destination has unread names")
+    knownLocal(session, item).foreach: (day, stem) =>
+      albumFile(session, destination).foreach: file =>
+        val album: Album = Album.read(session.root.configuration.archive, file)
+        // Same test Sync uses for an except.
+        if album.positive(day, stem) && !album.claims(day, stem) then
+          throw IllegalArgumentException(s"destination excepts ${Album.quote(stem)}")
+
+  private def albumFile(session: Session, destination: Catalog.Album): Option[File] =
+    val archive: File = session.root.configuration.archive
+    Title.parse(destination.title).map(parsed => Title.file(archive, parsed)).filter(_.isFile)
+
+  private def knownLocal(session: Session, item: Catalog.Item): Option[(LocalDate, String)] =
+    val (stem, extension) = Files.splitOnLast(item.filename, '.')
+    item.date.flatMap: date =>
+      val (_, grouped, _) = loadGrouped(session, civilDay(session.root, date))
+      resolve(grouped.toMap, stem, extension).map: local =>
+        Album.splitPath(s"${Title.dayText(date)}/$local")
+
+  private[photo] def confirmedAdd(
+    before: Set[String],
+    after: Seq[String],
+    named: Map[String, Catalog.Item],
+    current: String
+  ): Option[Catalog.Item] =
+    val added: Seq[String] = after.filterNot(before.contains)
+    if added.lengthIs != 1 then None
+    else named.get(added.head).filter(_.filename == current)
+
+  private def addOk(
+    session: Session,
+    destination: Catalog.Album,
+    filename: String,
+    key: String
+  ): (Session, Result) =
+    val text: String = PlaywrightPhotosUi.redactSecrets(
+      s"add-to-album ${Album.quote(filename)} ${Album.quote(destination.title)}\n",
+      destination.title
+    )
+    val value: Json = Json.Obj(Seq(
+      "action" -> Json.Str("add-to-album"),
+      "title" -> Json.Str(destination.title),
+      "catalog" -> Json.Str("updated"),
+      "albumId" -> Json.Str(destination.id),
+      "itemKey" -> Json.Str(key)
+    ))
+    (session, Result.Ok(text, value))
 
   private def itemOk(
     session: Session,
