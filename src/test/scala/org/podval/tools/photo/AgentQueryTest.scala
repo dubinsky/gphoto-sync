@@ -64,8 +64,6 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       listed.catalogCache.isDefined shouldBe true
-      File(archive, ".gphoto-sync/requests.tsv").exists shouldBe false
-      File(archive, ".gphoto-sync/results.tsv").exists shouldBe false
 
       val kept: String = JFiles.readString(file.toPath).replace("June", "June")
       JFiles.writeString(file.toPath, JFiles.readString(file.toPath).replace("Beta", "Zeta"))
@@ -395,6 +393,16 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
       text shouldBe "pending Pending.toml\n"
       value shouldBe driftValue("pending", "", "Pending.toml", None, None)
+
+  it should "report a pending rename and write nothing" in :
+    withArchive: archive =>
+      val toml: String = "external = true\n"
+      writeRaw(archive, "Best Of.toml", toml)
+      writeCatalog(archive, "album\tcid-best\t0\tBest  Of")
+      val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
+      text shouldBe "pending-rename Best Of.toml\n"
+      noIds(text, "cid-best")
+      value shouldBe driftValue("pending-rename", "", "Best Of.toml", None, Some("cid-best"))
 
   it should "report a skipped album and write nothing" in :
     withArchive: archive =>

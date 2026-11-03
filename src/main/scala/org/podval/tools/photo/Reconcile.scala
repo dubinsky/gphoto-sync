@@ -6,7 +6,7 @@ import java.nio.file.{Files as NFiles}
 import java.time.{LocalDate, YearMonth}
 
 // Links catalog albums to album files in this process. Not a loop over album-file:
-// a rename keeps the path and does not append rename-album.
+// a rename keeps the path.
 final class Reconcile(args: Cli.ReconcileArgs) extends Operation:
   def execute(session: Session): (Session, Result) =
     // Filled before a write so a failure still carries the plan. Read after the body.
@@ -21,6 +21,7 @@ object Reconcile:
     case Update extends Kind("update")
     case Gone extends Kind("gone")
     case Pending extends Kind("pending")
+    case PendingRename extends Kind("pending-rename")
     case Skipped extends Kind("skipped")
 
   private[photo] final case class Action(
@@ -75,6 +76,7 @@ object Reconcile:
 
   private[photo] def line(action: Action): String = action.kind match
     case Kind.Pending => s"pending ${action.path}"
+    case Kind.PendingRename => s"pending-rename ${action.path}"
     case Kind.Skipped => s"skipped ${action.label} ${action.reason}"
     case Kind.Gone => s"gone ${action.label}"
     case Kind.Create => s"create ${action.label}"
@@ -182,6 +184,7 @@ object Reconcile:
     val touches: mutable.ListBuffer[Touch] = mutable.ListBuffer.empty
     val links: mutable.ListBuffer[AlbumLinks.Row] = mutable.ListBuffer.empty
     val linkedPaths: mutable.Set[String] = mutable.Set.empty
+    val renamePaths: mutable.Set[String] = mutable.Set.empty
 
     def keep(id: String, rel: String): Unit =
       if links.exists(row => row.id == id || row.path == rel) then
@@ -209,6 +212,10 @@ object Reconcile:
                 val reason: String = if row.album.owner.isDefined || album.owner.isDefined then "owner" else "title"
                 actions += skipped(album.title, rel, reason, Some(album.id))
                 keep(album.id, rel)
+              else if pendingRename(album, row.album) then
+                actions += Action(Kind.PendingRename, "", rel, "", Some(album.id))
+                if pinned.contains(album.id) then keep(album.id, rel)
+                else renamePaths += rel
               else
                 val (next, prepared) = prepare(session, album, row.album.span, monthFile(row.album))
                 session = next
@@ -264,7 +271,8 @@ object Reconcile:
       goneLinks.foreach(link => keep(link.id, link.path))
     val gonePaths: Set[String] = goneLinks.map(_.path).toSet
     val unlinked: Seq[Action] = found.filter: row =>
-      !pending(row.album) && !linkedPaths.contains(relOf(row)) && !gonePaths.contains(relOf(row))
+      !pending(row.album) && !linkedPaths.contains(relOf(row)) && !gonePaths.contains(relOf(row)) &&
+        !renamePaths.contains(relOf(row))
     .sortBy(relOf).map: row =>
       skipped(relOf(row), relOf(row), "unlinked", None)
 
@@ -442,6 +450,11 @@ object Reconcile:
     key == album.title || key == working(album.title)
 
   private def pending(album: Album): Boolean = !album.external && album.googleAlbumId.isEmpty
+
+  // The operator renames this album. Reconcile does not write the file.
+  private def pendingRename(album: Catalog.Album, file: Album): Boolean =
+    album.owner.isEmpty && file.owner.isEmpty && file.external && file.googleTitle.isEmpty &&
+      file.title != album.title
 
   private def client(album: Album): Boolean = !album.external && album.googleAlbumId.nonEmpty
 

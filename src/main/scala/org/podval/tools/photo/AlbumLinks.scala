@@ -8,7 +8,7 @@ import java.nio.file.{Files as NFiles, StandardCopyOption, StandardOpenOption}
 import java.util.UUID
 
 // Identity after the first reconcile. Refresh does not write this file.
-// Absent until a reconcile has a row, same as requests.tsv: do not create it empty.
+// Absent until a reconcile has a row: do not create it empty.
 object AlbumLinks:
   final case class Row(id: String, path: String) derives CanEqual
 

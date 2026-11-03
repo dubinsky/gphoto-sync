@@ -7,7 +7,7 @@ enum PathStyle:
   case OneShot, Cursor, Serve
 
 // The bot replaces catalog.txt as a whole file, so size and mtime are the generation.
-// A failed parse is not stored. Requests and results are not cached.
+// A failed parse is not stored.
 private[photo] final case class CatalogCache(
   size: Long,
   mtimeMillis: Long,

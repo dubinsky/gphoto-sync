@@ -217,7 +217,7 @@ It is not an MCP tool.
 `photo login`, `photo status`, and `photo logout` manage the Google Photos token.
 
 `photo agent` reads the catalog and the archive.
-It writes an album file or appends a request row only when that command says to.
+It writes an album file only for `photo agent album-file`.
 It does not print album ids or item keys.
 `photo agent stems <day>` lists that day's grouped stems.
 Extensions are sorted and joined with `+`.
@@ -227,18 +227,17 @@ The metadata comes from sidecar TOML, not from EXIF.
 The album is an exact catalog title.
 `photo agent match [--id <id>] <album>` matches those items to local stems and writes nothing.
 `photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines and writes nothing.
-`photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] [--no-request] <album>` writes one
-external album file.
+`photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] <album>` writes one external album
+file.
 `--dry-run` prints that file and writes nothing.
 `--replace` overwrites an existing file.
 When the album has no owner, it keeps the Google id and published title.
-`--google-title` stores that exact string and does not append `rename-album`.
-A rename row is appended when the catalog title differs from the path title, unless `--no-request` is set or the album
-has an owner.
-`photo agent request <action>` checks the catalog and appends one request row.
-`photo agent requests` lists those rows without album ids or item keys.
-`photo agent results` lists result rows and prints each note unchanged.
-`photo agent drift` reports create, update, gone, pending, and skipped.
+`--google-title` stores that exact string.
+When the album has no owner and `--google-title` is absent, the command prints `rename yes` when the catalog title
+differs from the path title, and `rename no` when those titles are the same.
+An album with an owner prints `rename no`.
+The command does not publish, sync, or run `repair --names`.
+`photo agent drift` reports create, update, gone, pending, pending-rename, and skipped.
 It uses the classes reconcile already computes and writes nothing.
 A line is the class, then the album title or the relative path.
 A skipped line adds a short reason.
@@ -299,10 +298,10 @@ It is a client of `photo serve`, the same way `photo shell` is.
 It starts a detached `photo serve` when the socket is down, and it does not stop that process on exit.
 It does not run a command in this process when the socket is down.
 A mismatch names both paths, says to run `photo serve stop`, and does not run the command in this process.
-Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent requests`,
-`agent results`, `agent drift`, and `agent missing`.
+Tools are `agent stems`, `agent catalog`, `agent items`, `agent match`, `agent include`, `agent drift`, and
+`agent missing`.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
-Album files, request rows, repair, publish, sync, refresh, reconcile, and file are not tools.
+Album files, repair, publish, sync, refresh, reconcile, and file are not tools.
 Tool JSON may contain album ids and item keys.
 Chat should not.
 The user adds the server.

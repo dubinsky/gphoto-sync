@@ -97,7 +97,7 @@ private[photo] final class AgentRename(
         val album: Catalog.Album = AgentCommands.select(albums, wantedTitle, id)
         AgentCommands.acceptRequest(
           albums,
-          Requests.Action.RenameAlbum,
+          AgentCommands.Action.RenameAlbum,
           album.id,
           "",
           wantedCurrent,
@@ -117,7 +117,7 @@ private[photo] final class AgentSetDescription(
       val text: String = updated.getOrElse(throw IllegalArgumentException("missing new"))
       val (loaded, albums) = session.loadCatalog
       AgentCommands.catching(loaded):
-        AgentCommands.acceptRequest(albums, Requests.Action.SetDescription, "", key, wantedCurrent, text)
+        AgentCommands.acceptRequest(albums, AgentCommands.Action.SetDescription, "", key, wantedCurrent, text)
         if text.exists(ch => ch == '\t' || ch == '\n' || ch == '\r') then
           throw IllegalArgumentException("new contains a tab or a newline")
         val album: Catalog.Album = AgentCommands.locateItem(albums, key)._1
@@ -135,7 +135,7 @@ private[photo] final class AgentSetDate(
       val local: String = updated.getOrElse(throw IllegalArgumentException("missing new"))
       val (loaded, albums) = session.loadCatalog
       AgentCommands.catching(loaded):
-        AgentCommands.acceptRequest(albums, Requests.Action.SetDate, "", key, wantedCurrent, local)
+        AgentCommands.acceptRequest(albums, AgentCommands.Action.SetDate, "", key, wantedCurrent, local)
         val album: Catalog.Album = AgentCommands.locateItem(albums, key)._1
         AgentCommands.setDate(loaded, album, key, wantedCurrent, local)
 
@@ -153,7 +153,7 @@ private[photo] final class AgentDownload(
       val (loaded, albums) = session.loadCatalog
       AgentCommands.catching(loaded):
         val album: Catalog.Album = AgentCommands.select(albums, wantedTitle, id)
-        AgentCommands.acceptRequest(albums, Requests.Action.DownloadItem, album.id, key, wantedCurrent, "")
+        AgentCommands.acceptRequest(albums, AgentCommands.Action.DownloadItem, album.id, key, wantedCurrent, "")
         AgentCommands.downloadItem(loaded, album, key, wantedCurrent)
 
 private[photo] final class AgentAdd(
@@ -222,32 +222,6 @@ private[photo] final class AgentDelete(
       AgentCommands.catching(loaded):
         AgentCommands.deleteItem(loaded, albums, wantedTitle, id, key, wantedCurrent)
 
-private[photo] final class AgentRequest(
-  action: Requests.Action,
-  album: Option[String],
-  item: Option[String],
-  current: Option[String],
-  updated: Option[String],
-  id: Option[String]
-) extends Operation:
-  override def execute(session: Session): (Session, Result) =
-    AgentCommands.catching(session):
-      id.foreach(Requests.requireId)
-      val fields: (String, String, String, String) =
-        AgentCommands.requestFields(action, album, item, current, updated)
-      val (loaded, albums) = session.loadCatalog
-      AgentCommands.catching(loaded):
-        AgentCommands.acceptRequest(albums, action, fields._1, fields._2, fields._3, fields._4)
-        (loaded, Result.Usage("photo agent request does not append"))
-
-private[photo] object AgentRequests extends Operation:
-  override def execute(session: Session): (Session, Result) =
-    AgentCommands.listRequests(session)
-
-private[photo] object AgentResults extends Operation:
-  override def execute(session: Session): (Session, Result) =
-    AgentCommands.listResults(session)
-
 private[photo] object AgentDrift extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentCommands.catching(session):
@@ -278,6 +252,9 @@ private[photo] final class AgentInclude(spanText: Option[String], paths: Seq[Str
       (loaded, Result.Ok(AgentCommands.textOf(entries.map(Include.render)), value))
 
 private[photo] object AgentCommands:
+  enum Action derives CanEqual:
+    case RenameAlbum, SetDescription, SetDate, DownloadItem, DeleteItem
+
   // Usage keeps the session passed in. A later failure keeps a catalog that already parsed.
   def catching(session: Session)(body: => (Session, Result)): (Session, Result) =
     try body
@@ -643,9 +620,6 @@ private[photo] object AgentCommands:
     acceptDelete(album, item)
     withLock(session, album.title)(heldDelete(session, album.id, key, current))
 
-  // Set by apply-requests so the outcome line is written before this lock is released.
-  private[photo] var afterHeld: Result => Unit = _ => ()
-
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
     Refresh.claim(places.lock) match
@@ -657,10 +631,7 @@ private[photo] object AgentCommands:
           case other =>
             (kept, other)
       case Refresh.Claim.Owned(channel, lock) =>
-        try
-          val done: (Session, Result) = body
-          afterHeld(done._2)
-          done
+        try body
         finally Refresh.release(channel, lock)
 
   private def heldRename(
@@ -712,7 +683,7 @@ private[photo] object AgentCommands:
     val fresh: Catalog.Album = albums.find(_.id == album.id).getOrElse(
       throw IllegalArgumentException("no such album")
     )
-    acceptRequest(albums, Requests.Action.RenameAlbum, fresh.id, "", album.title, updated)
+    acceptRequest(albums, Action.RenameAlbum, fresh.id, "", album.title, updated)
     fresh
 
   private def publishTitle(session: Session, album: Catalog.Album, updated: String): Either[String, Session] =
@@ -785,7 +756,7 @@ private[photo] object AgentCommands:
     current: String,
     text: String
   ): (Session, Result) =
-    val (album, item) = rereadItem(session, Requests.Action.SetDescription, key, current, text)
+    val (album, item) = rereadItem(session, Action.SetDescription, key, current, text)
     var ui: PhotosAct = null
     try
       // A notice would write status.txt and drop a crashed refresh's resume phase.
@@ -810,7 +781,7 @@ private[photo] object AgentCommands:
     current: String,
     local: String
   ): (Session, Result) =
-    val (album, item) = rereadItem(session, Requests.Action.SetDate, key, current, local)
+    val (album, item) = rereadItem(session, Action.SetDate, key, current, local)
     val day: LocalDate = LocalDate.parse(local.take(10))
     var ui: PhotosAct = null
     try
@@ -878,7 +849,7 @@ private[photo] object AgentCommands:
     val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
       throw IllegalArgumentException("no such album")
     )
-    acceptRequest(albums, Requests.Action.DownloadItem, album.id, key, current, "")
+    acceptRequest(albums, Action.DownloadItem, album.id, key, current, "")
     val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
       throw IllegalArgumentException("no such item")
     )
@@ -891,7 +862,7 @@ private[photo] object AgentCommands:
 
   private def rereadItem(
     session: Session,
-    action: Requests.Action,
+    action: Action,
     key: String,
     current: String,
     updated: String
@@ -1460,36 +1431,15 @@ private[photo] object AgentCommands:
         got.equals(claimed)
     if !ok then throw IllegalArgumentException("include does not match")
 
-  def requestFields(
-    action: Requests.Action,
-    album: Option[String],
-    item: Option[String],
-    current: Option[String],
-    updated: Option[String]
-  ): (String, String, String, String) =
-    def text(value: Option[String], name: String): String =
-      value.getOrElse(throw IllegalArgumentException(s"missing $name"))
-    action match
-      case Requests.Action.RenameAlbum =>
-        (text(album, "album"), "", text(current, "current"), text(updated, "new"))
-      case Requests.Action.MoveItem =>
-        (text(album, "album"), text(item, "item"), text(current, "current"), text(updated, "new"))
-      case Requests.Action.SetDescription =>
-        ("", text(item, "item"), text(current, "current"), updated.getOrElse(""))
-      case Requests.Action.SetDate =>
-        ("", text(item, "item"), text(current, "current"), text(updated, "new"))
-      case Requests.Action.DownloadItem | Requests.Action.DeleteItem =>
-        (text(album, "album"), text(item, "item"), text(current, "current"), "")
-
   def acceptRequest(
     albums: Seq[Catalog.Album],
-    action: Requests.Action,
+    action: Action,
     albumId: String,
     itemKey: String,
     current: String,
     updated: String
   ): Unit = action match
-    case Requests.Action.RenameAlbum =>
+    case Action.RenameAlbum =>
       val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
         throw IllegalArgumentException("no such album")
       )
@@ -1497,24 +1447,14 @@ private[photo] object AgentCommands:
       requireCurrent(album.title, current)
       if updated.isEmpty then throw IllegalArgumentException("new title is empty")
       if updated == current then throw IllegalArgumentException("new title is unchanged")
-    case Requests.Action.MoveItem =>
-      val source: Catalog.Album = albums.find(_.id == albumId).getOrElse(
-        throw IllegalArgumentException("no such album")
-      )
-      if !albums.exists(_.id == updated) then throw IllegalArgumentException("no such destination")
-      val item: Catalog.Item = source.items.find(_.key == itemKey).getOrElse(
-        throw IllegalArgumentException("no such item")
-      )
-      requireCurrent(item.filename, current)
-      if updated == albumId then throw IllegalArgumentException("destination is the source album")
-    case Requests.Action.SetDescription =>
+    case Action.SetDescription =>
       val item: Catalog.Item = uniqueItem(albums, itemKey)
       requireCurrent(item.filename, current)
-    case Requests.Action.SetDate =>
+    case Action.SetDate =>
       val item: Catalog.Item = uniqueItem(albums, itemKey)
       requireCurrent(item.filename, current)
       requireDate(updated)
-    case Requests.Action.DownloadItem =>
+    case Action.DownloadItem =>
       val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
         throw IllegalArgumentException("no such album")
       )
@@ -1524,7 +1464,7 @@ private[photo] object AgentCommands:
       requireCurrent(item.filename, current)
       if updated.nonEmpty then throw IllegalArgumentException("new is not empty")
       requireFilename(item.filename)
-    case Requests.Action.DeleteItem =>
+    case Action.DeleteItem =>
       val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
         throw IllegalArgumentException("no such album")
       )
@@ -1535,40 +1475,6 @@ private[photo] object AgentCommands:
       if updated.nonEmpty then throw IllegalArgumentException("new is not empty")
       if album.owner.isDefined then throw IllegalArgumentException("album has an owner")
       if item.uploader.isDefined then throw IllegalArgumentException("item has an uploader")
-
-  def listRequests(session: Session): (Session, Result) =
-    catching(session):
-      val file: File = requestsFile(session)
-      if !file.isFile then (session, Result.Ok("no requests\n", Json.Arr(Seq.empty)))
-      else
-        val rows: Seq[Requests.Row] = Requests.read(file)
-        if rows.isEmpty then (session, Result.Ok("", Json.Arr(Seq.empty)))
-        else
-          val (loaded, albums) =
-            if rows.exists(_.action == Requests.Action.MoveItem) then session.loadCatalog
-            else (session, Seq.empty)
-          catching(loaded):
-            val lines: Seq[String] = rows.map(row => requestText(row, albums))
-            (loaded, Result.Ok(textOf(lines), Json.Arr(rows.map(requestValue))))
-
-  def listResults(session: Session): (Session, Result) =
-    catching(session):
-      val file: File = resultsFile(session)
-      if !file.isFile then (session, Result.Ok("no results\n", Json.Arr(Seq.empty)))
-      else
-        val rows: Seq[Results.Row] = Results.read(file)
-        val lines: Seq[String] = rows.map: row =>
-          val note: String = if row.note.isEmpty then "" else s" ${row.note}"
-          s"${row.id} ${row.action.wire} ${row.status.wire}$note"
-        val value: Json = Json.Arr(rows.map: row =>
-          Json.Obj(Seq(
-            "id" -> Json.Str(row.id),
-            "action" -> Json.Str(row.action.wire),
-            "status" -> Json.Str(row.status.wire),
-            "note" -> Json.Str(row.note)
-          ))
-        )
-        (session, Result.Ok(textOf(lines), value))
 
   // Same classes reconcile prints. dry-run builds no write touches, and the link file is not published.
   def drift(session: Session): (Session, Result) =
@@ -1612,33 +1518,6 @@ private[photo] object AgentCommands:
       )
     ))
     (ready, Result.Ok(textOf(lines), value))
-
-  def requestsFile(session: Session): File =
-    File(File(session.root.configuration.archive, ".gphoto-sync"), "requests.tsv")
-
-  def resultsFile(session: Session): File =
-    File(File(session.root.configuration.archive, ".gphoto-sync"), "results.tsv")
-
-  def requestValue(row: Requests.Row): Json =
-    Json.Obj(Seq(
-      "id" -> Json.Str(row.id),
-      "action" -> Json.Str(row.action.wire),
-      "albumId" -> Json.Str(row.albumId),
-      "itemKey" -> Json.Str(row.itemKey),
-      "current" -> Json.Str(row.current),
-      "new" -> Json.Str(row.`new`)
-    ))
-
-  private def requestText(row: Requests.Row, albums: Seq[Catalog.Album]): String = row.action match
-    case Requests.Action.RenameAlbum =>
-      s"${row.id} rename-album ${Album.quote(row.current)} ${Album.quote(row.`new`)}"
-    case Requests.Action.MoveItem =>
-      val dest: String = albums.find(_.id == row.`new`).fold("destination unknown")(album => Album.quote(album.title))
-      s"${row.id} move-item ${Album.quote(row.current)} $dest"
-    case Requests.Action.SetDescription | Requests.Action.SetDate =>
-      s"${row.id} ${row.action.wire} ${Album.quote(row.current)} ${Album.quote(row.`new`)}"
-    case Requests.Action.DownloadItem | Requests.Action.DeleteItem =>
-      s"${row.id} ${row.action.wire} ${Album.quote(row.current)}"
 
   private def albumValueOf(
     albumId: String,

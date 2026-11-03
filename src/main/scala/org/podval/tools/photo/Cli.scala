@@ -114,17 +114,6 @@ object Cli:
     current: Option[String],
     id: Option[String]
   ) extends Parsed
-  private[photo] final case class AgentRequestArgs(
-    action: String,
-    album: Option[String],
-    item: Option[String],
-    current: Option[String],
-    updated: Option[String],
-    id: Option[String]
-  ) extends Parsed
-  private[photo] case object AgentRequestsArgs extends Parsed
-  private[photo] final case class ApplyRequestsArgs(perform: Boolean) extends Parsed
-  private[photo] case object AgentResultsArgs extends Parsed
   private[photo] case object AgentDriftArgs extends Parsed
   private[photo] case object AgentMissingArgs extends Parsed
 
@@ -362,7 +351,6 @@ object Cli:
     case _: RemoveFromAlbumArgs => true
     case _: MoveItemArgs => true
     case _: DeleteItemArgs => true
-    case _: ApplyRequestsArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -382,9 +370,6 @@ object Cli:
     case _: AgentMatchArgs => false
     case _: AgentIncludeArgs => false
     case _: AgentAlbumFileArgs => false
-    case _: AgentRequestArgs => false
-    case AgentRequestsArgs => false
-    case AgentResultsArgs => false
     case AgentDriftArgs => false
     case AgentMissingArgs => false
 
@@ -400,7 +385,6 @@ object Cli:
     case _: RemoveFromAlbumArgs => "remove-from-album"
     case _: MoveItemArgs => "move-item"
     case _: DeleteItemArgs => "delete-item"
-    case _: ApplyRequestsArgs => "apply-requests"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
@@ -692,14 +676,6 @@ object Cli:
       AgentMove(title, item, current, dest, id, destId)
     case DeleteItemArgs(title, item, current, id) =>
       AgentDelete(title, item, current, id)
-    case AgentRequestArgs(action, album, item, current, updated, id) =>
-      AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
-    case AgentRequestsArgs =>
-      AgentRequests
-    case ApplyRequestsArgs(perform) =>
-      AgentApply(perform)
-    case AgentResultsArgs =>
-      AgentResults
     case AgentDriftArgs =>
       AgentDrift
     case AgentMissingArgs =>
@@ -1348,29 +1324,8 @@ object Cli:
       )
     ),
     Command(
-      name = "requests",
-      help = "list request rows",
-      positionals = Nil,
-      flags = Nil,
-      build = (_, _) => AgentRequestsArgs
-    ),
-    Command(
-      name = "apply-requests",
-      help = "read a legacy requests file",
-      positionals = Nil,
-      flags = List(Flag("apply", None, BooleanKind, "click the rows that are still click")),
-      build = (values, _) => ApplyRequestsArgs(bool(values, "apply"))
-    ),
-    Command(
-      name = "results",
-      help = "list result rows",
-      positionals = Nil,
-      flags = Nil,
-      build = (_, _) => AgentResultsArgs
-    ),
-    Command(
       name = "drift",
-      help = "report create, update, gone, pending, and skipped",
+      help = "report create, update, gone, pending, pending-rename, and skipped",
       positionals = Nil,
       flags = Nil,
       build = (_, _) => AgentDriftArgs
@@ -1388,7 +1343,7 @@ object Cli:
   private val mcpToolNames: Set[String] = Set(
     "stems", "catalog", "items", "match", "include", "rename-album",
     "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-    "move-item", "delete-item", "requests", "results", "drift", "missing"
+    "move-item", "delete-item", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =

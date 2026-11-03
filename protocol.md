@@ -12,14 +12,14 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
-  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
-  `photo agent delete-item`, `photo agent apply-requests`, and the legacy request grammar.
+  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`, and
+  `photo agent delete-item`.
 
 ## Files
 
 The archive is the configured originals directory.
 `rootPath` in the configuration file names it, under the home directory.
-The catalog, the request file, and the result file live in `archive/.gphoto-sync/`.
+The catalog and `album-links.tsv` live in `archive/.gphoto-sync/`.
 There is no config key for that directory.
 
 `photo refresh` rewrites `catalog.txt`.
@@ -41,19 +41,8 @@ Delete forever and Empty trash are not clicked.
 `photo agent delete-item` publishes nothing for Delete forever or Empty trash.
 When the confirm ran and the key is still present, `catalog.txt` stays byte-identical.
 `photo agent delete-item` does not change the archive or `.download/`.
-`requests.tsv` is a legacy file.
-`photo agent apply-requests` reads `requests.tsv`.
-`requests.tsv` is not a second current path.
-The script is not a reader and is not the applier.
-The script does not apply the batch.
 `photo reconcile` reads and writes `album-links.tsv`.
 `photo refresh` does not write that file.
-The program does not append `requests.tsv`.
-`photo agent request` has no action that appends a row.
-`photo agent apply-requests` does not write `requests.tsv`.
-`photo refresh` does not write `requests.tsv`.
-`photo agent apply-requests` does not write `results.tsv`.
-`photo agent results` reads `results.tsv` when `results.tsv` is present.
 `photo agent download-item` stages that original in `.download/`, as Download describes.
 `photo file` files a dated download from there, as Filing describes.
 
@@ -67,7 +56,6 @@ The program does not append `requests.tsv`.
 `photo agent move-item` adds one item to an existing album and then removes it from the source album, in one session.
 `photo agent delete-item` moves one library item to Google Photos trash.
 `photo publish` and `photo sync` still change Google Photos.
-A request batch is not a refresh.
 
 `catalog.txt.partial` and `catalog.txt.previous` exist only while a catalog rewrite is published.
 They are not a second catalog.
@@ -486,18 +474,13 @@ The reader relies on that rename.
 It never sees a half-written `catalog.txt`.
 A file that fails the version line is an error, not a cue to parse the old shape.
 
-Do not write `requests.tsv` from a refresh.
-
 `photo refresh` is the command.
 This section is its procedure.
-Do not treat a request row as a run of Refresh.
-Refresh does not add a request-file action.
 
 ## Album files
 
 Match one catalog album to the archive and write one album file.
 Title grammar and on-disk paths are the archive-layout section of `README.adoc` in this repository.
-A legacy request row follows Requests.
 A historical album file is `external = true`.
 Leave `google-album-id` unset.
 
@@ -516,7 +499,6 @@ The path title is still the local file, chosen from the working title below.
 
 An album with no `owner` line, whose Google title is the path title, leaves `google-title` unset.
 When the catalog title differs from that path title, `photo agent album-file` prints `rename yes`.
-It does not append a request row.
 A rename the operator wants is `photo agent rename-album`.
 `--current` is the exact catalog title.
 `--new` is the path title.
@@ -696,7 +678,7 @@ An empty claim prints `albums=-`.
 
 `photo reconcile` reads `catalog.txt` and `album-links.tsv`.
 The link grammar is Album links.
-It does not call `photo agent album-file` and it does not append `rename-album`.
+`photo reconcile` does not call `photo agent album-file`.
 A rename is `photo agent rename-album`.
 
 Pending means `external` left false and `google-album-id` empty.
@@ -704,11 +686,21 @@ There is no pending key.
 Reconcile does not create, rewrite, or delete a pending file.
 A pending album has no link row.
 
+`pending-rename` is not pending.
+It is an external file with no `owner` line and an empty `google-title`, matched to a catalog album whose title differs
+from the path title.
+The text line is `pending-rename` and the path.
+The text line does not include a catalog id.
+Reconcile does not write that file.
+Reconcile does not add a link row for that match.
+A link row that already names the file stays.
+
 The first link of an external file uses the working title.
 That title splits the catalog title on spaces, drops empty tokens, and rejoins them.
 When `google-title` is present, the match is that exact catalog title.
 Otherwise the match is the working title against the path title.
-If the path that placement would use already exists and the working titles agree, reconcile links that file.
+If the path that placement would use already exists, the working titles agree, and the file is not `pending-rename`,
+reconcile links that file.
 It does not create a second file.
 If that path exists and the working titles disagree, reconcile reports it and skips it.
 It does not overwrite.
@@ -750,7 +742,7 @@ An external file that never linked is reported and kept.
 `--dry-run --delete` prints `gone` and its link rows are the rows a real `--delete` would keep.
 It still does not remove the toml.
 
-Classes are `create`, `update`, `gone`, `pending`, and `skipped`.
+Classes are `create`, `update`, `gone`, `pending`, `pending-rename`, and `skipped`.
 `photo agent drift` reports those classes and writes nothing.
 
 ### Filing
@@ -944,173 +936,11 @@ Before Chrome opens, the album has no `owner` line and the item's uploader is `-
 A refusal is usage.
 Chrome stays closed and `catalog.txt` stays byte-identical.
 
-The grammar below is legacy.
-The column tables, the version lines, and Catalog updates describe the old row statuses.
-`photo agent apply-requests` reads `requests.tsv`.
-`photo agent apply-requests` does not write `requests.tsv`.
-`requests.tsv` is not a second current path.
-The script is not a reader and is not the applier.
-The script does not apply the batch.
-
-`archive/.gphoto-sync/requests.tsv` is a legacy file the program no longer writes.
-`photo agent apply-requests` reads `requests.tsv` and does not write `requests.tsv`.
-`photo agent apply-requests` does not delete `requests.tsv`.
-Do not create `requests.tsv` empty.
-A file that exists and does not start with `# gphoto-requests 2` is `requests are not version 2`.
-The program does not rewrite `requests.tsv` into the new shape and does not delete `requests.tsv`.
-
-```
-# gphoto-requests 2
-<request-id>	<action>	<album-id>	<item-key>	<current>	<new>
-```
-
-Six columns on every row.
-Empty means unused.
-An unused field is empty, not omitted.
-No field contains a tab or a newline.
-UTF-8, LF only.
-A CR is an error.
-A blank line is not a row.
-A trailing partial line with no LF is a parse error, not a row.
-The first appended row creates the file and writes the header and that row, each ending in LF.
-The program does not create the file before that.
-
-Album ids and item keys are the stable keys.
-`current` must match the catalog exactly.
-A mismatch does not append.
-Rows are processed in file order.
-
-A request id is `r` plus a non-zero decimal with no leading zero: `r[1-9][0-9]*`.
-`r1` is legal.
-`r0`, `r00`, `r000`, and `r001` are not.
-The program assigns the next integer after the maximum already in the file and formats it with no padding.
-An empty file's first id is `r1`.
-
-| action | album-id | item-key | current | new |
-|---|---|---|---|---|
-| `rename-album` (legacy) | album id | empty | current title, exact | new title |
-| `move-item` (legacy) | source album id | item key | current filename | destination album id |
-| `set-description` (legacy) | empty | item key | current filename | new description, empty clears |
-| `set-date` (legacy) | empty | item key | current filename | `YYYY-MM-DD HH:MM` local |
-| `download-item` (legacy) | album id | item key | current filename | empty |
-| `delete-item` (legacy) | album id | item key | current filename | empty |
-
-| action | Accept only when |
-|---|---|
-| `rename-album` (legacy) | The album id exists, there is no `owner` line, `current` equals the catalog title exactly, `new` is non-empty, and `new` differs from `current`. |
-| `move-item` (legacy) | The source album and the destination album exist, the item key is an `item` line on the source (not an `unset` line), `current` equals that filename, and the destination id differs from the source. |
-| `set-description` (legacy) | `album-id` is empty, the item key is an `item` line on exactly one album, `current` equals that filename, and `new` may be empty. |
-| `set-date` (legacy) | The same item identity as `set-description`, and `new` matches `YYYY-MM-DD HH:MM`. |
-| `download-item` (legacy) | The album id and item key name one `item` line, `current` equals the filename, `new` is empty, and the filename is not `.`, `..`, or a string containing `/`. |
-| `delete-item` (legacy) | The same identity check as legacy `download-item`, `new` is empty, the album has no `owner` line, and the item's uploader is `-`. |
-
-`rename-album` changes the album title.
-A legacy `move-item` row adds the item to the destination album, then removes it from the source album.
-The item stays in the library.
-A legacy `set-description` row sets the item's description.
-An empty `new` clears it.
-A legacy `set-date` row changes the item's date taken.
-`new` is the item's local time.
-A legacy `download-item` row downloads the original into the staging directory in Download.
-For that row, the program does not create the staging day directory.
-`photo agent download-item` creates the staging day directory.
-The script does not create the staging day directory.
-A legacy `delete-item` row is not the applier.
-`photo agent delete-item` moves that one library item to Google Photos trash, as Delete describes.
-
-### Catalog updates
-
-This subsection describes the old row statuses.
-
-Applying a batch updates `catalog.txt` in that pass.
-A legacy `download-item` row does not change it.
-A legacy `delete-item` row is not the applier.
-`photo agent delete-item` changes the catalog as Delete describes.
-`set-description` does not change it: the catalog has no description column.
-A `new` value that contains a tab or a newline fails that row and is not written.
-The result note does not contain an album id or an item key.
-A key learned during the batch is written only on a catalog line.
-
-`rename-album` replaces that album line's title with `new` after the live title equals `new`.
-The album id, the count, the owner line, and the item lines stay.
-The control is More options, then the menuitem Edit album, Rename album, or Rename.
-Replace the title field and confirm with Done, or with Enter when Done is absent.
-
-`set-date` sets that item's `date` to the `YYYY-MM-DD` prefix of `new` after a fresh item read shows that calendar day.
-The catalog omits the clock.
-The item key, the filename, the uploader, and the album count stay.
-When the read date is not that day, the row is `failed` and the old date stays.
-In the info panel, open the control whose aria-label starts with `Date taken`.
-Open info first when that control is absent.
-The fields are Year, Month, Day, Hour, Minutes, and AM/PM.
-Type each value.
-Read AM/PM back after typing it.
-When it is not the value in `new`, choose that option, or type it and press Enter.
-Confirm with Save, Done, or OK.
-The item read that decides the catalog date is the same `fDcn4b` read Refresh uses.
-
-A legacy `move-item` row adds the item to the destination album, then removes it from the source album.
-`photo agent move-item` is not this row.
-The destination key is not the source key.
-Before the change, read the destination album's item keys with `snAcKc`.
-On the open item, More options, then Add to album, then the existing destination album.
-The sandbox run opened that same menu and created a new album (New album, Add a title, Done).
-It did not click an existing album.
-Removal on the source is More options, then Select photos, then the item, then Remove.
-The confirm dialog must be a remove.
-A dialog about trash is not this action.
-Opening the item and choosing Remove from album, then confirming Remove, is the same removal.
-After those steps, read both albums' item keys again.
-The destination key is the one key present after and absent before whose `fDcn4b` filename equals `current`.
-The date and the uploader on the new line come from that read when they are present, and otherwise from the source line.
-When that key is exactly one and the filename equals `current`, write the destination `item` line with the new key and
-the same filename.
-Increment the destination `count` by one.
-When the destination has an `error` line, set `of` to the new count, increment `got` by one, and leave `name-failures`
-unchanged.
-When it has no `error` line, write none.
-The new number of item lines equals the new `count`.
-
-When the destination key set grew by exactly one and that key's filename was not read, write an `unset` line for the new
-key.
-Increment `count` by one and `name-failures` by one.
-`got` counts that `unset` line.
-`of` is the new count.
-An `unset` line requires an `error` line.
-The row is not `done`.
-The filename was not confirmed.
-
-When the new key cannot be identified, do not invent a key or a filename.
-No new key on the destination leaves the destination lines unchanged.
-More than one new key leaves the destination lines unchanged.
-One new key whose filename was read and is not `current` is not a line.
-When the source key is also gone, that destination is a gap until a later single-album read.
-Set its `count` to the previous count plus one.
-Write an `error` line, or update the one it has.
-`of` is that count, `got` is the item lines plus the unset lines still present, and `name-failures` is unchanged.
-
-On the source, when a source read shows the old key gone, remove that `item` line, decrement `count` by one, and adjust
-an `error` line the way `photo agent delete-item` does.
-When the old key is still present, leave the source lines.
-The row is `done` only when the source line was removed and the destination `item` line was written with the new key and
-the filename `current`.
-Otherwise the row is `failed`.
-The catalog still follows the two reads.
-
-`set-description` opens info when the panel is closed.
-The control is the button whose aria-label is Open info, or the i key.
-The empty field's text is Add a description.
-Type `new` into that field.
-An empty `new` clears it.
-The row is `done` only when the panel shows the resulting text.
-
 Google Photos cannot rename an item's filename (it is read-only in the UI).
 There is no `rename-item` action.
 A filename change is done locally after a download.
-New actions are added to this table only after the operator agrees.
 `photos-renames.tsv` is no longer supported.
 Album renames are `photo agent rename-album`.
-The `rename-album` row is legacy.
 
 ### Download
 
@@ -1153,7 +983,6 @@ The archive inbox `.upload` is a different directory.
 - When the same catalog day and filename already exist under `.download`, keep the existing file and do not overwrite
   it.
   The command does not open the browser for that file.
-- The command does not write `results.tsv` and does not rewrite the catalog.
 - UI Download (More options → Download / Shift+D) returns the file as Google Photos stores it.
   There is normally no quality chooser for a single-photo download.
   The info panel's pixel size is that stored file.
@@ -1202,31 +1031,7 @@ remains.
 A miss before the confirm leaves `catalog.txt` byte-identical.
 When the confirm ran and the source key is still present, `catalog.txt` stays byte-identical.
 `photo agent delete-item` does not change the archive or `.download/`.
-There is no results row.
 `photo agent delete-item` does not trash any other item, including an `IMG_` re-encode copy.
-
-### Results
-
-`archive/.gphoto-sync/results.tsv` is not written by `photo agent apply-requests`.
-
-```
-# gphoto-results 2
-<request-id>	<action>	<done|failed|skipped>	<note>
-```
-
-One line per request row, four columns.
-The status is exactly `done`, `failed`, or `skipped`.
-The note is one field and may be empty.
-The note does not contain an album id or an item key.
-The program prints the note unchanged.
-It does not try to redact.
-UTF-8, LF only.
-A CR is an error.
-A blank line is not a row.
-A trailing partial line with no LF is a parse error, not a row.
-`results.tsv` is separate from `requests.tsv`.
-`photo agent apply-requests` never writes into `requests.tsv`.
-`photo agent apply-requests` does not write `results.tsv`.
 
 ### Process
 
@@ -1238,35 +1043,3 @@ A trailing partial line with no LF is a parse error, not a row.
 `photo agent remove-from-album` is the applier for removing an item from an album.
 `photo agent move-item` is the applier for moving an item from one album to another.
 `photo agent delete-item` is the applier for moving one library item to trash.
-The script is not a reader and is not the applier.
-The script does not apply the batch.
-
-`photo agent apply-requests` reads a legacy `requests.tsv`.
-`photo agent apply-requests` prints a plan unless `--apply` is present.
-The plan does not open Chrome.
-`--apply` is a second run.
-`--apply` is the only run that clicks.
-`--apply` re-reads the catalog and `requests.tsv.outcomes` before each click.
-`requests.tsv.outcomes` sits beside `requests.tsv`.
-The first line of `requests.tsv.outcomes` is `# gphoto-request-outcomes 1`.
-Each later line is a request id, `needs-agent` or `done`, and epoch millis, separated by tabs.
-An outcome line has no album id, no item key, and no title.
-A missing `requests.tsv.outcomes` means there are no outcomes.
-A malformed line or a repeated id makes `photo agent apply-requests` exit non-zero before Chrome.
-An outcome line wins over the catalog.
-A `needs-agent` line stays when another album is published.
-`photo agent apply-requests` does not click a request id that has a `needs-agent` line.
-A `done` line is a successful `set-description`.
-`photo agent apply-requests` does not click a `done` row.
-`photo agent apply-requests` appends `needs-agent` or `done` and does not delete an outcome line.
-`photo agent apply-requests` does not delete `requests.tsv.outcomes`.
-`photo agent apply-requests` does not rewrite `requests.tsv`.
-`photo agent apply-requests` does not delete `requests.tsv`.
-`photo agent apply-requests` does not write `results.tsv`.
-
-`--apply` is the explicit OK for a legacy row that is still click.
-A legacy `delete-item` row on `--apply` is the OK to trash that item.
-`photo agent delete-item` is the command that clicks.
-Deleting an album or emptying trash still needs a separate OK.
-Sharing still needs a separate OK.
-A library item that no legacy `delete-item` row names still needs a separate OK.

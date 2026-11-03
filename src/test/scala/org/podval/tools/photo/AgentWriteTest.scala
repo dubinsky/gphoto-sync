@@ -687,107 +687,14 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         Seq.empty
       )
       intercept[IllegalArgumentException]:
-        AgentCommands.acceptRequest(Seq(download), Requests.Action.DownloadItem, "alb1", "key1", "pic.jpg", "nope")
+        AgentCommands.acceptRequest(Seq(download), AgentCommands.Action.DownloadItem, "alb1", "key1", "pic.jpg", "nope")
       .getMessage shouldBe "new is not empty"
       intercept[IllegalArgumentException]:
-        AgentCommands.acceptRequest(Seq(download), Requests.Action.DeleteItem, "alb1", "key1", "pic.jpg", "nope")
+        AgentCommands.acceptRequest(Seq(download), AgentCommands.Action.DeleteItem, "alb1", "key1", "pic.jpg", "nope")
       .getMessage shouldBe "new is not empty"
       intercept[IllegalArgumentException]:
-        AgentCommands.acceptRequest(Seq(download), Requests.Action.RenameAlbum, "gone", "", "Title", "Next")
+        AgentCommands.acceptRequest(Seq(download), AgentCommands.Action.RenameAlbum, "gone", "", "Title", "Next")
       .getMessage shouldBe "no such album"
-
-  it should "append r1 and list titles without album ids or item keys" in :
-    withArchive: archive =>
-      writeFixture(archive)
-      val session: Session = sessionFor(archive)
-      val seeded: Requests.Row = Requests.append(
-        requests(archive), Requests.Action.RenameAlbum, "albTrail", "", "2010/07 ", "July"
-      )
-      seeded.id shouldBe "r1"
-      val before: String = JFiles.readString(requests(archive).toPath)
-      Cli.parse(List(
-        "agent", "request", "move-item",
-        "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg", "--new", "albDst", "--id", "r1"
-      )) shouldBe Cli.Usage("use photo agent move-item")
-      JFiles.readString(requests(archive).toPath) shouldBe before
-      Cli.parse(List(
-        "agent", "request", "delete-item",
-        "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg", "--id", "r1"
-      )) shouldBe Cli.Usage("use photo agent delete-item")
-      JFiles.readString(requests(archive).toPath) shouldBe before
-      Requests.append(requests(archive), Requests.Action.MoveItem, "albSrc", "keyPic", "pic.jpg", "albDst")
-      Requests.append(requests(archive), Requests.Action.MoveItem, "albSrc", "keyPic", "pic.jpg", "goneId")
-      val beforeLegacy: String = JFiles.readString(requests(archive).toPath)
-      Cli.parse(List(
-        "agent", "request", "move-item",
-        "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg", "--new", "albDst"
-      )) shouldBe Cli.Usage("use photo agent move-item")
-      Cli.parse(List(
-        "agent", "request", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "Hello"
-      )) shouldBe Cli.Usage("use photo agent set-description")
-      Cli.parse(List(
-        "agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
-      )) shouldBe Cli.Usage("use photo agent set-date")
-      Cli.parse(List(
-        "agent", "request", "download-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
-      )) shouldBe Cli.Usage("use photo agent download-item")
-      JFiles.readString(requests(archive).toPath) shouldBe beforeLegacy
-      Requests.append(requests(archive), Requests.Action.SetDescription, "", "keyOnly", "pic.jpg", "")
-      Requests.append(requests(archive), Requests.Action.SetDate, "", "keyOnly", "pic.jpg", "2010-07-19 09:05")
-      Requests.append(requests(archive), Requests.Action.DownloadItem, "albSrc", "keyPic", "pic.jpg", "")
-      val beforeDelete: String = JFiles.readString(requests(archive).toPath)
-      Cli.parse(List(
-        "agent", "request", "delete-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
-      )) shouldBe Cli.Usage("use photo agent delete-item")
-      JFiles.readString(requests(archive).toPath) shouldBe beforeDelete
-      Requests.append(requests(archive), Requests.Action.DeleteItem, "albSrc", "keyPic", "pic.jpg", "")
-      val (_, listed) = exec(session, "agent", "requests")
-      listed match
-        case Result.Ok(text, Json.Arr(rows)) =>
-          text shouldBe
-            """r1 rename-album "2010/07 " "July"
-              |r2 move-item "pic.jpg" "Dest Title"
-              |r3 move-item "pic.jpg" destination unknown
-              |r4 set-description "pic.jpg" ""
-              |r5 set-date "pic.jpg" "2010-07-19 09:05"
-              |r6 download-item "pic.jpg"
-              |r7 delete-item "pic.jpg"
-              |""".stripMargin
-          noIds(text, fixtureIds*)
-          noIds(text, "goneId")
-          rows.map(field(_, "id")) shouldBe Seq("r1", "r2", "r3", "r4", "r5", "r6", "r7").map(Json.Str.apply)
-          field(rows(2), "new") shouldBe Json.Str("goneId")
-        case other =>
-          fail(other.toString)
-
-  it should "print a result note unchanged" in :
-    withArchive: archive =>
-      val (_, absent) = exec(sessionFor(archive), "agent", "results")
-      absent shouldBe Result.Ok("no results\n", Json.Arr(Seq.empty))
-      File(archive, ".gphoto-sync").exists shouldBe false
-      val (_, quiet) = exec(sessionFor(archive), "agent", "requests")
-      quiet shouldBe Result.Ok("no requests\n", Json.Arr(Seq.empty))
-      File(archive, ".gphoto-sync").exists shouldBe false
-      val dot: File = File(archive, ".gphoto-sync")
-      dot.mkdirs()
-      JFiles.writeString(File(dot, "requests.tsv").toPath, "# gphoto-requests 2\n")
-      val (_, emptyRows) = exec(sessionFor(archive), "agent", "requests")
-      emptyRows shouldBe Result.Ok("", Json.Arr(Seq.empty))
-      JFiles.writeString(
-        File(dot, "results.tsv").toPath,
-        "# gphoto-results 2\nr1\trename-album\tdone\thello \nr2\tmove-item\tfailed\t\n"
-      )
-      val (_, listed) = exec(sessionFor(archive), "agent", "results")
-      listed match
-        case Result.Ok(text, Json.Arr(Seq(first, second))) =>
-          text shouldBe "r1 rename-album done hello \nr2 move-item failed\n"
-          field(first, "note") shouldBe Json.Str("hello ")
-          field(first, "status") shouldBe Json.Str("done")
-          field(first, "action") shouldBe Json.Str("rename-album")
-          field(second, "note") shouldBe Json.Str("")
-          field(second, "status") shouldBe Json.Str("failed")
-        case other =>
-          fail(other.toString)
 
   it should "report a missing request flag before it reads the catalog" in :
     withArchive: archive =>

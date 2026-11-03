@@ -532,6 +532,34 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/19/1234.jpg").isFile shouldBe true
       links(archive) shouldBe ""
 
+  it should "report pending-rename and write nothing when the path title differs" in :
+    withArchive: archive =>
+      val before: String = "external = true\n"
+      writeToml(archive, "Best Of.toml", before)
+      writeCatalog(archive, "album\tcid-best\t0\tBest  Of")
+      val result: Result = exec(sessionFor(archive), "reconcile")._2
+      val text: String = ok(result)
+      text shouldBe "pending-rename Best Of.toml\n"
+      quiet(text, "cid-best")
+      valueHas(result, "pending-rename")
+      valueHas(result, "cid-best")
+      readToml(archive, "Best Of.toml") shouldBe before
+      File(archive, ".gphoto-sync/album-links.tsv").isFile shouldBe false
+      requests(archive).isFile shouldBe false
+
+  it should "keep an existing link on pending-rename and leave the file" in :
+    withArchive: archive =>
+      val before: String = "external = true\n"
+      writeToml(archive, "Best Of.toml", before)
+      writeLinks(archive, "cid-best" -> "Best Of.toml")
+      writeCatalog(archive, "album\tcid-best\t0\tBest  Of")
+      val text: String = ok(exec(sessionFor(archive), "reconcile")._2)
+      text shouldBe "pending-rename Best Of.toml\n"
+      quiet(text, "cid-best")
+      text should not include ("wrote")
+      readToml(archive, "Best Of.toml") shouldBe before
+      links(archive) shouldBe "# gphoto-album-links 1\ncid-best\tBest Of.toml\n"
+
   private def ok(result: Result): String = result match
     case Result.Ok(text, _) => text
     case other => fail(other.toString)
