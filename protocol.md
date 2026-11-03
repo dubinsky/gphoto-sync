@@ -1017,8 +1017,6 @@ The command does not call `Publish`.
 Before Chrome opens, the command refuses when `path` is outside the archive, when the extension is not `jpg`, `jpeg`,
 `mov`, `mp4`, `avi`, or `3gp`, when gather's stem and civil-date rules find a catalog item, or when that file's sidecar
 has a non-empty `google-media-item-id` or `already-in-google` true.
-An exact stem matches.
-One leading `MVIMG_`, `PXL_`, `IMG_`, `VID_`, or `MVI_` prefix matches.
 RAW, `heic`, `png`, and `webp` stay local.
 `acceptPut` runs on the destination before Chrome opens, and again on the reread under the lock.
 An `owner` line, `auto-add`, unread names, or an excepted stem does not open Chrome.

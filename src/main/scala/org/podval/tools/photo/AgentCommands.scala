@@ -641,10 +641,11 @@ private[photo] object AgentCommands:
     destTitle: String,
     destId: Option[String]
   ): (Session, Result) =
-    val ready: UploadReady = checkUpload(session, albums, pathText, destTitle, destId)
-    withLock(ready.session, ready.destination.title)(
-      heldUpload(ready.session, pathText, ready.destination.id)
-    )
+    val (_, relative) = uploadFile(session, pathText)
+    val (day, stem, _, extension) = uploadName(relative)
+    val destination: Catalog.Album = select(albums, destTitle, destId)
+    val loaded: Session = refuseUpload(session, albums, destination, day, stem, extension)
+    withLock(loaded, destination.title)(heldUpload(loaded, pathText, destination.id))
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -963,7 +964,7 @@ private[photo] object AgentCommands:
       )
       publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))) match
         case Right(next) =>
-          addOk(next, destination, current, line.key)
+          addOk(next, destination, current, line.key, "add-to-album")
         case Left(message) =>
           itemFailed(session, source, item, "add-to-album", AddStep, "refresh-only", message)
     catch
@@ -1087,34 +1088,27 @@ private[photo] object AgentCommands:
         try ui.close()
         catch case _: Exception => ()
 
-  private final case class UploadReady(
-    session: Session,
-    destination: Catalog.Album,
-    file: File,
-    name: String
-  )
-
   // The reread stays outside the catch. A refusal here is usage, and Chrome stays closed.
   private def heldUpload(session: Session, pathText: String, destinationId: String): (Session, Result) =
-    val ready: UploadReady = rereadUpload(session, pathText, destinationId)
+    val (destination, file, name) = rereadUpload(session, pathText, destinationId)
     var ui: PhotosAct = null
     try
       // A notice would write status.txt and drop a crashed refresh's resume phase.
       ui = Refresh.openAct(_ => ())
-      val read: Catalog.Item = ui.uploadItem(ready.destination, ready.file, ready.name)
-      val line: Catalog.Item = Catalog.Item(ready.name, read.date, read.key, read.uploader)
-      publishAlbum(session, Seq(ready.destination.id -> (dest => revisedAdd(dest, line)))) match
+      val read: Catalog.Item = ui.uploadItem(destination, file, name)
+      val line: Catalog.Item = Catalog.Item(name, read.date, read.key, read.uploader)
+      publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))) match
         case Right(next) =>
-          uploadOk(next, ready.destination, ready.name, line.key)
+          addOk(next, destination, name, line.key, "upload-item")
         case Left(message) =>
-          uploadFailed(session, ready.destination, ready.name, "refresh-only", message)
+          uploadFailed(session, destination, name, "refresh-only", message)
     catch
       case miss: Refresh.ActMiss =>
         val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
         val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("upload-item failed")
-        uploadFailed(session, ready.destination, ready.name, recovery, detail)
+        uploadFailed(session, destination, name, recovery, detail)
       case error: Exception =>
-        uploadFailed(session, ready.destination, ready.name, "one-click", Operation.messageOf(error))
+        uploadFailed(session, destination, name, "one-click", Operation.messageOf(error))
     finally
       if ui != null then
         try ui.close()
@@ -1257,51 +1251,45 @@ private[photo] object AgentCommands:
         if album.positive(day, stem) && !album.claims(day, stem) then
           throw IllegalArgumentException(s"destination excepts ${Album.quote(stem)}")
 
-  private def checkUpload(
+  private def rereadUpload(
     session: Session,
-    albums: Seq[Catalog.Album],
     pathText: String,
-    destTitle: String,
-    destId: Option[String]
-  ): UploadReady =
-    val (file, relative) = uploadFile(session, pathText)
-    val (day, stem, name) = uploadName(relative)
-    val destination: Catalog.Album = select(albums, destTitle, destId)
-    val loaded: Session = refuseUpload(session, albums, destination, day, stem)
-    UploadReady(loaded, destination, file, name)
-
-  private def rereadUpload(session: Session, pathText: String, destinationId: String): UploadReady =
+    destinationId: String
+  ): (Catalog.Album, File, String) =
     val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(catalog)
     val destination: Catalog.Album = albums.find(_.id == destinationId).getOrElse(
       throw IllegalArgumentException("no such album")
     )
     val (file, relative) = uploadFile(session, pathText)
-    val (day, stem, name) = uploadName(relative)
-    val loaded: Session = refuseUpload(session, albums, destination, day, stem)
-    UploadReady(loaded, destination, file, name)
+    val (day, stem, name, extension) = uploadName(relative)
+    refuseUpload(session, albums, destination, day, stem, extension)
+    (destination, file, name)
 
   private def refuseUpload(
     session: Session,
     albums: Seq[Catalog.Album],
     destination: Catalog.Album,
     day: LocalDate,
-    stem: String
+    stem: String,
+    extension: Option[String]
   ): Session =
     val (loaded, grouped, sidecars) = loadGrouped(session, civilDay(session.root, day), readSidecars = true)
     val groupedMap: Map[String, Set[String]] = grouped.toMap
+    // dropOnePrefix of VID_1000.mp4 is 1000, the still beside it. The grouped stem is 1000v.
+    val groupedStem: String = resolve(groupedMap, stem, extension).getOrElse(stem)
     val matched: Boolean = albums.exists: album =>
       album.items.exists: item =>
         item.date.contains(day) && {
           val (itemStem, itemExt) = Files.splitOnLast(item.filename, '.')
-          resolve(groupedMap, itemStem, itemExt).contains(stem)
+          resolve(groupedMap, itemStem, itemExt).contains(groupedStem)
         }
     if matched then throw IllegalArgumentException("catalog item exists")
-    sidecars.get(stem).foreach: metadata =>
+    sidecars.get(groupedStem).foreach: metadata =>
       val marked: Boolean =
         metadata.`google-media-item-id`.exists(_.nonEmpty) || metadata.`already-in-google`.contains(true)
       if marked then throw IllegalArgumentException("already in google")
-    acceptDestination(loaded, destination, Some(day -> stem))
+    acceptDestination(loaded, destination, Some(day -> groupedStem))
     loaded
 
   private def uploadFile(session: Session, text: String): (File, String) =
@@ -1316,24 +1304,18 @@ private[photo] object AgentCommands:
       throw IllegalArgumentException("path is outside the archive")
     (file, Album.relative(archive, file))
 
-  private def uploadName(relative: String): (LocalDate, String, String) =
-    def fixed(text: String, length: Int): Boolean =
-      text.length == length && text.forall(_.isDigit)
-    relative.split('/').filter(_.nonEmpty).toSeq match
-      case Seq(year, month, day, name) if fixed(year, 4) && fixed(month, 2) && fixed(day, 2) =>
-        val date: LocalDate =
-          try LocalDate.of(year.toInt, month.toInt, day.toInt)
-          catch case _: DateTimeException =>
-            throw IllegalArgumentException("not a picture path")
-        val (rawStem, extension) = Files.splitOnLast(name, '.')
-        val lowered: Option[String] = extension.map(_.toLowerCase(java.util.Locale.ROOT)).filter(_.nonEmpty)
-        if rawStem.isEmpty then throw IllegalArgumentException("not a picture path")
-        else if !lowered.exists(Publish.uploadable.contains) then
-          throw IllegalArgumentException("extension is not uploadable")
-        // Grouped keys drop one leading camera prefix. The except stem and the sidecar key are that name.
-        (date, Pictures.dropOnePrefix(rawStem), name)
-      case _ =>
+  private def uploadName(relative: String): (LocalDate, String, String, Option[String]) =
+    val (date, name) =
+      try picturePath(relative)
+      catch case _: IllegalArgumentException =>
         throw IllegalArgumentException("not a picture path")
+    val (rawStem, extension) = Files.splitOnLast(name, '.')
+    val lowered: Option[String] = extension.map(_.toLowerCase(java.util.Locale.ROOT)).filter(_.nonEmpty)
+    if rawStem.isEmpty then throw IllegalArgumentException("not a picture path")
+    else if !lowered.exists(Publish.uploadable.contains) then
+      throw IllegalArgumentException("extension is not uploadable")
+    // Prefix only. refuseUpload resolves the grouped stem, including a trailing v beside a still.
+    (date, Pictures.dropOnePrefix(rawStem), name, lowered)
 
   private def albumFile(session: Session, destination: Catalog.Album): Option[File] =
     val archive: File = session.root.configuration.archive
@@ -1359,33 +1341,15 @@ private[photo] object AgentCommands:
     session: Session,
     destination: Catalog.Album,
     filename: String,
-    key: String
+    key: String,
+    action: String
   ): (Session, Result) =
     val text: String = PlaywrightPhotosUi.redactSecrets(
-      s"add-to-album ${Album.quote(filename)} ${Album.quote(destination.title)}\n",
+      s"$action ${Album.quote(filename)} ${Album.quote(destination.title)}\n",
       destination.title
     )
     val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("add-to-album"),
-      "title" -> Json.Str(destination.title),
-      "catalog" -> Json.Str("updated"),
-      "albumId" -> Json.Str(destination.id),
-      "itemKey" -> Json.Str(key)
-    ))
-    (session, Result.Ok(text, value))
-
-  private def uploadOk(
-    session: Session,
-    destination: Catalog.Album,
-    filename: String,
-    key: String
-  ): (Session, Result) =
-    val text: String = PlaywrightPhotosUi.redactSecrets(
-      s"upload-item ${Album.quote(filename)} ${Album.quote(destination.title)}\n",
-      destination.title
-    )
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("upload-item"),
+      "action" -> Json.Str(action),
       "title" -> Json.Str(destination.title),
       "catalog" -> Json.Str("updated"),
       "albumId" -> Json.Str(destination.id),

@@ -2675,21 +2675,24 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       ),
       "catalog item exists"
     )
+    // A non-digit toml in a day folder is an album file, so the sidecar stem starts with a digit.
     uploadRefuse(
       Seq("album\talbDst\t0\tDest Title"),
       "already in google",
+      relative = "2010/07/01/2412.jpg",
       prepare = archive =>
         JFiles.writeString(
-          File(archive, "2010/07/01/pic.toml").toPath,
+          File(archive, "2010/07/01/2412.toml").toPath,
           Metadata.encode(Metadata(`google-media-item-id` = Some("media-1")))
         )
     )
     uploadRefuse(
       Seq("album\talbDst\t0\tDest Title"),
       "already in google",
+      relative = "2010/07/01/2412.jpg",
       prepare = archive =>
         JFiles.writeString(
-          File(archive, "2010/07/01/pic.toml").toPath,
+          File(archive, "2010/07/01/2412.toml").toPath,
           Metadata.encode(Metadata(`already-in-google` = Some(true)))
         )
     )
@@ -2746,6 +2749,81 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
+  it should "resolve a video beside a still to the v stem" in :
+    uploadRefuse(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\tVID_1000.mp4\t2010-07-02\tkeyVid\t-",
+        "album\talbDst\t0\tDest Title"
+      ),
+      "catalog item exists",
+      prepare = archive => touch(File(archive, "2010/07/02"), "1000.jpg"),
+      relative = "2010/07/02/VID_1000.mp4"
+    )
+    uploadRefuse(
+      Seq("album\talbDst\t0\tDest Title"),
+      "already in google",
+      relative = "2010/07/02/VID_1000.mp4",
+      prepare = archive =>
+        touch(File(archive, "2010/07/02"), "1000.jpg")
+        JFiles.writeString(
+          File(archive, "2010/07/02/1000v.toml").toPath,
+          Metadata.encode(Metadata(`google-media-item-id` = Some("media-v")))
+        )
+    )
+    openedUpload(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\t1000.jpg\t2010-07-02\tkeyStill\t-",
+        "album\talbDst\t0\tDest Title"
+      ),
+      relative = "2010/07/02/VID_1000.mp4",
+      prepare = archive => touch(File(archive, "2010/07/02"), "1000.jpg")
+    )
+    openedUpload(
+      Seq("album\talbDst\t0\tDest Title"),
+      relative = "2010/07/02/VID_1000.mp4",
+      prepare = archive =>
+        touch(File(archive, "2010/07/02"), "1000.jpg")
+        JFiles.writeString(
+          File(archive, "2010/07/02/1000.toml").toPath,
+          Metadata.encode(Metadata(`google-media-item-id` = Some("media-still")))
+        )
+    )
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest")
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      touch(File(archive, "2010/07/02"), "1000.jpg")
+      touch(File(archive, "2010/07/02"), "VID_1000.mp4")
+      JFiles.writeString(File(archive, "Dest.toml").toPath, "include = [\"2010/07/02 except 1000v\"]\n")
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onUpload = (_, _, _) => fail("opened"))
+        usage(session, "agent", "upload-item", "--dest", "Dest", "2010/07/02/VID_1000.mp4") shouldBe
+          "destination excepts \"1000v\""
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        places.directory.exists shouldBe false
+    withArchive: archive =>
+      writeCatalog(archive, "album\talbDst\t0\tDest")
+      touch(File(archive, "2010/07/02"), "1000.jpg")
+      touch(File(archive, "2010/07/02"), "VID_1000.mp4")
+      JFiles.writeString(File(archive, "Dest.toml").toPath, "include = [\"2010/07/02 except 1000\"]\n")
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onUpload = (_, _, current) =>
+            called = true
+            current shouldBe "VID_1000.mp4"
+            throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
+          )
+        val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest", "2010/07/02/VID_1000.mp4")
+        called shouldBe true
+        result match
+          case Result.Failed(_, _, message) =>
+            message shouldBe Refresh.MutationFailed
+          case other =>
+            fail(other.toString)
+        places.directory.exists shouldBe false
+
   it should "open for a file the catalog does not already have" in :
     openedUpload(Seq(
       "album\talbOther\t1\tOther",
@@ -2764,9 +2842,10 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     ))
     openedUpload(
       Seq("album\talbDst\t0\tDest Title"),
+      relative = "2010/07/01/2412.jpg",
       prepare = archive =>
         JFiles.writeString(
-          File(archive, "2010/07/01/pic.toml").toPath,
+          File(archive, "2010/07/01/2412.toml").toPath,
           Metadata.encode(Metadata(`already-in-google` = Some(false), `google-media-item-id` = Some("")))
         )
     )
@@ -2985,12 +3064,13 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     lines: Seq[String],
     message: String,
     prepare: File => Unit = _ => (),
-    args: Seq[String] = Seq.empty
+    args: Seq[String] = Seq.empty,
+    relative: String = "2010/07/01/pic.jpg"
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, lines*)
       val catalog: String = JFiles.readString(catalogFile.toPath)
-      touch(File(archive, "2010/07/01"), "pic.jpg")
+      touch(File(archive, relative).getParentFile, File(relative).getName)
       prepare(archive)
       withAct(archive): (session, places, _) =>
         var called = false
@@ -2998,7 +3078,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           called = true
           new RenameFake((_, _) => (), onUpload = (_, _, _) => fail("opened"))
         val argv: Seq[String] =
-          Seq("agent", "upload-item", "--dest", "Dest Title") ++ args ++ Seq("2010/07/01/pic.jpg")
+          Seq("agent", "upload-item", "--dest", "Dest Title") ++ args ++ Seq(relative)
         usage(session, argv*) shouldBe message
         called shouldBe false
         JFiles.readString(catalogFile.toPath) shouldBe catalog
