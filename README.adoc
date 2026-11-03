@@ -458,13 +458,7 @@ Cron is out of scope.
 
 - packaging/publishing/installation/setup/documentstion
 
-- if we keep Google Photos API support and use it for item upload from local archive - why do we need "create album" via
-  Google Photos UI?
-
 - fix day and date-range albums: split, merge, month...
 
-- running without Hyprland
-
-- running on non-Linux?
 
 
