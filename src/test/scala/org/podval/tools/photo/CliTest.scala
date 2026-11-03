@@ -401,7 +401,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |match  match catalog items to local stems
         |include  compress include lines
         |album-file  write an album file
-        |request  append one request row
+        |request  redirect that does not append
         |rename-album  rename an album
         |set-description  set an item description
         |set-date  set an item date
@@ -422,7 +422,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     agent should include ("remove-from-album  remove an item from an album")
     agent should include ("move-item  move an item to another album")
     agent should include ("delete-item  delete an item")
-    helpOf("agent", "request", "--help") shouldBe "request  append one request row\n"
+    helpOf("agent", "request", "--help") shouldBe "request  redirect that does not append\n"
     helpOf("agent", "request", "--help") should not include ("delete-item")
     helpOf("agent", "request", "--help") should not include ("move-item")
     helpOf("agent", "request", "--help") should not include ("download-item")

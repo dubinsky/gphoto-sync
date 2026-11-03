@@ -1548,7 +1548,7 @@ object Cli:
 
   private val agentLine: String = "agent  query the catalog and the archive"
 
-  private val requestLine: String = "request  append one request row"
+  private val requestLine: String = "request  redirect that does not append"
 
   private def cursorOnly(session: Session, name: String): Option[Result] = session.style match
     case PathStyle.Cursor =>

@@ -560,6 +560,28 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       readToml(archive, "Best Of.toml") shouldBe before
       links(archive) shouldBe "# gphoto-album-links 1\ncid-best\tBest Of.toml\n"
 
+  it should "keep a stale link that names a pending-rename file under --delete" in :
+    withArchive: archive =>
+      val before: String = "external = true\n"
+      writeToml(archive, "Best Of.toml", before)
+      val link: String = "# gphoto-album-links 1\ncid-old\tBest Of.toml\n"
+      writeLinks(archive, "cid-old" -> "Best Of.toml")
+      writeCatalog(archive, "album\tcid-best\t0\tBest  Of")
+      val kept: String = ok(exec(sessionFor(archive), "reconcile")._2)
+      kept shouldBe "pending-rename Best Of.toml\n"
+      quiet(kept, "cid-best", "cid-old")
+      kept should not include ("gone")
+      kept should not include ("wrote")
+      readToml(archive, "Best Of.toml") shouldBe before
+      links(archive) shouldBe link
+      val deleted: String = ok(exec(sessionFor(archive), "reconcile", "--delete")._2)
+      deleted shouldBe "pending-rename Best Of.toml\n"
+      deleted should not include ("gone")
+      deleted should not include ("wrote")
+      readToml(archive, "Best Of.toml") shouldBe before
+      File(archive, "Best Of.toml").isFile shouldBe true
+      links(archive) shouldBe link
+
   private def ok(result: Result): String = result match
     case Result.Ok(text, _) => text
     case other => fail(other.toString)

@@ -256,9 +256,13 @@ object Reconcile:
 
     val pendingActions: Seq[Action] = found.filter(row => pending(row.album)).sortBy(relOf).map: row =>
       Action(Kind.Pending, "", relOf(row), "", None)
+    // A stale id still names this path. Reporting it gone would delete the file under --delete.
+    existing.filter(link => renamePaths.contains(link.path) && !linkedPaths.contains(link.path)).foreach: link =>
+      keep(link.id, link.path)
     val goneLinks: Seq[AlbumLinks.Row] = existing.filter: link =>
       !catalogById.contains(link.id) &&
-        byRel.get(link.path).exists(row => !pending(row.album) && !linkedPaths.contains(link.path))
+        byRel.get(link.path).exists(row => !pending(row.album) && !linkedPaths.contains(link.path)) &&
+        !renamePaths.contains(link.path)
     val goneActions: Seq[Action] = goneLinks.map: link =>
       val row: Album.Loaded = byRel(link.path)
       val label: String = if row.album.googleTitle.nonEmpty then row.album.googleTitle else row.album.title
@@ -451,7 +455,7 @@ object Reconcile:
 
   private def pending(album: Album): Boolean = !album.external && album.googleAlbumId.isEmpty
 
-  // The operator renames this album. Reconcile does not write the file.
+  // Empty google-title is not a stored rename. Do not write the catalog title.
   private def pendingRename(album: Catalog.Album, file: Album): Boolean =
     album.owner.isEmpty && file.owner.isEmpty && file.external && file.googleTitle.isEmpty &&
       file.title != album.title
