@@ -12,8 +12,8 @@ Keep catalog ids and item keys out of chat and out of `google-album-id` and `goo
 - Refresh — how `photo refresh` reads Google Photos.
 - Album files — match, the album file, reconcile, and filing.
 - Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
-  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`, and
-  the legacy request grammar.
+  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
+  `photo agent delete-item`, and the legacy request grammar.
 
 ## Files
 
@@ -35,13 +35,20 @@ byte-identical.
 `takeOut` are both clean.
 Otherwise `catalog.txt` stays byte-identical.
 If the add confirm ran, recovery is refresh-only and the text names both titles.
+`photo agent delete-item` removes that item line when the source key is already absent, and when the trash confirm
+leaves the key gone.
+Delete forever and Empty trash are not clicked.
+`photo agent delete-item` publishes nothing for Delete forever or Empty trash.
+When the confirm ran and the key is still present, `catalog.txt` stays byte-identical.
+`photo agent delete-item` does not change the archive or `.download/`.
 `requests.tsv` is a legacy file that a later command will read.
 It is not a second current path.
 The script does not apply the batch.
 `photo reconcile` reads and writes `album-links.tsv`.
 `photo refresh` does not write that file.
-The program still writes `requests.tsv` for actions that are still request rows.
+The program does not append `requests.tsv`.
 The local reader reads it and does not write it.
+`photo agent request` has no action that appends a row.
 `photo refresh` does not write `requests.tsv`.
 The local reader writes `results.tsv`.
 The program reads it.
@@ -56,6 +63,7 @@ The program reads it.
 `photo agent add-to-album` adds one item to an existing album.
 `photo agent remove-from-album` removes one item from an album.
 `photo agent move-item` adds one item to an existing album and then removes it from the source album, in one session.
+`photo agent delete-item` moves one library item to Google Photos trash.
 `photo publish` and `photo sync` still change Google Photos.
 A request batch is not a refresh.
 
@@ -520,6 +528,7 @@ Sync compares Library API media ids and does not match filenames, so it cannot r
 `photo agent album-file` stops at the local file.
 It does not publish, sync, or run `repair --names`.
 `photo agent move-item` uses the catalog item key, as Requests describes.
+`photo agent delete-item` moves one library item to trash, as Delete describes.
 
 ### Names
 
@@ -925,6 +934,14 @@ A catalog read that throws after both halves return is refresh-only and leaves t
 Success names the action and both titles.
 Stdout has no album id and no item key.
 
+`photo agent delete-item` moves one library item to Google Photos trash, as Delete describes.
+`--title` names the album.
+`--id` is required when more than one album has that title, and it must match.
+The item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
+Before Chrome opens, the album has no `owner` line and the item's uploader is `-`.
+A refusal is usage.
+Chrome stays closed and `catalog.txt` stays byte-identical.
+
 The grammar below is legacy.
 The column tables, the version lines, and Catalog updates describe the old row statuses.
 They stay until a later command reads `requests.tsv`.
@@ -972,7 +989,7 @@ An empty file's first id is `r1`.
 | `set-description` (legacy) | empty | item key | current filename | new description, empty clears |
 | `set-date` (legacy) | empty | item key | current filename | `YYYY-MM-DD HH:MM` local |
 | `download-item` (legacy) | album id | item key | current filename | empty |
-| `delete-item` | album id | item key | current filename | empty |
+| `delete-item` (legacy) | album id | item key | current filename | empty |
 
 | action | Accept only when |
 |---|---|
@@ -981,7 +998,7 @@ An empty file's first id is `r1`.
 | `set-description` (legacy) | `album-id` is empty, the item key is an `item` line on exactly one album, `current` equals that filename, and `new` may be empty. |
 | `set-date` (legacy) | The same item identity as `set-description`, and `new` matches `YYYY-MM-DD HH:MM`. |
 | `download-item` (legacy) | The album id and item key name one `item` line, `current` equals the filename, `new` is empty, and the filename is not `.`, `..`, or a string containing `/`. |
-| `delete-item` | The same identity check as legacy `download-item`, `new` is empty, the album has no `owner` line, and the item's uploader is `-`. |
+| `delete-item` (legacy) | The same identity check as legacy `download-item`, `new` is empty, the album has no `owner` line, and the item's uploader is `-`. |
 
 `rename-album` changes the album title.
 A legacy `move-item` row adds the item to the destination album, then removes it from the source album.
@@ -993,10 +1010,8 @@ A legacy `set-date` row changes the item's date taken.
 A legacy `download-item` row downloads the original into the staging directory in Download.
 For that row, the program does not create the staging day directory.
 The local reader does.
-`delete-item` moves that one library item to Google Photos trash, as Delete describes.
-The program only writes the row.
-For `delete-item`, the program does not touch Google Photos and does not rewrite the catalog.
-The local reader does both, after the operator tells it to process the file.
+A legacy `delete-item` row is not the applier.
+`photo agent delete-item` moves that one library item to Google Photos trash, as Delete describes.
 
 ### Catalog updates
 
@@ -1004,7 +1019,8 @@ This subsection describes the old row statuses.
 
 Applying a batch updates `catalog.txt` in that pass.
 A legacy `download-item` row does not change it.
-`delete-item` changes it as Delete describes.
+A legacy `delete-item` row is not the applier.
+`photo agent delete-item` changes the catalog as Delete describes.
 `set-description` does not change it: the catalog has no description column.
 A `new` value that contains a tab or a newline fails that row and is not written.
 The result note does not contain an album id or an item key.
@@ -1069,7 +1085,7 @@ Write an `error` line, or update the one it has.
 `of` is that count, `got` is the item lines plus the unset lines still present, and `name-failures` is unchanged.
 
 On the source, when a source read shows the old key gone, remove that `item` line, decrement `count` by one, and adjust
-an `error` line the way `delete-item` does.
+an `error` line the way `photo agent delete-item` does.
 When the old key is still present, leave the source lines.
 The row is `done` only when the source line was removed and the destination `item` line was written with the new key and
 the filename `current`.
@@ -1154,29 +1170,35 @@ The archive inbox `.upload` is a different directory.
 
 ### Delete
 
-`delete-item` moves one library item to Google Photos trash.
-The program only writes the row.
-It does not touch Google Photos and does not rewrite the catalog.
-The local reader does both, after the operator tells it to process the file.
-
-- Skip the row unless the signed-in account owns the album (no `owner` line) and the item's uploader is `-`.
-- Skip the row when the current filename does not match the catalog exactly.
-- If the item is already gone from Google Photos, remove its `item` line and mark the row `skipped`.
-- On success, remove that item's `item` line and mark the row `done`.
-- On both of those paths, decrement that album's `count` by one.
-  That is the new album-list count.
-  When an `error` line is present, set `of` to the new `count`, decrement `got` by one, and leave `name-failures`
-  unchanged.
-  Do not set `count` to the number of remaining `item` lines while an `error` line or an `unset` line remains.
-- A UI failure leaves the catalog unchanged and marks the row `failed`.
-- Use the Google Photos UI only: open the item and move it to trash.
-  The control is the button whose aria-label is `Move to trash`, or More options and then that menuitem.
-  The confirm button's name starts with `Move to trash`.
-  Do not empty trash, do not choose Delete forever, and do not delete the album.
-  Do not invent or guess a `batchexecute` RPC for this.
-- Do not change anything under the archive or `archive/.gphoto-sync/.download`.
-- Only items in `delete-item` rows that the operator put in `requests.tsv` are trashed; no other items (for example
-  `IMG_` re-encode copies) are trashed as a side effect.
+`photo agent delete-item` moves one library item to Google Photos trash.
+`--title` names the album.
+`--id` is required when more than one album has that title, and it must match.
+The item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
+Before Chrome opens, the album has no `owner` line and the item's uploader is `-`.
+A refusal is usage.
+Chrome stays closed and `catalog.txt` stays byte-identical.
+The command opens the item the way `photo agent download-item` opens it.
+The control is the button whose aria-label is `Move to trash`, or More options and then the menuitem `Move to trash`.
+The confirm button's name starts with `Move to trash`.
+`photo agent delete-item` does not click Delete forever or Empty trash.
+`photo agent delete-item` publishes nothing for Delete forever or Empty trash.
+`photo agent delete-item` does not click Remove, Remove from album, or New album.
+`photo agent delete-item` does not delete the album.
+After the confirm, the command reads the source keys with `snAcKc`.
+Do not invent or guess a `batchexecute` RPC for this.
+When the source key is already absent before the trash click, `photo agent delete-item` does not click.
+`photo agent delete-item` still removes that `item` line.
+When the trash confirm ran and the source key is gone, `photo agent delete-item` removes that `item` line.
+`count` decreases by one.
+When an `error` line is present, `of` becomes the new count and `got` decreases by one.
+`name-failures` stays.
+The command does not set `count` to the number of remaining `item` lines while an `error` line or an `unset` line
+remains.
+A miss before the confirm leaves `catalog.txt` byte-identical.
+When the confirm ran and the source key is still present, `catalog.txt` stays byte-identical.
+`photo agent delete-item` does not change the archive or `.download/`.
+There is no results row.
+`photo agent delete-item` does not trash any other item, including an `IMG_` re-encode copy.
 
 ### Results
 
@@ -1210,6 +1232,7 @@ It is rewritten for each processed batch.
 `photo agent add-to-album` is the applier for adding an item to an existing album.
 `photo agent remove-from-album` is the applier for removing an item from an album.
 `photo agent move-item` is the applier for moving an item from one album to another.
+`photo agent delete-item` is the applier for moving one library item to trash.
 The numbered steps are the legacy batch.
 The script does not apply the batch.
 
@@ -1225,6 +1248,7 @@ The script does not apply the batch.
 
 The local reader never deletes, shares or edits anything in Google Photos without the operator's explicit OK.
 Request handling when the operator says to process the file is that OK for the actions in `requests.tsv`.
-A `delete-item` row, once the operator says to process the request file, is the OK to trash those items.
-Deleting an album or emptying trash still needs a separate explicit OK, as do sharing and deleting library items not in
-`delete-item` rows.
+A legacy `delete-item` row, once the operator says to process the request file, is the OK to trash those items.
+`photo agent delete-item` is not this row.
+Deleting an album or emptying trash still needs a separate explicit OK, as do sharing and deleting library items not
+named by `photo agent delete-item`.

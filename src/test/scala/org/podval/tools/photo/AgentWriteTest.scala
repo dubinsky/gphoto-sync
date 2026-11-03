@@ -637,6 +637,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       )) shouldBe Cli.Usage("use photo agent move-item")
       Cli.parse(List("agent", "request", "move-item", "--help")) shouldBe
         Cli.Usage("use photo agent move-item")
+      Cli.parse(List(
+        "agent", "request", "delete-item", "--album", "albOwn", "--item", "keyOwn", "--current", "pic.jpg"
+      )) shouldBe Cli.Usage("use photo agent delete-item")
+      Cli.parse(List("agent", "request", "delete-item", "--help")) shouldBe
+        Cli.Usage("use photo agent delete-item")
+      Cli.requestCommandNames shouldBe Nil
       requests(archive).exists shouldBe false
       reject(
         "no such item",
@@ -675,20 +681,6 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 00:60")
       reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-02-31 09:05")
       reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-13-01 09:05")
-      reject(
-        "album has an owner",
-        "agent", "request", "delete-item", "--album", "albOwn", "--item", "keyOwn", "--current", "pic.jpg"
-      )
-      reject(
-        "item has an uploader",
-        "agent", "request", "delete-item", "--album", "albUp", "--item", "keyUp", "--current", "pic.jpg"
-      )
-      Seq("r0", "r00", "r000", "r001").foreach: id =>
-        reject(
-          "request id is not valid",
-          "agent", "request", "delete-item", "--album", "albSrc", "--item", "keyPic",
-          "--current", "pic.jpg", "--id", id
-        )
       val download: Catalog.Album = Catalog.Album(
         "alb1", 1, "Title", None, false, None,
         Seq(Catalog.Item("pic.jpg", Some(LocalDate.of(2010, 7, 1)), "key1", None)),
@@ -718,12 +710,10 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg", "--new", "albDst", "--id", "r1"
       )) shouldBe Cli.Usage("use photo agent move-item")
       JFiles.readString(requests(archive).toPath) shouldBe before
-      val duplicate: String = usage(
-        session, "agent", "request", "delete-item",
+      Cli.parse(List(
+        "agent", "request", "delete-item",
         "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg", "--id", "r1"
-      )
-      duplicate shouldBe "duplicate request id"
-      noIds(duplicate, fixtureIds*)
+      )) shouldBe Cli.Usage("use photo agent delete-item")
       JFiles.readString(requests(archive).toPath) shouldBe before
       Requests.append(requests(archive), Requests.Action.MoveItem, "albSrc", "keyPic", "pic.jpg", "albDst")
       Requests.append(requests(archive), Requests.Action.MoveItem, "albSrc", "keyPic", "pic.jpg", "goneId")
@@ -745,16 +735,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       Requests.append(requests(archive), Requests.Action.SetDescription, "", "keyOnly", "pic.jpg", "")
       Requests.append(requests(archive), Requests.Action.SetDate, "", "keyOnly", "pic.jpg", "2010-07-19 09:05")
       Requests.append(requests(archive), Requests.Action.DownloadItem, "albSrc", "keyPic", "pic.jpg", "")
-      val (_, deleted) = exec(
-        session, "agent", "request", "delete-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
-      )
-      deleted match
-        case Result.Ok(text, value) =>
-          text shouldBe "appended r7 delete-item\n"
-          noIds(text, fixtureIds*)
-          field(value, "albumId") shouldBe Json.Str("albSrc")
-        case other =>
-          fail(other.toString)
+      val beforeDelete: String = JFiles.readString(requests(archive).toPath)
+      Cli.parse(List(
+        "agent", "request", "delete-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
+      )) shouldBe Cli.Usage("use photo agent delete-item")
+      JFiles.readString(requests(archive).toPath) shouldBe beforeDelete
+      Requests.append(requests(archive), Requests.Action.DeleteItem, "albSrc", "keyPic", "pic.jpg", "")
       val (_, listed) = exec(session, "agent", "requests")
       listed match
         case Result.Ok(text, Json.Arr(rows)) =>
@@ -844,6 +830,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       usage(session, "agent", "move-item", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
       usage(session, "agent", "move-item", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg") shouldBe
         "missing dest"
+      usage(session, "agent", "delete-item") shouldBe "missing title"
+      usage(session, "agent", "delete-item", "--title", "Source Title") shouldBe "missing item"
+      usage(session, "agent", "delete-item", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
+      Cli.parse(List(
+        "agent", "request", "delete-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
+      )) shouldBe Cli.Usage("use photo agent delete-item")
       File(archive, ".gphoto-sync").exists shouldBe false
 
   "rename-album" should "leave the catalog unchanged when the step throws" in :
@@ -1352,6 +1344,12 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           (_, _) => fail("move-item was forwarded")
         )
         moved should include ("move-item runs in the calling process")
+        val (_, deleted) = Cli.serveResponse(
+          session,
+          """{"argv":["agent","delete-item","--title","2010/07 ","--item","keyPic","--current","pic.jpg"]}""",
+          (_, _) => fail("delete-item was forwarded")
+        )
+        deleted should include ("delete-item runs in the calling process")
         Refresh.openAct = _ =>
           new RenameFake((_, _) => (), onDescription = (_, text) =>
             if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
@@ -2462,6 +2460,268 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
+  "delete-item" should "refuse no owner line or an uploader before Chrome opens" in :
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(
+        archive,
+        "album\talbOwn\t1\tOwned Name",
+        "owner\talbOwn\tAda",
+        "item\talbOwn\tpic.jpg\t2010-07-01\tkeyOwn\t-",
+        "album\talbUp\t1\tUploaded Name",
+        "item\talbUp\tpic.jpg\t2010-07-02\tkeyUp\tBea",
+        "album\talbSrc\t1\tSource Title",
+        "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-"
+      )
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        var called = false
+        Refresh.openAct = _ =>
+          called = true
+          new RenameFake((_, _) => (), onTrash = (_, _) => fail("trash"))
+        val owner: String = usage(
+          session, "agent", "delete-item", "--title", "Owned Name", "--item", "keyOwn", "--current", "pic.jpg"
+        )
+        owner shouldBe "no owner line"
+        owner should not include ("owned")
+        val uploader: String = usage(
+          session, "agent", "delete-item", "--title", "Uploaded Name", "--item", "keyUp", "--current", "pic.jpg"
+        )
+        uploader shouldBe "uploader is not -"
+        usage(
+          session, "agent", "delete-item", "--title", "Source Title", "--item", "keyPic", "--current", "other.jpg"
+        ) shouldBe "current does not match \"pic.jpg\" \"other.jpg\""
+        called shouldBe false
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/.download").exists shouldBe false
+        places.directory.exists shouldBe false
+
+  it should "remove the item line when the key is already gone and not record a trash click" in :
+    withArchive: archive =>
+      val catalogFile: File = deleteCatalog(archive)
+      withAct(archive): (session, places, _) =>
+        var clicks: List[String] = Nil
+        var closed = false
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onPut = (_, _, _) => fail("put"), onTake = (_, _) => fail("take"), onTrash = (album, item) =>
+            album.id shouldBe "albSrc"
+            item.key shouldBe "keyPic"
+            item.uploader shouldBe None
+          ):
+            override def close(): Unit = closed = true
+        val (_, result) = exec(
+          session, "agent", "delete-item",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        clicks shouldBe Nil
+        closed shouldBe true
+        result match
+          case Result.Ok(text, value) =>
+            text shouldBe "delete-item \"pic.jpg\"\n"
+            text should not include ("albSrc")
+            text should not include ("keyPic")
+            field(value, "action") shouldBe Json.Str("delete-item")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("albSrc")
+            field(value, "itemKey") shouldBe Json.Str("keyPic")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe deletedBody
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        File(archive, ".gphoto-sync/.download").exists shouldBe false
+        File(archive, ".gphoto-sync/results.tsv").exists shouldBe false
+        requests(archive).exists shouldBe false
+        File(archive, "2010").exists shouldBe false
+        places.directory.exists shouldBe false
+        released(places)
+
+  it should "remove the item line when the confirm leaves the key gone" in :
+    withArchive: archive =>
+      val catalogFile: File = deleteCatalog(archive)
+      withAct(archive): (session, _, _) =>
+        var clicks: List[String] = Nil
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onTrash = (_, _) =>
+            clicks = clicks :+ "trash"
+          )
+        val (_, result) = exec(
+          session, "agent", "delete-item",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        clicks shouldBe List("trash")
+        result match
+          case Result.Ok(text, _) =>
+            text shouldBe "delete-item \"pic.jpg\"\n"
+            text should not include ("albSrc")
+            text should not include ("keyPic")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe deletedBody
+        File(archive, ".gphoto-sync/.download").exists shouldBe false
+        File(archive, ".gphoto-sync/results.tsv").exists shouldBe false
+
+  it should "report one-click and publish nothing when the control is Delete forever" in :
+    withArchive: archive =>
+      val catalogFile: File = deleteCatalog(archive)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        var clicks: List[String] = Nil
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onTrash = (_, _) =>
+            throw new Refresh.ActMiss("Delete forever", confirmed = false)
+          )
+        val (_, result) = exec(
+          session, "agent", "delete-item",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        clicks shouldBe Nil
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            message shouldBe "mutation failed"
+            text shouldBe
+              """failed delete-item
+                |filename "pic.jpg"
+                |step Move to trash
+                |recovery one-click
+                |catalog unchanged
+                |Delete forever
+                |""".stripMargin
+            text should not include ("refresh-only")
+            field(value, "step") shouldBe Json.Str("Move to trash")
+            field(value, "recovery") shouldBe Json.Str("one-click")
+            field(value, "catalog") shouldBe Json.Str("unchanged")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/.download").exists shouldBe false
+        places.directory.exists shouldBe false
+        val (code, out, err) = shellOf(
+          session,
+          "agent delete-item --title \"Source Title\" --item keyPic --current pic.jpg"
+        )
+        code shouldBe 0
+        out should include ("Delete forever")
+        out should include ("recovery one-click")
+        out should not include ("albSrc")
+        out should not include ("keyPic")
+        err should not include ("mutation failed")
+        err should not include ("Photo Archive Tool:")
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+
+  it should "stay refresh-only when the key is still present after the confirm" in :
+    withArchive: archive =>
+      val catalogFile: File = deleteCatalog(archive)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onTrash = (_, _) =>
+            throw new Refresh.ActMiss("source key is present", confirmed = true)
+          )
+        val (_, result) = exec(
+          session, "agent", "delete-item",
+          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+        )
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include ("recovery refresh-only")
+            text should include ("catalog unchanged")
+            text should include ("source key is present")
+            text should not include ("one-click")
+            field(value, "step") shouldBe Json.Str("Move to trash")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        File(archive, ".gphoto-sync/.download").exists shouldBe false
+
+  it should "stay refresh-only when the catalog read throws after a clean return" in :
+    withArchive: archive =>
+      val catalogFile: File = deleteCatalog(archive)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, _, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake((_, _) => (), onTrash = (_, _) =>
+            catalogFile.setReadable(false, false)
+          )
+        try
+          val (_, result) = exec(
+            session, "agent", "delete-item",
+            "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+          )
+          result match
+            case Result.Failed(text, value, message) =>
+              message shouldBe Refresh.MutationFailed
+              text should include ("recovery refresh-only")
+              text should include ("catalog unchanged")
+              text should not include ("one-click")
+              field(value, "recovery") shouldBe Json.Str("refresh-only")
+            case other =>
+              fail(other.toString)
+          catalogFile.setReadable(true, false)
+          JFiles.readString(catalogFile.toPath) shouldBe catalog
+          File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+        finally
+          catalogFile.setReadable(true, false)
+
+  it should "report already running without opening the browser" in :
+    withArchive: archive =>
+      val catalogFile: File = deleteCatalog(archive)
+      val catalog: String = JFiles.readString(catalogFile.toPath)
+      withAct(archive): (session, places, _) =>
+        places.directory.mkdirs()
+        JFiles.writeString(File(places.directory, "status.txt").toPath, "phase=items\nAF1QipBusy\n")
+        Refresh.claim(places.lock) match
+          case Refresh.Claim.Owned(channel, lock) =>
+            try
+              Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
+              val (_, result) = exec(
+                session, "agent", "delete-item",
+                "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+              )
+              result match
+                case Result.Failed(text, value, message) =>
+                  message shouldBe Refresh.AlreadyRunning
+                  message shouldBe "already running"
+                  Cli.processCode(result) shouldBe 2
+                  text should startWith ("already running\n")
+                  text should include ("phase=items")
+                  text should not include ("AF1Qip")
+                  value shouldBe Json.Null
+                case other =>
+                  fail(other.toString)
+              JFiles.readString(catalogFile.toPath) shouldBe catalog
+              File(archive, ".gphoto-sync/.download").exists shouldBe false
+            finally
+              Refresh.release(channel, lock)
+          case Refresh.Claim.Busy =>
+            fail("lock was already held")
+
+  private def deleteCatalog(archive: File): File =
+    writeCatalog(
+      archive,
+      "album\talbSrc\t2\tSource Title",
+      "error\talbSrc\t2\t2\t1",
+      "unset\talbSrc\t2010-07-09\tkeyUnset\t-",
+      "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-",
+      "album\talbKeep\t1\tKeep Title",
+      "item\talbKeep\tother.jpg\t2010-08-01\tkeyKeep\t-",
+      "owner\talbKeep\tZoe"
+    )
+
+  private def deletedBody: String =
+    catalogBody(
+      "album\talbSrc\t1\tSource Title",
+      "error\talbSrc\t1\t1\t1",
+      "unset\talbSrc\t2010-07-09\tkeyUnset\t-",
+      "album\talbKeep\t1\tKeep Title",
+      "item\talbKeep\tother.jpg\t2010-08-01\tkeyKeep\t-",
+      "owner\talbKeep\tZoe"
+    )
+
   private def catalogBody(lines: String*): String =
     (Seq("# gphoto-catalog 2") ++ lines).mkString("", "\n", "\n")
 
@@ -2624,7 +2884,8 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     onDownload: (Catalog.Item, File) => Unit = (_, _) => (),
     onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (_, _, _) =>
       throw IllegalStateException("put"),
-    onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => ()
+    onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+    onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => ()
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -2637,6 +2898,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
     def putInAlbum(item: Catalog.Item, destination: Catalog.Album, current: String): Catalog.Item =
       onPut(item, destination, current)
     def takeOut(album: Catalog.Album, item: Catalog.Item): Unit = onTake(album, item)
+    def trash(album: Catalog.Album, item: Catalog.Item): Unit = onTrash(album, item)
 
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile

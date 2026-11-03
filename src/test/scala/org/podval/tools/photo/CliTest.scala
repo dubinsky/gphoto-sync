@@ -156,6 +156,15 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("agent", "request", "move-item", "--help")) shouldBe
       Cli.Usage("use photo agent move-item")
     Cli.parse(List(
+      "agent", "delete-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
+    )) shouldBe Cli.Run(Cli.DeleteItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
+    Cli.parse(List(
+      "agent", "request", "delete-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
+    )) shouldBe Cli.Usage("use photo agent delete-item")
+    Cli.parse(List("agent", "request", "delete-item", "--help")) shouldBe
+      Cli.Usage("use photo agent delete-item")
+    Cli.requestCommandNames shouldBe Nil
+    Cli.parse(List(
       "agent", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello"
     )) shouldBe Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("Hello")))
     Cli.parse(List(
@@ -196,11 +205,6 @@ class CliTest extends AnyFlatSpec, Matchers:
       Cli.Usage("unknown command 'add-to-album'")
     Cli.parse(List("agent", "request", "remove-from-album")) shouldBe
       Cli.Usage("unknown command 'remove-from-album'")
-    Cli.parse(List(
-      "agent", "request", "delete-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
-    )) shouldBe Cli.Run(Cli.AgentRequestArgs(
-      "delete-item", Some("a1"), Some("k1"), Some("a.jpg"), None, Some("r1")
-    ))
     Cli.parse(List("agent", "requests")) shouldBe Cli.Run(Cli.AgentRequestsArgs)
     Cli.parse(List("agent", "results")) shouldBe Cli.Run(Cli.AgentResultsArgs)
     Cli.parse(List("agent", "drift")) shouldBe Cli.Run(Cli.AgentDriftArgs)
@@ -404,6 +408,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |add-to-album  add an item to an album
         |remove-from-album  remove an item from an album
         |move-item  move an item to another album
+        |delete-item  delete an item
         |requests  list request rows
         |results  list result rows
         |drift  report create, update, gone, pending, and skipped
@@ -417,11 +422,9 @@ class CliTest extends AnyFlatSpec, Matchers:
     agent should include ("add-to-album  add an item to an album")
     agent should include ("remove-from-album  remove an item from an album")
     agent should include ("move-item  move an item to another album")
-    agent should not include ("delete-item")
-    helpOf("agent", "request", "--help") shouldBe
-      """request  append one request row
-        |
-        |delete-item  delete an item""".stripMargin
+    agent should include ("delete-item  delete an item")
+    helpOf("agent", "request", "--help") shouldBe "request  append one request row\n"
+    helpOf("agent", "request", "--help") should not include ("delete-item")
     helpOf("agent", "request", "--help") should not include ("move-item")
     helpOf("agent", "request", "--help") should not include ("download-item")
     Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
@@ -505,6 +508,17 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--dest  text  destination album title
         |--id  text  catalog album id
         |--dest-id  text  destination album id""".stripMargin
+    helpOf("agent", "delete-item", "--help") shouldBe
+      """delete-item  delete an item
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--title  text  album title
+        |--item  text  item key
+        |--current  text  current filename
+        |--id  text  catalog album id""".stripMargin
     helpOf("agent", "album-file", "--help") should include ("--id  text  catalog album id")
     helpOf("agent", "album-file", "--help") should not include ("--no-request")
     helpOf("agent", "include", "--help") shouldBe
@@ -599,6 +613,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "request", "download-item", "--help") -> "use photo agent download-item",
       List("agent", "request", "move-item") -> "use photo agent move-item",
       List("agent", "request", "move-item", "--help") -> "use photo agent move-item",
+      List("agent", "request", "delete-item") -> "use photo agent delete-item",
+      List("agent", "request", "delete-item", "--help") -> "use photo agent delete-item",
       List("agent", "album-file", "--no-request", "2010/07") -> "unknown option '--no-request'",
       List("agent", "request", "--album", "a1", "rename-album") -> "unknown command '--album'",
       List("agent", "requests", "x") -> "extra argument 'x'",
@@ -696,12 +712,11 @@ class CliTest extends AnyFlatSpec, Matchers:
     tools.map(_.name) shouldBe List(
       "stems", "catalog", "items", "match", "include", "rename-album",
       "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-      "move-item", "requests", "results", "drift", "missing"
+      "move-item", "delete-item", "requests", "results", "drift", "missing"
     )
     List(
       "album-file",
       "request",
-      "delete-item",
       "repair", "publish", "sync", "refresh", "reconcile", "file", "set-metadata",
       "login", "status", "logout",
       "ls", "lsd", "albums",
@@ -729,6 +744,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "add-to-album" -> described("add an item to an album", "add-to-album", ambiguous = true),
       "remove-from-album" -> described("remove an item from an album", "remove-from-album", ambiguous = true),
       "move-item" -> described("move an item to another album", "move-item", ambiguous = true),
+      "delete-item" -> described("delete an item", "delete-item", ambiguous = true),
       "requests" -> described("list request rows", "requests", ambiguous = false),
       "results" -> described("list result rows", "results", ambiguous = false),
       "drift" -> described("report create, update, gone, pending, and skipped", "drift", ambiguous = false),
@@ -784,6 +800,12 @@ class CliTest extends AnyFlatSpec, Matchers:
         "id" -> mcpStringSchema,
         "dest-id" -> mcpStringSchema
       ),
+      "delete-item" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "id" -> mcpStringSchema
+      ),
       "requests" -> Seq.empty,
       "results" -> Seq.empty,
       "drift" -> Seq.empty,
@@ -802,6 +824,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "add-to-album" -> Seq("title", "item", "current", "dest"),
       "remove-from-album" -> Seq("title", "item", "current"),
       "move-item" -> Seq("title", "item", "current", "dest"),
+      "delete-item" -> Seq("title", "item", "current"),
       "requests" -> Seq.empty,
       "results" -> Seq.empty,
       "drift" -> Seq.empty,

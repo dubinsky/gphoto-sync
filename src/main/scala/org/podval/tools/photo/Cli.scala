@@ -108,6 +108,12 @@ object Cli:
     id: Option[String],
     destId: Option[String]
   ) extends Parsed
+  private[photo] final case class DeleteItemArgs(
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
+  ) extends Parsed
   private[photo] final case class AgentRequestArgs(
     action: String,
     album: Option[String],
@@ -354,6 +360,7 @@ object Cli:
     case _: AddToAlbumArgs => true
     case _: RemoveFromAlbumArgs => true
     case _: MoveItemArgs => true
+    case _: DeleteItemArgs => true
     case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
@@ -390,6 +397,7 @@ object Cli:
     case _: AddToAlbumArgs => "add-to-album"
     case _: RemoveFromAlbumArgs => "remove-from-album"
     case _: MoveItemArgs => "move-item"
+    case _: DeleteItemArgs => "delete-item"
     case _ => "command"
 
   // Refresh, reconcile, and file stay off this branch.
@@ -401,6 +409,7 @@ object Cli:
     case _: AddToAlbumArgs => true
     case _: RemoveFromAlbumArgs => true
     case _: MoveItemArgs => true
+    case _: DeleteItemArgs => true
     case _ => false
 
   private def remoteStep(
@@ -678,6 +687,8 @@ object Cli:
       AgentRemove(title, item, current, id)
     case MoveItemArgs(title, item, current, dest, id, destId) =>
       AgentMove(title, item, current, dest, id, destId)
+    case DeleteItemArgs(title, item, current, id) =>
+      AgentDelete(title, item, current, id)
     case AgentRequestArgs(action, album, item, current, updated, id) =>
       AgentRequest(Requests.Action.fromWire(action), album, item, current, updated, id)
     case AgentRequestsArgs =>
@@ -874,6 +885,8 @@ object Cli:
       Usage("use photo agent download-item")
     case "move-item" :: _ =>
       Usage("use photo agent move-item")
+    case "delete-item" :: _ =>
+      Usage("use photo agent delete-item")
     case name :: rest =>
       requestCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
@@ -1313,6 +1326,23 @@ object Cli:
       )
     ),
     Command(
+      name = "delete-item",
+      help = "delete an item",
+      positionals = Nil,
+      flags = List(
+        Flag("title", None, TextKind, "album title"),
+        Flag("item", None, TextKind, "item key"),
+        Flag("current", None, TextKind, "current filename"),
+        albumIdFlag
+      ),
+      build = (values, _) => DeleteItemArgs(
+        values.texts.get("title"),
+        values.texts.get("item"),
+        values.texts.get("current"),
+        values.texts.get("id")
+      )
+    ),
+    Command(
       name = "requests",
       help = "list request rows",
       positionals = Nil,
@@ -1346,7 +1376,7 @@ object Cli:
   private val mcpToolNames: Set[String] = Set(
     "stems", "catalog", "items", "match", "include", "rename-album",
     "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-    "move-item", "requests", "results", "drift", "missing"
+    "move-item", "delete-item", "requests", "results", "drift", "missing"
   )
 
   private val mcpDoNotEcho: String =
@@ -1390,7 +1420,8 @@ object Cli:
       else if command.name == "download-item" then List("title", "item", "current")
       else if command.name == "add-to-album" || command.name == "move-item" then
         List("title", "item", "current", "dest")
-      else if command.name == "remove-from-album" then List("title", "item", "current")
+      else if command.name == "remove-from-album" || command.name == "delete-item" then
+        List("title", "item", "current")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
     McpTool(command.name, mcpDescription(command), params, required)
@@ -1399,7 +1430,8 @@ object Cli:
     val base: String = s"${command.help} (photo agent ${command.name}). $mcpDoNotEcho"
     if command.name == "items" || command.name == "match" || command.name == "rename-album" ||
       command.name == "download-item" || command.name == "add-to-album" ||
-      command.name == "remove-from-album" || command.name == "move-item"
+      command.name == "remove-from-album" || command.name == "move-item" ||
+      command.name == "delete-item"
     then
       s"$base $mcpAmbiguousId"
     else base
@@ -1501,36 +1533,10 @@ object Cli:
       // readMcpFields already rejected a mismatched JSON type.
       throw IllegalStateException(s"argument '${mcpParamName(param)}' has the wrong type")
 
-  private val requestIdFlag: Flag = Flag("id", None, TextKind, "request id")
-
-  private def requestCommand(
-    name: String,
-    help: String,
-    flags: List[Flag],
-    build: Values => AgentRequestArgs
-  ): Command =
-    Command(name, help, Nil, flags, (values, _) => build(values))
-
-  private val requestCommands: List[Command] = List(
-    requestCommand(
-      "delete-item",
-      "delete an item",
-      List(
-        Flag("album", None, TextKind, "album id"),
-        Flag("item", None, TextKind, "item key"),
-        Flag("current", None, TextKind, "current filename"),
-        requestIdFlag
-      ),
-      values => AgentRequestArgs(
-        "delete-item",
-        values.texts.get("album"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        None,
-        values.texts.get("id")
-      )
-    )
-  )
+  // No request action remains. photo agent request does not append.
+  // Command stays private, so the empty-arm check is the names.
+  private val requestCommands: List[Command] = Nil
+  private[photo] def requestCommandNames: List[String] = requestCommands.map(_.name)
 
   private val helpCommand: Command = Command(
     name = "help",

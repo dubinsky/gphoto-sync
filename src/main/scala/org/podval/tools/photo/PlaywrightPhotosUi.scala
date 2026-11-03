@@ -269,6 +269,95 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       case error: Exception =>
         throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
 
+  def trash(album: Catalog.Album, item: Catalog.Item): Unit =
+    var confirmed = false
+    try
+      // start() leaves the context timeout unlimited so a sweep can scroll. A miss here must not hang.
+      page.setDefaultTimeout(20000)
+      ensureSession()
+      navigate(s"https://photos.google.com/photo/${item.key}")
+      // An absent source key is not a click. The caller still removes the catalog line.
+      if readKeyList(album.id).contains(item.key) then
+        openTrash()
+        val name: String = awaitTrashConfirm(System.currentTimeMillis + 20000L)
+        val dialog: Locator = visibleDialog.getOrElse(
+          throw Refresh.ActMiss("Move to trash is absent", confirmed = false)
+        )
+        refuseWrong(name)
+        val button: Locator = dialog.getByRole(
+          AriaRole.BUTTON,
+          new Locator.GetByRoleOptions().setName(name).setExact(true)
+        )
+        if button.count() == 0 then throw Refresh.ActMiss("Move to trash is absent", confirmed = false)
+        confirmed = true
+        click(button.first())
+        if readKeyList(album.id).contains(item.key) then
+          throw Refresh.ActMiss("source key is present", confirmed = true)
+    catch
+      case miss: Refresh.ActMiss =>
+        throw miss
+      case error: Exception =>
+        throw Refresh.ActMiss(Operation.messageOf(error), confirmed)
+
+  // Delete forever and Empty trash are not this command. Remove and New album are not either.
+  private def openTrash(): Unit =
+    val button: Locator = page.locator("[aria-label=\"Move to trash\"]")
+    if button.count() > 0 then
+      val label: String = Option(button.last().getAttribute("aria-label")).getOrElse("")
+      refuseWrong(label)
+      click(button.last())
+    else
+      clickMore()
+      val menu: Locator = page.getByRole(
+        AriaRole.MENUITEM,
+        new Page.GetByRoleOptions().setName(java.util.regex.Pattern.compile("Move to trash"))
+      )
+      awaitCount(menu, System.currentTimeMillis + 20000L, "Move to trash is absent")
+      val name: String = Option(menu.last().innerText()).getOrElse("").replaceAll("\\s+", " ").trim
+      refuseWrong(name)
+      click(menu.last())
+
+  @tailrec
+  private def awaitTrashConfirm(deadline: Long): String =
+    visibleDialog match
+      case None if System.currentTimeMillis >= deadline =>
+        throw Refresh.ActMiss("Move to trash is absent", confirmed = false)
+      case None =>
+        Thread.sleep(300)
+        awaitTrashConfirm(deadline)
+      case Some(dialog) =>
+        val buttons: Seq[String] = dialogButtons(dialog)
+        // Delete forever and Empty trash stay unclicked even when Move to trash is also listed.
+        buttons.find(isForeverName) match
+          case Some(name) =>
+            throw Refresh.ActMiss(name.trim, confirmed = false)
+          case None =>
+            buttons.find(isTrashConfirm) match
+              case Some(name) =>
+                refuseWrong(name)
+                name
+              case None if System.currentTimeMillis >= deadline =>
+                throw Refresh.ActMiss("Move to trash is absent", confirmed = false)
+              case None =>
+                Thread.sleep(300)
+                awaitTrashConfirm(deadline)
+
+  private def refuseWrong(name: String): Unit =
+    val folded: String = name.trim.toLowerCase(java.util.Locale.ROOT)
+    if isForeverName(name) then throw Refresh.ActMiss(name.trim, confirmed = false)
+    else if folded == "new album" || folded.startsWith("remove") then
+      throw Refresh.ActMiss("Move to trash is absent", confirmed = false)
+
+  private def isForeverName(name: String): Boolean =
+    val folded: String = name.trim.toLowerCase(java.util.Locale.ROOT)
+    folded.startsWith("delete forever") || folded.startsWith("empty trash")
+
+  private def isTrashConfirm(name: String): Boolean =
+    java.util.regex.Pattern.compile(
+      "^Move to trash\\b",
+      java.util.regex.Pattern.CASE_INSENSITIVE
+    ).matcher(name).find()
+
   @tailrec
   private def awaitRemove(deadline: Long): String =
     visibleDialog match

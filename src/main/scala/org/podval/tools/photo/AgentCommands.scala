@@ -207,6 +207,21 @@ private[photo] final class AgentMove(
       AgentCommands.catching(loaded):
         AgentCommands.moveItem(loaded, albums, wantedTitle, id, key, wantedCurrent, destTitle, destId)
 
+private[photo] final class AgentDelete(
+  title: Option[String],
+  item: Option[String],
+  current: Option[String],
+  id: Option[String]
+) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    AgentCommands.catching(session):
+      val wantedTitle: String = title.getOrElse(throw IllegalArgumentException("missing title"))
+      val key: String = item.getOrElse(throw IllegalArgumentException("missing item"))
+      val wantedCurrent: String = current.getOrElse(throw IllegalArgumentException("missing current"))
+      val (loaded, albums) = session.loadCatalog
+      AgentCommands.catching(loaded):
+        AgentCommands.deleteItem(loaded, albums, wantedTitle, id, key, wantedCurrent)
+
 private[photo] final class AgentRequest(
   action: Requests.Action,
   album: Option[String],
@@ -522,6 +537,7 @@ private[photo] object AgentCommands:
   private val DownloadStep: String = "More options, then Download"
   private val AddStep: String = "More options, then Add to album, then the existing album"
   private val RemoveStep: String = "More options, then Remove from album, then Remove"
+  private val TrashStep: String = "Move to trash"
 
   def renameAlbum(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     withLock(session, album.title)(heldRename(session, album, updated))
@@ -612,6 +628,22 @@ private[photo] object AgentCommands:
     if album.id == destination.id then throw IllegalArgumentException("destination is the source album")
     acceptPut(session, destination, item)
     withLock(session, album.title)(heldMove(session, album.id, key, current, destination.id))
+
+  def deleteItem(
+    session: Session,
+    albums: Seq[Catalog.Album],
+    title: String,
+    id: Option[String],
+    key: String,
+    current: String
+  ): (Session, Result) =
+    val album: Catalog.Album = select(albums, title, id)
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    requireCurrent(item.filename, current)
+    acceptDelete(album, item)
+    withLock(session, album.title)(heldDelete(session, album.id, key, current))
 
   private def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -1025,6 +1057,35 @@ private[photo] object AgentCommands:
         try ui.close()
         catch case _: Exception => ()
 
+  private def heldDelete(
+    session: Session,
+    albumId: String,
+    key: String,
+    current: String
+  ): (Session, Result) =
+    val (album, item) = rereadDelete(session, albumId, key, current)
+    var ui: PhotosAct = null
+    try
+      // A notice would write status.txt and drop a crashed refresh's resume phase.
+      ui = Refresh.openAct(_ => ())
+      ui.trash(album, item)
+      publishAlbum(session, Seq(album.id -> (next => revisedTake(next, item)))) match
+        case Right(next) =>
+          itemOk(next, album, item, "delete-item", "updated")
+        case Left(message) =>
+          itemFailed(session, album, item, "delete-item", TrashStep, "refresh-only", message)
+    catch
+      case miss: Refresh.ActMiss =>
+        val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse("delete-item failed")
+        itemFailed(session, album, item, "delete-item", TrashStep, recovery, detail)
+      case error: Exception =>
+        itemFailed(session, album, item, "delete-item", TrashStep, "one-click", Operation.messageOf(error))
+    finally
+      if ui != null then
+        try ui.close()
+        catch case _: Exception => ()
+
   private def rereadAdd(
     session: Session,
     sourceId: String,
@@ -1063,6 +1124,24 @@ private[photo] object AgentCommands:
       throw IllegalArgumentException("no such item")
     )
     requireCurrent(item.filename, current)
+    (album, item)
+
+  private def rereadDelete(
+    session: Session,
+    albumId: String,
+    key: String,
+    current: String
+  ): (Catalog.Album, Catalog.Item) =
+    val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val albums: Seq[Catalog.Album] = Catalog.read(file)
+    val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
+      throw IllegalArgumentException("no such album")
+    )
+    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
+      throw IllegalArgumentException("no such item")
+    )
+    requireCurrent(item.filename, current)
+    acceptDelete(album, item)
     (album, item)
 
   private def publishAlbum(
@@ -1120,6 +1199,10 @@ private[photo] object AgentCommands:
       error = next.error.map(err => err.copy(of = count, got = err.got - 1)),
       items = next.items.filterNot(_.key == item.key)
     )
+
+  private def acceptDelete(album: Catalog.Album, item: Catalog.Item): Unit =
+    if album.owner.isDefined then throw IllegalArgumentException("no owner line")
+    if item.uploader.isDefined then throw IllegalArgumentException("uploader is not -")
 
   private def acceptPut(session: Session, destination: Catalog.Album, item: Catalog.Item): Unit =
     if destination.owner.isDefined then throw IllegalArgumentException("destination has an owner")
