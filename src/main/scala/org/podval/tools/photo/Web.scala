@@ -224,16 +224,14 @@ object Web:
     try body.write(bytes)
     finally body.close()
 
-  private def sendJson(exchange: HttpExchange, json: Json): Unit =
-    send(exchange, 200, "application/json; charset=utf-8", Serve.write(json).getBytes(StandardCharsets.UTF_8))
-
   private def api(exchange: HttpExchange)(body: => Either[Rejected, Json]): Unit =
     try
       body match
         case Left(rejected) =>
           sendError(exchange, rejected.status, rejected.message)
         case Right(json) =>
-          sendJson(exchange, json)
+          val bytes: Array[Byte] = Serve.write(json).getBytes(StandardCharsets.UTF_8)
+          send(exchange, 200, "application/json; charset=utf-8", bytes)
     catch case error: IllegalArgumentException =>
       val message: String = Operation.messageOf(error)
       val shown: String = if message.contains("AF1Qip") then "failed" else message
@@ -254,23 +252,22 @@ object Web:
       val where: String = at.getOrElse("")
       branchOf(where).flatMap: branch =>
         val archive: File = start.root.configuration.archive
-        val relative: String = branch match
-          case Branch.Years => ""
-          case Branch.Months(year) => year
-          case Branch.Days(year, month) => s"$year/$month"
-        openDirectory(archive, relative, Rejected(400, "not a branch")).flatMap: resolved =>
-          directories(resolved).flatMap: children =>
+        openDirectory(archive, where, Rejected(400, "not a branch")).flatMap: resolved =>
+          val children: Either[Rejected, Seq[File]] =
+            try Right(Files.listDirectories(resolved.toFile))
+            catch case _: IllegalArgumentException => Left(Rejected(500, "stray file"))
+          children.flatMap: dirs =>
             val entries: Either[Rejected, Seq[Json]] = branch match
               case Branch.Years =>
-                Right(children.filter(dir => isNumber(dir.getName, 4)).map: dir =>
+                Right(dirs.filter(dir => isNumber(dir.getName, 4)).map: dir =>
                   entryJson(dir.getName, dir.getName, None)
                 )
               case Branch.Months(year) =>
-                Right(children.filter(dir => isMonth(dir.getName)).map: dir =>
+                Right(dirs.filter(dir => isMonth(dir.getName)).map: dir =>
                   entryJson(dir.getName, s"$year/${dir.getName}", None)
                 )
               case Branch.Days(year, month) =>
-                dayCounts(archive, year, month, children)
+                dayCounts(archive, year, month, dirs)
             entries.map: listed =>
               val folder: File = resolved.toFile
               val albums: Seq[Json] = branch match
@@ -301,24 +298,23 @@ object Web:
       case None =>
         Left(Rejected(400, "not a day"))
       case Some(text) =>
-        lexical(text).flatMap: _ =>
-          val parsed: Day = AgentCommands.parseDay(start, text)
-          val archive: File = start.root.configuration.archive
-          val shown: String = Title.dayText(parsed.date)
-          openDirectory(archive, shown, Rejected(404, "no such day")).flatMap: resolved =>
-            val curated: Seq[Album] = tomlAlbums(archive, archive).map(_._2)
-            val stems: Seq[Json] = pictureStems(resolved).map: (stem, extensions) =>
-              val claimed: Seq[String] = curated.filter(_.claims(parsed.date, stem)).map(_.title)
-              stemJson(shown, stem, extensions, claimed)
-            val albums: Seq[Json] =
-              dayAlbumFiles(archive, resolved).map(pair => albumJson(archive, pair._1, pair._2))
-            Right(Json.Obj(Seq(
-              "day" -> Json.Str(shown),
-              "stems" -> Json.Arr(stems),
-              "albums" -> Json.Arr(albums),
-              "curated" -> Json.Arr(curated.map(album => Json.Str(album.title))),
-              "catalog" -> catalogJson(start, view)
-            )))
+        val parsed: Day = AgentCommands.parseDay(start, text)
+        val archive: File = start.root.configuration.archive
+        val shown: String = Title.dayText(parsed.date)
+        openDirectory(archive, shown, Rejected(404, "no such day")).flatMap: resolved =>
+          val curated: Seq[Album] = tomlAlbums(archive, archive).map(_._2)
+          val stems: Seq[Json] = pictureStems(resolved).map: (stem, extensions) =>
+            val claimed: Seq[String] = curated.filter(_.claims(parsed.date, stem)).map(_.title)
+            stemJson(shown, stem, extensions, claimed)
+          val albums: Seq[Json] =
+            dayAlbumFiles(archive, resolved).map(pair => albumJson(archive, pair._1, pair._2))
+          Right(Json.Obj(Seq(
+            "day" -> Json.Str(shown),
+            "stems" -> Json.Arr(stems),
+            "albums" -> Json.Arr(albums),
+            "curated" -> Json.Arr(curated.map(album => Json.Str(album.title))),
+            "catalog" -> catalogJson(start, view)
+          )))
 
   private def album(exchange: HttpExchange): Either[Rejected, Json] =
     val start: Session = currentSession()
@@ -406,10 +402,6 @@ object Web:
       catch
         case _: NoSuchFileException => Left(missing)
         case _: FileSystemException => Left(Rejected(400, escapeMessage))
-
-  private def directories(resolved: java.nio.file.Path): Either[Rejected, Seq[File]] =
-    try Right(Files.listDirectories(resolved.toFile))
-    catch case _: IllegalArgumentException => Left(Rejected(500, "stray file"))
 
   private def dayCounts(
     archive: File,
