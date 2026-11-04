@@ -56,6 +56,8 @@ h1 {
 
 .cell {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 152px;
   height: 152px;
   box-sizing: border-box;

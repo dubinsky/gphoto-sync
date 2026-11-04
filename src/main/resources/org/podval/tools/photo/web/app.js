@@ -71,23 +71,21 @@ function clearError() {
   errorLine.hidden = true;
 }
 
-function catalogText(value) {
-  if (!value || !value.present) return "catalog missing";
-  if (!value.readable) return "catalog unreadable";
-  if (!value.mtime) return value.zone || "";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      timeZone: value.zone,
-      dateStyle: "medium",
-      timeStyle: "medium"
-    }).format(new Date(value.mtime));
-  } catch {
-    return value.mtime;
-  }
-}
-
 function showCatalog(value) {
-  catalog.textContent = catalogText(value);
+  if (!value || !value.present) catalog.textContent = "catalog missing";
+  else if (!value.readable) catalog.textContent = "catalog unreadable";
+  else if (!value.mtime) catalog.textContent = value.zone || "";
+  else {
+    try {
+      catalog.textContent = new Intl.DateTimeFormat(undefined, {
+        timeZone: value.zone,
+        dateStyle: "medium",
+        timeStyle: "medium"
+      }).format(new Date(value.mtime));
+    } catch {
+      catalog.textContent = value.mtime;
+    }
+  }
 }
 
 async function readBody(response) {
@@ -368,7 +366,6 @@ async function toggleIndex(index) {
   if (!item) return;
   const title = view.kind === "album" ? (state.album && state.album.title) : state.target;
   if (!title) return;
-  const token = loadToken;
   const generation = ++toggleGeneration;
   const before = view.kind === "album" ? item.desired === true : (item.curated || []).indexOf(title) !== -1;
   state.pending = true;
@@ -382,7 +379,7 @@ async function toggleIndex(index) {
       body: JSON.stringify({ title: title, path: item.path })
     });
     const body = await readBody(response);
-    if (generation !== toggleGeneration || token !== loadToken) return;
+    if (generation !== toggleGeneration) return;
     if (!response.ok || !body || typeof body.desired !== "boolean") {
       applyDesired(item, view.kind, title, before);
       showError(body && body.error ? body.error : "failed");
@@ -391,14 +388,14 @@ async function toggleIndex(index) {
       clearError();
     }
   } catch (failure) {
-    if (generation !== toggleGeneration || token !== loadToken) return;
+    if (generation !== toggleGeneration) return;
     applyDesired(item, view.kind, title, before);
     showError(failure.message || "failed");
   } finally {
     if (generation !== toggleGeneration) return;
     state.pending = false;
     state.pendingIndex = -1;
-    if (token === loadToken) paint();
+    paint();
   }
 }
 
@@ -446,10 +443,18 @@ function hideGrid() {
   });
 }
 
-async function showTree(at, token) {
+async function showTree(next, token) {
+  const at = next.at || "";
   const url = at ? treeRoute + "?at=" + encodeURIComponent(at) : treeRoute;
   const body = await getJson(url);
   if (token !== loadToken) return;
+  // A newer screen is mounted only after this body arrives. x still means the previous view until then.
+  toggleGeneration++;
+  state.pending = false;
+  state.pendingIndex = -1;
+  cancelScheduledToggle();
+  closePanel();
+  state.view = next;
   state.album = null;
   resetChrome();
   hideGrid();
@@ -465,12 +470,18 @@ async function showTree(at, token) {
   });
   (body.curated || []).forEach((album) => addLink(album.title, { kind: "album", album: album.title }));
   (body.albums || []).forEach((album) => addLink(album.title, { kind: "album", album: album.title }));
-  showBack(state.view, null);
+  showBack(next, null);
 }
 
-async function showDay(day, token) {
-  const body = await getJson(dayRoute + "?day=" + encodeURIComponent(day));
+async function showDay(next, token) {
+  const body = await getJson(dayRoute + "?day=" + encodeURIComponent(next.day));
   if (token !== loadToken) return;
+  toggleGeneration++;
+  state.pending = false;
+  state.pendingIndex = -1;
+  cancelScheduledToggle();
+  closePanel();
+  state.view = next;
   state.album = null;
   resetChrome();
   showCatalog(body.catalog);
@@ -480,13 +491,19 @@ async function showDay(day, token) {
   fillSelect(titles, state.target);
   curatedLabel.hidden = false;
   (body.albums || []).forEach((album) => addLink(album.title, { kind: "album", album: album.title }));
-  showBack(state.view, null);
+  showBack(next, null);
   showGrid(body.stems || []);
 }
 
-async function showAlbum(title, token) {
-  const body = await getJson(albumRoute + "?title=" + encodeURIComponent(title));
+async function showAlbum(next, token) {
+  const body = await getJson(albumRoute + "?title=" + encodeURIComponent(next.album));
   if (token !== loadToken) return;
+  toggleGeneration++;
+  state.pending = false;
+  state.pendingIndex = -1;
+  cancelScheduledToggle();
+  closePanel();
+  state.view = next;
   state.album = body;
   resetChrome();
   showCatalog(body.catalog);
@@ -508,25 +525,18 @@ async function showAlbum(title, token) {
     line.textContent = row.day ? row.filename + " " + row.day : row.filename;
     unmatched.append(line);
   });
-  showBack(state.view, body);
+  showBack(next, body);
   showGrid(body.tiles || []);
 }
 
 async function load() {
-  cancelScheduledToggle();
   const token = ++loadToken;
-  toggleGeneration++;
-  state.pending = false;
-  state.pendingIndex = -1;
-  closePanel();
+  const next = viewFromLocation();
   clearError();
-  state.view = viewFromLocation();
-  state.album = null;
-  showBack(state.view, null);
   try {
-    if (state.view.kind === "album") await showAlbum(state.view.album, token);
-    else if (state.view.kind === "day") await showDay(state.view.day, token);
-    else await showTree(state.view.at || "", token);
+    if (next.kind === "album") await showAlbum(next, token);
+    else if (next.kind === "day") await showDay(next, token);
+    else await showTree(next, token);
   } catch (failure) {
     if (token !== loadToken) return;
     showError(failure.message || "failed");
