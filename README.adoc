@@ -610,11 +610,3 @@ Publish does not upload or rename an external album, and it does not call `updat
 A client album is `external = false`.
 Cron is out of scope.
 
-== TODO
-
-- packaging/publishing/installation/setup/documentstion
-
-- fix day and date-range albums: split, merge, month...
-
-
-
