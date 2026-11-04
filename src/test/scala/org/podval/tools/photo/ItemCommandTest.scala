@@ -24,9 +24,14 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       val day: File = File(archive, "2010/07/04")
       val jpg: File = picture(day, "2412.jpg", bytes)
       val raw: File = picture(day, "2412.cr2", bytes)
+      picture(File(archive, "2011/02/03"), "IMG_9.JPG", bytes)
+      write(archive, "2011/02/02/notes.txt", "stray\n")
       val root: File = sessionFor(archive).root.configuration.archive
       val (text, value) = ok(archive, "item", "set", "date=2010/08/01", "2010/07/04/2412")
       text.linesIterator.next() shouldBe "moving /2010/07/04/2412 to /2010/08/01"
+      text.linesIterator.count(_ == "moving /2010/07/04/2412 to /2010/08/01") shouldBe 1
+      text should not include ("WRONG NAME")
+      text should not include ("NOT RENAMED")
       text should include (s"moving ${File(root, "2010/07/04/2412.jpg")} to ")
       text should include (s"moving ${File(root, "2010/07/04/2412.cr2")} to ")
       text should include ("/2010/08/01/2412: writing metadata file")
@@ -79,6 +84,8 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
   it should "fail closed when a claiming dated album does not contain the new day" in :
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+      picture(File(archive, "2011/02/03"), "IMG_9.JPG", jpegBytes)
+      write(archive, "2011/02/02/notes.txt", "stray\n")
       write(archive, "2010/07/album.toml", "include = [\n  'all',\n]\n")
       write(archive, "2010/07/Cape Cod.toml", "include = [\n  'all',\n]\n")
       write(archive, "Cape Cod.toml", "include = [\n  '2010/07/04 2412',\n]\n")

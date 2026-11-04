@@ -162,19 +162,17 @@ object Album:
   // Same reads as rewriteInclude, no write. A bad curated file fails before a move.
   private[photo] def planCurated(
     originals: File,
-    from: String,
-    to: String
+    from: (LocalDate, String),
+    to: (LocalDate, String)
   ): Seq[(File, Seq[Include.Entry])] =
-    if from == to then Seq.empty
+    if from._1.equals(to._1) && from._2 == to._2 then Seq.empty
     else
-      val fromPair: (LocalDate, String) = splitPath(from)
-      val toPair: (LocalDate, String) = splitPath(to)
-      val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+      val universe: Map[LocalDate, Set[String]] = planningUniverse(originals)
       val files: Seq[File] = curatedFiles(originals)
       files.foreach(file => read(originals, file))
       files.flatMap: file =>
         val album: Album = read(originals, file)
-        val next: Seq[Include.Entry] = Include.relocate(album.include, album.span, fromPair, toPair, universe)
+        val next: Seq[Include.Entry] = Include.relocate(album.include, album.span, from, to, universe)
         if sameEntries(next, album.include) then None
         else
           renderedInclude(file, next)
@@ -186,8 +184,8 @@ object Album:
     to: (LocalDate, String),
     fromPath: String
   ): Seq[(File, Seq[Include.Entry])] =
-    val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
-    val loaded: Seq[Loaded] = Archive.scan(originals).albums
+    val universe: Map[LocalDate, Set[String]] = planningUniverse(originals)
+    val loaded: Seq[Loaded] = planningAlbums(originals)
     val outside: Seq[String] =
       loaded.flatMap: one =>
         one.album.span match
@@ -224,25 +222,62 @@ object Album:
                   to,
                   universe
                 )
-              Some(one.file -> spliceKeepingFixed(one.album.include, rewrite, rewritten))
+              val rewriteSet: Set[Include.Entry] = rewrite.toSet
+              val (prefix, tail) = one.album.include.span(entry => !rewriteSet.contains(entry))
+              val rest: Seq[Include.Entry] = tail.drop(1).filterNot(rewriteSet.contains)
+              Some(one.file -> (prefix ++ rewritten ++ rest))
     edits.foreach((file, include) => renderedInclude(file, include))
     edits
 
-  private def spliceKeepingFixed(
-    include: Seq[Include.Entry],
-    rewrite: Seq[Include.Entry],
-    rewritten: Seq[Include.Entry]
-  ): Seq[Include.Entry] =
-    val rewriteSet: Set[Include.Entry] = rewrite.toSet
-    val (_, spliced) =
-      include.foldLeft((false, Seq.empty[Include.Entry])):
-        case ((true, acc), entry) if rewriteSet.contains(entry) =>
-          (true, acc)
-        case ((false, acc), entry) if rewriteSet.contains(entry) =>
-          (true, acc ++ rewritten)
-        case ((inserted, acc), entry) =>
-          (inserted, acc :+ entry)
-    spliced
+  // Pictures.group(Leave) prints WRONG NAME into this command and throws on a stray file.
+  // grouped does not enact. A non-picture is dropped so one unrelated day cannot fail the move.
+  private def planningUniverse(originals: File): Map[LocalDate, Set[String]] =
+    def accepted(file: File): Boolean =
+      if file.getName.startsWith(".") then false
+      else
+        val (stem, extension) = Files.nameAndExtension(file)
+        extension match
+          case None =>
+            false
+          case Some("toml") if !stem.headOption.exists(_.isDigit) =>
+            false
+          case Some(raw) =>
+            val lower: String = raw.toLowerCase(java.util.Locale.ROOT)
+            val corrected: String =
+              if raw != lower && Extension.all.exists(_.name == lower) then lower else raw
+            Extension.all.exists(_.name == corrected) || corrected == Metadata.extension
+    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(Map.empty[LocalDate, Set[String]]):
+      (universe, yearDir) =>
+        val year: Int = yearDir.getName.toInt
+        childDirectories(yearDir).filter(dir => isMonth(dir.getName)).foldLeft(universe):
+          (universe, monthDir) =>
+            val month: Int = monthDir.getName.toInt
+            childDirectories(monthDir).filter(dir => isDay(dir.getName)).foldLeft(universe):
+              (universe, dayDir) =>
+                val stems: Set[String] =
+                  Pictures.grouped(Files.listFiles(dayDir).filter(accepted)).map(_._1).toSet
+                if stems.isEmpty then universe
+                else universe.updated(LocalDate.of(year, month, dayDir.getName.toInt), stems)
+
+  // Album files only. Archive.scan also lists pictures with NameMode.Leave.
+  private def planningAlbums(originals: File): Seq[Loaded] =
+    def albumsIn(directory: File, skipDigitToml: Boolean): Seq[Loaded] =
+      children(directory).filter(_.isFile).filter: file =>
+        val (stem, _) = Files.nameAndExtension(file)
+        file.getName.endsWith(".toml") && !(skipDigitToml && stem.headOption.exists(_.isDigit))
+      .sortBy(_.getName)
+      .map(file => Loaded(file, read(originals, file)))
+    val curated: Seq[Loaded] = albumsIn(originals, skipDigitToml = false)
+    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(curated):
+      (albums, yearDir) =>
+        children(yearDir).filter(file => file.isFile && file.getName.endsWith(".toml")).foreach: file =>
+          throw IllegalArgumentException(s"$file: album files do not live in a year directory")
+        childDirectories(yearDir).filter(dir => isMonth(dir.getName)).foldLeft(albums):
+          (albums, monthDir) =>
+            val withMonth: Seq[Loaded] = albums ++ albumsIn(monthDir, skipDigitToml = false)
+            childDirectories(monthDir).filter(dir => isDay(dir.getName)).foldLeft(withMonth):
+              (albums, dayDir) =>
+                albums ++ albumsIn(dayDir, skipDigitToml = true)
 
   def picturePath(path: String): Option[(LocalDate, String)] =
     path.split('/').filter(_.nonEmpty).toSeq match
@@ -563,6 +598,16 @@ object Album:
 
   private def isNumber(name: String, length: Int): Boolean =
     name.length == length && name.forall(_.isDigit)
+
+  private def isMonth(name: String): Boolean = isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 12
+
+  private def isDay(name: String): Boolean = isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 31
+
+  private def childDirectories(directory: File): Seq[File] =
+    children(directory).filter(_.isDirectory).sortBy(_.getName)
+
+  private def children(directory: File): Seq[File] =
+    Option(directory.listFiles).map(_.toSeq).getOrElse(Seq.empty)
 
   private def includeLines(include: Seq[Include.Entry]): Seq[String] =
     Seq("include = [") ++ include.map(entry => s"  ${quoteInclude(Include.render(entry))},") ++ Seq("]")

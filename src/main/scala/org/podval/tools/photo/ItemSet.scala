@@ -52,9 +52,9 @@ final case class ItemSet(dryRun: Boolean, property: String, picture: String) ext
 
   private def movePicture(parsed: Picture, fromPath: String, toDay: LocalDate, updated: Metadata): String =
     val archive: File = parsed.root.configuration.archive
-    val fromPair: (LocalDate, String) =
-      Album.picturePath(fromPath).getOrElse(throw IllegalArgumentException("not a date-tree path"))
-    val stem: String = fromPair._2
+    val fromDay: Day = parsed.parent.day.getOrElse(throw IllegalArgumentException("not a date-tree path"))
+    val stem: String = parsed.name
+    val fromPair: (LocalDate, String) = (fromDay.date, stem)
     val destDay: Day = parsed.root.year(toDay.getYear).month(toDay.getMonthValue).day(toDay.getDayOfMonth)
     val toPath: String = s"${Album.relative(archive, destDay.directory)}/$stem"
     val extensions: Seq[String] = parsed.extensions.toSeq.map(_.name).sorted
@@ -64,7 +64,7 @@ final case class ItemSet(dryRun: Boolean, property: String, picture: String) ext
     if taken then throw IllegalArgumentException(s"destination exists: $toPath")
     val toPair: (LocalDate, String) = (toDay, stem)
     Album.planDated(archive, fromPair, toPair, fromPath)
-    Album.planCurated(archive, fromPath, toPath)
+    Album.planCurated(archive, fromPair, toPair)
     Transcript.println(s"moving $parsed to $destDay")
     extensions.foreach: ext =>
       Transcript.println(s"moving ${parsed.file(ext)} to ${File(destDay.directory, s"$stem.$ext")}")
@@ -73,7 +73,7 @@ final case class ItemSet(dryRun: Boolean, property: String, picture: String) ext
     if !dryRun then
       // The preflight entries are not spliced. Recompute under the lock, then putInclude.
       Album.withWriteLock:
-        val curated = Album.planCurated(archive, fromPath, toPath)
+        val curated = Album.planCurated(archive, fromPair, toPair)
         val dated = Album.planDated(archive, fromPair, toPair, fromPath)
         curated.foreach((file, include) => Album.putInclude(file, include))
         dated.foreach((file, include) => Album.putInclude(file, include))
