@@ -1,9 +1,10 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.time.LocalDate
+import java.nio.file.FileAlreadyExistsException
+import java.time.{LocalDate, YearMonth}
 
-private object AlbumCommand:
+private[photo] object AlbumCommand:
   def load(originals: File, title: String): (File, Album) =
     Title.parse(title) match
       case None =>
@@ -24,6 +25,31 @@ private object AlbumCommand:
   def same(left: Seq[Include.Entry], right: Seq[Include.Entry]): Boolean =
     left.map(Include.render) == right.map(Include.render)
 
+  // Include.add keeps only pairs on the hit day. A multi-day line would lose its other days.
+  def addCovering(
+    current: Seq[Include.Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    scanned: Map[LocalDate, Set[String]]
+  ): Seq[Include.Entry] =
+    val widened: Map[LocalDate, Set[String]] =
+      scanned.updated(pair._1, scanned.getOrElse(pair._1, Set.empty) + pair._2)
+    def covers(entry: Include.Entry): Boolean =
+      Include.expand(albumSpan, entry, widened).exists(item => item._1.equals(pair._1))
+    val (prefix, tail) = current.span(entry => !covers(entry))
+    val (hit, kept) = tail.partition(covers)
+    val pairs: Set[(LocalDate, String)] =
+      hit.flatMap(entry => Include.expand(albumSpan, entry, widened)).toSet + pair
+    val first: Seq[Include.Entry] = Include.compress(albumSpan, pairs, widened)
+    def isAll(entry: Include.Entry): Boolean = entry match
+      case Include.Entry.All(_) => true
+      case Include.Entry.Dates(_, _, _) => false
+    val touched: Seq[Include.Entry] =
+      if (prefix.nonEmpty || kept.nonEmpty) && first.exists(isAll) then
+        Include.compress(None, pairs, widened)
+      else first
+    prefix ++ touched ++ kept
+
   def edit(
     include: Seq[Include.Entry],
     span: Option[Title.Span],
@@ -31,31 +57,6 @@ private object AlbumCommand:
     pictures: Seq[Picture],
     exclude: Boolean
   ): (Seq[Include.Entry], Seq[String]) =
-    // Include.add keeps only pairs on the hit day. A multi-day line would lose its other days.
-    def addCovering(
-      current: Seq[Include.Entry],
-      albumSpan: Option[Title.Span],
-      pair: (LocalDate, String),
-      scanned: Map[LocalDate, Set[String]]
-    ): Seq[Include.Entry] =
-      val widened: Map[LocalDate, Set[String]] =
-        scanned.updated(pair._1, scanned.getOrElse(pair._1, Set.empty) + pair._2)
-      def covers(entry: Include.Entry): Boolean =
-        Include.expand(albumSpan, entry, widened).exists(item => item._1.equals(pair._1))
-      val (prefix, tail) = current.span(entry => !covers(entry))
-      val (hit, kept) = tail.partition(covers)
-      val pairs: Set[(LocalDate, String)] =
-        hit.flatMap(entry => Include.expand(albumSpan, entry, widened)).toSet + pair
-      val first: Seq[Include.Entry] = Include.compress(albumSpan, pairs, widened)
-      def isAll(entry: Include.Entry): Boolean = entry match
-        case Include.Entry.All(_) => true
-        case Include.Entry.Dates(_, _, _) => false
-      val touched: Seq[Include.Entry] =
-        if (prefix.nonEmpty || kept.nonEmpty) && first.exists(isAll) then
-          Include.compress(None, pairs, widened)
-        else first
-      prefix ++ touched ++ kept
-
     pictures.foldLeft((include, Seq.empty[String])):
       case ((current, changed), picture) =>
         val day: LocalDate = picture.parent.day.map(_.date).getOrElse(
@@ -307,3 +308,116 @@ final case class AlbumEdit(
         "include" -> AlbumCommand.strings(shown.map(Include.logical)),
         "pictures" -> AlbumCommand.strings(paths)
       ))
+
+final case class AlbumMerge(dryRun: Boolean, first: String, second: String) extends Operation:
+  override def execute(session: Session): (Session, Result) =
+    var produced: Json = Json.Null
+    Operation.run(session, produced):
+      val originals: File = session.root.configuration.archive
+      val (fileA, albumA) = AlbumCommand.load(originals, first)
+      val (fileB, albumB) = AlbumCommand.load(originals, second)
+      val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+      val plan: Plan = planOf(originals, fileA, albumA, fileB, albumB, universe)
+      Album.renderedInclude(plan.earlierFile, plan.include)
+      if !dryRun then
+        // Web.toggle can rewrite include before this lock is taken.
+        Album.withWriteLock:
+          val freshA: Album = Album.read(originals, fileA)
+          val freshB: Album = Album.read(originals, fileB)
+          val again: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+          val fresh: Plan = planOf(originals, fileA, freshA, fileB, freshB, again)
+          Album.renderedInclude(fresh.earlierFile, fresh.include)
+          Files.mkDirs(fresh.resultFile.getParentFile)
+          if DirectoryIndex.key(fresh.earlierFile) != DirectoryIndex.key(fresh.resultFile) then
+            try Files.move(fresh.earlierFile, fresh.resultFile)
+            catch case _: FileAlreadyExistsException =>
+              throw IllegalArgumentException(s"album already exists: ${fresh.resultTitle}")
+          Album.putInclude(fresh.resultFile, fresh.include)
+          Files.delete(fresh.laterFile)
+      plan.lines.foreach(Transcript.println)
+      if !dryRun then Files.deleteEmptyDirectories(plan.laterFile.getParentFile, originals)
+      produced = Json.Obj(Seq(
+        "dryRun" -> Json.Bool(dryRun),
+        "title" -> Json.Str(plan.resultTitle),
+        "from" -> AlbumCommand.strings(Seq(plan.earlierTitle, plan.laterTitle))
+      ))
+
+  private final case class Plan(
+    earlierFile: File,
+    laterFile: File,
+    resultFile: File,
+    resultTitle: String,
+    earlierTitle: String,
+    laterTitle: String,
+    include: Seq[Include.Entry],
+    lines: Seq[String]
+  )
+
+  private def planOf(
+    originals: File,
+    fileA: File,
+    albumA: Album,
+    fileB: File,
+    albumB: Album,
+    universe: Map[LocalDate, Set[String]]
+  ): Plan =
+    def bounds(album: Album): (YearMonth, YearMonth) = album.span match
+      case Some(span) if span.grain.equals(Title.Grain.Month) =>
+        YearMonth.from(span.start) -> YearMonth.from(span.end)
+      case _ =>
+        throw IllegalArgumentException(s"not a month album: ${album.title}")
+    val (a0, a1) = bounds(albumA)
+    val (b0, b1) = bounds(albumB)
+    if !a1.isBefore(b0) && !b1.isBefore(a0) then
+      throw IllegalArgumentException(s"spans overlap: ${albumA.title} and ${albumB.title}")
+    if !a1.plusMonths(1).equals(b0) && !b1.plusMonths(1).equals(a0) then
+      throw IllegalArgumentException(s"spans do not meet: ${albumA.title} and ${albumB.title}")
+    if albumA.external && albumB.external then
+      throw IllegalArgumentException(s"refusing external album ${albumA.title} and ${albumB.title}")
+    else if albumA.external then
+      throw IllegalArgumentException(s"refusing external album ${albumA.title}")
+    else if albumB.external then
+      throw IllegalArgumentException(s"refusing external album ${albumB.title}")
+    val nameA: Option[String] = Title.parse(albumA.title).flatMap(_.name)
+    val nameB: Option[String] = Title.parse(albumB.title).flatMap(_.name)
+    if nameA != nameB then
+      throw IllegalArgumentException(s"name mismatch: ${albumA.title} and ${albumB.title}")
+    val aEarlier: Boolean = !albumA.span.get.start.isAfter(albumB.span.get.start)
+    val (earlierFile, earlier, laterFile, later) =
+      if aEarlier then (fileA, albumA, fileB, albumB) else (fileB, albumB, fileA, albumA)
+    val resultSpan: Title.Span = Title.Span(earlier.span.get.start, later.span.get.end, Title.Grain.Month)
+    val resultParsed: Title.Parsed = Title.Parsed(Some(resultSpan), nameA)
+    val resultFile: File = Title.file(originals, resultParsed)
+    if resultFile.exists && DirectoryIndex.key(resultFile) != DirectoryIndex.key(earlierFile) then
+      throw IllegalArgumentException(s"album already exists: ${resultParsed.title}")
+    if later.googleAlbumId.nonEmpty || later.googleTitle.nonEmpty ||
+      later.publishedTitle.nonEmpty || later.owner.exists(_.nonEmpty) then
+      throw IllegalArgumentException(s"refusing album ${later.title} with google metadata")
+    def expanded(album: Album): Set[(LocalDate, String)] =
+      album.include.flatMap(entry => Include.expand(album.span, entry, universe)).toSet
+    val include: Seq[Include.Entry] =
+      Include.compress(Some(resultSpan), expanded(earlier) ++ expanded(later), universe, allowAll = true)
+    val moveLine: Option[String] =
+      Option.when(DirectoryIndex.key(earlierFile) != DirectoryIndex.key(resultFile)):
+        s"move ${Album.relative(originals, earlierFile)} ${Album.relative(originals, resultFile)}"
+    val removed: Seq[File] = AlbumCommand.removedDirectories(
+      laterFile.getParentFile,
+      originals,
+      laterFile,
+      Some(resultFile.getParentFile)
+    )
+    val lines: Seq[String] =
+      Seq(s"merge ${earlier.title} and ${later.title} into ${resultParsed.title}") ++
+        moveLine.toSeq ++
+        Seq(s"delete ${Album.relative(originals, laterFile)}") ++
+        removed.map(dir => s"rmdir ${Album.relative(originals, dir)}")
+    Plan(
+      earlierFile,
+      laterFile,
+      resultFile,
+      resultParsed.title,
+      earlier.title,
+      later.title,
+      include,
+      lines
+    )

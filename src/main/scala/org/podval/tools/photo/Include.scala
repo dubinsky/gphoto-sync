@@ -75,12 +75,14 @@ object Include:
 
   // Claimed pairs against the scanned universe. `all` is legal only when albumSpan is defined.
   // Equal logical length keeps the per-day lines. Newlines are not part of either length.
+  // allowAll false skips both all candidates even when the claimed set is the whole span.
   def compress(
     albumSpan: Option[Title.Span],
     claimed: Set[(LocalDate, String)],
-    universe: Map[LocalDate, Set[String]]
+    universe: Map[LocalDate, Set[String]],
+    allowAll: Boolean = true
   ): Seq[Entry] =
-    val prepared: Prepared = prepare(albumSpan, claimed, universe)
+    val prepared: Prepared = prepare(albumSpan, claimed, universe, allowAll)
     prepared.all.map(entry => Seq(entry))
       .orElse:
         prepared.allExcept
@@ -93,11 +95,13 @@ object Include:
   private def prepare(
     albumSpan: Option[Title.Span],
     claimed: Set[(LocalDate, String)],
-    universe: Map[LocalDate, Set[String]]
+    universe: Map[LocalDate, Set[String]],
+    allowAll: Boolean = true
   ): Prepared =
     val widened: Map[LocalDate, Set[String]] = withClaimed(universe, claimed)
     val perDay: Seq[Entry] = perDayLines(claimed, widened)
-    albumSpan match
+    if !allowAll then Prepared(perDay, None, None)
+    else albumSpan match
       case None =>
         Prepared(perDay, None, None)
       case Some(span) =>

@@ -344,6 +344,240 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
 
+  "item month" should "create YYYY/MM with a per-day line and leave a curated album" in :
+    withOriginals: archive =>
+      val bytes: Array[Byte] = jpegBytes
+      picture(File(archive, "2010/07/04"), "2412.jpg", bytes)
+      val dayBody: String = "external = true\ninclude = [\n  'all',\n]\n"
+      val dayFile: File = write(archive, "2010/07/04/to-18 Cape Cod.toml", dayBody)
+      val namedBody: String = "include = [\n  'all',\n]\n"
+      val namedFile: File = write(archive, "2010/07/Cape Cod.toml", namedBody)
+      val bestBody: String = "include = [\n  '2010/07/04 2412',\n]\n"
+      val bestFile: File = write(archive, "Best.toml", bestBody)
+      val excluded: Seq[(String, String)] = Seq(
+        "2010/07/04-18/Cape Cod" -> "2010/07/04/2412",
+        "2010/07/Cape Cod" -> "2010/07/04/2412"
+      )
+      val included: Seq[(String, String)] = Seq("2010/07" -> "2010/07/04/2412")
+      val expected: String =
+        """create 2010/07
+          |exclude 2010/07/04-18/Cape Cod 2010/07/04/2412
+          |exclude 2010/07/Cape Cod 2010/07/04/2412
+          |include 2010/07 2010/07/04/2412
+          |""".stripMargin
+      val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
+      val (dryText, dryValue) = ok(archive, "item", "month", "--dry-run", "2010/07/04/2412")
+      dryText shouldBe expected
+      dryValue shouldBe placeValue(true, Seq("2010/07"), excluded, included)
+      snapshot(archive) shouldBe before
+      File(archive, "2010/07/album.toml").exists shouldBe false
+      val (text, value) = ok(archive, "item", "month", "2010/07/04/2412")
+      text shouldBe expected
+      value shouldBe placeValue(false, Seq("2010/07"), excluded, included)
+      val created: Album = Album.read(archive, File(archive, "2010/07/album.toml"))
+      created.title shouldBe "2010/07"
+      created.external shouldBe false
+      created.googleAlbumId shouldBe ""
+      created.include.map(Include.logical) shouldBe Seq("2010/07/04 2412")
+      val day: Album = Album.read(archive, dayFile)
+      day.external shouldBe true
+      day.title shouldBe "2010/07/04-18/Cape Cod"
+      day.include.map(Include.logical) shouldBe Seq.empty[String]
+      Album.read(archive, namedFile).include.map(Include.logical) shouldBe Seq.empty[String]
+      Files.read(bestFile) shouldBe bestBody
+      noRequests(archive)
+
+  it should "print the earlier month before the later one" in :
+    withOriginals: archive =>
+      val bytes: Array[Byte] = jpegBytes
+      picture(File(archive, "2010/08/02"), "1000.jpg", bytes)
+      picture(File(archive, "2010/07/04"), "2412.jpg", bytes)
+      val (text, value) = ok(archive, "item", "month", "2010/08/02/1000", "2010/07/04/2412")
+      text shouldBe
+        """create 2010/07
+          |include 2010/07 2010/07/04/2412
+          |create 2010/08
+          |include 2010/08 2010/08/02/1000
+          |""".stripMargin
+      value shouldBe placeValue(
+        false,
+        Seq("2010/07", "2010/08"),
+        Seq.empty,
+        Seq("2010/07" -> "2010/07/04/2412", "2010/08" -> "2010/08/02/1000")
+      )
+      Album.read(archive, File(archive, "2010/07/album.toml")).include.map(Include.logical) shouldBe
+        Seq("2010/07/04 2412")
+      Album.read(archive, File(archive, "2010/08/album.toml")).include.map(Include.logical) shouldBe
+        Seq("2010/08/02 1000")
+      noRequests(archive)
+
+  it should "splice an existing external month to all when the picture completes it" in :
+    withOriginals: archive =>
+      picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+      val file: File = write(archive, "2010/07/album.toml", "external = true\ninclude = []\n")
+      val (text, value) = ok(archive, "item", "month", "2010/07/04/2412")
+      text shouldBe "include 2010/07 2010/07/04/2412\n"
+      text should not include ("create")
+      value shouldBe placeValue(false, Seq.empty, Seq.empty, Seq("2010/07" -> "2010/07/04/2412"))
+      val album: Album = Album.read(archive, file)
+      album.external shouldBe true
+      album.include.map(Include.logical) shouldBe Seq("all")
+      noRequests(archive)
+
+  it should "leave an already claimed picture with an empty transcript" in :
+    withOriginals: archive =>
+      picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+      val body: String = "include = [\n  'all',\n]\n"
+      val file: File = write(archive, "2010/07/album.toml", body)
+      val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
+      val (text, value) = ok(archive, "item", "month", "2010/07/04/2412")
+      text shouldBe ""
+      value shouldBe placeValue(false, Seq.empty, Seq.empty, Seq.empty)
+      snapshot(archive) shouldBe before
+      Files.read(file) shouldBe body
+
+  it should "write nothing when a picture or an album file cannot be applied" in :
+    withClue("repeated"):
+      withOriginals: archive =>
+        picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+        val body: String = "include = [\n  'all',\n]\n"
+        val file: File = write(archive, "2010/07/04/album.toml", body)
+        usage(archive, "item", "month", "2010/07/04/2412", "2010/07/04/2412") shouldBe
+          "repeated picture 2010/07/04/2412"
+        Files.read(file) shouldBe body
+        File(archive, "2010/07/album.toml").exists shouldBe false
+    withClue("include splicer"):
+      withOriginals: archive =>
+        picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+        val body: String = "include = [\n  'all', ]\n"
+        val file: File = write(archive, "2010/07/04/album.toml", body)
+        usage(archive, "item", "month", "2010/07/04/2412") should include (
+          "include array does not end on its own line"
+        )
+        Files.read(file) shouldBe body
+        File(archive, "2010/07/album.toml").exists shouldBe false
+    withClue("unreadable"):
+      withOriginals: archive =>
+        picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+        val body: String = "nope = true\n"
+        val file: File = write(archive, "2010/07/04/album.toml", body)
+        usage(archive, "item", "month", "2010/07/04/2412") should include ("unknown key 'nope'")
+        Files.read(file) shouldBe body
+        File(archive, "2010/07/album.toml").exists shouldBe false
+
+  "item into" should "add to a curated album and leave the span album" in :
+    withOriginals: archive =>
+      picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+      val monthBody: String = "include = [\n  'all',\n]\n"
+      val month: File = write(archive, "2010/07/album.toml", monthBody)
+      val best: File = write(archive, "Best.toml", "")
+      val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
+      val (dryText, dryValue) = ok(archive, "item", "into", "--dry-run", "Best", "2010/07/04/2412")
+      dryText shouldBe "include Best 2010/07/04/2412\n"
+      dryValue shouldBe placeValue(true, Seq.empty, Seq.empty, Seq("Best" -> "2010/07/04/2412"))
+      snapshot(archive) shouldBe before
+      val (text, value) = ok(archive, "item", "into", "Best", "2010/07/04/2412")
+      text shouldBe "include Best 2010/07/04/2412\n"
+      value shouldBe placeValue(false, Seq.empty, Seq.empty, Seq("Best" -> "2010/07/04/2412"))
+      Files.read(month) shouldBe monthBody
+      Album.read(archive, best).include.map(Include.logical) shouldBe Seq("2010/07/04 2412")
+      noRequests(archive)
+
+  it should "drop other span albums in title order and keep argv order" in :
+    withOriginals: archive =>
+      val bytes: Array[Byte] = jpegBytes
+      picture(File(archive, "2010/07/05"), "1000.jpg", bytes)
+      picture(File(archive, "2010/07/04"), "2412.jpg", bytes)
+      val dest: File = write(archive, "2010/07/album.toml", "include = []\n")
+      val day: File = write(archive, "2010/07/04/album.toml", "include = [\n  'all',\n]\n")
+      val cape: File = write(archive, "2010/07/04/to-18 Cape Cod.toml", "include = [\n  'all',\n]\n")
+      val bestBody: String = "include = [\n  '2010/07/04 2412',\n]\n"
+      val best: File = write(archive, "Best.toml", bestBody)
+      val excluded: Seq[(String, String)] = Seq(
+        "2010/07/04-18/Cape Cod" -> "2010/07/05/1000",
+        "2010/07/04" -> "2010/07/04/2412",
+        "2010/07/04-18/Cape Cod" -> "2010/07/04/2412"
+      )
+      val included: Seq[(String, String)] = Seq(
+        "2010/07" -> "2010/07/05/1000",
+        "2010/07" -> "2010/07/04/2412"
+      )
+      val expected: String =
+        """exclude 2010/07/04-18/Cape Cod 2010/07/05/1000
+          |include 2010/07 2010/07/05/1000
+          |exclude 2010/07/04 2010/07/04/2412
+          |exclude 2010/07/04-18/Cape Cod 2010/07/04/2412
+          |include 2010/07 2010/07/04/2412
+          |""".stripMargin
+      val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
+      val (dryText, dryValue) = ok(
+        archive, "item", "into", "--dry-run", "2010/07", "2010/07/05/1000", "2010/07/04/2412"
+      )
+      dryText shouldBe expected
+      dryValue shouldBe placeValue(true, Seq.empty, excluded, included)
+      snapshot(archive) shouldBe before
+      val (text, value) = ok(archive, "item", "into", "2010/07", "2010/07/05/1000", "2010/07/04/2412")
+      text shouldBe expected
+      value shouldBe placeValue(false, Seq.empty, excluded, included)
+      val month: Album = Album.read(archive, dest)
+      month.claims(LocalDate.parse("2010-07-05"), "1000") shouldBe true
+      month.claims(LocalDate.parse("2010-07-04"), "2412") shouldBe true
+      Album.read(archive, day).claims(LocalDate.parse("2010-07-04"), "2412") shouldBe false
+      val span: Album = Album.read(archive, cape)
+      span.claims(LocalDate.parse("2010-07-05"), "1000") shouldBe false
+      span.claims(LocalDate.parse("2010-07-04"), "2412") shouldBe false
+      Files.read(best) shouldBe bestBody
+      noRequests(archive)
+
+  it should "refuse a picture outside the span and write nothing" in :
+    withOriginals: archive =>
+      picture(File(archive, "2010/08/01"), "2412.jpg", jpegBytes)
+      val body: String = "include = [\n  'all',\n]\n"
+      val file: File = write(archive, "2010/07/album.toml", body)
+      usage(archive, "item", "into", "2010/07", "2010/08/01/2412") shouldBe "2010/08/01/2412 is outside 2010/07"
+      Files.read(file) shouldBe body
+
+  it should "refuse a repeated picture and write nothing" in :
+    withOriginals: archive =>
+      picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+      val body: String = "include = []\n"
+      val file: File = write(archive, "2010/07/album.toml", body)
+      usage(archive, "item", "into", "2010/07", "2010/07/04/2412", "2010/07/04/2412") shouldBe
+        "repeated picture 2010/07/04/2412"
+      Files.read(file) shouldBe body
+
+  it should "print nothing when the album already claims the picture" in :
+    withOriginals: archive =>
+      picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+      val body: String = "include = [\n  'all',\n]\n"
+      val file: File = write(archive, "2010/07/album.toml", body)
+      val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
+      val (text, value) = ok(archive, "item", "into", "2010/07", "2010/07/04/2412")
+      text shouldBe ""
+      value shouldBe placeValue(false, Seq.empty, Seq.empty, Seq.empty)
+      snapshot(archive) shouldBe before
+      Files.read(file) shouldBe body
+
+  private def placeValue(
+    dryRun: Boolean,
+    created: Seq[String],
+    excluded: Seq[(String, String)],
+    included: Seq[(String, String)]
+  ): Json =
+    def pairs(values: Seq[(String, String)]): Json = Json.Arr(values.map: (title, path) =>
+      Json.Obj(Seq("title" -> Json.Str(title), "path" -> Json.Str(path)))
+    )
+    Json.Obj(Seq(
+      "dryRun" -> Json.Bool(dryRun),
+      "created" -> Json.Arr(created.map(Json.Str(_))),
+      "excluded" -> pairs(excluded),
+      "included" -> pairs(included)
+    ))
+
+  private def noRequests(archive: File): Unit =
+    File(archive, "requests.tsv").exists shouldBe false
+    File(archive, ".gphoto-sync/requests.tsv").exists shouldBe false
+
   private def setValue(dryRun: Boolean, path: String, property: String, stored: Json, movedTo: Json): Json =
     Json.Obj(Seq(
       "dryRun" -> Json.Bool(dryRun),

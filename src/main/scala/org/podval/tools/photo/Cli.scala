@@ -37,6 +37,9 @@ object Cli:
   private[photo] final case class AlbumMvArgs(dryRun: Boolean, from: String, to: String) extends Parsed
   private[photo] final case class AlbumIncludeArgs(dryRun: Boolean, title: String, pictures: Seq[String]) extends Parsed
   private[photo] final case class AlbumExcludeArgs(dryRun: Boolean, title: String, pictures: Seq[String]) extends Parsed
+  private[photo] final case class AlbumMergeArgs(dryRun: Boolean, first: String, second: String) extends Parsed
+  private[photo] final case class ItemMonthArgs(dryRun: Boolean, pictures: Seq[String]) extends Parsed
+  private[photo] final case class ItemIntoArgs(dryRun: Boolean, title: String, pictures: Seq[String]) extends Parsed
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class RefreshArgs(
@@ -369,6 +372,8 @@ object Cli:
     case _: Ls => false
     case _: ItemShowArgs => false
     case _: ItemSetArgs => false
+    case _: ItemMonthArgs => false
+    case _: ItemIntoArgs => false
     case _: AlbumLsArgs => false
     case _: AlbumShowArgs => false
     case _: AlbumClaimsArgs => false
@@ -377,6 +382,7 @@ object Cli:
     case _: AlbumMvArgs => false
     case _: AlbumIncludeArgs => false
     case _: AlbumExcludeArgs => false
+    case _: AlbumMergeArgs => false
     case _: PublishArgs => false
     case _: SyncArgs => false
     case _: RepairArgs => false
@@ -678,6 +684,10 @@ object Cli:
       ItemShow(picture)
     case ItemSetArgs(dryRun, property, picture) =>
       ItemSet(dryRun, property, picture)
+    case ItemMonthArgs(dryRun, pictures) =>
+      ItemMonth(dryRun, pictures)
+    case ItemIntoArgs(dryRun, title, pictures) =>
+      ItemInto(dryRun, title, pictures)
     case AlbumLsArgs(path) =>
       AlbumLs(path)
     case AlbumShowArgs(title) =>
@@ -694,6 +704,8 @@ object Cli:
       AlbumEdit(dryRun, exclude = false, title, pictures)
     case AlbumExcludeArgs(dryRun, title, pictures) =>
       AlbumEdit(dryRun, exclude = true, title, pictures)
+    case AlbumMergeArgs(dryRun, first, second) =>
+      AlbumMerge(dryRun, first, second)
     case PublishArgs(path, recursive, dryRun) =>
       Publish(path, recursive = recursive, dryRun = dryRun)
     case SyncArgs(path, recursive, dryRun) =>
@@ -788,6 +800,10 @@ object Cli:
       case AlbumIncludeArgs(_, _, pictures) if pictures.isEmpty =>
         Usage("missing picture")
       case AlbumExcludeArgs(_, _, pictures) if pictures.isEmpty =>
+        Usage("missing picture")
+      case ItemMonthArgs(_, pictures) if pictures.isEmpty =>
+        Usage("missing picture")
+      case ItemIntoArgs(_, _, pictures) if pictures.isEmpty =>
         Usage("missing picture")
       case other =>
         Run(other)
@@ -1152,6 +1168,9 @@ object Cli:
     Flag("dry-run", None, BooleanKind, "print those actions and write nothing")
   )
 
+  private val albumDryRun: Flag =
+    Flag("dry-run", None, BooleanKind, "print the actions and write nothing")
+
   private val itemCommands: List[Command] = List(
     Command(
       name = "show",
@@ -1166,11 +1185,22 @@ object Cli:
       positionals = List(Required("property"), Required("picture", path = true)),
       flags = List(Flag("dry-run", None, BooleanKind, "print the actions and write nothing")),
       build = (values, args) => ItemSetArgs(bool(values, "dry-run"), args.head, args.drop(1).head)
+    ),
+    Command(
+      name = "month",
+      help = "exclude the picture from every other dated album that claims it, then include it in YYYY/MM, creating that album when absent",
+      positionals = List(Rest("picture", path = true)),
+      flags = List(albumDryRun),
+      build = (values, args) => ItemMonthArgs(bool(values, "dry-run"), args)
+    ),
+    Command(
+      name = "into",
+      help = "include the picture in the album; when that album has a span, also exclude it from every other span album",
+      positionals = List(Required("title"), Rest("picture", path = true)),
+      flags = List(albumDryRun),
+      build = (values, args) => ItemIntoArgs(bool(values, "dry-run"), args.head, args.drop(1))
     )
   )
-
-  private val albumDryRun: Flag =
-    Flag("dry-run", None, BooleanKind, "print the actions and write nothing")
 
   private val albumCommands: List[Command] = List(
     Command(
@@ -1232,6 +1262,13 @@ object Cli:
       positionals = List(Required("title"), Rest("picture", path = true)),
       flags = List(albumDryRun),
       build = (values, args) => AlbumExcludeArgs(bool(values, "dry-run"), args.head, args.drop(1))
+    ),
+    Command(
+      name = "merge",
+      help = "merge two adjoining month albums",
+      positionals = List(Required("first"), Required("second")),
+      flags = List(albumDryRun),
+      build = (values, args) => AlbumMergeArgs(bool(values, "dry-run"), args.head, args.drop(1).head)
     )
   )
 

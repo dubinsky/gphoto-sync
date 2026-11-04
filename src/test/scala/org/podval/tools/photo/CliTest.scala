@@ -103,8 +103,14 @@ class CliTest extends AnyFlatSpec, Matchers:
       Cli.Run(Cli.ItemSetArgs(dryRun = false, "source=scan", "2010/07/04/2412"))
     Cli.parse(List("item", "show", "2010/07/04/2412")) shouldBe
       Cli.Run(Cli.ItemShowArgs("2010/07/04/2412"))
+    Cli.parse(List("item", "month", "--dry-run", "2010/07/04/2412")) shouldBe
+      Cli.Run(Cli.ItemMonthArgs(dryRun = true, Seq("2010/07/04/2412")))
+    Cli.parse(List("item", "into", "--dry-run", "Best", "2010/07/04/2412")) shouldBe
+      Cli.Run(Cli.ItemIntoArgs(dryRun = true, "Best", Seq("2010/07/04/2412")))
     Cli.inProcessWrite(Cli.ItemShowArgs("2010/07/04/2412")) shouldBe false
     Cli.inProcessWrite(Cli.ItemSetArgs(dryRun = true, "date=", "2010/07/04/2412")) shouldBe false
+    Cli.inProcessWrite(Cli.ItemMonthArgs(dryRun = false, Seq("2010/07/04/2412"))) shouldBe false
+    Cli.inProcessWrite(Cli.ItemIntoArgs(dryRun = true, "Best", Seq("2010/07/04/2412"))) shouldBe false
 
     Cli.parse(List("album", "ls")) shouldBe Cli.Run(Cli.AlbumLsArgs(None))
     Cli.parse(List("album", "ls", "2009")) shouldBe Cli.Run(Cli.AlbumLsArgs(Some("2009")))
@@ -125,6 +131,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       Cli.Run(Cli.AlbumIncludeArgs(dryRun = true, "2010/07", Seq("2010/07/04/2412")))
     Cli.parse(List("album", "exclude", "2010/07", "2010/07/04/2412", "2010/07/05/1000")) shouldBe
       Cli.Run(Cli.AlbumExcludeArgs(dryRun = false, "2010/07", Seq("2010/07/04/2412", "2010/07/05/1000")))
+    Cli.parse(List("album", "merge", "--dry-run", "2010/07", "2010/08")) shouldBe
+      Cli.Run(Cli.AlbumMergeArgs(dryRun = true, "2010/07", "2010/08"))
     Cli.inProcessWrite(Cli.AlbumLsArgs(None)) shouldBe false
     Cli.inProcessWrite(Cli.AlbumShowArgs("Best")) shouldBe false
     Cli.inProcessWrite(Cli.AlbumClaimsArgs(None)) shouldBe false
@@ -133,6 +141,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.inProcessWrite(Cli.AlbumMvArgs(dryRun = false, "2010/07", "2010/08")) shouldBe false
     Cli.inProcessWrite(Cli.AlbumIncludeArgs(dryRun = false, "2010/07", Seq("2010/07/04/2412"))) shouldBe false
     Cli.inProcessWrite(Cli.AlbumExcludeArgs(dryRun = true, "2010/07", Seq("2010/07/04/2412"))) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumMergeArgs(dryRun = true, "2010/07", "2010/08")) shouldBe false
 
     Cli.parse(List("publish")) shouldBe publish(None, recursive = false, dryRun = false)
     Cli.parse(List("publish", "2009")) shouldBe publish(Some("2009"), recursive = false, dryRun = false)
@@ -348,7 +357,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       """item  show or change a picture
         |
         |show  show extensions, sidecar, folder day, assessed civil time, and claiming albums
-        |set  set one sidecar property; date= moves the picture""".stripMargin
+        |set  set one sidecar property; date= moves the picture
+        |month  exclude the picture from every other dated album that claims it, then include it in YYYY/MM, creating that album when absent
+        |into  include the picture in the album; when that album has a span, also exclude it from every other span album""".stripMargin
     helpOf("item", "--help") shouldBe item
     helpOf("item", "-h") shouldBe item
     helpOf("help", "item") shouldBe item
@@ -382,7 +393,8 @@ class CliTest extends AnyFlatSpec, Matchers:
         |rm  delete an album file and leave the pictures
         |mv  change an album title and move its file
         |include  add pictures to one album and recompress include
-        |exclude  remove pictures from one album and recompress include""".stripMargin
+        |exclude  remove pictures from one album and recompress include
+        |merge  merge two adjoining month albums""".stripMargin
     helpOf("album", "--help") shouldBe album
     helpOf("album", "-h") shouldBe album
     helpOf("help", "album") shouldBe album
@@ -775,6 +787,12 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("item", "show") -> "missing picture",
       List("item", "set") -> "missing property",
       List("item", "set", "date=") -> "missing picture",
+      List("item", "month") -> "missing picture",
+      List("item", "into") -> "missing title",
+      List("item", "into", "Best") -> "missing picture",
+      List("item", "month", "2010/07/04/2412", "--dry-run") -> "extra argument '--dry-run'",
+      List("album", "merge", "2010/07") -> "missing second",
+      List("album", "merge", "2010/07", "2010/08", "--dry-run") -> "extra argument '--dry-run'",
       List("item", "show", "--dry-run", "2010/07/04/2412") -> "unknown option '--dry-run'",
       List("item", "set", "date=2010/08/01", "2010/07/04/2412", "--dry-run") -> "extra argument '--dry-run'",
       List("help", "item", "show", "extra") -> "extra argument 'extra'",
@@ -910,6 +928,12 @@ class CliTest extends AnyFlatSpec, Matchers:
       AlbumEdit(dryRun = false, exclude = false, "2010/07", Seq("2010/07/04/2412"))
     Cli.toOperation(Cli.AlbumExcludeArgs(dryRun = true, "Best", Seq("2010/07/04/2412"))) shouldBe
       AlbumEdit(dryRun = true, exclude = true, "Best", Seq("2010/07/04/2412"))
+    Cli.toOperation(Cli.AlbumMergeArgs(dryRun = true, "2010/07", "2010/08")) shouldBe
+      AlbumMerge(dryRun = true, "2010/07", "2010/08")
+    Cli.toOperation(Cli.ItemMonthArgs(dryRun = false, Seq("2010/07/04/2412"))) shouldBe
+      ItemMonth(dryRun = false, Seq("2010/07/04/2412"))
+    Cli.toOperation(Cli.ItemIntoArgs(dryRun = true, "Best", Seq("2010/07/04/2412"))) shouldBe
+      ItemInto(dryRun = true, "Best", Seq("2010/07/04/2412"))
     Cli.toOperation(Cli.PublishArgs(None, recursive = true, dryRun = false)) shouldBe
       Publish(None, recursive = true, dryRun = false)
     Cli.toOperation(Cli.SyncArgs(None, recursive = false, dryRun = true)) shouldBe

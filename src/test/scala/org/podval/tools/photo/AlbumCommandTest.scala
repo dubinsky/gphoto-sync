@@ -419,6 +419,185 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
         ))
       ))
 
+  "album merge" should "keep the earlier file across a year boundary" in :
+    withOriginals: archive =>
+      val body: String =
+        """# keep
+          |google-album-id = "abc"
+          |published-title = "Kept"
+          |include = [
+          |  'all',
+          |]
+          |""".stripMargin
+      val earlier: File = write(archive, "2010/12/album.toml", body)
+      val later: File = write(archive, "2011/01/album.toml", allFile)
+      write(archive, "2010/12/01/2412.jpg", "")
+      File(archive, "2011/02").mkdirs() shouldBe true
+      val expected: String =
+        """merge 2010/12 and 2011/01 into 2010/12-2011/01
+          |move 2010/12/album.toml 2010/12/to-2011-01.toml
+          |delete 2011/01/album.toml
+          |rmdir 2011/01
+          |""".stripMargin
+      val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
+      val (dryText, dryValue) = ok(archive, "album", "merge", "--dry-run", "2011/01", "2010/12")
+      dryText shouldBe expected
+      dryValue shouldBe mergeValue(true, "2010/12-2011/01", "2010/12", "2011/01")
+      snapshot(archive) shouldBe before
+      earlier.isFile shouldBe true
+      later.isFile shouldBe true
+      File(archive, "2010/12/to-2011-01.toml").exists shouldBe false
+      File(archive, "2011/02").isDirectory shouldBe true
+      val (text, value) = ok(archive, "album", "merge", "2011/01", "2010/12")
+      text shouldBe expected
+      value shouldBe mergeValue(false, "2010/12-2011/01", "2010/12", "2011/01")
+      earlier.exists shouldBe false
+      later.exists shouldBe false
+      File(archive, "2011/01").exists shouldBe false
+      File(archive, "2011/02").isDirectory shouldBe true
+      File(archive, "2011").isDirectory shouldBe true
+      File(archive, "2010/12/01/2412.jpg").isFile shouldBe true
+      File(archive, "2010").isDirectory shouldBe true
+      val result: File = File(archive, "2010/12/to-2011-01.toml")
+      val kept: String = Files.read(result)
+      kept should include ("# keep")
+      kept should include ("google-album-id = \"abc\"")
+      kept should include ("published-title = \"Kept\"")
+      val album: Album = Album.read(archive, result)
+      album.title shouldBe "2010/12-2011/01"
+      album.googleAlbumId shouldBe "abc"
+      album.publishedTitle shouldBe "Kept"
+      album.include.map(Include.logical) shouldBe Seq("all")
+      File(archive, "requests.tsv").exists shouldBe false
+      File(archive, ".gphoto-sync/requests.tsv").exists shouldBe false
+
+  it should "reject the first failing check and leave both albums" in :
+    val external: String = "external = true\n" + allFile
+    val google: String = "google-album-id = \"abc\"\n" + allFile
+    withClue("name mismatch"):
+      withOriginals: archive =>
+        val named: File = write(archive, "2010/07/Cape Cod.toml", allFile)
+        val later: File = write(archive, "2010/08/album.toml", allFile)
+        usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/08") shouldBe
+          "name mismatch: 2010/07/Cape Cod and 2010/08"
+        Files.read(named) shouldBe allFile
+        Files.read(later) shouldBe allFile
+    withClue("gap"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/album.toml", allFile)
+        val right: File = write(archive, "2010/09/album.toml", allFile)
+        usage(archive, "album", "merge", "2010/07", "2010/09") shouldBe "spans do not meet: 2010/07 and 2010/09"
+        Files.read(left) shouldBe allFile
+        Files.read(right) shouldBe allFile
+    withClue("one external"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/album.toml", external)
+        val right: File = write(archive, "2010/08/album.toml", allFile)
+        usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe "refusing external album 2010/07"
+        Files.read(left) shouldBe external
+        Files.read(right) shouldBe allFile
+    withClue("both external"):
+      withOriginals: archive =>
+        val first: File = write(archive, "2010/08/album.toml", external)
+        val second: File = write(archive, "2010/07/album.toml", external)
+        usage(archive, "album", "merge", "2010/08", "2010/07") shouldBe
+          "refusing external album 2010/08 and 2010/07"
+        Files.read(first) shouldBe external
+        Files.read(second) shouldBe external
+    withClue("same file"):
+      withOriginals: archive =>
+        val file: File = write(archive, "2010/07/album.toml", google)
+        usage(archive, "album", "merge", "2010/07", "2010/07") shouldBe "spans overlap: 2010/07 and 2010/07"
+        Files.read(file) shouldBe google
+    withClue("result exists"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/album.toml", allFile)
+        val right: File = write(archive, "2010/08/album.toml", allFile)
+        val occupied: File = write(archive, "2010/07/to-08.toml", "kept\n")
+        usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe "album already exists: 2010/07-08"
+        Files.read(left) shouldBe allFile
+        Files.read(right) shouldBe allFile
+        Files.read(occupied) shouldBe "kept\n"
+    withClue("later google"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/album.toml", allFile)
+        val right: File = write(archive, "2010/08/album.toml", google)
+        usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe
+          "refusing album 2010/08 with google metadata"
+        Files.read(left) shouldBe allFile
+        Files.read(right) shouldBe google
+    withClue("day external"):
+      withOriginals: archive =>
+        val day: String = "external = true\ngoogle-album-id = \"abc\"\n" + allFile
+        val left: File = write(archive, "2010/07/04/album.toml", day)
+        val right: File = write(archive, "2010/08/album.toml", allFile)
+        usage(archive, "album", "merge", "2010/07/04", "2010/08") shouldBe "not a month album: 2010/07/04"
+        Files.read(left) shouldBe day
+        Files.read(right) shouldBe allFile
+    withClue("curated"):
+      withOriginals: archive =>
+        val left: File = write(archive, "Best.toml", "")
+        val right: File = write(archive, "2010/07/album.toml", allFile)
+        usage(archive, "album", "merge", "Best", "2010/07") shouldBe "not a month album: Best"
+        Files.read(left) shouldBe ""
+        Files.read(right) shouldBe allFile
+    withClue("overlap before external"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/Cape Cod.toml", external)
+        val right: File = write(archive, "2010/07/to-08.toml", external)
+        usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/07-08") shouldBe
+          "spans overlap: 2010/07/Cape Cod and 2010/07-08"
+        Files.read(left) shouldBe external
+        Files.read(right) shouldBe external
+    withClue("gap before name"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/Cape Cod.toml", allFile)
+        val right: File = write(archive, "2010/09/album.toml", allFile)
+        usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/09") shouldBe
+          "spans do not meet: 2010/07/Cape Cod and 2010/09"
+        Files.read(left) shouldBe allFile
+        Files.read(right) shouldBe allFile
+    withClue("external before name"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/Cape Cod.toml", external)
+        val right: File = write(archive, "2010/08/album.toml", allFile)
+        usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/08") shouldBe
+          "refusing external album 2010/07/Cape Cod"
+        Files.read(left) shouldBe external
+        Files.read(right) shouldBe allFile
+    withClue("name before google"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/Cape Cod.toml", allFile)
+        val right: File = write(archive, "2010/08/album.toml", google)
+        usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/08") shouldBe
+          "name mismatch: 2010/07/Cape Cod and 2010/08"
+        Files.read(left) shouldBe allFile
+        Files.read(right) shouldBe google
+    withClue("result before google"):
+      withOriginals: archive =>
+        val left: File = write(archive, "2010/07/album.toml", allFile)
+        val right: File = write(archive, "2010/08/album.toml", google)
+        val occupied: File = write(archive, "2010/07/to-08.toml", "kept\n")
+        usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe "album already exists: 2010/07-08"
+        Files.read(left) shouldBe allFile
+        Files.read(right) shouldBe google
+        Files.read(occupied) shouldBe "kept\n"
+
+  private def mergeValue(dryRun: Boolean, title: String, from: String*): Json =
+    json(
+      "dryRun" -> Json.Bool(dryRun),
+      "title" -> Json.Str(title),
+      "from" -> Json.Arr(from.map(Json.Str(_)))
+    )
+
+  private def snapshot(root: File): Map[String, (Seq[Byte], Long)] =
+    def walk(file: File): Seq[(String, (Seq[Byte], Long))] =
+      if file.isDirectory then Option(file.listFiles).toSeq.flatten.flatMap(walk)
+      else
+        val rel: String = root.toPath.relativize(file.toPath).toString
+        Seq(rel -> (JFiles.readAllBytes(file.toPath).toSeq, file.lastModified))
+    Option(root.listFiles).toSeq.flatten.flatMap(walk).toMap
+
   private def showJson(
     path: String,
     title: String,
