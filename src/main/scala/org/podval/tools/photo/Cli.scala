@@ -1,7 +1,10 @@
 package org.podval.tools.photo
 
 import scala.annotation.tailrec
+import scala.jdk.CollectionConverters.ListHasAsScala
 import java.io.File
+import org.jline.reader.{Candidate, Completer, EndOfFileException, LineReader, LineReaderBuilder, UserInterruptException}
+import org.jline.terminal.TerminalBuilder
 
 object Cli:
   private[photo] sealed trait Outcome
@@ -175,7 +178,8 @@ object Cli:
                 val code: Int = shell(
                   session,
                   stdinLines,
-                  exchange = Some((current, argv) => remoteResult(runtime, current, argv))
+                  exchange = Some((current, argv) => remoteResult(runtime, current, argv)),
+                  interactive = System.console() != null
                 )
                 if code != 0 then sys.exit(code)
       case ServeFront =>
@@ -250,17 +254,51 @@ object Cli:
     session: Session,
     lines: Iterator[String],
     run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session),
-    exchange: Option[(Session, List[String]) => Result] = None
+    exchange: Option[(Session, List[String]) => Result] = None,
+    interactive: Boolean = false
   ): Int =
-    @tailrec
-    def loop(current: Session): Int =
-      Console.err.print(current.prompt)
-      Console.err.flush()
-      if !lines.hasNext then 0
-      else step(current, lines.next(), run, exchange) match
-        case Step.Stop => 0
-        case Step.Continue(next) => loop(next)
-    loop(session)
+    // Assigned before each readLine. Tab runs inside that read, so cd is already visible.
+    var live: Session = session
+    val reader: Option[LineReader] =
+      if !interactive then None
+      else
+        try
+          val terminal = TerminalBuilder.builder().system(true).jna(true).build()
+          val sessionNow: () => Session = () => live
+          val completer: Completer = (_, line, found) =>
+            val words: List[String] = line.words.asScala.toList
+            Completion.candidates(sessionNow(), words, line.wordIndex).foreach: text =>
+              found.add(new Candidate(text))
+          Some(LineReaderBuilder.builder().terminal(terminal).completer(completer).build())
+        catch
+          case _: Exception =>
+            None
+    try
+      @tailrec
+      def loop(current: Session): Int =
+        live = current
+        val line: Option[String] = reader match
+          case None =>
+            Console.err.print(current.prompt)
+            Console.err.flush()
+            if lines.hasNext then Some(lines.next()) else None
+          case Some(lineReader) =>
+            try Option(lineReader.readLine(current.prompt))
+            catch
+              case _: EndOfFileException => None
+              case _: UserInterruptException => Some("")
+        line match
+          case None =>
+            0
+          case Some(text) =>
+            step(current, text, run, exchange) match
+              case Step.Stop => 0
+              case Step.Continue(next) => loop(next)
+      loop(session)
+    finally
+      reader.foreach: lineReader =>
+        try lineReader.getTerminal.close()
+        catch case _: java.io.IOException => ()
 
   // The socket writes this line on the connection. serveResponse does not print it.
   private[photo] def serveResponse(
@@ -926,7 +964,7 @@ object Cli:
             case value :: more =>
               readFlags(command, more, store(value))
 
-  private def splitFlag(token: String): Option[(Boolean, String, Option[String])] =
+  private[photo] def splitFlag(token: String): Option[(Boolean, String, Option[String])] =
     val (long: Boolean, body: String) =
       if token.startsWith("--") then (true, token.drop(2))
       else if token.startsWith("-") then (false, token.drop(1))
@@ -937,7 +975,7 @@ object Cli:
       val value: Option[String] = if rest.isEmpty then None else Some(rest.drop(1))
       Some((long, name, value))
 
-  private def findFlag(flags: List[Flag], isLong: Boolean, name: String): Option[Flag] =
+  private[photo] def findFlag(flags: List[Flag], isLong: Boolean, name: String): Option[Flag] =
     if isLong then flags.find(_.name == name)
     else flags.find(_.alias.contains(name))
 
@@ -984,6 +1022,13 @@ object Cli:
         List(agentLine) ++
         sessionCommands.map(lineOf)
     (header ++ lines).mkString("\n")
+
+  // Shell help order. item, album, card, and agent are not registry commands.
+  private[photo] def shellCommandNames: List[String] =
+    val (beforeLogin, fromLogin) = commands.span(_.name != "login")
+    val (beforePublish, fromPublish) = beforeLogin.span(_.name != "publish")
+    beforePublish.map(_.name) ++ List("item", "album") ++ fromPublish.map(_.name) ++ List("card") ++
+      fromLogin.map(_.name) ++ List(helpCommand.name, "agent", cdCommand.name, pwdCommand.name, exitCommand.name)
 
   private def lineOf(command: Command): String = s"${command.name}  ${command.help}"
 
@@ -1095,21 +1140,21 @@ object Cli:
       case RepeatKind => "repeatable"
     s"$names  $kind  ${flag.description}"
 
-  private sealed trait Positional:
+  private[photo] sealed trait Positional:
     def path: Boolean
-  private final case class Required(name: String, path: Boolean = false) extends Positional
-  private final case class Optional(name: String, path: Boolean = false) extends Positional
+  private[photo] final case class Required(name: String, path: Boolean = false) extends Positional
+  private[photo] final case class Optional(name: String, path: Boolean = false) extends Positional
   // schemaName is the JSON key when name is not an identifier. Help still prints name.
-  private final case class Rest(name: String, path: Boolean = false, schemaName: Option[String] = None) extends Positional
+  private[photo] final case class Rest(name: String, path: Boolean = false, schemaName: Option[String] = None) extends Positional
 
-  private sealed trait FlagKind
-  private case object BooleanKind extends FlagKind
-  private case object TextKind extends FlagKind
-  private case object RepeatKind extends FlagKind
+  private[photo] sealed trait FlagKind
+  private[photo] case object BooleanKind extends FlagKind
+  private[photo] case object TextKind extends FlagKind
+  private[photo] case object RepeatKind extends FlagKind
 
-  private final case class Flag(name: String, alias: Option[String], kind: FlagKind, description: String)
+  private[photo] final case class Flag(name: String, alias: Option[String], kind: FlagKind, description: String)
 
-  private final case class Values(
+  private[photo] final case class Values(
     bools: Map[String, Boolean] = Map.empty,
     texts: Map[String, String] = Map.empty,
     repeats: Map[String, List[String]] = Map.empty
@@ -1121,7 +1166,7 @@ object Cli:
     def addRepeat(name: String, value: String): Values =
       copy(repeats = repeats.updated(name, repeats.getOrElse(name, Nil) :+ value))
 
-  private final case class Command(
+  private[photo] final case class Command(
     name: String,
     help: String,
     positionals: List[Positional],
@@ -1171,7 +1216,7 @@ object Cli:
   private val albumDryRun: Flag =
     Flag("dry-run", None, BooleanKind, "print the actions and write nothing")
 
-  private val itemCommands: List[Command] = List(
+  private[photo] val itemCommands: List[Command] = List(
     Command(
       name = "show",
       help = "show extensions, sidecar, folder day, assessed civil time, and claiming albums",
@@ -1202,7 +1247,7 @@ object Cli:
     )
   )
 
-  private val albumCommands: List[Command] = List(
+  private[photo] val albumCommands: List[Command] = List(
     Command(
       name = "ls",
       help = "list album titles",
@@ -1419,7 +1464,7 @@ object Cli:
 
   private val albumIdFlag: Flag = Flag("id", None, TextKind, "catalog album id")
 
-  private val agentCommands: List[Command] = List(
+  private[photo] val agentCommands: List[Command] = List(
     Command(
       name = "stems",
       help = "list one day's grouped stems",
@@ -2172,7 +2217,7 @@ object Cli:
     build = (_, _) => ExitArgs
   )
 
-  private val registry: List[Command] =
+  private[photo] val registry: List[Command] =
     commands ++ List(helpCommand, cdCommand, pwdCommand, exitCommand)
 
   private val shellLine: String = "shell  start a session"
@@ -2209,7 +2254,7 @@ object Cli:
       "copy  copy DCIM picture files into .upload"
     ).mkString("\n")
 
-  private val discoverCommand: Command = Command(
+  private[photo] val discoverCommand: Command = Command(
     name = "card",
     help = "print one camera card",
     positionals = Nil,
@@ -2217,7 +2262,7 @@ object Cli:
     build = (values, _) => CardDiscover(bool(values, "dry-run"))
   )
 
-  private val copyCommand: Command = Command(
+  private[photo] val copyCommand: Command = Command(
     name = "copy",
     help = "copy DCIM picture files into .upload",
     positionals = List(Optional("path", path = false)),

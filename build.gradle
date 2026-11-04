@@ -14,6 +14,7 @@ project.gradle.startParameter.excludedTaskNames.add('compileJava')
 dependencies {
   implementation 'com.drewnoakes:metadata-extractor:2.22.0'
   implementation 'io.github.wasabithumb:jtoml:1.8.2'
+  implementation 'org.jline:jline:3.30.17'
   implementation 'com.google.photos.library:google-photos-library-client:1.7.3'
   implementation 'com.google.auth:google-auth-library-oauth2-http:1.24.0'
   implementation 'com.microsoft.playwright:playwright:1.64.0'
