@@ -450,6 +450,7 @@ async function showTree(next, token) {
   if (token !== loadToken) return;
   // A newer screen is mounted only after this body arrives. x still means the previous view until then.
   toggleGeneration++;
+  clearError();
   state.pending = false;
   state.pendingIndex = -1;
   cancelScheduledToggle();
@@ -477,6 +478,7 @@ async function showDay(next, token) {
   const body = await getJson(dayRoute + "?day=" + encodeURIComponent(next.day));
   if (token !== loadToken) return;
   toggleGeneration++;
+  clearError();
   state.pending = false;
   state.pendingIndex = -1;
   cancelScheduledToggle();
@@ -499,6 +501,7 @@ async function showAlbum(next, token) {
   const body = await getJson(albumRoute + "?title=" + encodeURIComponent(next.album));
   if (token !== loadToken) return;
   toggleGeneration++;
+  clearError();
   state.pending = false;
   state.pendingIndex = -1;
   cancelScheduledToggle();
