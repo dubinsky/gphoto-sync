@@ -163,16 +163,7 @@ final case class AlbumNew(dryRun: Boolean, span: Option[String], name: Option[St
       val relative: String = Album.relative(originals, file)
       val include: Seq[Include.Entry] =
         if parsed.span.isDefined then Seq(Include.Entry.All(Seq.empty)) else Seq.empty
-      val album: Album = Album(
-        title = parsed.title,
-        span = parsed.span,
-        include = include,
-        external = false,
-        googleAlbumId = "",
-        publishedTitle = "",
-        googleTitle = "",
-        owner = None
-      )
+      val album: Album = Album.pending(parsed.title, parsed.span, include)
       Transcript.println(s"create ${parsed.title}")
       Transcript.println(relative)
       if !dryRun then

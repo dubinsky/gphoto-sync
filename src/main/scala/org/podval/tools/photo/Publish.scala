@@ -390,49 +390,61 @@ object Publish:
     transport: GoogleTransport
   ): Either[String, Ensured] =
     val album: Album = loaded.album
-    if album.owner.nonEmpty then
-      Left(s"${album.title} is owned by someone else")
-    else if album.external then
-      Left(s"${album.title} is external")
-    else
-      val desired: String = album.desiredGoogleTitle
-      val resolved: Either[String, (String, Seq[(String, String)], Map[String, String], Boolean)] =
-        if album.googleAlbumId.nonEmpty then Right((album.googleAlbumId, remote, ids, false))
-        else
-          remote.filter(_._2 == desired) match
-            case Seq() =>
-              try
-                val id: String = transport.createAlbum(desired)
-                Album.storeGoogle(loaded.file, id, desired)
-                Right((id, remote :+ (id, desired), ids.updated(id, album.title), true))
-              catch case error: Exception => Left(Album.messageOf(error))
-            case Seq((id, _)) =>
-              ids.get(id) match
-                case Some(other) if other != album.title =>
-                  Left(s"google album id is already stored on $other")
-                case _ =>
+    album.role match
+      case AlbumRole.External(_, owner) if owner.nonEmpty =>
+        Left(s"${album.title} is owned by someone else")
+      case AlbumRole.External(_, _) =>
+        Left(s"${album.title} is external")
+      case AlbumRole.Client(_, publication) =>
+        val desired: String = album.desiredGoogleTitle
+        val resolved: Either[String, (String, Seq[(String, String)], Map[String, String], Boolean)] =
+          publication match
+            case Publication.Published(id, _) => Right((id, remote, ids, false))
+            case Publication.Pending(_) =>
+              remote.filter(_._2 == desired) match
+                case Seq() =>
                   try
+                    val id: String = transport.createAlbum(desired)
                     Album.storeGoogle(loaded.file, id, desired)
-                    Right((id, remote, ids.updated(id, album.title), true))
+                    Right((id, remote :+ (id, desired), ids.updated(id, album.title), true))
                   catch case error: Exception => Left(Album.messageOf(error))
-            case _ =>
-              Left(s"more than one Google album titled $desired")
+                case Seq((id, _)) =>
+                  ids.get(id) match
+                    case Some(other) if other != album.title =>
+                      Left(s"google album id is already stored on $other")
+                    case _ =>
+                      try
+                        Album.storeGoogle(loaded.file, id, desired)
+                        Right((id, remote, ids.updated(id, album.title), true))
+                      catch case error: Exception => Left(Album.messageOf(error))
+                case _ =>
+                  Left(s"more than one Google album titled $desired")
+        resolved.flatMap: (id, remoteNow, idsNow, wrote) =>
+          val titleNeedsUpdate: Boolean =
+            album.publishedTitle.isEmpty || album.publishedTitle != desired
+          if wrote || !titleNeedsUpdate then Right(Ensured(id, remoteNow, idsNow))
+          else
+            try
+              transport.updateAlbumTitle(id, desired)
+              Album.storeGoogle(loaded.file, id, desired)
+              val seen: Seq[(String, String)] = remoteNow.map:
+                case (existing, _) if existing == id => (id, desired)
+                case pair => pair
+              val remoteAfter: Seq[(String, String)] =
+                if seen.exists(_._1 == id) then seen else seen :+ (id, desired)
+              Right(Ensured(id, remoteAfter, idsNow))
+            catch case error: Exception => Left(Album.messageOf(error))
 
-      resolved.flatMap: (id, remoteNow, idsNow, wrote) =>
-        val titleNeedsUpdate: Boolean =
-          album.publishedTitle.isEmpty || album.publishedTitle != desired
-        if wrote || !titleNeedsUpdate then Right(Ensured(id, remoteNow, idsNow))
-        else
-          try
-            transport.updateAlbumTitle(id, desired)
-            Album.storeGoogle(loaded.file, id, desired)
-            val seen: Seq[(String, String)] = remoteNow.map:
-              case (existing, _) if existing == id => (id, desired)
-              case pair => pair
-            val remoteAfter: Seq[(String, String)] =
-              if seen.exists(_._1 == id) then seen else seen :+ (id, desired)
-            Right(Ensured(id, remoteAfter, idsNow))
-          catch case error: Exception => Left(Album.messageOf(error))
+  private enum LibraryMark:
+    case Unknown
+    case AlreadyInGoogle
+    case Media(id: String)
+
+  private def libraryMark(metadata: Metadata): LibraryMark =
+    if metadata.`already-in-google`.contains(true) then LibraryMark.AlreadyInGoogle
+    else metadata.`google-media-item-id`.filter(_.nonEmpty) match
+      case Some(id) => LibraryMark.Media(id)
+      case None => LibraryMark.Unknown
 
   private def plan(
     picture: Claims.Resolved,
@@ -441,7 +453,10 @@ object Publish:
     tempDirectory: File
   ): Work =
     val titles: Seq[String] = picture.albums
-    val targets: Seq[String] = titles.filterNot(title => albums(title).album.external)
+    val targets: Seq[String] = titles.filter: title =>
+      albums(title).album.role match
+        case _: AlbumRole.Client => true
+        case _: AlbumRole.External => false
     if targets.isEmpty then SkipExternal(picture.path)
     else if fact.metadata.uploader.isDefined then SkipUploader(picture.path)
     else if twoNormals(fact) then Broken(picture.path, targets.mkString(","), "too many normal extensions")
@@ -450,10 +465,10 @@ object Publish:
       val name: String = fact.name
       val metadataFile: File = File(directory, s"$name.toml")
       val metadata: Metadata = fact.metadata
-      if metadata.`already-in-google`.contains(true) then AlreadyInGoogle(picture.path)
-      else metadata.`google-media-item-id`.filter(_.nonEmpty) match
-        case Some(id) => FileExisting(picture.path, id, targets)
-        case None =>
+      libraryMark(metadata) match
+        case LibraryMark.AlreadyInGoogle => AlreadyInGoogle(picture.path)
+        case LibraryMark.Media(id) => FileExisting(picture.path, id, targets)
+        case LibraryMark.Unknown =>
           literalUpload(directory, name) match
             case Left(message) => Broken(picture.path, targets.mkString(","), message)
             case Right(None) => StayLocal(picture.path)

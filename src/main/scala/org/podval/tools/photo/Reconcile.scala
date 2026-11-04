@@ -321,15 +321,12 @@ object Reconcile:
       Left("owner")
     else if badControl(googleTitle) then Left("title")
     else
-      val written: Album = Album(
-        title = parsed.title,
-        span = parsed.span,
-        include = matched.include,
-        external = true,
-        googleAlbumId = "",
-        publishedTitle = "",
-        googleTitle = googleTitle,
-        owner = owner
+      val written: Album = Album.external(
+        parsed.title,
+        parsed.span,
+        matched.include,
+        Option.when(googleTitle.nonEmpty)(googleTitle),
+        owner
       )
       Right(Album.renderFile(written))
 
@@ -463,14 +460,21 @@ object Reconcile:
     val key: String = if file.publishedTitle.nonEmpty then file.publishedTitle else file.title
     key == album.title || key == working(album.title)
 
-  private def pending(album: Album): Boolean = !album.external && album.googleAlbumId.isEmpty
+  private def pending(album: Album): Boolean = album.role match
+    case AlbumRole.Client(_, Publication.Pending(_)) => true
+    case _ => false
 
   // Empty google-title is not a stored rename. Do not write the catalog title.
   private def pendingRename(album: Catalog.Album, file: Album): Boolean =
-    album.owner.isEmpty && file.owner.isEmpty && file.external && file.googleTitle.isEmpty &&
-      file.title != album.title
+    album.owner.isEmpty && (file.role match
+      case AlbumRole.External(googleTitle, owner) =>
+        owner.isEmpty && googleTitle.isEmpty && file.title != album.title
+      case _ => false
+    )
 
-  private def client(album: Album): Boolean = !album.external && album.googleAlbumId.nonEmpty
+  private def client(album: Album): Boolean = album.role match
+    case AlbumRole.Client(_, Publication.Published(_, _)) => true
+    case _ => false
 
   private def monthFile(album: Album): Boolean =
     album.span.exists: span =>

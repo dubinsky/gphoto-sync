@@ -2287,16 +2287,10 @@ private[photo] object AgentCommands:
         (googleFlag.getOrElse(""), None)
     val pathTitle: String = parsed.title
     val willRename: Boolean = album.owner.isEmpty && googleFlag.isEmpty && album.title != pathTitle
-    val written: Album = Album(
-      title = pathTitle,
-      span = parsed.span,
-      include = include,
-      external = keptId.isEmpty,
-      googleAlbumId = keptId,
-      publishedTitle = keptPublished,
-      googleTitle = googleTitle,
-      owner = owner
-    )
+    val stored: Option[String] = Option.when(googleTitle.nonEmpty)(googleTitle)
+    val written: Album =
+      if keptId.isEmpty then Album.external(pathTitle, parsed.span, include, stored, owner)
+      else Album.published(pathTitle, parsed.span, include, keptId, keptPublished, stored)
     val renameWord: String = if willRename then "yes" else "no"
     val value: Json = albumValueOf(album.id, relative, pathTitle, album.title, willRename, None)
     if dryRun then

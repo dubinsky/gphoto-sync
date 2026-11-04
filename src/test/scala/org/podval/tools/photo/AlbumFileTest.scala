@@ -150,16 +150,7 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       val claimed: Set[(LocalDate, String)] = Set(day -> low, day -> high, day -> wide)
       val parsed: Title.Parsed = Title.parse("2012/11/04").getOrElse(fail("day"))
       val include: Seq[Include.Entry] = Include.compress(parsed.span, claimed, universe)
-      val album: Album = Album(
-        title = parsed.title,
-        span = parsed.span,
-        include = include,
-        external = true,
-        googleAlbumId = "",
-        publishedTitle = "",
-        googleTitle = "",
-        owner = None
-      )
+      val album: Album = Album.external(parsed.title, parsed.span, include, None, None)
       val file: File = Title.file(originals, parsed)
       file.getParentFile.mkdirs()
       Files.write(Album.renderFile(album), file)
@@ -172,18 +163,13 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
   it should "write an include line as a literal string when it has no apostrophe" in :
     withOriginals: originals =>
       val parsed: Title.Parsed = Title.parse("2009/07/03/Party").getOrElse(fail("day"))
-      val album: Album = Album(
-        title = parsed.title,
-        span = parsed.span,
-        include = Seq(
+      val album: Album = Album.pending(
+        parsed.title,
+        parsed.span,
+        Seq(
           Include.parse("2009/07/03 \"2009-07-03 13.02.37\""),
           Include.parse("2009/07/03 4217")
-        ),
-        external = false,
-        googleAlbumId = "",
-        publishedTitle = "",
-        googleTitle = "",
-        owner = None
+        )
       )
       val file: File = Title.file(originals, parsed)
       file.getParentFile.mkdirs()
@@ -205,18 +191,13 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       Include.needsQuote("O'Brien") shouldBe false
       Include.needsQuote("O'Brien day") shouldBe true
       val parsed: Title.Parsed = Title.parse("2009/03/10/Party").getOrElse(fail("day"))
-      val album: Album = Album(
-        title = parsed.title,
-        span = parsed.span,
-        include = Seq(
+      val album: Album = Album.pending(
+        parsed.title,
+        parsed.span,
+        Seq(
           Include.parse("2009/03/10 O'Brien"),
           Include.parse("2009/03/10 \"O'Brien day\"")
-        ),
-        external = false,
-        googleAlbumId = "",
-        publishedTitle = "",
-        googleTitle = "",
-        owner = None
+        )
       )
       val file: File = Title.file(originals, parsed)
       file.getParentFile.mkdirs()

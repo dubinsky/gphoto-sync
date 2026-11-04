@@ -61,16 +61,7 @@ private object ItemPlace:
             val claimed: Set[(LocalDate, String)] = monthPics.map(pic => pic.day -> pic.stem).toSet
             val include: Seq[Include.Entry] =
               Include.compress(parsed.span, claimed, universe, allowAll = false)
-            val album: Album = Album(
-              title = destTitle,
-              span = parsed.span,
-              include = include,
-              external = false,
-              googleAlbumId = "",
-              publishedTitle = "",
-              googleTitle = "",
-              owner = None
-            )
+            val album: Album = Album.pending(destTitle, parsed.span, include)
             val spokenPics: Spoken = monthPics.foldLeft(acc.addCreate(destTitle)): (soFar, pic) =>
               val after: Boolean = holds(include, parsed.span, pic.day, pic.stem)
               soFar.addPicture(excludePairs(current.values, pic, other), Option.when(after)(destTitle -> pic.path))

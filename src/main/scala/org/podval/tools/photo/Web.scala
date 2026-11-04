@@ -965,32 +965,15 @@ object Web:
           val include: Seq[Include.Entry] =
             if claimed.isEmpty then Seq.empty
             else Include.compress(Some(span), claimed, universe)
-          val (googleTitle, owner) = found.owner match
-            case Some(label) => (found.title, Some(label))
-            case None => ("", None)
-          val album: Album = Album(
-            title = parsed.title,
-            span = Some(span),
-            include = include,
-            external = true,
-            googleAlbumId = "",
-            publishedTitle = "",
-            googleTitle = googleTitle,
-            owner = owner
-          )
+          val album: Album = found.owner match
+            case Some(label) =>
+              Album.external(parsed.title, Some(span), include, Some(found.title), Some(label))
+            case None =>
+              Album.external(parsed.title, Some(span), include, None, None)
           (album, "matched")
       case _ =>
         Right((
-          Album(
-            title = parsed.title,
-            span = Some(span),
-            include = Seq(Include.Entry.All(Seq.empty)),
-            external = false,
-            googleAlbumId = "",
-            publishedTitle = "",
-            googleTitle = "",
-            owner = None
-          ),
+          Album.pending(parsed.title, Some(span), Seq(Include.Entry.All(Seq.empty))),
           "all"
         ))
 

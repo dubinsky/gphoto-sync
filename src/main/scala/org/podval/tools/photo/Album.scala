@@ -18,17 +18,42 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 
+private[photo] enum Publication:
+  case Pending(publishedTitle: Option[String])
+  case Published(id: String, title: String)
+
+private[photo] enum AlbumRole:
+  case External(googleTitle: Option[String], owner: Option[String])
+  case Client(googleTitle: Option[String], publication: Publication)
+
 // One album. The title is not the path: the file sits in the start folder, and a span's end is `to-` in the name.
-final case class Album(
+final case class Album private (
   title: String,
   span: Option[Title.Span],
   include: Seq[Include.Entry],
-  external: Boolean,
-  googleAlbumId: String,
-  publishedTitle: String,
-  googleTitle: String,
-  owner: Option[String]
+  private[photo] val role: AlbumRole
 ):
+  def external: Boolean = role match
+    case _: AlbumRole.External => true
+    case _: AlbumRole.Client => false
+
+  def googleAlbumId: String = role match
+    case AlbumRole.Client(_, Publication.Published(id, _)) => id
+    case _ => ""
+
+  def publishedTitle: String = role match
+    case AlbumRole.Client(_, Publication.Published(_, stored)) => stored
+    case AlbumRole.Client(_, Publication.Pending(stored)) => stored.getOrElse("")
+    case _: AlbumRole.External => ""
+
+  def googleTitle: String = role match
+    case AlbumRole.External(stored, _) => stored.getOrElse("")
+    case AlbumRole.Client(stored, _) => stored.getOrElse("")
+
+  def owner: Option[String] = role match
+    case AlbumRole.External(_, stored) => stored
+    case _: AlbumRole.Client => None
+
   def desiredGoogleTitle: String =
     if googleTitle.nonEmpty then googleTitle else title
 
@@ -41,6 +66,55 @@ final case class Album(
     include.exists(entry => Include.positive(span, entry, day, stem))
 
 object Album:
+  private[photo] def external(
+    title: String,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    googleTitle: Option[String],
+    owner: Option[String]
+  ): Album =
+    val keptTitle: Option[String] = googleTitle.filter(_.nonEmpty)
+    owner.foreach: name =>
+      require(!name.trim.isEmpty, "owner must be a non-empty display name")
+      require(keptTitle.nonEmpty, "owner requires a non-empty google-title")
+    new Album(title, span, include, AlbumRole.External(keptTitle, owner))
+
+  private[photo] def pending(
+    title: String,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    googleTitle: Option[String] = None,
+    publishedTitle: Option[String] = None
+  ): Album =
+    new Album(
+      title,
+      span,
+      include,
+      AlbumRole.Client(
+        googleTitle.filter(_.nonEmpty),
+        Publication.Pending(publishedTitle.filter(_.nonEmpty))
+      )
+    )
+
+  private[photo] def published(
+    title: String,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    id: String,
+    publishedTitle: String,
+    googleTitle: Option[String] = None
+  ): Album =
+    require(id.nonEmpty, "id must be non-empty")
+    new Album(
+      title,
+      span,
+      include,
+      AlbumRole.Client(
+        googleTitle.filter(_.nonEmpty),
+        Publication.Published(id, publishedTitle)
+      )
+    )
+
   def relative(originals: File, file: File): String =
     originals.toPath.relativize(file.toPath).iterator.asScala.map(_.toString).mkString("/")
 
@@ -63,30 +137,34 @@ object Album:
           reject(file, "include", Album.messageOf(error))
       if Include.inside(span, entry) then entry
       else reject(file, "include", s"'$text' is outside the album")
-    Album(
-      title = parsed.title,
-      span = span,
-      include = include,
-      external = common.external,
-      googleAlbumId = common.googleAlbumId,
-      publishedTitle = common.publishedTitle,
-      googleTitle = common.googleTitle,
-      owner = common.owner
-    )
+    val googleTitle: Option[String] = Option.when(common.googleTitle.nonEmpty)(common.googleTitle)
+    val role: AlbumRole =
+      if common.external then AlbumRole.External(googleTitle, common.owner)
+      else if common.googleAlbumId.nonEmpty then
+        AlbumRole.Client(googleTitle, Publication.Published(common.googleAlbumId, common.publishedTitle))
+      else
+        AlbumRole.Client(
+          googleTitle,
+          Publication.Pending(Option.when(common.publishedTitle.nonEmpty)(common.publishedTitle))
+        )
+    new Album(parsed.title, span, include, role)
 
   // Hand-written order.
   def renderFile(album: Album): String =
-    val lines: Seq[String] = Seq(
-      Option.when(!album.external)(Seq("external = false")).getOrElse(Seq.empty),
-      Option.when(album.googleTitle.nonEmpty)(Seq(s"google-title = ${quote(album.googleTitle)}")).getOrElse(Seq.empty),
-      album.owner.map(name => s"owner = ${quote(name)}").toSeq,
-      if album.googleAlbumId.isEmpty then Seq.empty
-      else Seq(
-        s"google-album-id = ${quote(album.googleAlbumId)}",
-        s"published-title = ${quote(album.publishedTitle)}"
-      ),
-      if album.include.isEmpty then Seq.empty else includeLines(album.include)
-    ).flatten
+    def googleLine(googleTitle: Option[String]): Seq[String] =
+      googleTitle.filter(_.nonEmpty).map(text => s"google-title = ${quote(text)}").toSeq
+    val head: Seq[String] = album.role match
+      case AlbumRole.External(googleTitle, owner) =>
+        googleLine(googleTitle) ++ owner.map(name => s"owner = ${quote(name)}").toSeq
+      case AlbumRole.Client(googleTitle, Publication.Pending(_)) =>
+        Seq("external = false") ++ googleLine(googleTitle)
+      case AlbumRole.Client(googleTitle, Publication.Published(id, published)) =>
+        Seq("external = false") ++ googleLine(googleTitle) ++ Seq(
+          s"google-album-id = ${quote(id)}",
+          s"published-title = ${quote(published)}"
+        )
+    val lines: Seq[String] =
+      head ++ (if album.include.isEmpty then Seq.empty else includeLines(album.include))
     if lines.isEmpty then "" else lines.mkString("", "\n", "\n")
 
   private[photo] final case class Loaded(file: File, album: Album)

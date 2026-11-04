@@ -943,15 +943,12 @@ class PublishTest extends AnyFlatSpec, Matchers:
         "external = true\ninclude = [\"all\"]\ngoogle-title = \"Hawaii \"\nowner = \"Ada Owner\"\n"
       )
       val before: Seq[Byte] = bytes(file)
-      val album: Album = Album(
-        title = "2009/03/10/Party",
-        span = Some(Title.Span(LocalDate.of(2009, 3, 10), LocalDate.of(2009, 3, 10), Title.Grain.Day)),
-        include = Seq(Include.Entry.All(Seq.empty)),
-        external = true,
-        googleAlbumId = "",
-        publishedTitle = "",
-        googleTitle = "Hawaii ",
-        owner = Some("Ada Owner")
+      val album: Album = Album.external(
+        "2009/03/10/Party",
+        Some(Title.Span(LocalDate.of(2009, 3, 10), LocalDate.of(2009, 3, 10), Title.Grain.Day)),
+        Seq(Include.Entry.All(Seq.empty)),
+        Some("Hawaii "),
+        Some("Ada Owner")
       )
       val fake: Fake = Fake()
       Publish.ensureOne(Album.Loaded(file, album), Seq.empty, Map.empty, fake) shouldBe
@@ -969,15 +966,12 @@ class PublishTest extends AnyFlatSpec, Matchers:
         "external = true\ninclude = [\"all\"]\n"
       )
       val before: Seq[Byte] = bytes(file)
-      val album: Album = Album(
-        title = "2009/03/10/Party",
-        span = Some(Title.Span(LocalDate.of(2009, 3, 10), LocalDate.of(2009, 3, 10), Title.Grain.Day)),
-        include = Seq(Include.Entry.All(Seq.empty)),
-        external = true,
-        googleAlbumId = "",
-        publishedTitle = "",
-        googleTitle = "",
-        owner = None
+      val album: Album = Album.external(
+        "2009/03/10/Party",
+        Some(Title.Span(LocalDate.of(2009, 3, 10), LocalDate.of(2009, 3, 10), Title.Grain.Day)),
+        Seq(Include.Entry.All(Seq.empty)),
+        None,
+        None
       )
       val fake: Fake = Fake()
       Publish.ensureOne(Album.Loaded(file, album), Seq.empty, Map.empty, fake) match
