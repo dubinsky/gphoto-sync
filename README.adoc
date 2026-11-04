@@ -162,6 +162,12 @@ A year, a month, or the root lists the directories inside it.
 `photo ls 2010` lists months.
 It does not list the items in that year.
 `photo ls -R 2010` lists those items and does not print directory names.
+Item listings are a day, a picture, `-R`, and any picture filter.
+Those listings are ordered by the assessed civil time, including subseconds.
+A picture with no assessed time goes after the timed rows.
+That includes a folder-day clock and a sidecar disagreement.
+Equal times, and those untimed rows, are ordered by the archive path.
+Directory lines stay in directory-name order.
 `-l` prints a count on a directory, or the long item line on a day or a picture.
 It does not rename, generate, set mtimes, rewrite albums, or move files.
 

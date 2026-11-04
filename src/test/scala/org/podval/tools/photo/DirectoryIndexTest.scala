@@ -90,6 +90,12 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       again shouldBe ""
       again shouldBe cold(root, "ls", "--name-contains", "07", july)
 
+      val (augustListed, augustText) = runOk(cursor, "ls", august)
+      augustListed.index.get(File(archive, august)).get.listing.get.map(_.stem) shouldBe
+        Seq("1000", "20100812_013216")
+      augustText.linesIterator.filter(_.startsWith(s"/$august/")).map(_.takeWhile(_ != ' ')).toSeq shouldBe
+        Seq(s"/$august/20100812_013216", s"/$august/1000")
+
   it should "not store a listing when the extractor rejects the file" in :
     withArchive: archive =>
       val relative: String = "2010/08/13"

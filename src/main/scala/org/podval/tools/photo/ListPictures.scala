@@ -2,7 +2,7 @@ package org.podval.tools.photo
 
 import com.drew.imaging.ImageProcessingException
 import java.io.File
-import java.time.{Instant, ZoneId}
+import java.time.{Instant, LocalDateTime, ZoneId}
 import java.time.temporal.ChronoUnit
 
 final case class ListPictures(
@@ -107,7 +107,7 @@ final case class ListPictures(
       wrongDay ||
       wrong
 
-  private def walk(path: Path, propertyAndValue: Option[Property.AndValue[?]]): Seq[Json] = path match
+  private def walk(path: Path, propertyAndValue: Option[Property.AndValue[?]]): Seq[ListedLine] = path match
     case day: Day if DirectoryIndex.cursor.isDefined =>
       val (next, entries) = listDay(DirectoryIndex.now, day, propertyAndValue)
       DirectoryIndex.replace(next)
@@ -125,18 +125,18 @@ final case class ListPictures(
     session: Session,
     day: Day,
     propertyAndValue: Option[Property.AndValue[?]]
-  ): (Session, Seq[Json]) =
+  ): (Session, Seq[ListedLine]) =
     val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(day.directory, filesOnly = true)
     val cached: Option[DirEntry] = session.cached(day.directory).filter(_.fingerprint == fingerprint)
     val zone: ZoneId = day.root.configuration.zoneId
     cached.flatMap(_.listing) match
       case Some(rows) =>
-        val entries: Seq[Json] = rows.flatMap(row => lsListed(row, propertyAndValue, zone))
+        val entries: Seq[ListedLine] = rows.flatMap(row => lsListed(row, propertyAndValue, zone))
         (session, entries)
       case None =>
         val grouped: Seq[(String, Set[String])] = Pictures.group(Files.listFiles(day.directory), NameMode.Leave)
         val pictures: Seq[Picture] = day.fromGrouped(grouped)
-        val entries: Seq[Json] = pictures.flatMap(picture => ls(picture, propertyAndValue))
+        val entries: Seq[ListedLine] = pictures.flatMap(picture => ls(picture, propertyAndValue))
         val listed: Seq[ListedPicture] = pictures.map(toListed)
         val albums: Seq[Album.Loaded] = cached.map(_.albums).getOrElse(
           Archive.dayAlbums(day.root.configuration.archive, day.directory)
@@ -203,7 +203,7 @@ final case class ListPictures(
       .find(row => !row.omitted && row.stem == picture.name && row.extension == extension)
       .map(_.file)
 
-  private def ls(picture: Picture, propertyAndValue: Option[Property.AndValue[?]]): Option[Json] =
+  private def ls(picture: Picture, propertyAndValue: Option[Property.AndValue[?]]): Option[ListedLine] =
     lazy val audit: Dates.Assessment = PictureAudit(picture)
 
     val included: Boolean =
@@ -235,8 +235,7 @@ final case class ListPictures(
       val sidecar: String = if picture.hasMetadata then picture.metadata.toString else ""
       val showAudit: Boolean = long || timestampsVary || noTimestamp || wrongTimestamp || wrongDay || wrong
       val normalGenerationSuppressed: Boolean = picture.metadata.`bad-raw`.contains(true)
-
-      Transcript.println(
+      val text: String =
         s"$picture " ++
         extensionNames.mkString("+") ++
         (if picture.normal.isDefined then "" else " NO NORMAL IMAGE" ++ (if !normalGenerationSuppressed then "" else "; GENERATION SUPPRESSED")) ++
@@ -250,7 +249,6 @@ final case class ListPictures(
               extensionLine(extension.name, extension.read, extension.current, audit.writesMtime, picture.zone)
             ).mkString("\n")
           )
-      )
       // PictureAudit reads the corrected path. A short line has not renamed, and an empty file
       // must still print; listDay's own toListed is what rejects the extractor failure.
       val forValue: Option[Dates.Assessment] =
@@ -258,13 +256,14 @@ final case class ListPictures(
         else
           try Some(toListed(picture).audit)
           catch case _: ImageProcessingException => None
-      Some(itemJson(picture.toString, extensionNames, sidecar, forValue))
+      val path: String = picture.toString.stripPrefix("/")
+      Some(ListedLine(text, itemJson(picture.toString, extensionNames, sidecar, forValue), assessedCivil(forValue), path))
 
   private def lsListed(
     row: ListedPicture,
     propertyAndValue: Option[Property.AndValue[?]],
     zone: ZoneId
-  ): Option[Json] =
+  ): Option[ListedLine] =
     val included: Boolean =
       (nameContains.isEmpty || row.stem.contains(nameContains.get)) &&
       (hasExtension.isEmpty || row.extensionNames.contains(hasExtension.get)) &&
@@ -293,7 +292,7 @@ final case class ListPictures(
       val sidecar: String = if row.hasMetadata then row.metadata.toString else ""
       val showAudit: Boolean = long || timestampsVary || noTimestamp || wrongTimestamp || wrongDay || wrong
       val normalGenerationSuppressed: Boolean = row.metadata.`bad-raw`.contains(true)
-      Transcript.println(
+      val text: String =
         s"${row.textPath} " ++
         row.extensionNames.mkString("+") ++
         (if row.hasNormal then "" else " NO NORMAL IMAGE" ++ (if !normalGenerationSuppressed then "" else "; GENERATION SUPPRESSED")) ++
@@ -307,8 +306,12 @@ final case class ListPictures(
               extensionLine(extension.name, extension.read, extension.current, row.audit.writesMtime, zone)
             ).mkString("\n")
           )
-      )
-      Some(itemJson(row.textPath, row.extensionNames, sidecar, Some(row.audit)))
+      Some(ListedLine(
+        text,
+        itemJson(row.textPath, row.extensionNames, sidecar, Some(row.audit)),
+        assessedCivil(Some(row.audit)),
+        row.textPath.stripPrefix("/")
+      ))
 
   private def filenameOnly(hasName: Boolean, captured: Iterable[(Boolean, Option[Dates.Clock])]): Boolean =
     hasName && captured.forall((votes, clock) => !votes || Dates.usable(clock).isEmpty)
@@ -319,6 +322,13 @@ final case class ListPictures(
   private def assessedJson(audit: Dates.Assessment): Json =
     if PictureAudit.noAssessedTimestamp(audit) || audit.disagreement.isDefined then Json.Null
     else audit.clock.fold(Json.Null)(clock => Json.Str(show(clock)))
+
+  // Same null as assessedJson. FolderDay, Undated, Disagree.
+  // audit = None is only the catch in ls, not a cursor day.
+  private def assessedCivil(audit: Option[Dates.Assessment]): Option[LocalDateTime] =
+    audit.flatMap: value =>
+      if PictureAudit.noAssessedTimestamp(value) || value.disagreement.isDefined then None
+      else value.clock.map(_.civil)
 
   private def itemJson(
     textPath: String,
@@ -337,8 +347,18 @@ final case class ListPictures(
   private def directoriesJson(entries: Seq[Json]): Json =
     Json.Obj(Seq("kind" -> Json.Str("directories"), "entries" -> Json.Arr(entries)))
 
-  private def itemsJson(entries: Seq[Json]): Json =
-    Json.Obj(Seq("kind" -> Json.Str("items"), "entries" -> Json.Arr(entries)))
+  private final case class ListedLine(
+    text: String,
+    json: Json,
+    when: Option[LocalDateTime],
+    path: String
+  )
+
+  private def itemsJson(entries: Seq[ListedLine]): Json =
+    val ordered: Seq[ListedLine] =
+      entries.sortBy(line => ListPictures.itemOrder(line.when, line.path))
+    ordered.foreach(line => Transcript.println(line.text))
+    Json.Obj(Seq("kind" -> Json.Str("items"), "entries" -> Json.Arr(ordered.map(_.json))))
 
   private def auditText(audit: Dates.Assessment): String =
     audit.disagreement match
@@ -370,3 +390,13 @@ final case class ListPictures(
       read.fold("")(clock => s" read=${show(clock)}") ++
       s" current=$currentText" ++
       toSet
+
+object ListPictures:
+  // Timed first. Epoch day, then nano-of-day, so subseconds participate. Path last.
+  private[photo] def itemOrder(when: Option[LocalDateTime], path: String): (Boolean, Long, Long, String) =
+    (
+      when.isEmpty,
+      when.fold(0L)(_.toLocalDate.toEpochDay),
+      when.fold(0L)(_.toLocalTime.toNanoOfDay),
+      path
+    )
