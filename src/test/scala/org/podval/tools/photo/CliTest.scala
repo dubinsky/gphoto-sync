@@ -285,7 +285,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |ls  list the date tree
         |repair  repair picture names, raw files, timestamps, or day folders
         |item  show or change a picture
-        |album  list or change an album
+        |album  list and edit local album files
         |publish  publish albums to Google Photos
         |sync  sync album removals into local except lists
         |push  push external albums
@@ -373,7 +373,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     helpOf("item", "set", "-h") shouldBe helpOf("item", "set", "--help")
 
     val album: String =
-      """album  list or change an album
+      """album  list and edit local album files
         |
         |ls  list album titles
         |show  show one album file

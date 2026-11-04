@@ -2151,7 +2151,7 @@ object Cli:
   private def itemHelp: String =
     (List(itemLine, "") ++ itemCommands.map(lineOf)).mkString("\n")
 
-  private val albumLine: String = "album  list or change an album"
+  private val albumLine: String = "album  list and edit local album files"
 
   private def albumHelp: String =
     (List(albumLine, "") ++ albumCommands.map(lineOf)).mkString("\n")

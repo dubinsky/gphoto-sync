@@ -5,7 +5,7 @@ import org.scalatest.matchers.should.Matchers
 import scala.annotation.targetName
 import java.io.File
 import java.nio.file.Files as JFiles
-import java.time.ZoneId
+import java.time.{LocalDate, ZoneId}
 
 class AlbumCommandTest extends AnyFlatSpec, Matchers:
   @targetName("resultCanEqual")
@@ -315,6 +315,70 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       text shouldBe "include Best 2010/08/01/2412\n"
       value shouldBe editValue(false, "Best", Seq("2010/08/01 2412"), Seq("2010/08/01/2412"))
       Album.read(archive, file).include.map(Include.logical) shouldBe Seq("2010/08/01 2412")
+
+  it should "keep the other day when an excepted stem is included back" in :
+    withOriginals: archive =>
+      write(archive, "2010/07/04/1000.jpg", "")
+      write(archive, "2010/07/04/1001.jpg", "")
+      write(archive, "2010/07/05/1000.jpg", "")
+      val file: File = write(archive, "2010/07/album.toml", "include = [\n  'all except 1001',\n]\n")
+      val (text, value) = ok(archive, "album", "include", "2010/07", "2010/07/04/1001")
+      text shouldBe "include 2010/07 2010/07/04/1001\n"
+      value shouldBe editValue(false, "2010/07", Seq("all"), Seq("2010/07/04/1001"))
+      val album: Album = Album.read(archive, file)
+      album.claims(LocalDate.of(2010, 7, 4), "1000") shouldBe true
+      album.claims(LocalDate.of(2010, 7, 4), "1001") shouldBe true
+      album.claims(LocalDate.of(2010, 7, 5), "1000") shouldBe true
+
+  it should "keep the other day of a multi-day line" in :
+    withOriginals: archive =>
+      write(archive, "2010/07/04/1000.jpg", "")
+      write(archive, "2010/07/04/2412.jpg", "")
+      write(archive, "2010/07/05/1000.jpg", "")
+      val file: File = write(archive, "2010/07/album.toml", "include = [\n  '2010/07/04-05 1000',\n]\n")
+      val (text, value) = ok(archive, "album", "include", "2010/07", "2010/07/04/2412")
+      text shouldBe "include 2010/07 2010/07/04/2412\n"
+      val album: Album = Album.read(archive, file)
+      album.claims(LocalDate.of(2010, 7, 4), "1000") shouldBe true
+      album.claims(LocalDate.of(2010, 7, 4), "2412") shouldBe true
+      album.claims(LocalDate.of(2010, 7, 5), "1000") shouldBe true
+      value shouldBe editValue(false, "2010/07", album.include.map(Include.logical), Seq("2010/07/04/2412"))
+
+  it should "not turn a touched subset into all while another line remains" in :
+    withOriginals: archive =>
+      write(archive, "2010/07/04/1000.jpg", "")
+      write(archive, "2010/07/04/2412.jpg", "")
+      write(archive, "2010/07/05/1000.jpg", "")
+      write(archive, "2010/07/06/2000.jpg", "")
+      val body: String = "include = [\n  '2010/07/04-05 1000',\n  '2010/07/06 2000',\n]\n"
+      val file: File = write(archive, "2010/07/album.toml", body)
+      ok(archive, "album", "include", "2010/07", "2010/07/04/2412")
+      val album: Album = Album.read(archive, file)
+      val logical: Seq[String] = album.include.map(Include.logical)
+      logical.exists(_.startsWith("all")) shouldBe false
+      logical should contain ("2010/07/06 2000")
+      album.claims(LocalDate.of(2010, 7, 4), "2412") shouldBe true
+      album.claims(LocalDate.of(2010, 7, 5), "1000") shouldBe true
+      album.claims(LocalDate.of(2010, 7, 6), "2000") shouldBe true
+
+  it should "report usage and leave a one-line include array" in :
+    withOriginals: archive =>
+      write(archive, "2009/03/10/2412.jpg", "")
+      write(archive, "2009/03/10/1000.jpg", "")
+      val body: String = "include = [\"2009/03/10 2412\", # every picture]\n]\n"
+      val file: File = write(archive, "2009/03/album.toml", body)
+      usage(archive, "album", "exclude", "--dry-run", "2009/03", "2009/03/10/2412") should include (
+        "include array does not end on its own line"
+      )
+      Files.read(file) shouldBe body
+      usage(archive, "album", "exclude", "2009/03", "2009/03/10/2412") should include (
+        "include array does not end on its own line"
+      )
+      Files.read(file) shouldBe body
+      usage(archive, "album", "include", "2009/03", "2009/03/10/1000") should include (
+        "include array does not end on its own line"
+      )
+      Files.read(file) shouldBe body
 
   "album claims" should "match today's list text and the claims object" in :
     withOriginals: archive =>

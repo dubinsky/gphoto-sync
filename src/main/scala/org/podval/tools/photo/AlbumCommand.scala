@@ -31,6 +31,31 @@ private object AlbumCommand:
     pictures: Seq[Picture],
     exclude: Boolean
   ): (Seq[Include.Entry], Seq[String]) =
+    // Include.add keeps only pairs on the hit day. A multi-day line would lose its other days.
+    def addCovering(
+      current: Seq[Include.Entry],
+      albumSpan: Option[Title.Span],
+      pair: (LocalDate, String),
+      scanned: Map[LocalDate, Set[String]]
+    ): Seq[Include.Entry] =
+      val widened: Map[LocalDate, Set[String]] =
+        scanned.updated(pair._1, scanned.getOrElse(pair._1, Set.empty) + pair._2)
+      def covers(entry: Include.Entry): Boolean =
+        Include.expand(albumSpan, entry, widened).exists(item => item._1.equals(pair._1))
+      val (prefix, tail) = current.span(entry => !covers(entry))
+      val (hit, kept) = tail.partition(covers)
+      val pairs: Set[(LocalDate, String)] =
+        hit.flatMap(entry => Include.expand(albumSpan, entry, widened)).toSet + pair
+      val first: Seq[Include.Entry] = Include.compress(albumSpan, pairs, widened)
+      def isAll(entry: Include.Entry): Boolean = entry match
+        case Include.Entry.All(_) => true
+        case Include.Entry.Dates(_, _, _) => false
+      val touched: Seq[Include.Entry] =
+        if (prefix.nonEmpty || kept.nonEmpty) && first.exists(isAll) then
+          Include.compress(None, pairs, widened)
+        else first
+      prefix ++ touched ++ kept
+
     pictures.foldLeft((include, Seq.empty[String])):
       case ((current, changed), picture) =>
         val day: LocalDate = picture.parent.day.map(_.date).getOrElse(
@@ -41,8 +66,8 @@ private object AlbumCommand:
         val before: Boolean = current.exists(entry => Include.claims(span, entry, day, stem))
         val next: Seq[Include.Entry] =
           if !exclude && before then current
-          else if !exclude then Include.add(current, span, (day, stem), universe)
-          else Include.drop(current, span, (day, stem), universe)
+          else if exclude then Include.drop(current, span, (day, stem), universe)
+          else addCovering(current, span, (day, stem), universe)
         val after: Boolean = next.exists(entry => Include.claims(span, entry, day, stem))
         (next, if before == after then changed else changed :+ path)
 
@@ -120,20 +145,17 @@ final case class AlbumNew(dryRun: Boolean, span: Option[String], name: Option[St
   override def execute(session: Session): (Session, Result) =
     var produced: Json = Json.Null
     Operation.run(session, produced):
-      val dates: Option[Title.Span] = span.map(parseSpan)
+      val parsedSpan: Option[Title.Parsed] = span.map(parseSpan)
       val albumName: Option[String] = name.map(parseName)
-      val title: String = (dates, albumName) match
+      val parsed: Title.Parsed = (parsedSpan, albumName) match
         case (None, None) =>
           throw IllegalArgumentException("missing span or name")
         case (Some(value), None) =>
-          Title.renderSpan(value)
+          value
         case (None, Some(text)) =>
-          text
+          Title.Parsed(None, Some(text))
         case (Some(value), Some(text)) =>
-          s"${Title.renderSpan(value)}/$text"
-      val parsed: Title.Parsed = Title.parse(title).getOrElse(
-        throw IllegalArgumentException(s"not an album title: $title")
-      )
+          value.copy(name = Some(text))
       val originals: File = session.root.configuration.archive
       val file: File = Title.file(originals, parsed)
       if file.exists then throw IllegalArgumentException(s"album already exists: ${parsed.title}")
@@ -161,10 +183,10 @@ final case class AlbumNew(dryRun: Boolean, span: Option[String], name: Option[St
         "path" -> Json.Str(relative)
       ))
 
-  private def parseSpan(text: String): Title.Span =
+  private def parseSpan(text: String): Title.Parsed =
     Title.parse(text) match
       case Some(parsed) if parsed.span.isDefined && parsed.name.isEmpty =>
-        parsed.span.get
+        parsed
       case _ =>
         throw IllegalArgumentException(s"not a span: $text")
 
@@ -215,15 +237,21 @@ final case class AlbumMv(dryRun: Boolean, from: String, to: String) extends Oper
       val removed: Seq[File] =
         if sameParent then Seq.empty
         else AlbumCommand.removedDirectories(oldParent, originals, file, Some(newParent))
-      Transcript.println(s"move ${album.title} ${parsed.title}")
-      Transcript.println(s"${Album.relative(originals, file)} ${Album.relative(originals, dest)}")
-      removed.foreach(dir => Transcript.println(s"rmdir ${Album.relative(originals, dir)}"))
       if !dryRun then
+        // Web.toggle can rewrite include before this lock is taken.
         Album.withWriteLock:
+          val fresh: Album = Album.read(originals, file)
+          if fresh.external then throw IllegalArgumentException(s"refusing external album ${fresh.title}")
+          fresh.include.foreach: entry =>
+            if !Include.inside(parsed.span, entry) then
+              throw IllegalArgumentException(s"include is outside ${parsed.title}: ${Include.logical(entry)}")
           if dest.exists then throw IllegalArgumentException(s"album already exists: ${parsed.title}")
           Files.mkDirs(newParent)
           Files.move(file, dest)
-        if !sameParent then Files.deleteEmptyDirectories(oldParent, originals)
+      Transcript.println(s"move ${album.title} ${parsed.title}")
+      Transcript.println(s"${Album.relative(originals, file)} ${Album.relative(originals, dest)}")
+      removed.foreach(dir => Transcript.println(s"rmdir ${Album.relative(originals, dir)}"))
+      if !dryRun && !sameParent then Files.deleteEmptyDirectories(oldParent, originals)
       produced = Json.Obj(Seq(
         "dryRun" -> Json.Bool(dryRun),
         "from" -> Json.Str(album.title),
@@ -254,21 +282,24 @@ final case class AlbumEdit(
         AlbumCommand.edit(album.include, album.span, universe, resolved, exclude)
       val unchanged: Boolean = AlbumCommand.same(planned, album.include)
       val verb: String = if exclude then "exclude" else "include"
-      if !unchanged then changed.foreach(path => Transcript.println(s"$verb ${album.title} $path"))
       val (shown, paths) =
         if unchanged then (album.include, Seq.empty)
-        else if dryRun then (planned, changed)
         else
-          Album.withWriteLock:
-            val fresh: Album = Album.read(originals, file)
-            if AlbumCommand.same(fresh.include, album.include) then
-              Album.putInclude(file, planned)
-              (planned, changed)
-            else
-              val again: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+          Album.renderedInclude(file, planned)
+          if dryRun then
+            changed.foreach(path => Transcript.println(s"$verb ${album.title} $path"))
+            (planned, changed)
+          else
+            Album.withWriteLock:
+              val fresh: Album = Album.read(originals, file)
               val (next, againChanged) =
-                AlbumCommand.edit(fresh.include, fresh.span, again, resolved, exclude)
+                if AlbumCommand.same(fresh.include, album.include) then (planned, changed)
+                else
+                  val again: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+                  AlbumCommand.edit(fresh.include, fresh.span, again, resolved, exclude)
+              Album.renderedInclude(file, next)
               Album.putInclude(file, next)
+              againChanged.foreach(path => Transcript.println(s"$verb ${album.title} $path"))
               (next, againChanged)
       produced = Json.Obj(Seq(
         "dryRun" -> Json.Bool(dryRun),
