@@ -218,12 +218,12 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       val (dryDays, _) = runOk(dryTimestamps, "repair", "--days", "--dry-run", july)
       dryDays.index.get(File(archive, july)).isDefined shouldBe true
 
-      val (usage, usageResult) = run(dryDays, "set-metadata", "nope", s"$july/2412")
+      val (usage, usageResult) = run(dryDays, "item", "set", "nope", s"$july/2412")
       usageResult match
         case Result.Usage(_) => usage should be theSameInstanceAs dryDays
         case other => fail(other.toString)
 
-      val (clearedDay, _) = runOk(usage, "set-metadata", "source=camera", s"$july/2412")
+      val (clearedDay, _) = runOk(usage, "item", "set", "source=camera", s"$july/2412")
       clearedDay.index.get(File(archive, july)) shouldBe None
       clearedDay.index.get(File(archive, august)).get.listing.isDefined shouldBe true
 

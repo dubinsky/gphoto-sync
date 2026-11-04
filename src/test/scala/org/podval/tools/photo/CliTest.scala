@@ -93,10 +93,18 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("ls", "--name-contains", "--", "-hidden")) shouldBe
       ls(nameContains = Some("-hidden"))
 
-    Cli.parse(List("set-metadata", "bad-raw", "2009/03/10/2412.jpg")) shouldBe
-      Cli.Run(Cli.SetMetadataArgs("bad-raw", "2009/03/10/2412.jpg"))
-    Cli.parse(List("set-metadata", "bad-raw=true", "2009/03/10/2412.jpg")) shouldBe
-      Cli.Run(Cli.SetMetadataArgs("bad-raw=true", "2009/03/10/2412.jpg"))
+    Cli.parse(List("item", "set", "bad-raw", "2009/03/10/2412.jpg")) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "bad-raw", "2009/03/10/2412.jpg"))
+    Cli.parse(List("item", "set", "bad-raw=true", "2009/03/10/2412.jpg")) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "bad-raw=true", "2009/03/10/2412.jpg"))
+    Cli.parse(List("item", "set", "--dry-run", "date=2010/08/01", "2010/07/04/2412")) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = true, "date=2010/08/01", "2010/07/04/2412"))
+    Cli.parse(List("item", "set", "--dry-run=false", "source=scan", "2010/07/04/2412")) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "source=scan", "2010/07/04/2412"))
+    Cli.parse(List("item", "show", "2010/07/04/2412")) shouldBe
+      Cli.Run(Cli.ItemShowArgs("2010/07/04/2412"))
+    Cli.inProcessWrite(Cli.ItemShowArgs("2010/07/04/2412")) shouldBe false
+    Cli.inProcessWrite(Cli.ItemSetArgs(dryRun = true, "date=", "2010/07/04/2412")) shouldBe false
 
     Cli.parse(List("albums")) shouldBe Cli.Run(Cli.Albums(None))
     Cli.parse(List("albums", "2009")) shouldBe Cli.Run(Cli.Albums(Some("2009")))
@@ -251,7 +259,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |
         |ls  list the date tree
         |repair  repair picture names, raw files, timestamps, or day folders
-        |set-metadata  set metadata property
+        |item  show or change a picture
         |albums  list album claims
         |publish  publish albums to Google Photos
         |sync  sync album removals into local except lists
@@ -311,16 +319,33 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--dry-run  boolean  print those actions and write nothing""".stripMargin
     helpOf("repair", "-h") shouldBe helpOf("repair", "--help")
 
-    helpOf("set-metadata", "--help") shouldBe
-      """set-metadata  set metadata property
+    val item: String =
+      """item  show or change a picture
+        |
+        |show  show extensions, sidecar, folder day, assessed civil time, and claiming albums
+        |set  set one sidecar property; date= moves the picture""".stripMargin
+    helpOf("item", "--help") shouldBe item
+    helpOf("item", "-h") shouldBe item
+    helpOf("help", "item") shouldBe item
+    helpOf("item", "show", "--help") shouldBe
+      """show  show extensions, sidecar, folder day, assessed civil time, and claiming albums
+        |
+        |Positionals:
+        |picture  required
+        |
+        |Flags:
+        |none""".stripMargin
+    helpOf("help", "item", "show") shouldBe helpOf("item", "show", "--help")
+    helpOf("item", "set", "--help") shouldBe
+      """set  set one sidecar property; date= moves the picture
         |
         |Positionals:
         |property  required
         |picture  required
         |
         |Flags:
-        |none""".stripMargin
-    helpOf("set-metadata", "-h") shouldBe helpOf("set-metadata", "--help")
+        |--dry-run  boolean  print the actions and write nothing""".stripMargin
+    helpOf("item", "set", "-h") shouldBe helpOf("item", "set", "--help")
 
     helpOf("albums", "--help") shouldBe
       """albums  list album claims
@@ -681,8 +706,15 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("ls", "-nfoo", "2009") -> "unknown option '-nfoo'",
       List("ls", "--Long", "2009") -> "unknown option '--Long'",
       List("ls", "--timestamp-from", "2009") -> "unknown option '--timestamp-from'",
-      List("set-metadata") -> "missing property",
-      List("set-metadata", "bad-raw") -> "missing picture",
+      List("set-metadata") -> "unknown command 'set-metadata'",
+      List("item") -> "missing item command",
+      List("item", "nope") -> "unknown command 'nope'",
+      List("item", "show") -> "missing picture",
+      List("item", "set") -> "missing property",
+      List("item", "set", "date=") -> "missing picture",
+      List("item", "show", "--dry-run", "2010/07/04/2412") -> "unknown option '--dry-run'",
+      List("item", "set", "date=2010/08/01", "2010/07/04/2412", "--dry-run") -> "extra argument '--dry-run'",
+      List("help", "item", "show", "extra") -> "extra argument 'extra'",
       List("login", "extra") -> "extra argument 'extra'",
       List("albums", "2009", "2010") -> "extra argument '2010'",
       List("ls", "2009/03/10", "--fix") -> "extra argument '--fix'",
@@ -853,7 +885,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "requests",
       "results",
       "apply-requests",
-      "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "card", "set-metadata",
+      "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "card", "item",
       "login", "status", "logout",
       "ls", "albums",
       "help", "cd", "pwd", "exit",

@@ -115,7 +115,9 @@ A sidecar `date` replaces the day and keeps the time from the next source.
 When both are set and the days agree, the timestamp's day is the date.
 A file where they disagree is reported by path and is not moved.
 `repair --days` is the move.
-`set-metadata` writes the sidecar and leaves the file where it is.
+`item set date=<day>` stores that civil day and moves the files there.
+Clearing `date` does not move the files.
+Any other `item set` leaves the files in their folder.
 
 Otherwise one embedded capture time is used, from one file: a JPEG-class still, else a HEIC or other image, else a RAW,
 else a video.
@@ -181,8 +183,9 @@ A source under `.upload` does not delete `.upload`.
 The steps run in that order, and each later step sees the files written by the earlier ones.
 `--dry-run` prints those actions and writes nothing.
 
-`photo set-metadata <property> <picture>` sets one sidecar property.
-The picture argument is the stem, without `.jpg`.
+`item set date=<day>` stores that civil day and moves the files there.
+Clearing `date` does not move the files.
+Any other `item set` leaves the files in their folder.
 
 `photo albums [path]` lists album claims.
 Each picture line ends with `albums=` and every claiming title, in Scala string order, with no spaces after commas.

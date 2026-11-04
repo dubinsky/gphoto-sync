@@ -446,6 +446,46 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       rejected.getMessage should include ("is outside")
       Files.read(file) shouldBe outside
 
+  "planDated" should "keep all and a whole-day line and not write" in :
+    withOriginals: originals =>
+      touch(originals, "2010/07/04/2412.jpg")
+      val day: LocalDate = LocalDate.of(2010, 7, 4)
+      val next: LocalDate = LocalDate.of(2010, 7, 5)
+      val mixed: String =
+        "# keep\ninclude = [\n  'all',\n  '2010/07/04 2412',\n]\n"
+      val file: File = write(originals, "2010/07/album.toml", mixed)
+      val edits: Seq[(File, Seq[Include.Entry])] =
+        Album.planDated(originals, day -> "2412", next -> "2412", "2010/07/04/2412")
+      Files.read(file) shouldBe mixed
+      edits.map(_._1.getName) shouldBe Seq("album.toml")
+      edits.head._2.map(Include.logical) shouldBe Seq("all", "2010/07/05 2412")
+      val whole: String =
+        "include = [\n  '2010/07/04',\n  '2010/07/04 2412',\n]\n"
+      val wholeFile: File = write(originals, "2010/07/album.toml", whole)
+      val wholeEdits: Seq[(File, Seq[Include.Entry])] =
+        Album.planDated(originals, day -> "2412", next -> "2412", "2010/07/04/2412")
+      Files.read(wholeFile) shouldBe whole
+      wholeEdits.map(_._2.map(Include.logical)) shouldBe Seq(Seq("2010/07/04", "2010/07/05 2412"))
+
+  it should "return no edit for all alone or a whole day alone" in :
+    withOriginals: originals =>
+      touch(originals, "2010/07/04/2412.jpg")
+      val day: LocalDate = LocalDate.of(2010, 7, 4)
+      val next: LocalDate = LocalDate.of(2010, 7, 5)
+      val allOnly: String = "include = [\n  'all',\n]\n"
+      val file: File = write(originals, "2010/07/album.toml", allOnly)
+      Album.planDated(originals, day -> "2412", next -> "2412", "2010/07/04/2412").isEmpty shouldBe true
+      Files.read(file) shouldBe allOnly
+      val whole: String = "include = [\n  '2010/07/04',\n]\n"
+      val wholeFile: File = write(originals, "2010/07/album.toml", whole)
+      Album.planDated(originals, day -> "2412", next -> "2412", "2010/07/04/2412").isEmpty shouldBe true
+      Files.read(wholeFile) shouldBe whole
+
+  private def touch(originals: File, path: String): Unit =
+    val file: File = File(originals, path)
+    file.getParentFile.mkdirs()
+    file.createNewFile() shouldBe true
+
   private def roundTrip(title: String, relative: String): Unit =
     val parsed: Title.Parsed = Title.parse(title).getOrElse(fail(title))
     parsed.title shouldBe title

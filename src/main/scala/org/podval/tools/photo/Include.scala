@@ -215,7 +215,7 @@ object Include:
     val (hit, kept) = tail.partition(touched)
     prefix ++ replaced(hit) ++ kept
 
-  private def add(
+  private[photo] def add(
     include: Seq[Entry],
     albumSpan: Option[Title.Span],
     pair: (LocalDate, String),

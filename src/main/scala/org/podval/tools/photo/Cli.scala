@@ -27,7 +27,8 @@ object Cli:
     wrongDay: Boolean,
     wrong: Boolean
   ) extends Parsed
-  private[photo] final case class SetMetadataArgs(property: String, picture: String) extends Parsed
+  private[photo] final case class ItemShowArgs(picture: String) extends Parsed
+  private[photo] final case class ItemSetArgs(dryRun: Boolean, property: String, picture: String) extends Parsed
   private[photo] final case class Albums(path: Option[String]) extends Parsed
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
@@ -359,7 +360,8 @@ object Cli:
     case _: DeleteAlbumArgs => true
     case _: WebArgs => true
     case _: Ls => false
-    case _: SetMetadataArgs => false
+    case _: ItemShowArgs => false
+    case _: ItemSetArgs => false
     case _: Albums => false
     case _: PublishArgs => false
     case _: SyncArgs => false
@@ -471,6 +473,8 @@ object Cli:
       requestCommands.find(_.name == name).map(command => (command, rest, List("agent", "request", name)))
     case "agent" :: name :: rest =>
       agentCommands.find(_.name == name).map(command => (command, rest, List("agent", name)))
+    case "item" :: name :: rest =>
+      itemCommands.find(_.name == name).map(command => (command, rest, List("item", name)))
     case name :: rest =>
       registry.find(_.name == name).map(command => (command, rest, List(name)))
     case Nil =>
@@ -620,6 +624,8 @@ object Cli:
               Usage(s"extra argument '$extra'")
     case "agent" :: rest =>
       parseAgent(rest, front)
+    case "item" :: rest =>
+      parseItem(rest, front)
     case "card" :: rest =>
       parseCard(rest, front)
     case name :: rest =>
@@ -650,8 +656,10 @@ object Cli:
         ls.wrong,
         ls.recursive
       )
-    case SetMetadataArgs(property, picture) =>
-      SetMetadata(picture, property)
+    case ItemShowArgs(picture) =>
+      ItemShow(picture)
+    case ItemSetArgs(dryRun, property, picture) =>
+      ItemSet(dryRun, property, picture)
     case Albums(path) =>
       ListAlbums(path)
     case PublishArgs(path, recursive, dryRun) =>
@@ -760,15 +768,21 @@ object Cli:
   private def helpText(positionals: List[String], front: Front): Outcome = positionals match
     case Nil =>
       Help(topHelp(front))
-    case name :: Nil if name == "agent" =>
+    case "item" :: Nil =>
+      Help(itemHelp)
+    case "item" :: verb :: Nil =>
+      itemCommands.find(_.name == verb) match
+        case None => Usage(s"unknown command '$verb'")
+        case Some(found) => Help(commandHelp(found))
+    case "agent" :: Nil =>
       Help(agentHelp)
-    case name :: Nil if name == "card" =>
+    case "card" :: Nil =>
       Help(cardHelp)
     case name :: Nil =>
       registry.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
         case Some(found) => Help(commandHelp(found))
-    case extra :: _ =>
+    case _ :: extra :: _ =>
       Usage(s"extra argument '$extra'")
 
   private[photo] def usageLine(message: String): String = s"Photo Archive Tool: $message"
@@ -781,7 +795,10 @@ object Cli:
     readFlags(command, args, Values()) match
       case Left(outcome) => outcome
       case Right((values, positionals)) =>
-        checkPositionals(command.positionals, positionals) match
+        val rejected: Option[String] =
+          if command.name == "help" then positionals.drop(2).headOption.map(extra => s"extra argument '$extra'")
+          else checkPositionals(command.positionals, positionals)
+        rejected match
           case Some(message) => Usage(message)
           case None => finish(command, values, positionals, front)
 
@@ -899,8 +916,10 @@ object Cli:
       case Front.Shell | Front.Serve =>
         Nil
     val (beforeLogin, fromLogin) = commands.span(_.name != "login")
+    val (beforeAlbums, fromAlbums) = beforeLogin.span(_.name != "albums")
     val lines: List[String] =
-      beforeLogin.map(lineOf) ++ List(cardLine) ++ fromLogin.map(lineOf) ++ List(lineOf(helpCommand)) ++
+      beforeAlbums.map(lineOf) ++ List(itemLine) ++ fromAlbums.map(lineOf) ++ List(cardLine) ++
+        fromLogin.map(lineOf) ++ List(lineOf(helpCommand)) ++
         frontLines ++
         List(agentLine) ++
         sessionCommands.map(lineOf)
@@ -919,6 +938,16 @@ object Cli:
       Usage(s"unknown command '$token'")
     case rest =>
       parseCommand(discoverCommand, rest, front)
+
+  private def parseItem(args: List[String], front: Front): Outcome = args match
+    case Nil =>
+      Usage("missing item command")
+    case ("--help" | "-h") :: _ =>
+      Help(itemHelp)
+    case name :: rest =>
+      itemCommands.find(_.name == name) match
+        case None => Usage(s"unknown command '$name'")
+        case Some(command) => parseCommand(command, rest, front)
 
   private def parseAgent(args: List[String], front: Front): Outcome = args match
     case Nil =>
@@ -1069,6 +1098,23 @@ object Cli:
     Flag("dry-run", None, BooleanKind, "print those actions and write nothing")
   )
 
+  private val itemCommands: List[Command] = List(
+    Command(
+      name = "show",
+      help = "show extensions, sidecar, folder day, assessed civil time, and claiming albums",
+      positionals = List(Required("picture", path = true)),
+      flags = Nil,
+      build = (_, args) => ItemShowArgs(args.head)
+    ),
+    Command(
+      name = "set",
+      help = "set one sidecar property; date= moves the picture",
+      positionals = List(Required("property"), Required("picture", path = true)),
+      flags = List(Flag("dry-run", None, BooleanKind, "print the actions and write nothing")),
+      build = (values, args) => ItemSetArgs(bool(values, "dry-run"), args.head, args.drop(1).head)
+    )
+  )
+
   private val commands: List[Command] = List(
     Command(
       name = "ls",
@@ -1107,13 +1153,6 @@ object Cli:
         days = bool(values, "days"),
         dryRun = bool(values, "dry-run")
       )
-    ),
-    Command(
-      name = "set-metadata",
-      help = "set metadata property",
-      positionals = List(Required("property"), Required("picture", path = true)),
-      flags = Nil,
-      build = (_, args) => SetMetadataArgs(args.head, args.drop(1).head)
     ),
     Command(
       name = "albums",
@@ -1993,6 +2032,11 @@ object Cli:
   private val mcpLine: String = "mcp  expose agent queries on MCP stdio"
 
   private val agentLine: String = "agent  query the catalog and the archive"
+
+  private val itemLine: String = "item  show or change a picture"
+
+  private def itemHelp: String =
+    (List(itemLine, "") ++ itemCommands.map(lineOf)).mkString("\n")
 
   private val cardLine: String = "card  find a camera card or copy it into .upload"
 

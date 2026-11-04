@@ -37,7 +37,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("--help"), Cli.Front.Shell) match
       case Cli.Help(text) =>
         text.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
-          "ls", "repair", "set-metadata", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
+          "ls", "repair", "item", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
           "web", "card", "login", "status", "logout", "help", "agent", "cd", "pwd", "exit"
         )
       case other => fail(other.toString)
@@ -247,7 +247,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
           "pwd",
           "albums 07",
           "publish",
-          "set-metadata uploader 07/19/2412",
+          "item set uploader 07/19/2412",
           "agent include 2009/03/10/2412",
           "exit",
           "ls 07"
@@ -261,10 +261,24 @@ class ShellTest extends AnyFlatSpec, Matchers:
         List("ls", "--long", "2010/07"),
         List("albums", "2010/07"),
         List("publish"),
-        List("set-metadata", "uploader", "2010/07/19/2412"),
+        List("item", "set", "uploader", "2010/07/19/2412"),
         List("agent", "include", "2009/03/10/2412")
       )
       out shouldBe "2010\n"
+
+  it should "rewrite a relative item show to an archive-root path" in :
+    prepared: (_, session) =>
+      var sent: List[List[String]] = Nil
+      val exchange = (_: Session, argv: List[String]) =>
+        sent = sent :+ argv
+        Result.Ok("", Json.Null)
+      val (code, _, _) = run(
+        session,
+        Seq("cd 2010/07/19", "item show 2412"),
+        exchange = Some(exchange)
+      )
+      code shouldBe 0
+      sent shouldBe List(List("item", "show", "2010/07/19/2412"))
 
   private def execute(session: Session, args: String*): Result =
     Cli.parse(args.toList) match

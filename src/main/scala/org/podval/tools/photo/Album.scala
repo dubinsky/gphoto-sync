@@ -159,6 +159,91 @@ object Album:
           val next: Seq[Include.Entry] = Include.relocate(album.include, album.span, fromPair, toPair, universe)
           if !sameEntries(next, album.include) then spliceInclude(file, next)
 
+  // Same reads as rewriteInclude, no write. A bad curated file fails before a move.
+  private[photo] def planCurated(
+    originals: File,
+    from: String,
+    to: String
+  ): Seq[(File, Seq[Include.Entry])] =
+    if from == to then Seq.empty
+    else
+      val fromPair: (LocalDate, String) = splitPath(from)
+      val toPair: (LocalDate, String) = splitPath(to)
+      val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+      val files: Seq[File] = curatedFiles(originals)
+      files.foreach(file => read(originals, file))
+      files.flatMap: file =>
+        val album: Album = read(originals, file)
+        val next: Seq[Include.Entry] = Include.relocate(album.include, album.span, fromPair, toPair, universe)
+        if sameEntries(next, album.include) then None
+        else
+          renderedInclude(file, next)
+          Some(file -> next)
+
+  private[photo] def planDated(
+    originals: File,
+    from: (LocalDate, String),
+    to: (LocalDate, String),
+    fromPath: String
+  ): Seq[(File, Seq[Include.Entry])] =
+    val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
+    val loaded: Seq[Loaded] = Archive.scan(originals).albums
+    val outside: Seq[String] =
+      loaded.flatMap: one =>
+        one.album.span match
+          case Some(span) if one.album.claims(from._1, from._2) && !span.contains(to._1) =>
+            Some(one.album.title)
+          case _ =>
+            None
+    if outside.nonEmpty then
+      throw IllegalArgumentException(
+        s"$fromPath is claimed by ${outside.sorted.mkString(", ")}, which does not contain ${to._1}"
+      )
+    val edits: Seq[(File, Seq[Include.Entry])] =
+      loaded.flatMap: one =>
+        one.album.span match
+          case None =>
+            None
+          case Some(_) if !one.album.claims(from._1, from._2) =>
+            None
+          case Some(_) =>
+            val rewrite: Seq[Include.Entry] =
+              one.album.include.collect:
+                case entry @ Include.Entry.Dates(_, Some(_), _)
+                    if Include.claims(one.album.span, entry, from._1, from._2) &&
+                       !Include.claims(one.album.span, entry, to._1, to._2) =>
+                  entry
+            if rewrite.isEmpty then None
+            else
+              // Album span None: prepare cannot emit Entry.All.
+              // Entry.Dates claims and expand use the entry span.
+              val rewritten: Seq[Include.Entry] =
+                Include.add(
+                  Include.drop(rewrite, None, from, universe),
+                  None,
+                  to,
+                  universe
+                )
+              Some(one.file -> spliceKeepingFixed(one.album.include, rewrite, rewritten))
+    edits.foreach((file, include) => renderedInclude(file, include))
+    edits
+
+  private def spliceKeepingFixed(
+    include: Seq[Include.Entry],
+    rewrite: Seq[Include.Entry],
+    rewritten: Seq[Include.Entry]
+  ): Seq[Include.Entry] =
+    val rewriteSet: Set[Include.Entry] = rewrite.toSet
+    val (_, spliced) =
+      include.foldLeft((false, Seq.empty[Include.Entry])):
+        case ((true, acc), entry) if rewriteSet.contains(entry) =>
+          (true, acc)
+        case ((false, acc), entry) if rewriteSet.contains(entry) =>
+          (true, acc ++ rewritten)
+        case ((inserted, acc), entry) =>
+          (inserted, acc :+ entry)
+    spliced
+
   def picturePath(path: String): Option[(LocalDate, String)] =
     path.split('/').filter(_.nonEmpty).toSeq match
       case Seq(year, month, day, stem)
@@ -188,8 +273,7 @@ object Album:
     withWriteLock:
       spliceInclude(file, include)
 
-  // Unlocked splice. Equal text skips the rename. The caller holds the write lock.
-  private[photo] def spliceInclude(file: File, include: Seq[Include.Entry]): Unit =
+  private[photo] def renderedInclude(file: File, include: Seq[Include.Entry]): String =
     val text: String = Files.read(file)
     val lines: Seq[TextLine] = splitLines(text)
     val block: Seq[TextLine] =
@@ -200,7 +284,12 @@ object Album:
       case None if includePresent(text) =>
         throw IllegalArgumentException(s"$file: include array does not end on its own line")
       case None => appendBlock(lines, block)
-    val rendered: String = joinLines(next)
+    joinLines(next)
+
+  // Unlocked splice. Equal text skips the rename. The caller holds the write lock.
+  private[photo] def spliceInclude(file: File, include: Seq[Include.Entry]): Unit =
+    val text: String = Files.read(file)
+    val rendered: String = renderedInclude(file, include)
     if rendered != text then replaceAtomic(file, rendered, replace = true)
 
   // Checks and the create share one lock, so two creates of the same title cannot both pass.
