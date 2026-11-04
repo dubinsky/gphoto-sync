@@ -134,11 +134,9 @@ object Title:
 
   private def hyphen(text: String): Option[String] = Option.when(text.startsWith("-"))(text.drop(1))
 
-  private def isMonthNumber(name: String): Boolean =
-    isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 12
+  private def isMonthNumber(name: String): Boolean = DateTree.isMonth(name)
 
-  private def isDayNumber(name: String): Boolean =
-    isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 31
+  private def isDayNumber(name: String): Boolean = DateTree.isDay(name)
 
   private def curated(text: String): Option[Parsed] =
     Option.when(legalName(text) && !isNumber(text, 4))(Parsed(None, Some(text)))
@@ -293,5 +291,4 @@ object Title:
     try Some(YearMonth.of(year, month))
     catch case _: DateTimeException => None
 
-  private def isNumber(name: String, length: Int): Boolean =
-    name.length == length && name.forall(_.isDigit)
+  private def isNumber(name: String, length: Int): Boolean = DateTree.isNumber(name, length)

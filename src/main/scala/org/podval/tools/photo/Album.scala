@@ -182,7 +182,7 @@ object Album:
 
   private[photo] def needsRecursive(prefix: Option[String]): Boolean =
     val segments: Seq[String] = prefix.filter(_.nonEmpty).toSeq.flatMap(_.split('/').filter(_.nonEmpty))
-    segments.isEmpty || (segments.sizeIs == 1 && isNumber(segments.head, 4))
+    segments.isEmpty || (segments.sizeIs == 1 && DateTree.isNumber(segments.head, 4))
 
   def pictureMatches(path: String, prefix: Option[String]): Boolean =
     prefix.filter(_.nonEmpty).forall(selected => path == selected || path.startsWith(s"$selected/"))
@@ -339,18 +339,16 @@ object Album:
             val corrected: String =
               if raw != lower && Extension.all.exists(_.name == lower) then lower else raw
             Extension.all.exists(_.name == corrected) || corrected == Metadata.extension
-    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(Map.empty[LocalDate, Set[String]]):
-      (universe, yearDir) =>
-        val year: Int = yearDir.getName.toInt
-        childDirectories(yearDir).filter(dir => isMonth(dir.getName)).foldLeft(universe):
-          (universe, monthDir) =>
-            val month: Int = monthDir.getName.toInt
-            childDirectories(monthDir).filter(dir => isDay(dir.getName)).foldLeft(universe):
-              (universe, dayDir) =>
+    DateTree.years(originals).foldLeft(Map.empty[LocalDate, Set[String]]):
+      (universe, year) =>
+        DateTree.months(year).foldLeft(universe):
+          (universe, month) =>
+            DateTree.days(month).foldLeft(universe):
+              (universe, day) =>
                 val stems: Set[String] =
-                  Pictures.grouped(Files.listFiles(dayDir).filter(accepted)).map(_._1).toSet
+                  Pictures.grouped(Files.listFiles(day.directory).filter(accepted)).map(_._1).toSet
                 if stems.isEmpty then universe
-                else universe.updated(LocalDate.of(year, month, dayDir.getName.toInt), stems)
+                else universe.updated(day.date, stems)
 
   // Album files only. Archive.scan also lists pictures with NameMode.Leave.
   private def planningAlbums(originals: File): Seq[Loaded] =
@@ -361,21 +359,21 @@ object Album:
       .sortBy(_.getName)
       .map(file => Loaded(file, read(originals, file)))
     val curated: Seq[Loaded] = albumsIn(originals, skipDigitToml = false)
-    childDirectories(originals).filter(dir => isNumber(dir.getName, 4)).foldLeft(curated):
-      (albums, yearDir) =>
-        children(yearDir).filter(file => file.isFile && file.getName.endsWith(".toml")).foreach: file =>
+    DateTree.years(originals).foldLeft(curated):
+      (albums, year) =>
+        children(year.directory).filter(file => file.isFile && file.getName.endsWith(".toml")).foreach: file =>
           throw IllegalArgumentException(s"$file: album files do not live in a year directory")
-        childDirectories(yearDir).filter(dir => isMonth(dir.getName)).foldLeft(albums):
-          (albums, monthDir) =>
-            val withMonth: Seq[Loaded] = albums ++ albumsIn(monthDir, skipDigitToml = false)
-            childDirectories(monthDir).filter(dir => isDay(dir.getName)).foldLeft(withMonth):
-              (albums, dayDir) =>
-                albums ++ albumsIn(dayDir, skipDigitToml = true)
+        DateTree.months(year).foldLeft(albums):
+          (albums, month) =>
+            val withMonth: Seq[Loaded] = albums ++ albumsIn(month.directory, skipDigitToml = false)
+            DateTree.days(month).foldLeft(withMonth):
+              (albums, day) =>
+                albums ++ albumsIn(day.directory, skipDigitToml = true)
 
   def picturePath(path: String): Option[(LocalDate, String)] =
     path.split('/').filter(_.nonEmpty).toSeq match
       case Seq(year, month, day, stem)
-          if isNumber(year, 4) && isNumber(month, 2) && isNumber(day, 2) =>
+          if DateTree.isNumber(year, 4) && DateTree.isNumber(month, 2) && DateTree.isNumber(day, 2) =>
         Some((LocalDate.of(year.toInt, month.toInt, day.toInt), stem))
       case _ =>
         None
@@ -690,16 +688,6 @@ object Album:
     Option(originals.listFiles).map(_.toSeq).getOrElse(Seq.empty)
       .filter(file => file.isFile && file.getName.endsWith(".toml"))
       .sortBy(_.getName)
-
-  private def isNumber(name: String, length: Int): Boolean =
-    name.length == length && name.forall(_.isDigit)
-
-  private def isMonth(name: String): Boolean = isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 12
-
-  private def isDay(name: String): Boolean = isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 31
-
-  private def childDirectories(directory: File): Seq[File] =
-    children(directory).filter(_.isDirectory).sortBy(_.getName)
 
   private def children(directory: File): Seq[File] =
     Option(directory.listFiles).map(_.toSeq).getOrElse(Seq.empty)

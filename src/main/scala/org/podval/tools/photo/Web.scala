@@ -269,11 +269,11 @@ object Web:
           children.flatMap: dirs =>
             val entries: Either[Rejected, Seq[Json]] = branch match
               case Branch.Years =>
-                Right(dirs.filter(dir => isNumber(dir.getName, 4)).map: dir =>
+                Right(dirs.filter(dir => DateTree.isNumber(dir.getName, 4)).map: dir =>
                   entryJson(dir.getName, dir.getName, None)
                 )
               case Branch.Months(year) =>
-                Right(dirs.filter(dir => isMonth(dir.getName)).map: dir =>
+                Right(dirs.filter(dir => DateTree.isMonth(dir.getName)).map: dir =>
                   entryJson(dir.getName, s"$year/${dir.getName}", None)
                 )
               case Branch.Days(year, month) =>
@@ -393,9 +393,9 @@ object Web:
   private def branchOf(at: String): Either[Rejected, Branch] =
     if at.isEmpty then Right(Branch.Years)
     else lexical(at).flatMap:
-      case year :: Nil if isNumber(year, 4) =>
+      case year :: Nil if DateTree.isNumber(year, 4) =>
         Right(Branch.Months(year))
-      case year :: month :: Nil if isNumber(year, 4) && isMonth(month) =>
+      case year :: month :: Nil if DateTree.isNumber(year, 4) && DateTree.isMonth(month) =>
         Right(Branch.Days(year, month))
       case _ =>
         Left(Rejected(400, "not a branch"))
@@ -420,7 +420,7 @@ object Web:
     children: Seq[File]
   ): Either[Rejected, Seq[Json]] =
     val root: java.nio.file.Path = archive.toPath.toRealPath()
-    children.filter(dir => isDay(dir.getName)).foldLeft[Either[Rejected, List[Json]]](Right(Nil)): (acc, directory) =>
+    children.filter(dir => DateTree.isDay(dir.getName)).foldLeft[Either[Rejected, List[Json]]](Right(Nil)): (acc, directory) =>
       acc.flatMap: soFar =>
         val name: String = directory.getName
         if !directory.isDirectory then Right(soFar)
@@ -667,15 +667,6 @@ object Web:
               case Right(value) =>
                 decodeParams(tail, (key -> value) :: acc)
 
-  private def isNumber(name: String, length: Int): Boolean =
-    name.length == length && name.forall(_.isDigit)
-
-  private def isMonth(name: String): Boolean =
-    isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 12
-
-  private def isDay(name: String): Boolean =
-    isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 31
-
   private def percentDecode(raw: String): Either[Rejected, String] =
     decodeBytes(raw, Nil) match
       case Left(rejected) =>
@@ -791,7 +782,7 @@ object Web:
   private def dateStem(decoded: String): Option[(String, String)] =
     segments(decoded, Nil) match
       case year :: month :: day :: stem :: Nil
-        if isNumber(year, 4) && isMonth(month) && isDay(day) && !stem.contains('.') =>
+        if DateTree.isNumber(year, 4) && DateTree.isMonth(month) && DateTree.isDay(day) && !stem.contains('.') =>
           Some(s"$year/$month/$day" -> stem)
       case _ =>
         None
