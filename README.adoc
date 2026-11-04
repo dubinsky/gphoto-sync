@@ -173,6 +173,8 @@ It lowercases `JPEG` to `jpeg` and does not produce `jpg`.
 `--days` moves a picture into the assessed day folder.
 A day-folder source still rewrites curated include paths before any of its files move, and a source that is not
 `YYYY/MM/DD/stem` does not.
+The empty-directory climb stops at the archive root.
+A source under `.upload` does not delete `.upload`.
 The steps run in that order, and each later step sees the files written by the earlier ones.
 `--dry-run` prints those actions and writes nothing.
 

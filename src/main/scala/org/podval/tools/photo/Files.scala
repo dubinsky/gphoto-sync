@@ -19,10 +19,12 @@ object Files:
     !NFiles.list(directory.toPath).findFirst.isPresent
 
   @tailrec
-  def deleteEmptyDirectories(directory: File): Unit =
-    if isDirectoryEmpty(directory) then
+  def deleteEmptyDirectories(directory: File, stop: File): Unit =
+    if DirectoryIndex.key(directory) == DirectoryIndex.key(stop) then ()
+    else if directory.getParentFile == null then ()
+    else if directory.isDirectory && isDirectoryEmpty(directory) then
       NFiles.delete(directory.toPath)
-      deleteEmptyDirectories(directory.getParentFile)
+      deleteEmptyDirectories(directory.getParentFile, stop)
 
   def move(file: File, toFile: File): Unit =
     NFiles.move(file.toPath, toFile.toPath)

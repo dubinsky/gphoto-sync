@@ -231,6 +231,42 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, "2012/04/04/3404.jpg").isFile shouldBe true
       File(originals, "2012/04/04/3404.toml").isFile shouldBe true
 
+  it should "keep a directory that still holds an album file" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/12/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      val album: File = File(originals, "2009/06/album.toml")
+      val albumText: String = "include = [\"all\"]\n"
+      JFiles.writeString(album.toPath, albumText)
+      JFiles.writeString(File(originals, "2009/06/12/3404.toml").toPath, "date = 2012-04-04\n")
+      val out: String = capture(run(root, "2009/06/12", days = true))
+      picture.exists shouldBe false
+      File(originals, "2009/06/12").exists shouldBe false
+      File(originals, "2012/04/04/3404.jpg").isFile shouldBe true
+      File(originals, "2012/04/04/3404.toml").isFile shouldBe true
+      album.isFile shouldBe true
+      JFiles.readString(album.toPath) shouldBe albumText
+      File(originals, "2009/06").list.toSet shouldBe Set("album.toml")
+      File(originals, "2009").list.toSet shouldBe Set("06")
+      originals.list.toSet shouldBe Set("2009", "2012")
+      out should not include ("skipping")
+
+  it should "delete emptied parents and keep the archive root" in :
+    withOriginals: originals =>
+      val root: Root = rootFor(originals)
+      val picture: File = File(originals, "2009/06/12/3404.jpg")
+      copyFixture("/dates/evening-no-offset.jpg", picture)
+      JFiles.writeString(File(originals, "2009/06/12/3404.toml").toPath, "date = 2012-04-04\n")
+      val out: String = capture(run(root, "2009/06/12", days = true))
+      picture.exists shouldBe false
+      File(originals, "2009").exists shouldBe false
+      File(originals, "2012/04/04/3404.jpg").isFile shouldBe true
+      File(originals, "2012/04/04/3404.toml").isFile shouldBe true
+      originals.isDirectory shouldBe true
+      originals.list.toSet shouldBe Set("2012")
+      out should not include ("skipping")
+
   it should "not move or stamp when the sidecar date disagrees with the timestamp" in :
     withOriginals: originals =>
       val root: Root = rootFor(originals)
@@ -538,6 +574,22 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.isFile shouldBe true
       destination.isFile shouldBe true
       out should not include ("keep")
+
+  "deleteEmptyDirectories" should "stop at the archive root when that root is empty" in :
+    withOriginals: originals =>
+      originals.isDirectory shouldBe true
+      Files.deleteEmptyDirectories(originals, originals)
+      originals.isDirectory shouldBe true
+      val day: File = File(originals, "2009/06/12")
+      day.mkdirs()
+      val stop: File = File(day, "../../..")
+      DirectoryIndex.key(stop) shouldBe DirectoryIndex.key(originals)
+      Files.deleteEmptyDirectories(day, stop)
+      day.exists shouldBe false
+      File(originals, "2009/06").exists shouldBe false
+      File(originals, "2009").exists shouldBe false
+      originals.isDirectory shouldBe true
+      originals.list.length shouldBe 0
 
   private def run(
     root: Root,

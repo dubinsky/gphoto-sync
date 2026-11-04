@@ -172,7 +172,7 @@ object Repair:
                 val toFile: File = File(dayShouldBe.directory, s"${picture.name}.$extension")
                 Transcript.println(s"moving $fromFile to $toFile")
                 Files.move(fromFile, toFile)
-              Files.deleteEmptyDirectories(picture.parent.directory)
+              Files.deleteEmptyDirectories(picture.parent.directory, originals)
 
   private def act(dryRun: Boolean, message: String)(action: => Unit): Unit =
     Transcript.println(message)
