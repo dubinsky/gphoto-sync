@@ -68,9 +68,16 @@ class WebTest extends AnyFlatSpec, Matchers:
         val script: HttpResponse[String] = get(port, "/app.js")
         script.statusCode shouldBe 200
         script.headers.firstValue("content-type").orElse("") shouldBe "text/javascript; charset=utf-8"
-        script.body should include ("Photo archive")
-        script.body should not include ("fetch")
-        script.body should not include ("/api")
+        script.body should include ("/api/tree")
+        script.body should include ("/api/day")
+        script.body should include ("/api/album")
+        script.body should include ("/api/thumb")
+        script.body should include ("/api/file")
+        script.body should include ("/api/toggle")
+        script.body should include ("/api/albums")
+        script.body should include ("event.key === \"x\"")
+        script.body should include ("\"desired\"")
+        script.body should include ("\"observed\"")
         val style: HttpResponse[String] = get(port, "/app.css")
         style.statusCode shouldBe 200
         style.headers.firstValue("content-type").orElse("") shouldBe "text/css; charset=utf-8"

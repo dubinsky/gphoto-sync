@@ -7,6 +7,29 @@
 </head>
 <body>
 <h1>Photo archive</h1>
+<p id="catalog"></p>
+<p id="error" hidden></p>
+<p><button id="back" type="button" hidden>Back</button></p>
+<h2 id="heading" hidden></h2>
+<p id="meta" hidden></p>
+<p id="owner" hidden></p>
+<p id="reason" hidden></p>
+<label id="curated-label" hidden>curated <select id="curated"></select></label>
+<form id="create" hidden>
+  <label>start <input id="start" name="start" autocomplete="off" spellcheck="false" placeholder="YYYY/MM/DD"></label>
+  <label>end <input id="end" name="end" autocomplete="off" spellcheck="false" placeholder="YYYY/MM/DD"></label>
+  <label>name <input id="name" name="name" autocomplete="off" spellcheck="false"></label>
+  <button type="submit">Create</button>
+</form>
+<ul id="listing"></ul>
+<div id="grid" hidden>
+  <div id="spacer"></div>
+</div>
+<div id="unmatched"></div>
+<div id="panel" hidden>
+  <p id="panel-note" hidden>no displayable image</p>
+  <img id="full" alt="">
+</div>
 <script src="/app.js"></script>
 </body>
 </html>
