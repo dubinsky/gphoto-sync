@@ -33,6 +33,17 @@ final case class Album private (
   include: Seq[Include.Entry],
   private[photo] val role: AlbumRole
 ):
+  // fromProduct and copy call this constructor and skip the factories.
+  role match
+    case AlbumRole.Client(_, Publication.Published(id, _)) =>
+      require(id.nonEmpty, "id must be non-empty")
+    case AlbumRole.External(googleTitle, owner) =>
+      owner.foreach: name =>
+        require(!name.trim.isEmpty, "owner must be a non-empty display name")
+        require(googleTitle.exists(_.nonEmpty), "owner requires a non-empty google-title")
+    case AlbumRole.Client(_, Publication.Pending(_)) =>
+      ()
+
   def external: Boolean = role match
     case _: AlbumRole.External => true
     case _: AlbumRole.Client => false
