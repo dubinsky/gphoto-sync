@@ -38,19 +38,24 @@ final case class ListPictures(
         if segments.headOption.contains(UploadDirectory.directoryName) then
           throw IllegalArgumentException("not a date-tree path")
       // Pictures.item throws when the stem is absent, and Leave would print before the real walk.
+      // Session.walk climbs '..' off that picture, so the tail can re-enter .upload.
       case PathStyle.Cursor =>
         val start: Directory = if raw.startsWith("/") then session.root else session.cursor
-        val _: (Directory, Boolean) =
-          segments.foldLeft((start, true)):
-            case ((current, live), segment) =>
-              if !live then (current, false)
+        val _: (Directory, Boolean, Boolean) =
+          segments.foldLeft((start, false, true)):
+            case ((current, onPicture, live), segment) =>
+              if !live then (current, false, false)
+              else if onPicture then
+                if segment == "." then (current, true, true)
+                else if segment == ".." then (current, false, true)
+                else (current, true, false)
               else if current.isInstanceOf[Pictures] && segment != "." && segment != ".." then
                 if current.isInstanceOf[UploadDirectory] then
                   throw IllegalArgumentException("not a date-tree path")
-                else (current, false)
+                else (current, true, true)
               else session.copy(cursor = current).parse(segment) match
-                case directory: Directory => (directory, true)
-                case _ => (current, false)
+                case directory: Directory => (directory, false, true)
+                case _ => (current, false, false)
     val parsed: Path = session.parse(raw)
     val propertyAndValue: Option[Property.AndValue[?]] = property.map(Cli.parsePropertyAndValue)
     parsed match

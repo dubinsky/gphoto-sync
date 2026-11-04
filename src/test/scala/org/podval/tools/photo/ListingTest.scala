@@ -163,6 +163,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
   it should "reject the inbox" in :
     withArchive: archive =>
       JFiles.createDirectories(archive.toPath.resolve("2010/07"))
+      jpeg(File(archive, "2010/07/04/2412.jpg"))
       jpeg(File(archive, ".upload/2412.jpg"))
       val root: Root = rootFor(archive)
       val session: Session = Session(root)
@@ -190,7 +191,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
       )
       val yearListing: Result = Result.Ok(
         "2010/07\n",
-        directories(entry("2010/07", "days", 0))
+        directories(entry("2010/07", "days", 1))
       )
       execute(atInbox, "ls", "..")._2 shouldBe rootListing
       execute(atInbox, "ls", "../2010")._2 shouldBe yearListing
@@ -202,6 +203,9 @@ class ListingTest extends AnyFlatSpec, Matchers:
       usage(atYear, "ls", "../.upload")
       usage(atYear, "ls", "../.upload/2412")
       usage(atYear, "ls", "../.upload/missing/extra")
+      val atDay: Session = Session(root, PathStyle.Cursor, root.year(2010).month(7).day(4))
+      usage(atDay, "ls", "2412/../../../../.upload/missing")
+      usage(atDay, "ls", "2412/../../../../.upload/2412/extra")
 
   private def rootFor(archive: File): Root =
     val home: File = File(System.getProperty("user.home"))
