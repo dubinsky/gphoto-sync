@@ -55,7 +55,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
     Serve.readResponse("""{"ok":true,"archive":"/a","nope":1}""") match
       case Left(problem) => problem.message shouldBe "malformed request"
       case Right(other) => fail(other.toString)
-    Serve.read("""{"argv":["lsd","2010"],"archive":"/tmp/a"}""") match
+    Serve.read("""{"argv":["ls","2010"],"archive":"/tmp/a"}""") match
       case Left(problem) => problem.message shouldBe "malformed request"
       case Right(other) => fail(other.toString)
 
@@ -99,12 +99,12 @@ class ServeTest extends AnyFlatSpec, Matchers:
         """{"argv":["cd","2010"]}""",
         """{"argv":["pwd"]}""",
         """{"argv":["exit"]}""",
-        """{"argv":["lsd","2010"]}"""
+        """{"argv":["ls","2010"]}"""
       )) shouldBe List(
         usage(session, "cd is only available in the shell"),
         usage(session, "pwd is only available in the shell"),
         usage(session, "exit is only available in the shell"),
-        lsdOk(session)
+        lsOk(session)
       )
 
   it should "reset the cursor after a command" in :
@@ -112,7 +112,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
       var cursors: List[String] = Nil
       val lines: List[String] = respond(
         session,
-        Seq("""{"argv":["ls","2010"]}""", """{"argv":["lsd","2010"]}"""),
+        Seq("""{"argv":["ls","2010"]}""", """{"argv":["status"]}"""),
         (current, parsed) =>
           cursors = cursors :+ Session.display(current.cursor)
           parsed match
@@ -150,11 +150,11 @@ class ServeTest extends AnyFlatSpec, Matchers:
       respond(session, Seq(
         "",
         " \t ",
-        """{"argv":["lsd","2010"]}"""
+        """{"argv":["ls","2010"]}"""
       )) shouldBe List(
         usage(session, "empty request"),
         usage(session, "empty request"),
-        lsdOk(session)
+        lsOk(session)
       )
 
   it should "reject a malformed request and keep the session" in :
@@ -173,7 +173,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         """{"id":"s","argv":"pwd"}""",
         """{"id":"1","argv":["\q"]}""",
         """{"id":"t","argv":["pwd"]} true""",
-        """{"argv":["lsd","2010"]}"""
+        """{"argv":["ls","2010"]}"""
       )) shouldBe List(
         usage(session, "cd is only available in the shell"),
         malformed,
@@ -187,35 +187,29 @@ class ServeTest extends AnyFlatSpec, Matchers:
         withId("s", malformed),
         withId("1", malformed),
         withId("t", malformed),
-        lsdOk(session)
+        lsOk(session)
       )
 
   it should "omit a missing id and echo a string id" in :
     prepared: (_, session) =>
       respond(session, Seq(
-        """{"argv":["lsd","2010"]}  """,
-        """{ "id" : "1" , "argv" : [ "lsd", "2010" ] }""",
-        """{"id":"a\/b\"c\\d\n\t\r","argv":["lsd","2010"]}"""
+        """{"argv":["ls","2010"]}  """,
+        """{ "id" : "1" , "argv" : [ "ls", "2010" ] }""",
+        """{"id":"a\/b\"c\\d\n\t\r","argv":["ls","2010"]}"""
       )) shouldBe List(
-        lsdOk(session),
-        rendered(session, ok = true, text = Some("/2010\n"), value = Some(Json.Null), id = Some("1")),
-        rendered(
-          session,
-          ok = true,
-          text = Some("/2010\n"),
-          value = Some(Json.Null),
-          id = Some("a/b\"c\\d\n\t\r")
-        )
+        lsOk(session),
+        lsOk(session, Some("1")),
+        lsOk(session, Some("a/b\"c\\d\n\t\r"))
       )
 
   it should "reject a flag after the album positional" in :
     prepared: (_, session) =>
       respond(session, Seq(
         """{"argv":["agent","items","2010/07","--id","a1"]}""",
-        """{"argv":["lsd","2010"]}"""
+        """{"argv":["ls","2010"]}"""
       )) shouldBe List(
         usage(session, "extra argument '--id'"),
-        lsdOk(session)
+        lsOk(session)
       )
 
   it should "put an agent id in value and not in text" in :
@@ -254,7 +248,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         case Cli.Help(text) => text
         case other => fail(other.toString)
       help.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
-        "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
+        "ls", "repair", "set-metadata", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
         "web", "card", "login", "status", "logout", "help", "agent"
       )
       help should not include ("shell  start a session")
@@ -280,24 +274,18 @@ class ServeTest extends AnyFlatSpec, Matchers:
         """{"argv":["shell"]}""",
         """{"argv":["serve"]}""",
         """{"id":"s","argv":["shell","--help"]}""",
-        """{"argv":["lsd","2010"]}"""
+        """{"argv":["ls","2010"]}"""
       )) shouldBe List(
         usage(session, "already running"),
         usage(session, "already running"),
         usage(session, "already running", id = Some("s")),
-        lsdOk(session)
+        lsOk(session)
       )
 
   it should "escape a backspace so the echoed id round-trips" in :
     prepared: (_, session) =>
-      val (_, line) = Cli.serveResponse(session, """{"id":"a\b","argv":["lsd","2010"]}""")
-      line shouldBe rendered(
-        session,
-        ok = true,
-        text = Some("/2010\n"),
-        value = Some(Json.Null),
-        id = Some("a\b")
-      )
+      val (_, line) = Cli.serveResponse(session, """{"id":"a\b","argv":["ls","2010"]}""")
+      line shouldBe lsOk(session, Some("a\b"))
       line should not include ("\b")
       Serve.read(line) match
         case Left(problem) =>
@@ -311,7 +299,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
       val thrown: RuntimeException = the [RuntimeException] thrownBy
         Cli.serveResponse(
           session,
-          """{"argv":["lsd","2010"]}""",
+          """{"argv":["ls","2010"]}""",
           (_, _) => throw RuntimeException("boom")
         )
       thrown.getMessage shouldBe "boom"
@@ -343,8 +331,8 @@ class ServeTest extends AnyFlatSpec, Matchers:
           try
             Serve.readResponse(readSocket(channel)) shouldBe
               Right(Serve.Response(None, true, None, None, Serve.archiveOf(session)))
-            writeSocket(channel, Serve.renderRequest(None, List("lsd", "2010")))
-            readSocket(channel) shouldBe lsdOk(session)
+            writeSocket(channel, Serve.renderRequest(None, List("ls", "2010")))
+            readSocket(channel) shouldBe lsOk(session)
           finally channel.close()
       finally deleteTree(runtime)
 
@@ -376,7 +364,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         try
           val replaced: Object = JFiles.readAttributes(socket.toPath, classOf[BasicFileAttributes]).fileKey
           java.util.Objects.equals(replaced, key) shouldBe false
-          command(runtime, session, List("lsd", "2010")).ok shouldBe true
+          command(runtime, session, List("ls", "2010")).ok shouldBe true
         finally again.finish()
       finally deleteTree(runtime)
 
@@ -399,7 +387,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
           ) shouldBe true
           childLock(lock, socket) shouldBe "held\n"
           JFiles.exists(socket.toPath) shouldBe true
-          command(runtime, session, List("lsd", "2010")).ok shouldBe true
+          command(runtime, session, List("ls", "2010")).ok shouldBe true
       finally deleteTree(runtime)
 
   it should "not run cold while the lock is held and the socket is quiet" in :
@@ -416,8 +404,8 @@ class ServeTest extends AnyFlatSpec, Matchers:
       try
         val result: Result = Cli.executeOneShot(
           session.copy(style = PathStyle.OneShot),
-          List("lsd", "2010"),
-          lsdParsed,
+          List("ls", "2010"),
+          lsParsed,
           Right(runtime),
           waitMs = 250
         )
@@ -443,7 +431,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         try
           val attempt: Serve.Attempt = Serve.client(
             runtime,
-            List("lsd", "2010"),
+            List("ls", "2010"),
             Serve.archiveOf(session),
             waitMs = 200
           )
@@ -458,7 +446,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         try
           val slow: Stall = stall(again, delayMs = 800, respond = true, Serve.archiveOf(session))
           try
-            Serve.client(again, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 200) match
+            Serve.client(again, List("ls", "2010"), Serve.archiveOf(session), waitMs = 200) match
               case Serve.Attempt.Done(response) =>
                 response.ok shouldBe true
                 response.text shouldBe Some("late\n")
@@ -471,12 +459,12 @@ class ServeTest extends AnyFlatSpec, Matchers:
   "a one-shot" should "run cold when the lock is free and not spawn" in :
     prepared: (_, session) =>
       val oneShot: Session = session.copy(style = PathStyle.OneShot)
-      Cli.executeOneShot(oneShot, List("lsd", "2010"), lsdParsed, Left("XDG_RUNTIME_DIR is unset")) shouldBe
-        Result.Ok("/2010\n", Json.Null)
+      Cli.executeOneShot(oneShot, List("ls", "2010"), lsParsed, Left("XDG_RUNTIME_DIR is unset")) shouldBe
+        Result.Ok("", emptyDirectories)
       val runtime: File = tempRuntime()
       try
-        Cli.executeOneShot(oneShot, List("lsd", "2010"), lsdParsed, Right(runtime), waitMs = 200) shouldBe
-          Result.Ok("/2010\n", Json.Null)
+        Cli.executeOneShot(oneShot, List("ls", "2010"), lsParsed, Right(runtime), waitMs = 200) shouldBe
+          Result.Ok("", emptyDirectories)
         File(runtime, "serve.sock").exists shouldBe false
         File(runtime, "serve.lock").exists shouldBe false
         val stale: ServerSocketChannel = ServerSocketChannel.open(StandardProtocolFamily.UNIX)
@@ -484,8 +472,8 @@ class ServeTest extends AnyFlatSpec, Matchers:
           stale.bind(UnixDomainSocketAddress.of(File(runtime, "serve.sock").toPath))
         finally stale.close()
         File(runtime, "serve.sock").exists shouldBe true
-        Cli.executeOneShot(oneShot, List("lsd", "2010"), lsdParsed, Right(runtime), waitMs = 200) shouldBe
-          Result.Ok("/2010\n", Json.Null)
+        Cli.executeOneShot(oneShot, List("ls", "2010"), lsParsed, Right(runtime), waitMs = 200) shouldBe
+          Result.Ok("", emptyDirectories)
         File(runtime, "serve.sock").exists shouldBe true
         Cli.executeStop(Right(runtime)) shouldBe Left("serve is not running")
       finally deleteTree(runtime)
@@ -528,8 +516,8 @@ class ServeTest extends AnyFlatSpec, Matchers:
         try
           val result: Result = Cli.executeOneShot(
             client,
-            List("lsd", "2010"),
-            lsdParsed,
+            List("ls", "2010"),
+            lsParsed,
             Right(runtime),
             waitMs = 2000
           )
@@ -548,7 +536,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
               fail(message)
           running.awaitExit()
           File(runtime, "serve.sock").exists shouldBe false
-          Serve.client(runtime, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 200) shouldBe
+          Serve.client(runtime, List("ls", "2010"), Serve.archiveOf(session), waitMs = 200) shouldBe
             Serve.Attempt.Absent
           Cli.executeStop(Right(runtime), waitMs = 200) shouldBe Left("serve is not running")
         finally running.finish()
@@ -566,7 +554,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         withServer(session, runtime): _ =>
           val (code, out, err) = shell(
             shellSession,
-            Seq("lsd 2010", "pwd", "exit"),
+            Seq("ls 2010", "pwd", "exit"),
             Some((current, argv) => Cli.remoteResult(runtime, current, argv))
           )
           code shouldBe 0
@@ -617,7 +605,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
           case Right(()) => ()
           case Left(message) => fail(message)
         listens.get should (be >= 1 and be <= 2)
-        command(runtime, session, List("lsd", "2010")).ok shouldBe true
+        command(runtime, session, List("ls", "2010")).ok shouldBe true
         val err: ByteArrayOutputStream = new ByteArrayOutputStream
         val code: Int = Console.withErr(err)(Serve.listen(session, runtime))
         code shouldBe 0
@@ -682,7 +670,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         try
           val result: Either[String, Serve.Called] = Serve.call(
             runtime,
-            List("lsd", "2010"),
+            List("ls", "2010"),
             Serve.archiveOf(client),
             waitMs = 2000
           )
@@ -693,10 +681,11 @@ class ServeTest extends AnyFlatSpec, Matchers:
           )
         finally quiet.close()
         withServer(session, runtime): _ =>
-          Serve.call(runtime, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 2000) match
+          Serve.call(runtime, List("ls", "2010"), Serve.archiveOf(session), waitMs = 2000) match
             case Right(called) =>
               called.response.ok shouldBe true
-              called.response.text shouldBe Some("/2010\n")
+              called.response.text shouldBe Some("")
+              called.value shouldBe emptyDirectories
             case Left(message) =>
               fail(message)
       finally
@@ -725,7 +714,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
           lock should not be null
           lock.release()
         finally if closeChannel then channel.close()
-        Serve.call(runtime, List("lsd", "2010"), Serve.archiveOf(session), waitMs = 200) shouldBe
+        Serve.call(runtime, List("ls", "2010"), Serve.archiveOf(session), waitMs = 200) shouldBe
           Left("serve is not running")
       finally deleteTree(runtime)
 
@@ -773,7 +762,13 @@ class ServeTest extends AnyFlatSpec, Matchers:
   private def isSkip(ch: Char): Boolean =
     ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
 
-  private def lsdParsed: Cli.Parsed = Cli.parse(List("lsd", "2010")) match
+  private def emptyDirectories: Json =
+    Json.Obj(Seq(
+      "kind" -> Json.Str("directories"),
+      "entries" -> Json.Arr(Nil)
+    ))
+
+  private def lsParsed: Cli.Parsed = Cli.parse(List("ls", "2010")) match
     case Cli.Run(parsed) => parsed
     case other => fail(other.toString)
 
@@ -790,8 +785,8 @@ class ServeTest extends AnyFlatSpec, Matchers:
   private def usage(session: Session, message: String, id: Option[String] = None): String =
     rendered(session, ok = false, error = Some(s"Photo Archive Tool: $message"), id = id)
 
-  private def lsdOk(session: Session): String =
-    rendered(session, ok = true, text = Some("/2010\n"), value = Some(Json.Null))
+  private def lsOk(session: Session, id: Option[String] = None): String =
+    rendered(session, ok = true, text = Some(""), value = Some(emptyDirectories), id = id)
 
   private def withId(id: String, line: String): String =
     """{"id":"""" + id + "\"," + line.drop(1)

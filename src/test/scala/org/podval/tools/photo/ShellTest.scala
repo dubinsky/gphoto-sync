@@ -17,9 +17,6 @@ class ShellTest extends AnyFlatSpec, Matchers:
   @targetName("resultCanEqual")
   private given [A <: Result, B <: Result] => CanEqual[A, B] = CanEqual.derived
 
-  private val july: String = "/2010/07/19/2412 jpg\n"
-  private val january: String = "/2011/01/02/1000 jpg\n"
-
   "splitLine" should "group quotes and escapes" in :
     Cli.splitLine("ls  07") shouldBe Right(List("ls", "07"))
     Cli.splitLine("ls \"a b\" c") shouldBe Right(List("ls", "a b", "c"))
@@ -40,7 +37,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("--help"), Cli.Front.Shell) match
       case Cli.Help(text) =>
         text.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
-          "lsd", "ls", "repair", "set-metadata", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
+          "ls", "repair", "set-metadata", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
           "web", "card", "login", "status", "logout", "help", "agent", "cd", "pwd", "exit"
         )
       case other => fail(other.toString)
@@ -125,7 +122,14 @@ class ShellTest extends AnyFlatSpec, Matchers:
         "exit"
       ))
       code shouldBe 0
-      out shouldBe july + july + july + january + january + july
+      out shouldBe
+        """2010/07/19
+          |2010/07/19
+          |2010/07/19
+          |2011/01/02
+          |2011/01
+          |2010/07
+          |""".stripMargin
       err should include ("2010> ")
       err should include ("2011> ")
       err should include ("2011/01> ")
@@ -133,8 +137,14 @@ class ShellTest extends AnyFlatSpec, Matchers:
 
       val root: Root = session.root
       val oneShot: Session = Session(root, PathStyle.OneShot, root)
+      val julyDays: Json = Json.Obj(Seq(
+        "kind" -> Json.Str("directories"),
+        "entries" -> Json.Arr(Seq(
+          Json.Obj(Seq("path" -> Json.Str("2010/07/19"), "items" -> Json.Long(1)))
+        ))
+      ))
       execute(oneShot, "ls", "/2010/07") shouldBe execute(oneShot, "ls", "2010/07")
-      execute(oneShot, "ls", "2010/07") shouldBe Result.Ok(july, Json.Null)
+      execute(oneShot, "ls", "2010/07") shouldBe Result.Ok("2010/07/19\n", julyDays)
       execute(oneShot, "ls", "..") match
         case Result.Usage(message) => message should include ("not a year")
         case other => fail(other.toString)
@@ -153,8 +163,8 @@ class ShellTest extends AnyFlatSpec, Matchers:
         case Result.Usage(_) => ()
         case other => fail(other.toString)
       val cursorAtYear: Session = Session(root, PathStyle.Cursor, year)
-      execute(cursorAtYear, "ls", "07") shouldBe Result.Ok(july, Json.Null)
-      execute(cursorAtYear, "ls", "/2010/07") shouldBe Result.Ok(july, Json.Null)
+      execute(cursorAtYear, "ls", "07") shouldBe Result.Ok("2010/07/19\n", julyDays)
+      execute(cursorAtYear, "ls", "/2010/07") shouldBe Result.Ok("2010/07/19\n", julyDays)
       cursorAtYear.parse("07").toString shouldBe "/2010/07"
 
       File(archive, ".gphoto-sync").exists shouldBe false
@@ -167,9 +177,9 @@ class ShellTest extends AnyFlatSpec, Matchers:
         case directory: Directory => directory
         case other => fail(other.toString)
       val executeCommand = (current: Session, parsed: Cli.Parsed) => parsed match
-        case ls: Cli.Ls if ls.path == "move-fail" =>
+        case ls: Cli.Ls if ls.path.contains("move-fail") =>
           (current.copy(cursor = year), Result.Failed("partial\n", Json.Null, "boom"))
-        case ls: Cli.Ls if ls.path == "usage-move" =>
+        case ls: Cli.Ls if ls.path.contains("usage-move") =>
           (current.copy(cursor = current.root), Result.Usage("nope"))
         case other =>
           Cli.toOperation(other).execute(current)
@@ -231,6 +241,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
         session,
         Seq(
           "cd 2010",
+          "ls",
           "ls 07",
           "ls --long 07",
           "pwd",
@@ -245,6 +256,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
       )
       code shouldBe 0
       sent shouldBe List(
+        List("ls", "2010"),
         List("ls", "2010/07"),
         List("ls", "--long", "2010/07"),
         List("albums", "2010/07"),

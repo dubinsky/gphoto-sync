@@ -37,17 +37,13 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.inProcessWrite(Cli.CardCopy(dryRun = true, path = None)) shouldBe false
 
   "parse" should "accept every subcommand" in :
-    Cli.parse(List("lsd", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = false))
-    Cli.parse(List("lsd", "--long", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = true))
-    Cli.parse(List("lsd", "-l", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = true))
-    Cli.parse(List("lsd", "--long", "true")) shouldBe Cli.Run(Cli.Lsd("true", long = true))
-    Cli.parse(List("lsd", "-l=false", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = false))
-    Cli.parse(List("lsd", "--long=false", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = false))
-    Cli.parse(List("lsd", "--long=TRUE", "2009")) shouldBe Cli.Run(Cli.Lsd("2009", long = true))
-
-    Cli.parse(List("ls", "2009")) shouldBe ls("2009")
-    Cli.parse(List("ls", "--long", "false")) shouldBe ls(path = "false", long = true)
-    Cli.parse(List("ls", "--long=false", "2009")) shouldBe ls("2009", long = false)
+    Cli.parse(List("ls")) shouldBe ls()
+    Cli.parse(List("ls", "2009")) shouldBe ls(Some("2009"))
+    Cli.parse(List("ls", "-R", "2009")) shouldBe ls(Some("2009"), recursive = true)
+    Cli.parse(List("ls", "--recursive", "2009")) shouldBe ls(Some("2009"), recursive = true)
+    Cli.parse(List("ls", "--recursive=false", "2009")) shouldBe ls(Some("2009"))
+    Cli.parse(List("ls", "--long", "false")) shouldBe ls(path = Some("false"), long = true)
+    Cli.parse(List("ls", "--long=false", "2009")) shouldBe ls(Some("2009"), long = false)
     Cli.parse(List(
       "ls",
       "--long",
@@ -66,7 +62,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "--wrong",
       "2009/03"
     )) shouldBe ls(
-      path = "2009/03",
+      path = Some("2009/03"),
       long = true,
       nameContains = Some("mid"),
       hasExtension = Some("jpg"),
@@ -82,18 +78,20 @@ class CliTest extends AnyFlatSpec, Matchers:
       wrongDay = true,
       wrong = true
     )
-    Cli.parse(List("ls", "--name-contains=mid", "2009")) shouldBe ls("2009", nameContains = Some("mid"))
-    Cli.parse(List("ls", "--name-contains=-hidden", "2009")) shouldBe ls("2009", nameContains = Some("-hidden"))
-    Cli.parse(List("ls", "-n", "mid", "2009")) shouldBe ls("2009", nameContains = Some("mid"))
-    Cli.parse(List("ls", "-n=mid", "2009")) shouldBe ls("2009", nameContains = Some("mid"))
-    Cli.parse(List("ls", "-e", "jpg", "2009")) shouldBe ls("2009", hasExtension = Some("jpg"))
-    Cli.parse(List("ls", "-e=jpg", "2009")) shouldBe ls("2009", hasExtension = Some("jpg"))
-    Cli.parse(List("ls", "--has-extension=jpg", "2009")) shouldBe ls("2009", hasExtension = Some("jpg"))
+    Cli.parse(List("ls", "--name-contains=mid", "2009")) shouldBe ls(Some("2009"), nameContains = Some("mid"))
+    Cli.parse(List("ls", "--name-contains=-hidden", "2009")) shouldBe ls(Some("2009"), nameContains = Some("-hidden"))
+    Cli.parse(List("ls", "-n", "mid", "2009")) shouldBe ls(Some("2009"), nameContains = Some("mid"))
+    Cli.parse(List("ls", "-n=mid", "2009")) shouldBe ls(Some("2009"), nameContains = Some("mid"))
+    Cli.parse(List("ls", "-e", "jpg", "2009")) shouldBe ls(Some("2009"), hasExtension = Some("jpg"))
+    Cli.parse(List("ls", "-e=jpg", "2009")) shouldBe ls(Some("2009"), hasExtension = Some("jpg"))
+    Cli.parse(List("ls", "--has-extension=jpg", "2009")) shouldBe ls(Some("2009"), hasExtension = Some("jpg"))
     Cli.parse(List("ls", "--property=already-in-google=false", "2009")) shouldBe
-      ls("2009", property = Some("already-in-google=false"))
+      ls(Some("2009"), property = Some("already-in-google=false"))
     Cli.parse(List("ls", "--name-contains", "--", "-hidden", "2009")) shouldBe
-      ls("2009", nameContains = Some("-hidden"))
-    Cli.parse(List("ls", "--", "--fix")) shouldBe ls("--fix")
+      ls(Some("2009"), nameContains = Some("-hidden"))
+    Cli.parse(List("ls", "--", "--fix")) shouldBe ls(Some("--fix"))
+    Cli.parse(List("ls", "--name-contains", "--", "-hidden")) shouldBe
+      ls(nameContains = Some("-hidden"))
 
     Cli.parse(List("set-metadata", "bad-raw", "2009/03/10/2412.jpg")) shouldBe
       Cli.Run(Cli.SetMetadataArgs("bad-raw", "2009/03/10/2412.jpg"))
@@ -251,8 +249,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       """Photo Archive Tool 0.0.1
         |manipulates photo archive
         |
-        |lsd  list directories
-        |ls  list pictures
+        |ls  list the date tree
         |repair  repair picture names, raw files, timestamps, or day folders
         |set-metadata  set metadata property
         |albums  list album claims
@@ -275,24 +272,15 @@ class CliTest extends AnyFlatSpec, Matchers:
     helpOf("-h") shouldBe top
     helpOf("--help", "ls") shouldBe top
 
-    helpOf("lsd", "--help") shouldBe
-      """lsd  list directories
-        |
-        |Positionals:
-        |directory  required
-        |
-        |Flags:
-        |--long, -l  boolean  list nested directories""".stripMargin
-    helpOf("lsd", "-h") shouldBe helpOf("lsd", "--help")
-
     helpOf("ls", "--help") shouldBe
-      """ls  list pictures
+      """ls  list the date tree
         |
         |Positionals:
-        |path  required
+        |path  optional
         |
         |Flags:
-        |--long, -l  boolean  show per-file timestamps and day mismatches
+        |--long, -l  boolean  counts on a directory, or the long item line on a day or a picture
+        |--recursive, -R  boolean  list items under the path
         |--name-contains, -n  text  keep pictures whose name contains this text
         |--has-extension, -e  text  keep pictures that have this extension
         |--property  text  keep pictures whose sidecar property matches
@@ -679,7 +667,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("photo") -> "unknown command 'photo'",
       List("LS") -> "unknown command 'LS'",
       List("Lsd") -> "unknown command 'Lsd'",
-      List("lsd", "--bogus") -> "unknown option '--bogus'",
+      List("lsd") -> "unknown command 'lsd'",
+      List("lsd", "2009") -> "unknown command 'lsd'",
+      List("lsd", "--bogus") -> "unknown command 'lsd'",
       List("albums", "--bogus") -> "unknown option '--bogus'",
       List("ls", "--dry-run", "2009") -> "unknown option '--dry-run'",
       List("ls", "--fix", "2009") -> "unknown option '--fix'",
@@ -689,27 +679,24 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("login", "--long") -> "unknown option '--long'",
       List("ls", "-abc", "2009") -> "unknown option '-abc'",
       List("ls", "-nfoo", "2009") -> "unknown option '-nfoo'",
-      List("lsd", "--Long", "2009") -> "unknown option '--Long'",
+      List("ls", "--Long", "2009") -> "unknown option '--Long'",
       List("ls", "--timestamp-from", "2009") -> "unknown option '--timestamp-from'",
-      List("lsd") -> "missing directory",
-      List("ls") -> "missing path",
-      List("ls", "--name-contains", "--", "-hidden") -> "missing path",
       List("set-metadata") -> "missing property",
       List("set-metadata", "bad-raw") -> "missing picture",
-      List("lsd", "2009", "extra") -> "extra argument 'extra'",
       List("login", "extra") -> "extra argument 'extra'",
       List("albums", "2009", "2010") -> "extra argument '2010'",
       List("ls", "2009/03/10", "--fix") -> "extra argument '--fix'",
       List("ls", "path", "--help") -> "extra argument '--help'",
       List("ls", "path", "-h") -> "extra argument '-h'",
       List("publish", "2009", "--recursive") -> "extra argument '--recursive'",
-      List("lsd", "--long", "--long", "2009") -> "repeated option '--long'",
-      List("lsd", "--long", "-l", "2009") -> "repeated option '--long'",
-      List("lsd", "-l", "--long", "2009") -> "repeated option '--long'",
+      List("ls", "--long", "--long", "2009") -> "repeated option '--long'",
+      List("ls", "--long", "-l", "2009") -> "repeated option '--long'",
+      List("ls", "-l", "--long", "2009") -> "repeated option '--long'",
       List("publish", "--dry-run=yes") -> "invalid value 'yes' for '--dry-run'",
-      List("lsd", "--long=1", "2009") -> "invalid value '1' for '--long'",
-      List("lsd", "--long=on", "2009") -> "invalid value 'on' for '--long'",
-      List("lsd", "--long=", "2009") -> "invalid value '' for '--long'",
+      List("ls", "--long=1", "2009") -> "invalid value '1' for '--long'",
+      List("ls", "--long=on", "2009") -> "invalid value 'on' for '--long'",
+      List("ls", "--long=", "2009") -> "invalid value '' for '--long'",
+      List("ls", "--recursive=no") -> "invalid value 'no' for '--recursive'",
       List("ls", "--name-contains") -> "missing value for '--name-contains'",
       List("ls", "--name-contains=") -> "missing value for '--name-contains'",
       List("ls", "-n") -> "missing value for '--name-contains'",
@@ -868,7 +855,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "apply-requests",
       "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "card", "set-metadata",
       "login", "status", "logout",
-      "ls", "lsd", "albums",
+      "ls", "albums",
       "help", "cd", "pwd", "exit",
       "serve", "shell", "mcp"
     ).foreach: name =>
@@ -1556,8 +1543,9 @@ class CliTest extends AnyFlatSpec, Matchers:
     case other => fail(s"expected help for ${args.toList}, got $other")
 
   private def ls(
-    path: String,
+    path: Option[String] = None,
     long: Boolean = false,
+    recursive: Boolean = false,
     nameContains: Option[String] = None,
     hasExtension: Option[String] = None,
     property: Option[String] = None,
@@ -1574,6 +1562,7 @@ class CliTest extends AnyFlatSpec, Matchers:
   ): Cli.Outcome = Cli.Run(Cli.Ls(
     path,
     long,
+    recursive,
     nameContains,
     hasExtension,
     property,

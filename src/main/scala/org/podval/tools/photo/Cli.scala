@@ -9,10 +9,10 @@ object Cli:
   private[photo] final case class Usage(message: String) extends Outcome
 
   private[photo] sealed trait Parsed
-  private[photo] final case class Lsd(directory: String, long: Boolean) extends Parsed
   private[photo] final case class Ls(
-    path: String,
+    path: Option[String],
     long: Boolean,
+    recursive: Boolean,
     nameContains: Option[String],
     hasExtension: Option[String],
     property: Option[String],
@@ -358,7 +358,6 @@ object Cli:
     case _: CreateAlbumArgs => true
     case _: DeleteAlbumArgs => true
     case _: WebArgs => true
-    case _: Lsd => false
     case _: Ls => false
     case _: SetMetadataArgs => false
     case _: Albums => false
@@ -460,7 +459,12 @@ object Cli:
             args
           case Right((_, positionals)) =>
             val flags: List[String] = commandArgs.take(commandArgs.length - positionals.length)
-            prefix ++ flags ++ rewritePositionals(session, command.positionals, positionals)
+            val rewrittenPositionals: List[String] =
+              rewritePositionals(session, command.positionals, positionals)
+            if prefix == List("ls") && positionals.isEmpty then
+              prefix ++ flags ++ List(rootForm(session, "."))
+            else
+              prefix ++ flags ++ rewrittenPositionals
 
   private def locate(args: List[String]): Option[(Command, List[String], List[String])] = args match
     case "agent" :: "request" :: name :: rest =>
@@ -627,8 +631,6 @@ object Cli:
       case Some(command) => parseCommand(command, rest, front)
 
   private[photo] def toOperation(parsed: Parsed): Operation = parsed match
-    case Lsd(directory, long) =>
-      ListDirectories(directory, isLong = long)
     case ls: Ls =>
       ListPictures(
         ls.path,
@@ -645,7 +647,8 @@ object Cli:
         ls.noTimestamp,
         ls.wrongTimestamp,
         ls.wrongDay,
-        ls.wrong
+        ls.wrong,
+        ls.recursive
       )
     case SetMetadataArgs(property, picture) =>
       SetMetadata(picture, property)
@@ -1027,11 +1030,17 @@ object Cli:
     build: (Values, List[String]) => Parsed
   )
 
-  private val lsdLongFlag: Flag = Flag("long", Some("l"), BooleanKind, "list nested directories")
-  private val lsLongFlag: Flag = Flag("long", Some("l"), BooleanKind, "show per-file timestamps and day mismatches")
+  private val lsLongFlag: Flag = Flag(
+    "long",
+    Some("l"),
+    BooleanKind,
+    "counts on a directory, or the long item line on a day or a picture"
+  )
+  private val lsRecursiveFlag: Flag = Flag("recursive", Some("R"), BooleanKind, "list items under the path")
 
   private val lsFlags: List[Flag] = List(
     lsLongFlag,
+    lsRecursiveFlag,
     Flag("name-contains", Some("n"), TextKind, "keep pictures whose name contains this text"),
     Flag("has-extension", Some("e"), TextKind, "keep pictures that have this extension"),
     Flag("property", None, TextKind, "keep pictures whose sidecar property matches"),
@@ -1062,20 +1071,14 @@ object Cli:
 
   private val commands: List[Command] = List(
     Command(
-      name = "lsd",
-      help = "list directories",
-      positionals = List(Required("directory", path = true)),
-      flags = List(lsdLongFlag),
-      build = (values, args) => Lsd(args.head, bool(values, "long"))
-    ),
-    Command(
       name = "ls",
-      help = "list pictures",
-      positionals = List(Required("path", path = true)),
+      help = "list the date tree",
+      positionals = List(Optional("path", path = true)),
       flags = lsFlags,
       build = (values, args) => Ls(
-        path = args.head,
+        path = args.headOption,
         long = bool(values, "long"),
+        recursive = bool(values, "recursive"),
         nameContains = values.texts.get("name-contains"),
         hasExtension = values.texts.get("has-extension"),
         property = values.texts.get("property"),

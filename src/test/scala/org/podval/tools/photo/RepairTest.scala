@@ -93,7 +93,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.getParentFile.mkdirs()
       ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
       val (_, result) = ListPictures(
-        "2009/03/10",
+        Some("2009/03/10"),
         long = false,
         nameContains = None,
         hasExtension = None,
@@ -310,7 +310,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.isFile shouldBe true
       repairOut should not include ("moving")
       val (_, result) = ListPictures(
-        ".upload",
+        Some(".upload"),
         long = true,
         nameContains = None,
         hasExtension = None,
@@ -327,11 +327,8 @@ class RepairTest extends AnyFlatSpec, Matchers:
         wrong = false
       ).execute(Session(root))
       result match
-        case Result.Ok(text, _) =>
-          text should include ("NO TIMESTAMP")
-          text should not include ("source=FolderDay")
-        case Result.Failed(text, _, message) => fail(s"$message\n$text")
-        case Result.Usage(message) => fail(message)
+        case Result.Usage(message) => message shouldBe "not a date-tree path"
+        case other => fail(other.toString)
 
   it should "file an inbox jpeg on the civil day and leave the curated include" in :
     withOriginals: originals =>

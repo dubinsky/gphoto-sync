@@ -22,7 +22,7 @@ Publish uploads `jpg`, `jpeg`, and video other than `m4v`.
 RAW stays local.
 `heic`, `heif`, `avif`, `png`, and `webp` stay local and are not uploaded.
 The old sibling `Upload` is gone.
-`lsd` skips a child whose name starts with `.` at year, month, and day, then puts `.upload` back on the archive root.
+Year, month, and day skip a child whose name starts with `.`.
 `AGENTS.md` may sit in the archive root.
 Any other non-toml file next to child directories is stray.
 `.gphoto-sync/` is the agent's workspace.
@@ -154,10 +154,13 @@ It is not a second copy.
 
 == Commands
 
-`photo lsd <directory>` lists directories.
-`--long` lists nested directories.
-
-`photo ls <path>` lists pictures and prints name, timestamp, and day mismatches.
+`photo ls [path]` lists the date tree.
+With no path, the shell lists the cursor and a one-shot lists the archive root.
+A year, a month, or the root lists the directories inside it.
+`photo ls 2010` lists months.
+It does not list the items in that year.
+`photo ls -R 2010` lists those items and does not print directory names.
+`-l` prints a count on a directory, or the long item line on a day or a picture.
 It does not rename, generate, set mtimes, rewrite albums, or move files.
 
 `photo repair <path>` writes repairs.
