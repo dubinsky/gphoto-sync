@@ -1810,7 +1810,10 @@ object Cli:
 
   // .get fails initialization when the command is missing, instead of dropping the tool.
   private val archiveWrites: List[(String, List[String], Command)] = List(
-    ("item-set", List("item", "set"), itemCommands.find(_.name == "set").get)
+    ("item-set", List("item", "set"), itemCommands.find(_.name == "set").get),
+    ("album-new", List("album", "new"), albumCommands.find(_.name == "new").get),
+    ("album-rm", List("album", "rm"), albumCommands.find(_.name == "rm").get),
+    ("album-mv", List("album", "mv"), albumCommands.find(_.name == "mv").get)
   )
 
   private[photo] def mcpTools: List[McpTool] =

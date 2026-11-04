@@ -976,7 +976,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "rename-album",
       "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
       "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing",
-      "item-set"
+      "item-set", "album-new", "album-rm", "album-mv"
     )
     List(
       "album-file",
@@ -991,7 +991,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "serve", "shell", "mcp",
       "show", "set", "month", "into", "new", "rm", "mv", "exclude", "merge",
       "item-show", "item-month", "item-into", "album-ls", "album-show", "album-claims", "album-merge",
-      "album-new", "album-rm", "album-mv", "album-include", "album-exclude"
+      "album-include", "album-exclude"
     ).foreach: name =>
       withClue(name):
         tools.exists(_.name == name) shouldBe false
@@ -1030,7 +1030,10 @@ class CliTest extends AnyFlatSpec, Matchers:
       ),
       "missing" -> described("list catalog items absent from the day folder", "missing", ambiguous = false),
       "item-set" ->
-        s"set one sidecar property; date= moves the picture (photo item set). $echo"
+        s"set one sidecar property; date= moves the picture (photo item set). $echo",
+      "album-new" -> s"create a local album (photo album new). $echo",
+      "album-rm" -> s"delete an album file and leave the pictures (photo album rm). $echo",
+      "album-mv" -> s"change an album title and move its file (photo album mv). $echo"
     )
     val properties: Map[String, Seq[(String, Json)]] = Map(
       "stems" -> Seq("day" -> mcpStringSchema),
@@ -1106,6 +1109,20 @@ class CliTest extends AnyFlatSpec, Matchers:
         "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
         "property" -> mcpStringSchema,
         "picture" -> mcpStringSchema
+      ),
+      "album-new" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "span" -> mcpStringSchema,
+        "name" -> mcpStringSchema
+      ),
+      "album-rm" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "title" -> mcpStringSchema
+      ),
+      "album-mv" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "old" -> mcpStringSchema,
+        "new" -> mcpStringSchema
       )
     )
     val required: Map[String, Seq[String]] = Map(
@@ -1132,7 +1149,10 @@ class CliTest extends AnyFlatSpec, Matchers:
       "delete-album" -> Seq("title"),
       "drift" -> Seq.empty,
       "missing" -> Seq.empty,
-      "item-set" -> Seq("property", "picture")
+      "item-set" -> Seq("property", "picture"),
+      "album-new" -> Seq.empty,
+      "album-rm" -> Seq("title"),
+      "album-mv" -> Seq("old", "new")
     )
     tools.foreach: tool =>
       tool.description shouldBe descriptions(tool.name)
@@ -1329,6 +1349,71 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("agent", "item-set"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'item-set'")
     Cli.parse(List("item-set"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'item-set'")
 
+    val albumNewDry: List[String] = mcpArgv("album-new", Seq(
+      "dry-run" -> Json.Bool(true),
+      "span" -> Json.Str("2010/07")
+    ))
+    albumNewDry shouldBe List("album", "new", "--dry-run", "--span", "2010/07")
+    Cli.parse(albumNewDry, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = true, Some("2010/07"), None))
+    Cli.parse(albumNewDry, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    val albumNewName: List[String] = mcpArgv("album-new", Seq("name" -> Json.Str("Cape Cod")))
+    albumNewName shouldBe List("album", "new", "--name", "Cape Cod")
+    Cli.parse(albumNewName, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = false, None, Some("Cape Cod")))
+    mcpArgv("album-new", Seq(
+      "dry-run" -> Json.Bool(false),
+      "span" -> Json.Str("2010/07")
+    )) shouldBe List("album", "new", "--span", "2010/07")
+    val albumNewBoth: List[String] = mcpArgv("album-new", Seq(
+      "name" -> Json.Str("Cape Cod"),
+      "span" -> Json.Str("2010/07")
+    ))
+    albumNewBoth shouldBe List("album", "new", "--span", "2010/07", "--name", "Cape Cod")
+    Cli.parse(albumNewBoth, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = false, Some("2010/07"), Some("Cape Cod")))
+    val albumNewNeither: List[String] = mcpArgv("album-new", Seq.empty)
+    albumNewNeither shouldBe List("album", "new")
+    Cli.parse(albumNewNeither, Cli.Front.Serve) shouldBe Cli.Usage("missing span or name")
+    Cli.parse(List("agent", "album-new"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-new'")
+    Cli.parse(List("album-new"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-new'")
+
+    val albumRm: List[String] = mcpArgv("album-rm", Seq(
+      "dry-run" -> Json.Bool(true),
+      "title" -> Json.Str("Cape Cod")
+    ))
+    albumRm shouldBe List("album", "rm", "--dry-run", "Cape Cod")
+    Cli.parse(albumRm, Cli.Front.Serve) shouldBe Cli.Run(Cli.AlbumRmArgs(dryRun = true, "Cape Cod"))
+    Cli.parse(albumRm, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    mcpArgv("album-rm", Seq(
+      "dry-run" -> Json.Bool(false),
+      "title" -> Json.Str("2010/07")
+    )) shouldBe List("album", "rm", "2010/07")
+    Cli.parse(List("agent", "album-rm"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-rm'")
+    Cli.parse(List("album-rm"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-rm'")
+
+    val albumMv: List[String] = mcpArgv("album-mv", Seq(
+      "dry-run" -> Json.Bool(true),
+      "old" -> Json.Str("Cape Cod"),
+      "new" -> Json.Str("Best Of")
+    ))
+    albumMv shouldBe List("album", "mv", "--dry-run", "Cape Cod", "Best Of")
+    Cli.parse(albumMv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumMvArgs(dryRun = true, "Cape Cod", "Best Of"))
+    Cli.parse(albumMv, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    mcpArgv("album-mv", Seq(
+      "old" -> Json.Str("2010/07/Cape Cod"),
+      "new" -> Json.Str("2010/08/Cape Cod")
+    )) shouldBe List("album", "mv", "2010/07/Cape Cod", "2010/08/Cape Cod")
+    Cli.parse(List("agent", "album-mv"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-mv'")
+    Cli.parse(List("album-mv"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-mv'")
+
     Cli.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Long(2010))) shouldBe
       Left("argument 'day' has the wrong type")
     Cli.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Null)) shouldBe
@@ -1388,13 +1473,14 @@ class CliTest extends AnyFlatSpec, Matchers:
     ).foreach: name =>
       Cli.mcpReadOnly.contains(name) shouldBe false
       tools.exists(_.name == name) shouldBe true
+    val archiveWrites: Set[String] = Set("item-set", "album-new", "album-rm", "album-mv")
     tools.foreach: tool =>
       (tool.readOnlyHint && tool.destructiveHint) shouldBe false
       if Cli.mcpReadOnly.contains(tool.name) then
         tool.readOnlyHint shouldBe true
         tool.destructiveHint shouldBe false
         tool.outputSchema.isDefined shouldBe true
-      else if tool.name == "item-set" then
+      else if archiveWrites.contains(tool.name) then
         tool.readOnlyHint shouldBe false
         tool.destructiveHint shouldBe true
         tool.outputSchema shouldBe None
