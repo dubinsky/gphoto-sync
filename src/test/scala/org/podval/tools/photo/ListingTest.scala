@@ -162,13 +162,24 @@ class ListingTest extends AnyFlatSpec, Matchers:
 
   it should "reject the inbox" in :
     withArchive: archive =>
-      val session: Session = sessionFor(archive)
-      execute(session, "ls", ".upload")._2 match
-        case Result.Usage(message) => message shouldBe "not a date-tree path"
-        case other => fail(other.toString)
-      execute(session, "ls", ".upload/2412")._2 match
-        case Result.Usage(message) => message shouldBe "not a date-tree path"
-        case other => fail(other.toString)
+      jpeg(File(archive, ".upload/2412.jpg"))
+      val root: Root = rootFor(archive)
+      val session: Session = Session(root)
+      def usage(current: Session, args: String*): Unit =
+        execute(current, args*)._2 match
+          case Result.Usage(message) => message shouldBe "not a date-tree path"
+          case other => fail(other.toString)
+      usage(session, "ls", ".upload")
+      usage(session, "ls", ".upload/2412")
+      usage(session, "ls", ".upload/missing")
+      val atInbox: Session = Session(root, PathStyle.Cursor, root.item(".upload"))
+      usage(atInbox, "ls")
+      usage(atInbox, "ls", "2412")
+      usage(atInbox, "ls", "missing")
+      val year: Year = root.year(2010)
+      val atYear: Session = Session(root, PathStyle.Cursor, year)
+      usage(atYear, "ls", "../.upload")
+      usage(atYear, "ls", "../.upload/2412")
 
   private def rootFor(archive: File): Root =
     val home: File = File(System.getProperty("user.home"))

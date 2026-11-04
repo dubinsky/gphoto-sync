@@ -31,10 +31,27 @@ final case class ListPictures(
 
   private def listed(session: Session): Json =
     val raw: String = path.getOrElse("")
-    if notDateTree(session, raw) then throw IllegalArgumentException("not a date-tree path")
+    // A one-segment name has no parent slice, and Pictures.item throws when that stem is absent.
+    session.style match
+      case PathStyle.Cursor
+          if !raw.startsWith("/") &&
+            session.cursor.isInstanceOf[UploadDirectory] &&
+            raw.nonEmpty && raw != "." && raw != ".." && !raw.startsWith("../") =>
+        throw IllegalArgumentException("not a date-tree path")
+      case _ =>
+        ()
+    val slash: Int = raw.lastIndexOf('/')
+    if slash > 0 then
+      session.parse(raw.take(slash)) match
+        case _: UploadDirectory => throw IllegalArgumentException("not a date-tree path")
+        case _ => ()
     val parsed: Path = session.parse(raw)
     val propertyAndValue: Option[Property.AndValue[?]] = property.map(Cli.parsePropertyAndValue)
     parsed match
+      case _: UploadDirectory =>
+        throw IllegalArgumentException("not a date-tree path")
+      case picture: Picture if picture.parent.isInstanceOf[UploadDirectory] =>
+        throw IllegalArgumentException("not a date-tree path")
       case day: Day =>
         itemsJson(walk(day, propertyAndValue))
       case picture: Picture =>
@@ -78,26 +95,6 @@ final case class ListPictures(
       wrongTimestamp ||
       wrongDay ||
       wrong
-
-  // Root.parse does not treat '..' as a parent, so only a cursor path is folded.
-  private def notDateTree(session: Session, raw: String): Boolean =
-    val segments: List[String] = raw.split('/').toList.filter(_.nonEmpty)
-    session.style match
-      case PathStyle.Cursor =>
-        val start: List[String] =
-          if raw.startsWith("/") then Nil
-          else session.cursor.toString.stripPrefix("/").split('/').toList.filter(_.nonEmpty)
-        val resolved: Option[List[String]] =
-          segments.foldLeft(Option(start)): (acc, segment) =>
-            acc.flatMap: prefix =>
-              segment match
-                case "." => Some(prefix)
-                case ".." if prefix.nonEmpty => Some(prefix.dropRight(1))
-                case ".." => None
-                case name => Some(prefix :+ name)
-        resolved.exists(_.headOption.contains(UploadDirectory.directoryName))
-      case PathStyle.OneShot | PathStyle.Serve =>
-        segments.headOption.contains(UploadDirectory.directoryName)
 
   private def walk(path: Path, propertyAndValue: Option[Property.AndValue[?]]): Seq[Json] = path match
     case day: Day if DirectoryIndex.cursor.isDefined =>
