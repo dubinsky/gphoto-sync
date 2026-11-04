@@ -3,7 +3,10 @@ package org.podval.tools.photo
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import scala.annotation.targetName
-import java.io.{ByteArrayOutputStream, File}
+import java.awt.Color
+import java.awt.image.BufferedImage
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File}
+import javax.imageio.ImageIO
 import java.net.{InetSocketAddress, URI, URLEncoder}
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.nio.channels.FileChannel
@@ -583,6 +586,145 @@ class WebTest extends AnyFlatSpec, Matchers:
       deleteTree(outside)
       deleteTree(runtime)
 
+  it should "serve a scaled thumbnail, a placeholder, and the original file bytes" in :
+    val archive: File = JFiles.createTempDirectory("web-thumb-archive").toFile
+    val outside: File = JFiles.createTempDirectory("web-thumb-outside").toFile
+    val runtime: File = JFiles.createTempDirectory("web-thumb-rt").toFile
+    val cacheHome: File = JFiles.createTempDirectory("web-thumb-home").toFile
+    val port: Int = freePort()
+    val savedHome: String = System.getProperty("user.home")
+    val day: File = File(archive, "2010/07/04")
+    val jpeg: File = File(day, "1001.jpg")
+    val raw: File = File(day, "1000.cr2")
+    val video: File = File(day, "1005.mov")
+    val secret: File = File(outside, "secret-stem.jpg")
+    val placeholder: Array[Byte] =
+      val in = getClass.getClassLoader.getResourceAsStream("org/podval/tools/photo/web/placeholder.jpg")
+      try in.readAllBytes() finally in.close()
+    def filesIn(dir: File): Seq[File] =
+      if !dir.exists then Seq.empty
+      else
+        Option(dir.listFiles).toSeq.flatten.flatMap: child =>
+          if JFiles.isSymbolicLink(child.toPath) then Seq.empty
+          else if child.isDirectory then filesIn(child)
+          else if child.isFile && !child.getName.startsWith(".") then Seq(child)
+          else Seq.empty
+    def kindOf(stem: String): String =
+      val body = json(getq(port, "/api/day", "day", "2010/07/04"))
+      str(field(stemAt(arr(field(body, "stems")), stem), "kind"))
+    try
+      (placeholder(0) & 0xff) shouldBe 0xff
+      (placeholder(1) & 0xff) shouldBe 0xd8
+      writeJpeg(jpeg, 320, 240)
+      val original: Array[Byte] = JFiles.readAllBytes(jpeg.toPath)
+      val originalMtime: Long = jpeg.lastModified
+      JFiles.writeString(raw.toPath, "not a raw preview")
+      JFiles.writeString(video.toPath, "not a video")
+      val rawBytes: Array[Byte] = JFiles.readAllBytes(raw.toPath)
+      val videoBytes: Array[Byte] = JFiles.readAllBytes(video.toPath)
+      JFiles.writeString(secret.toPath, "OUTSIDE-SECRET-BYTES")
+      JFiles.createSymbolicLink(File(day, "2412.jpg").toPath, secret.toPath)
+      JFiles.createSymbolicLink(File(day, "1009.jpg").toPath, File(day, "missing-target.jpg").toPath)
+      JFiles.createSymbolicLink(File(archive, "2011").toPath, outside.toPath)
+      writeText(File(archive, ".gphoto-sync/catalog.txt"), "CATALOG-SECRET\n")
+      // A day listing reads album toml. The bytes still must not come back from /api/file.
+      writeText(File(day, "album.toml"), "google-title = \"TOML-SECRET\"\n")
+      System.setProperty("user.home", cacheHome.getAbsolutePath)
+      val cacheRoot: File = File(cacheHome, ".cache/org.podval.tools.photo/thumbs")
+      val (_, err, ended) = running(runtime, port):
+        Web.useSession(sessionAt(archive))
+        error(get(port, "/api/thumb"), 400, "not a picture path")
+        error(get(port, "/api/thumb?path=%2e%2e"), 400, escape)
+        error(get(port, "/api/file?path=%2e%2e"), 400, escape)
+        error(get(port, "/api/thumb?path=%252e%252e"), 400, "not a picture path")
+        val catalog: HttpResponse[String] = getq(port, "/api/file", "path", ".gphoto-sync/catalog.txt")
+        error(catalog, 400, "not a picture path")
+        catalog.body should not include ("CATALOG-SECRET")
+        val toml: HttpResponse[String] = getq(port, "/api/file", "path", "2010/07/04/album.toml")
+        error(toml, 400, "not a picture path")
+        toml.body should not include ("TOML-SECRET")
+        val escapedFile: HttpResponse[String] = getq(port, "/api/thumb", "path", "2010/07/04/2412")
+        error(escapedFile, 400, escape)
+        escapedFile.body should not include ("OUTSIDE-SECRET-BYTES")
+        val escapedBytes: HttpResponse[String] = getq(port, "/api/file", "path", "2010/07/04/2412")
+        error(escapedBytes, 400, escape)
+        escapedBytes.body should not include ("OUTSIDE-SECRET-BYTES")
+        val escapedDir: HttpResponse[String] = getq(port, "/api/thumb", "path", "2011/07/04/secret-stem")
+        error(escapedDir, 400, escape)
+        escapedDir.body should not include ("secret-stem")
+        escapedDir.body should not include ("OUTSIDE-SECRET-BYTES")
+        error(getq(port, "/api/thumb", "path", "2010/07/04/1009"), 404, "no such picture")
+        error(getq(port, "/api/file", "path", "2010/07/04/1009"), 404, "no such picture")
+        error(getq(port, "/api/thumb", "path", "2010/07/04/9999"), 404, "no such picture")
+        error(send(port, "/api/thumb", "POST"), 405, "method not allowed")
+        val full: HttpResponse[Array[Byte]] = getBytes(port, s"/api/file?path=${enc("2010/07/04/1001")}")
+        full.statusCode shouldBe 200
+        full.headers.firstValue("content-type").orElse("") shouldBe "image/jpeg"
+        full.headers.firstValue("x-photo-thumb").isEmpty shouldBe true
+        full.body.sameElements(original) shouldBe true
+        filesIn(cacheRoot).isEmpty shouldBe true
+        kindOf("1000") shouldBe "preview"
+        val missed: HttpResponse[Array[Byte]] = getBytes(port, s"/api/thumb?path=${enc("2010/07/04/1000")}")
+        missed.statusCode shouldBe 200
+        missed.headers.firstValue("content-type").orElse("") shouldBe "image/jpeg"
+        missed.headers.firstValue("x-photo-thumb").orElse("") shouldBe "placeholder"
+        missed.headers.firstValue("cache-control").orElse("") shouldBe "private, no-store"
+        missed.body.sameElements(placeholder) shouldBe true
+        kindOf("1000") shouldBe "preview"
+        val clip: HttpResponse[Array[Byte]] = getBytes(port, s"/api/thumb?path=${enc("2010/07/04/1005")}")
+        clip.statusCode shouldBe 200
+        clip.headers.firstValue("x-photo-thumb").orElse("") shouldBe "placeholder"
+        clip.body.sameElements(placeholder) shouldBe true
+        error(getq(port, "/api/file", "path", "2010/07/04/1000"), 404, "no displayable image")
+        error(getq(port, "/api/file", "path", "2010/07/04/1005"), 404, "no displayable image")
+        filesIn(cacheRoot).isEmpty shouldBe true
+        val hit: HttpResponse[Array[Byte]] = getBytes(port, s"/api/thumb?path=${enc("2010/07/04/1001")}")
+        hit.statusCode shouldBe 200
+        hit.headers.firstValue("content-type").orElse("") shouldBe "image/jpeg"
+        hit.headers.firstValue("x-photo-thumb").orElse("") shouldBe "hit"
+        hit.headers.firstValue("cache-control").orElse("") shouldBe "private, no-store"
+        val tile: Array[Byte] = hit.body
+        (tile(0) & 0xff) shouldBe 0xff
+        (tile(1) & 0xff) shouldBe 0xd8
+        tile.sameElements(original) shouldBe false
+        tile.sameElements(placeholder) shouldBe false
+        val scaled: BufferedImage = ImageIO.read(new ByteArrayInputStream(tile))
+        (scaled eq null) shouldBe false
+        scaled.getWidth should be <= 256
+        scaled.getHeight should be <= 256
+        scaled.getWidth should be < 320
+        val stored: Seq[File] = filesIn(cacheRoot)
+        stored.length shouldBe 1
+        val cacheFile: File = stored.head
+        cacheFile.getParentFile.getName should fullyMatch regex "[0-9a-f]{2}"
+        cacheFile.getName should fullyMatch regex "[0-9a-f]{62}\\.jpg"
+        JFiles.readAllBytes(cacheFile.toPath).sameElements(tile) shouldBe true
+        perms(File(cacheHome, ".cache/org.podval.tools.photo")) shouldBe "rwx------"
+        perms(cacheRoot) shouldBe "rwx------"
+        perms(cacheFile.getParentFile) shouldBe "rwx------"
+        perms(cacheFile) shouldBe "rw-------"
+        val stamped: Long = cacheFile.lastModified
+        val again: HttpResponse[Array[Byte]] = getBytes(port, s"/api/thumb?path=${enc("2010/07/04/1001")}")
+        again.statusCode shouldBe 200
+        again.headers.firstValue("x-photo-thumb").orElse("") shouldBe "hit"
+        again.body.sameElements(tile) shouldBe true
+        filesIn(cacheRoot).map(_.getAbsolutePath) shouldBe Seq(cacheFile.getAbsolutePath)
+        cacheFile.lastModified shouldBe stamped
+        JFiles.readAllBytes(jpeg.toPath).sameElements(original) shouldBe true
+        jpeg.lastModified shouldBe originalMtime
+        JFiles.readAllBytes(raw.toPath).sameElements(rawBytes) shouldBe true
+        JFiles.readAllBytes(video.toPath).sameElements(videoBytes) shouldBe true
+        JFiles.readAllBytes(secret.toPath).sameElements("OUTSIDE-SECRET-BYTES".getBytes(StandardCharsets.UTF_8)) shouldBe true
+      err should not include ("2010/07/04")
+      err should not include ("1001")
+      ended shouldBe Right(())
+    finally
+      System.setProperty("user.home", savedHome)
+      deleteTree(archive)
+      deleteTree(outside)
+      deleteTree(runtime)
+      deleteTree(cacheHome)
+
   private def rejected(archive: File, raw: String): Unit =
     Web.reject(archive, raw) shouldBe Left(Web.Rejected(400, escape))
 
@@ -617,6 +759,13 @@ class WebTest extends AnyFlatSpec, Matchers:
     loop()
 
   private def get(port: Int, path: String): HttpResponse[String] = send(port, path, "GET")
+
+  private def getBytes(port: Int, path: String): HttpResponse[Array[Byte]] =
+    val request: HttpRequest = HttpRequest.newBuilder(URI.create(s"http://$loopback:$port$path"))
+      .timeout(Duration.ofSeconds(30))
+      .GET()
+      .build()
+    client.send(request, HttpResponse.BodyHandlers.ofByteArray())
 
   private def send(port: Int, path: String, method: String): HttpResponse[String] =
     val request: HttpRequest = HttpRequest.newBuilder(URI.create(s"http://$loopback:$port$path"))
@@ -720,6 +869,24 @@ class WebTest extends AnyFlatSpec, Matchers:
     val home: File = File(System.getProperty("user.home"))
     val rootPath: String = home.toPath.relativize(archive.toPath).toString
     Session(Root(Configuration(rootPath, ZoneId.of("America/New_York"))))
+
+  // Configuration reads HOME, not user.home. The thumb cache is the user.home property.
+  private def sessionAt(archive: File): Session =
+    val home: File = File(System.getenv("HOME"))
+    val rootPath: String = home.toPath.relativize(archive.toPath).toString
+    Session(Root(Configuration(rootPath, ZoneId.of("America/New_York"))))
+
+  private def writeJpeg(file: File, width: Int, height: Int): Unit =
+    val image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+    val graphics = image.createGraphics()
+    try
+      graphics.setColor(Color.BLUE)
+      graphics.fillRect(0, 0, width, height)
+      graphics.setColor(Color.ORANGE)
+      graphics.fillRect(0, 0, width / 2, height / 2)
+    finally graphics.dispose()
+    file.getParentFile.mkdirs()
+    ImageIO.write(image, "jpg", file) shouldBe true
 
   private def touch(directory: File, name: String): Unit =
     if !directory.isDirectory then directory.mkdirs() shouldBe true

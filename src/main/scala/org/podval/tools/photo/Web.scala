@@ -38,6 +38,8 @@ object Web:
   private val alreadyRunning: String = "photo web is already running"
   private val escapeMessage: String = "path escapes the archive"
   private val missingPicture: String = "no such picture"
+  private val notPicture: String = "not a picture path"
+  private val noDisplay: String = "no displayable image"
   private val lockName: String = "web.lock"
   private val fileMode: String = "rw-------"
 
@@ -62,7 +64,9 @@ object Web:
     Route("GET", "/app.css", exchange => sendResource(exchange, "app.css", "text/css; charset=utf-8")),
     Route("GET", "/api/tree", exchange => api(exchange)(tree(exchange))),
     Route("GET", "/api/day", exchange => api(exchange)(day(exchange))),
-    Route("GET", "/api/album", exchange => api(exchange)(album(exchange)))
+    Route("GET", "/api/album", exchange => api(exchange)(album(exchange))),
+    Route("GET", "/api/thumb", exchange => guard(exchange)(serveThumb(exchange))),
+    Route("GET", "/api/file", exchange => guard(exchange)(serveFile(exchange)))
   )
 
   private[photo] def handlerRuntime: Option[File] = runtimeRef.get
@@ -93,7 +97,11 @@ object Web:
 
   // Decode once. A decoded ".." is still rejected. Callers pass the raw path, not a second decoding.
   private[photo] def reject(archive: File, raw: String): Either[Rejected, java.nio.file.Path] =
-    percentDecode(raw).flatMap(lexical).flatMap(names => confine(archive, names))
+    percentDecode(raw).flatMap(decoded => opened(archive, decoded))
+
+  // Query values are already decoded once. Decoding again would turn %252e%252e into "..".
+  private[photo] def opened(archive: File, decoded: String): Either[Rejected, java.nio.file.Path] =
+    lexical(decoded).flatMap(names => confine(archive, names))
 
   // Path.startsWith matches elements. "Pictures-other" is not under "Pictures".
   private[photo] def contained(root: java.nio.file.Path, candidate: java.nio.file.Path): Boolean =
@@ -718,3 +726,105 @@ object Web:
     catch
       case _: NoSuchFileException => Left(Rejected(404, missingPicture))
       case _: FileSystemException => Left(Rejected(400, escapeMessage))
+
+  private def guard(exchange: HttpExchange)(body: => Unit): Unit =
+    try body
+    catch case error: IllegalArgumentException =>
+      val message: String = Operation.messageOf(error)
+      val shown: String = if message.contains("AF1Qip") then "failed" else message
+      sendError(exchange, 400, shown)
+
+  private def serveThumb(exchange: HttpExchange): Unit =
+    prepared(exchange) match
+      case Left(rejected) =>
+        sendError(exchange, rejected.status, rejected.message)
+      case Right(relative, files) =>
+        val (bytes, marker) = Thumb.thumbnail(relative, files) match
+          case Some(image) => (image, "hit")
+          case None => (Thumb.placeholder, "placeholder")
+        exchange.getResponseHeaders.set("X-Photo-Thumb", marker)
+        exchange.getResponseHeaders.set("Cache-Control", "private, no-store")
+        send(exchange, 200, "image/jpeg", bytes)
+
+  private def serveFile(exchange: HttpExchange): Unit =
+    prepared(exchange) match
+      case Left(rejected) =>
+        sendError(exchange, rejected.status, rejected.message)
+      case Right(_, files) =>
+        Thumb.display(files) match
+          case None =>
+            sendError(exchange, 404, noDisplay)
+          case Some(Thumb.Display.Stream(file, contentType)) =>
+            sendStream(exchange, file, contentType)
+          case Some(Thumb.Display.Inline(bytes, contentType)) =>
+            send(exchange, 200, contentType, bytes)
+
+  private def prepared(exchange: HttpExchange): Either[Rejected, (String, Seq[(String, File)])] =
+    val archive: File = currentSession().root.configuration.archive
+    queryValue(exchange, "path").flatMap:
+      case None =>
+        Left(Rejected(400, notPicture))
+      case Some(decoded) =>
+        locate(archive, decoded)
+
+  private def locate(archive: File, decoded: String): Either[Rejected, (String, Seq[(String, File)])] =
+    if decoded.isEmpty then Left(Rejected(400, notPicture))
+    else opened(archive, decoded) match
+      case Left(rejected) if rejected.status == 400 =>
+        Left(rejected)
+      case _ =>
+        dateStem(decoded) match
+          case None =>
+            Left(Rejected(400, notPicture))
+          case Some(day, stem) =>
+            opened(archive, day).flatMap: dir =>
+              val rows: Seq[Pictures.Planned] =
+                Pictures.plan(Files.listFiles(dir.toFile)).filter(row => row.stem == stem && !row.omitted)
+              if !rows.exists(row => pictureExtensions.contains(row.extension)) then
+                Left(Rejected(404, missingPicture))
+              else openSources(archive, day, rows).flatMap: files =>
+                if files.isEmpty then Left(Rejected(404, missingPicture))
+                else Right(s"$day/$stem" -> files)
+
+  private def dateStem(decoded: String): Option[(String, String)] =
+    segments(decoded, Nil) match
+      case year :: month :: day :: stem :: Nil
+        if isNumber(year, 4) && isMonth(month) && isDay(day) && stemOk(stem) =>
+          Some(s"$year/$month/$day" -> stem)
+      case _ =>
+        None
+
+  private def stemOk(stem: String): Boolean =
+    stem.nonEmpty && !stem.contains('.') && stem != ".gphoto-sync" && stem != ".upload"
+
+  private def openSources(
+    archive: File,
+    day: String,
+    rows: Seq[Pictures.Planned]
+  ): Either[Rejected, Seq[(String, File)]] =
+    val byExt: Map[String, Pictures.Planned] =
+      rows.foldLeft(Map.empty[String, Pictures.Planned]): (acc, row) =>
+        if acc.contains(row.extension) then acc else acc.updated(row.extension, row)
+    Thumb.sourceOrder.foldLeft[Either[Rejected, List[(String, File)]]](Right(Nil)): (acc, ext) =>
+      acc.flatMap: soFar =>
+        byExt.get(ext) match
+          case None =>
+            Right(soFar)
+          case Some(row) =>
+            opened(archive, s"$day/${row.file.getName}") match
+              case Left(rejected) if rejected.status == 400 =>
+                Left(rejected)
+              case Left(_) =>
+                Right(soFar)
+              case Right(resolved) =>
+                Right(soFar :+ (ext -> resolved.toFile))
+
+  private def sendStream(exchange: HttpExchange, file: File, contentType: String): Unit =
+    exchange.getResponseHeaders.set("Content-Type", contentType)
+    exchange.sendResponseHeaders(200, file.length)
+    val out = exchange.getResponseBody
+    val in = NFiles.newInputStream(file.toPath)
+    try in.transferTo(out)
+    finally
+      in.close()
+      out.close()
