@@ -1,5 +1,6 @@
 package org.podval.tools.photo
 
+import org.jline.reader.{CompletingParsedLine, Parser}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import java.io.File
@@ -76,6 +77,10 @@ class CompletionTest extends AnyFlatSpec, Matchers:
       at(session, "ls -l --") should not contain ("--long")
       at(session, "ls -R --") should not contain ("--recursive")
       at(session, "ls --name-contains ") shouldBe Nil
+      at(session, "ls --name-contains -- ") shouldBe Nil
+      at(session, "ls --name-contains -- 2010") shouldBe Nil
+      at(session, "ls --name-contains -- 2010 ") shouldBe List("2010", "2011")
+      at(session, "agent include --span -- ") shouldBe Nil
       at(session, "ls --name-contains x ") shouldBe List("2010", "2011")
       at(session, "card -") shouldBe List("--dry-run")
       at(session, "card copy -") shouldBe List("--dry-run")
@@ -108,14 +113,14 @@ class CompletionTest extends AnyFlatSpec, Matchers:
       at(session, "item month ") shouldBe List("2010", "2011")
       at(session, "agent include ") shouldBe List("2010", "2011")
 
-  it should "offer archive titles, quoting a space or a quote the way splitLine reads" in :
+  it should "offer archive titles as the raw title" in :
     withSession: session =>
       val titles: List[String] = List(
         "Best",
-        "\"Cape Cod\"",
-        "\"Say \\\"Hi\\\"\"",
-        "\"a\\\\b\"",
-        "\"2010/07/Cape Cod\"",
+        "Cape Cod",
+        "Say \"Hi\"",
+        "a\\b",
+        "2010/07/Cape Cod",
         "2010/07",
         "2010/07/19"
       )
@@ -126,8 +131,13 @@ class CompletionTest extends AnyFlatSpec, Matchers:
       at(session, "item into ") shouldBe titles
       at(session, "item into Best ") shouldBe List("2010", "2011")
       at(session, "album mv ") shouldBe titles
-      titles.foreach: token =>
-        Cli.splitLine(s"album show $token") shouldBe Right(List("album", "show", unquote(token)))
+
+  it should "escape a quote or a backslash as the token splitLine reads" in :
+    List("Say \"Hi\"", "a\\b", "Cape Cod").foreach: title =>
+      val token: String = readerEscape(title)
+      Cli.splitLine(token) shouldBe Right(List(title))
+      val quotedAgain: String = readerEscape(token)
+      Cli.splitLine(quotedAgain) should not be Right(List(title))
 
   it should "offer item set property names with a trailing equals" in :
     withSession: session =>
@@ -139,10 +149,10 @@ class CompletionTest extends AnyFlatSpec, Matchers:
       at(session, "item set --dry-run up") shouldBe List("uploader=")
       at(session, "item set date= ") shouldBe List("2010", "2011")
 
-  private def unquote(token: String): String =
-    Cli.splitLine(token) match
-      case Right(List(title)) => title
-      case other => fail(other.toString)
+  private def readerEscape(title: String): String =
+    Cli.shellParser.parse("", 0, Parser.ParseContext.COMPLETE) match
+      case completing: CompletingParsedLine => completing.escape(title, true).toString
+      case other => fail(other.getClass.getName)
 
   private def at(session: Session, line: String): List[String] =
     val words: List[String] =

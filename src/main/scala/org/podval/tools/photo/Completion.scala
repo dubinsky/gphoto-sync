@@ -95,6 +95,12 @@ object Completion:
                   else more match
                     case Nil =>
                       (set + flag.name, count, true)
+                    // "--" introduces the value, as readValue does. It is not the value.
+                    // Nothing after it means the word being typed is still that value.
+                    case "--" :: Nil =>
+                      (set + flag.name, count, true)
+                    case "--" :: _ :: tail =>
+                      loop(tail, set + flag.name, count)
                     case _ :: tail =>
                       loop(tail, set + flag.name, count)
                 case None =>
@@ -147,10 +153,11 @@ object Completion:
     val titles: Seq[String] =
       try Archive.scan(session.root.configuration.archive).albums.map(_.album.title)
       catch case _: Exception => Seq.empty
-    titles.iterator.filter(title => title.startsWith(prefix) || titleToken(title).startsWith(prefix)).map(titleToken).toList
+    prefixed(titles, prefix)
 
   // Inside quotes splitLine only treats \\ and \" as escapes. Anything else would change the title.
-  private def titleToken(title: String): String =
+  // The reader inserts this in place of the raw word. Candidates stay the raw title.
+  private[photo] def titleToken(title: String): String =
     if title.exists(ch => ch.isWhitespace || ch == '"' || ch == '\\') then
       val body: String = title.flatMap:
         case '\\' => "\\\\"

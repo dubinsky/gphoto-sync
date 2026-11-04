@@ -3,7 +3,11 @@ package org.podval.tools.photo
 import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.ListHasAsScala
 import java.io.File
-import org.jline.reader.{Candidate, Completer, EndOfFileException, LineReader, LineReaderBuilder, UserInterruptException}
+import org.jline.reader.{
+  Candidate, Completer, CompletingParsedLine, EndOfFileException, LineReader, LineReaderBuilder, ParsedLine, Parser,
+  UserInterruptException
+}
+import org.jline.reader.impl.DefaultParser
 import org.jline.terminal.TerminalBuilder
 
 object Cli:
@@ -250,6 +254,28 @@ object Cli:
     case Continue(session: Session)
     case Stop
 
+  // doComplete deletes the raw word, opening quote included, then writes this escape.
+  // titleToken is that whole replacement. DefaultParser.escape would quote the token again.
+  private[photo] val shellParser: Parser = new DefaultParser:
+    override def parse(line: String, cursor: Int, context: Parser.ParseContext): ParsedLine =
+      super.parse(line, cursor, context) match
+        case completing: CompletingParsedLine =>
+          new CompletingParsedLine:
+            override def escape(candidate: CharSequence, complete: Boolean): CharSequence =
+              // complete is DefaultParser's request to append a closing quote.
+              // titleToken already closed one, and this string replaces the raw word.
+              Completion.titleToken(candidate.toString)
+            override def rawWordCursor(): Int = completing.rawWordCursor()
+            override def rawWordLength(): Int = completing.rawWordLength()
+            override def word(): String = completing.word()
+            override def wordCursor(): Int = completing.wordCursor()
+            override def wordIndex(): Int = completing.wordIndex()
+            override def words(): java.util.List[String] = completing.words()
+            override def line(): String = completing.line()
+            override def cursor(): Int = completing.cursor()
+        case other =>
+          other
+
   private[photo] def shell(
     session: Session,
     lines: Iterator[String],
@@ -269,7 +295,9 @@ object Cli:
             val words: List[String] = line.words.asScala.toList
             Completion.candidates(sessionNow(), words, line.wordIndex).foreach: text =>
               found.add(new Candidate(text))
-          Some(LineReaderBuilder.builder().terminal(terminal).completer(completer).build())
+          Some(
+            LineReaderBuilder.builder().terminal(terminal).parser(shellParser).completer(completer).build()
+          )
         catch
           case _: Exception =>
             None
