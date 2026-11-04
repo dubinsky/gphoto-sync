@@ -114,19 +114,23 @@ object Album:
     if text.indexOf('\'') >= 0 then quote(text) else "'" + text + "'"
 
   // Present keys are one single-line assignment each. The write splices the original text.
+  // The read is inside the lock. Text read before tryLock is not spliced.
   def storeGoogle(file: File, googleAlbumId: String, publishedTitle: String): Unit =
     rejectControl(file, "google-album-id", googleAlbumId)
     rejectControl(file, "published-title", publishedTitle)
-    val text: String = Files.read(file)
-    if text.isBlank then Files.write(blankGoogle(googleAlbumId, publishedTitle), file)
-    else
-      val table: TomlTable = JToml.jToml.readFromString(text)
-      val values: Map[String, String] = Map(
-        "google-album-id" -> googleAlbumId,
-        "published-title" -> publishedTitle
-      )
-      val present: Set[String] = values.keySet.filter(key => hasKey(table, key))
-      Files.write(joinLines(spliceGoogle(file, splitLines(text), values, present)), file)
+    withWriteLock:
+      val text: String = Files.read(file)
+      // Held here, the file is still the bytes just read. The write is below.
+      afterCompute()
+      if text.isBlank then Files.write(blankGoogle(googleAlbumId, publishedTitle), file)
+      else
+        val table: TomlTable = JToml.jToml.readFromString(text)
+        val values: Map[String, String] = Map(
+          "google-album-id" -> googleAlbumId,
+          "published-title" -> publishedTitle
+        )
+        val present: Set[String] = values.keySet.filter(key => hasKey(table, key))
+        Files.write(joinLines(spliceGoogle(file, splitLines(text), values, present)), file)
 
   // Recompress each include entry that claims one of these stems. An empty album writes include = [].
   // The read is inside the lock. A next include computed before tryLock is not spliced.

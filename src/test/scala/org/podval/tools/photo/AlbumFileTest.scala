@@ -5,6 +5,8 @@ import org.scalatest.matchers.should.Matchers
 import java.io.File
 import java.nio.file.Files as JFiles
 import java.time.LocalDate
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 class AlbumFileTest extends AnyFlatSpec, Matchers:
   "titles" should "round-trip through the start folder" in :
@@ -457,6 +459,66 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
           Album.spliceInclude(file, album.include)
       rejected.getMessage should include ("is outside")
       Files.read(file) shouldBe outside
+
+  "storeGoogle" should "hold the write lock across the read and the write" in :
+    val originals: File = JFiles.createTempDirectory("album-file").toFile
+    val runtime: File = JFiles.createTempDirectory("album-lock").toFile
+    Album.afterCompute = () => ()
+    try
+      val file: File = write(originals, "Best.toml", "external = false\n")
+      val entered = new CountDownLatch(1)
+      val queued = new AtomicBoolean(false)
+      val failed = new AtomicReference[Throwable](null)
+      val store = new Thread(() => {
+        try
+          Album.withWriteLockDirectory(runtime):
+            Album.afterCompute = () =>
+              Album.afterCompute = () => ()
+              entered.countDown()
+              val deadline: Long = System.nanoTime() + 3000000000L
+              def loop(): Unit =
+                if Album.writeWaiters > 0 then queued.set(true)
+                else if System.nanoTime() >= deadline then throw IllegalStateException("waiter not queued")
+                else
+                  Thread.sleep(20)
+                  loop()
+              loop()
+            Album.storeGoogle(file, "held", "Held")
+        catch
+          case error: Throwable =>
+            Album.afterCompute = () => ()
+            entered.countDown()
+            failed.set(error)
+      }, "album-store-google")
+      store.setDaemon(true)
+      store.start()
+      try
+        assert(entered.await(5, TimeUnit.SECONDS))
+        if failed.get != null then throw failed.get
+        val waiterFailed = new AtomicReference[Throwable](null)
+        val waiter = new Thread(() => {
+          try
+            Album.withWriteLockDirectory(runtime):
+              Album.storeGoogle(file, "waited", "Waited")
+          catch case error: Throwable => waiterFailed.set(error)
+        }, "album-google-wait")
+        waiter.setDaemon(true)
+        waiter.start()
+        waiter.join(15000)
+        waiter.isAlive shouldBe false
+        if waiterFailed.get != null then throw waiterFailed.get
+      finally store.join(15000)
+      store.isAlive shouldBe false
+      if failed.get != null then throw failed.get
+      queued.get shouldBe true
+      val text: String = Files.read(file)
+      text should include ("google-album-id = \"waited\"")
+      text should include ("published-title = \"Waited\"")
+      text should not include ("held")
+    finally
+      Album.afterCompute = () => ()
+      deleteTree(originals)
+      deleteTree(runtime)
 
   "planDated" should "keep all and a whole-day line and not write" in :
     withOriginals: originals =>
