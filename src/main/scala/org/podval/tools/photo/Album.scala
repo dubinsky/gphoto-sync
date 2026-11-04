@@ -260,7 +260,7 @@ object Album:
   ): Seq[(File, Seq[Include.Entry])] =
     if from._1.equals(to._1) && from._2 == to._2 then Seq.empty
     else
-      val universe: Map[LocalDate, Set[String]] = planningUniverse(originals)
+      val universe: Map[LocalDate, Set[String]] = PlanningWalk.planningUniverse(originals)
       val files: Seq[File] = curatedFiles(originals)
       files.foreach(file => read(originals, file))
       files.flatMap: file =>
@@ -277,8 +277,8 @@ object Album:
     to: (LocalDate, String),
     fromPath: String
   ): Seq[(File, Seq[Include.Entry])] =
-    val universe: Map[LocalDate, Set[String]] = planningUniverse(originals)
-    val loaded: Seq[Loaded] = planningAlbums(originals)
+    val universe: Map[LocalDate, Set[String]] = PlanningWalk.planningUniverse(originals)
+    val loaded: Seq[Loaded] = PlanningWalk.planningAlbums(originals)
     val outside: Seq[String] =
       loaded.flatMap: one =>
         one.album.span match
@@ -321,54 +321,6 @@ object Album:
               Some(one.file -> (prefix ++ rewritten ++ rest))
     edits.foreach((file, include) => renderedInclude(file, include))
     edits
-
-  // Pictures.group(Leave) prints WRONG NAME into this command and throws on a stray file.
-  // grouped does not enact. A non-picture is dropped so one unrelated day cannot fail the move.
-  private def planningUniverse(originals: File): Map[LocalDate, Set[String]] =
-    def accepted(file: File): Boolean =
-      if file.getName.startsWith(".") then false
-      else
-        val (stem, extension) = Files.nameAndExtension(file)
-        extension match
-          case None =>
-            false
-          case Some("toml") if !stem.headOption.exists(_.isDigit) =>
-            false
-          case Some(raw) =>
-            val lower: String = raw.toLowerCase(java.util.Locale.ROOT)
-            val corrected: String =
-              if raw != lower && Extension.all.exists(_.name == lower) then lower else raw
-            Extension.all.exists(_.name == corrected) || corrected == Metadata.extension
-    DateTree.years(originals).foldLeft(Map.empty[LocalDate, Set[String]]):
-      (universe, year) =>
-        DateTree.months(year).foldLeft(universe):
-          (universe, month) =>
-            DateTree.days(month).foldLeft(universe):
-              (universe, day) =>
-                val stems: Set[String] =
-                  Pictures.grouped(Files.listFiles(day.directory).filter(accepted)).map(_._1).toSet
-                if stems.isEmpty then universe
-                else universe.updated(LocalDate.of(month.year, month.month, day.day), stems)
-
-  // Album files only. Archive.scan also lists pictures with NameMode.Leave.
-  private def planningAlbums(originals: File): Seq[Loaded] =
-    def albumsIn(directory: File, skipDigitToml: Boolean): Seq[Loaded] =
-      children(directory).filter(_.isFile).filter: file =>
-        val (stem, _) = Files.nameAndExtension(file)
-        file.getName.endsWith(".toml") && !(skipDigitToml && stem.headOption.exists(_.isDigit))
-      .sortBy(_.getName)
-      .map(file => Loaded(file, read(originals, file)))
-    val curated: Seq[Loaded] = albumsIn(originals, skipDigitToml = false)
-    DateTree.years(originals).foldLeft(curated):
-      (albums, year) =>
-        children(year.directory).filter(file => file.isFile && file.getName.endsWith(".toml")).foreach: file =>
-          throw IllegalArgumentException(s"$file: album files do not live in a year directory")
-        DateTree.months(year).foldLeft(albums):
-          (albums, month) =>
-            val withMonth: Seq[Loaded] = albums ++ albumsIn(month.directory, skipDigitToml = false)
-            DateTree.days(month).foldLeft(withMonth):
-              (albums, day) =>
-                albums ++ albumsIn(day.directory, skipDigitToml = true)
 
   def picturePath(path: String): Option[(LocalDate, String)] =
     path.split('/').filter(_.nonEmpty).toSeq match
@@ -689,7 +641,7 @@ object Album:
       .filter(file => file.isFile && file.getName.endsWith(".toml"))
       .sortBy(_.getName)
 
-  private def children(directory: File): Seq[File] =
+  private[photo] def children(directory: File): Seq[File] =
     Option(directory.listFiles).map(_.toSeq).getOrElse(Seq.empty)
 
   private def includeLines(include: Seq[Include.Entry]): Seq[String] =
