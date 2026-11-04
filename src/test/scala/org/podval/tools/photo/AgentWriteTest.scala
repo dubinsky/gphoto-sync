@@ -631,18 +631,6 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         opened shouldBe false
       finally
         Refresh.openAct = previousAct
-      Cli.parse(List(
-        "agent", "request", "move-item", "--album", "goneId", "--item", "keyPic",
-        "--current", "pic.jpg", "--new", "albDst"
-      )) shouldBe Cli.Usage("use photo agent move-item")
-      Cli.parse(List("agent", "request", "move-item", "--help")) shouldBe
-        Cli.Usage("use photo agent move-item")
-      Cli.parse(List(
-        "agent", "request", "delete-item", "--album", "albOwn", "--item", "keyOwn", "--current", "pic.jpg"
-      )) shouldBe Cli.Usage("use photo agent delete-item")
-      Cli.parse(List("agent", "request", "delete-item", "--help")) shouldBe
-        Cli.Usage("use photo agent delete-item")
-      Cli.requestCommandNames shouldBe Nil
       requests(archive).exists shouldBe false
       reject(
         "no such item",
@@ -699,25 +687,9 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
   it should "report a missing request flag before it reads the catalog" in :
     withArchive: archive =>
       val session: Session = sessionFor(archive)
-      Cli.parse(List("agent", "request", "rename-album")) shouldBe Cli.Usage("use photo agent rename-album")
-      Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
-        Cli.Usage("use photo agent rename-album")
-      Cli.parse(List(
-        "agent", "request", "rename-album", "--album", "albTrail", "--current", "Old", "--new", "X"
-      )) shouldBe Cli.Usage("use photo agent rename-album")
       usage(session, "agent", "rename-album") shouldBe "missing title"
       usage(session, "agent", "rename-album", "--title", "T", "--new", "X") shouldBe "missing current"
       usage(session, "agent", "rename-album", "--title", "T", "--current", "Old") shouldBe "missing new"
-      Cli.parse(List(
-        "agent", "request", "move-item", "--album", "albSrc", "--current", "pic.jpg", "--new", "albDst"
-      )) shouldBe Cli.Usage("use photo agent move-item")
-      Cli.parse(List("agent", "request", "set-description", "--current", "pic.jpg")) shouldBe
-        Cli.Usage("use photo agent set-description")
-      Cli.parse(List("agent", "request", "set-date", "--item", "keyOnly", "--current", "pic.jpg")) shouldBe
-        Cli.Usage("use photo agent set-date")
-      Cli.parse(List(
-        "agent", "request", "download-item", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
-      )) shouldBe Cli.Usage("use photo agent download-item")
       usage(session, "agent", "set-description") shouldBe "missing item"
       usage(session, "agent", "set-description", "--item", "keyOnly") shouldBe "missing current"
       usage(session, "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg") shouldBe "missing new"
@@ -740,9 +712,6 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       usage(session, "agent", "delete-item") shouldBe "missing title"
       usage(session, "agent", "delete-item", "--title", "Source Title") shouldBe "missing item"
       usage(session, "agent", "delete-item", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
-      Cli.parse(List(
-        "agent", "request", "delete-item", "--album", "albSrc", "--item", "keyPic", "--current", "pic.jpg"
-      )) shouldBe Cli.Usage("use photo agent delete-item")
       File(archive, ".gphoto-sync").exists shouldBe false
 
   "rename-album" should "leave the catalog unchanged when the step throws" in :

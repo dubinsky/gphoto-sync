@@ -203,9 +203,9 @@ class CliTest extends AnyFlatSpec, Matchers:
     )) shouldBe Cli.Run(Cli.RenameAlbumArgs(Some("2010/07 "), Some("2010/07 "), Some("July"), Some("a1")))
     Cli.parse(List(
       "agent", "request", "rename-album", "--album", "a1", "--current", "Old", "--new", "New", "--id", "r1"
-    )) shouldBe Cli.Usage("use photo agent rename-album")
+    )) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
-      Cli.Usage("use photo agent rename-album")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List(
       "agent", "move-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg",
       "--dest", "Other", "--id", "a1", "--dest-id", "a2"
@@ -215,29 +215,28 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List(
       "agent", "request", "move-item", "--album", "a1", "--item", "k1",
       "--current", "a.jpg", "--new", "a2", "--id", "r1"
-    )) shouldBe Cli.Usage("use photo agent move-item")
+    )) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "move-item", "--help")) shouldBe
-      Cli.Usage("use photo agent move-item")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List(
       "agent", "delete-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
     )) shouldBe Cli.Run(Cli.DeleteItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
     Cli.parse(List(
       "agent", "request", "delete-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
-    )) shouldBe Cli.Usage("use photo agent delete-item")
+    )) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "delete-item", "--help")) shouldBe
-      Cli.Usage("use photo agent delete-item")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List(
       "agent", "upload-item", "--dest", "Trip", "--dest-id", "a2", "2010/07/01/a.jpg"
     )) shouldBe Cli.Run(Cli.UploadItemArgs(Some("2010/07/01/a.jpg"), Some("Trip"), Some("a2")))
     Cli.parse(List("agent", "request", "upload-item", "2010/07/01/a.jpg")) shouldBe
-      Cli.Usage("use photo agent upload-item")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "upload-item", "--help")) shouldBe
-      Cli.Usage("use photo agent upload-item")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "create-album", "--title", "Probe")) shouldBe
       Cli.Run(Cli.CreateAlbumArgs(Some("Probe")))
     Cli.parse(List("agent", "delete-album", "--title", "Probe", "--id", "a1")) shouldBe
       Cli.Run(Cli.DeleteAlbumArgs(Some("Probe"), Some("a1")))
-    Cli.requestCommandNames shouldBe Nil
     Cli.parse(List(
       "agent", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello"
     )) shouldBe Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("Hello")))
@@ -249,23 +248,23 @@ class CliTest extends AnyFlatSpec, Matchers:
     )) shouldBe Cli.Run(Cli.SetDateArgs(Some("k1"), Some("a.jpg"), Some("2010-07-19 00:00")))
     Cli.parse(List(
       "agent", "request", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello", "--id", "r1"
-    )) shouldBe Cli.Usage("use photo agent set-description")
+    )) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "set-description", "--help")) shouldBe
-      Cli.Usage("use photo agent set-description")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List(
       "agent", "request", "set-date", "--item", "k1", "--current", "a.jpg",
       "--new", "2010-07-19 00:00", "--id", "r1"
-    )) shouldBe Cli.Usage("use photo agent set-date")
+    )) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "set-date", "--help")) shouldBe
-      Cli.Usage("use photo agent set-date")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List(
       "agent", "download-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
     )) shouldBe Cli.Run(Cli.DownloadItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
     Cli.parse(List(
       "agent", "request", "download-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
-    )) shouldBe Cli.Usage("use photo agent download-item")
+    )) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "download-item", "--help")) shouldBe
-      Cli.Usage("use photo agent download-item")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List(
       "agent", "add-to-album", "--title", "Trip", "--item", "k1", "--current", "a.jpg",
       "--dest", "Other", "--id", "a1", "--dest-id", "a2"
@@ -276,9 +275,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       "agent", "remove-from-album", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
     )) shouldBe Cli.Run(Cli.RemoveFromAlbumArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
     Cli.parse(List("agent", "request", "add-to-album")) shouldBe
-      Cli.Usage("unknown command 'add-to-album'")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "remove-from-album")) shouldBe
-      Cli.Usage("unknown command 'remove-from-album'")
+      Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "requests")) shouldBe Cli.Usage("unknown command 'requests'")
     Cli.parse(List("agent", "results")) shouldBe Cli.Usage("unknown command 'results'")
     Cli.parse(List("agent", "apply-requests")) shouldBe Cli.Usage("unknown command 'apply-requests'")
@@ -567,7 +566,6 @@ class CliTest extends AnyFlatSpec, Matchers:
         |locate  list catalog rows that match one local stem
         |include  compress include lines
         |album-file  write an album file
-        |request  redirect that does not append
         |rename-album  rename an album
         |set-description  set an item description
         |set-date  set an item date
@@ -594,15 +592,6 @@ class CliTest extends AnyFlatSpec, Matchers:
     agent should include ("upload-item  upload one archive file into an album")
     agent should include ("create-album  create an album")
     agent should include ("delete-album  delete an album")
-    helpOf("agent", "request", "--help") shouldBe "request  redirect that does not append\n"
-    helpOf("agent", "request", "--help") should not include ("delete-item")
-    helpOf("agent", "request", "--help") should not include ("upload-item")
-    helpOf("agent", "request", "--help") should not include ("create-album")
-    helpOf("agent", "request", "--help") should not include ("delete-album")
-    helpOf("agent", "request", "--help") should not include ("move-item")
-    helpOf("agent", "request", "--help") should not include ("download-item")
-    Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
-      Cli.Usage("use photo agent rename-album")
     helpOf("agent", "rename-album", "--help") shouldBe
       """rename-album  rename an album
         |
@@ -844,24 +833,31 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("agent", "catalog", "June") -> "extra argument 'June'",
       List("agent", "nope") -> "unknown command 'nope'",
       List("agent", "album-file", "2010/07", "--replace") -> "extra argument '--replace'",
-      List("agent", "request") -> "missing request action",
-      List("agent", "request", "rename-album") -> "use photo agent rename-album",
-      List("agent", "request", "rename-album", "--help") -> "use photo agent rename-album",
-      List("agent", "request", "set-description") -> "use photo agent set-description",
-      List("agent", "request", "set-description", "--help") -> "use photo agent set-description",
-      List("agent", "request", "set-date") -> "use photo agent set-date",
-      List("agent", "request", "set-date", "--help") -> "use photo agent set-date",
-      List("agent", "request", "download-item") -> "use photo agent download-item",
-      List("agent", "request", "download-item", "--help") -> "use photo agent download-item",
-      List("agent", "request", "move-item") -> "use photo agent move-item",
-      List("agent", "request", "move-item", "--help") -> "use photo agent move-item",
-      List("agent", "request", "delete-item") -> "use photo agent delete-item",
-      List("agent", "request", "delete-item", "--help") -> "use photo agent delete-item",
-      List("agent", "request", "upload-item") -> "use photo agent upload-item",
-      List("agent", "request", "upload-item", "--help") -> "use photo agent upload-item",
+      List("agent", "request") -> "unknown command 'request'",
+      List("agent", "request", "--help") -> "unknown command 'request'",
+      List("agent", "request", "-h") -> "unknown command 'request'",
+      List("agent", "request", "rename-album") -> "unknown command 'request'",
+      List("agent", "request", "rename-album", "--help") -> "unknown command 'request'",
+      List("agent", "request", "set-description") -> "unknown command 'request'",
+      List("agent", "request", "set-description", "--help") -> "unknown command 'request'",
+      List("agent", "request", "set-date") -> "unknown command 'request'",
+      List("agent", "request", "set-date", "--help") -> "unknown command 'request'",
+      List("agent", "request", "download-item") -> "unknown command 'request'",
+      List("agent", "request", "download-item", "--help") -> "unknown command 'request'",
+      List("agent", "request", "move-item") -> "unknown command 'request'",
+      List("agent", "request", "move-item", "--help") -> "unknown command 'request'",
+      List("agent", "request", "delete-item") -> "unknown command 'request'",
+      List("agent", "request", "delete-item", "--help") -> "unknown command 'request'",
+      List("agent", "request", "upload-item") -> "unknown command 'request'",
+      List("agent", "request", "upload-item", "--help") -> "unknown command 'request'",
+      List("agent", "request", "--album", "a1", "rename-album") -> "unknown command 'request'",
+      List("agent", "request", "create-album") -> "unknown command 'request'",
+      List("agent", "request", "create-album", "--title", "Probe") -> "unknown command 'request'",
+      List("agent", "request", "delete-album") -> "unknown command 'request'",
+      List("agent", "request", "delete-album", "--help") -> "unknown command 'request'",
+      List("help", "agent", "request") -> "extra argument 'request'",
       List("agent", "create-album", "--title") -> "missing value for '--title'",
       List("agent", "album-file", "--no-request", "2010/07") -> "unknown option '--no-request'",
-      List("agent", "request", "--album", "a1", "rename-album") -> "unknown command '--album'",
       List("agent", "requests", "x") -> "unknown command 'requests'",
       List("agent", "results", "x") -> "unknown command 'results'",
       List("agent", "apply-requests") -> "unknown command 'apply-requests'"

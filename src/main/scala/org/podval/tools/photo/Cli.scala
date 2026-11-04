@@ -555,8 +555,6 @@ object Cli:
               prefix ++ flags ++ rewrittenPositionals
 
   private def locate(args: List[String]): Option[(Command, List[String], List[String])] = args match
-    case "agent" :: "request" :: name :: rest =>
-      requestCommands.find(_.name == name).map(command => (command, rest, List("agent", "request", name)))
     case "agent" :: name :: rest =>
       agentCommands.find(_.name == name).map(command => (command, rest, List("agent", name)))
     case "item" :: name :: rest =>
@@ -1097,44 +1095,13 @@ object Cli:
       Usage("missing agent command")
     case ("--help" | "-h") :: _ =>
       Help(agentHelp)
-    case "request" :: rest =>
-      parseRequest(rest, front)
     case name :: rest =>
       agentCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
         case Some(command) => parseCommand(command, rest, front)
 
-  private def parseRequest(args: List[String], front: Front): Outcome = args match
-    case Nil =>
-      Usage("missing request action")
-    case ("--help" | "-h") :: _ =>
-      Help(requestHelp)
-    case "rename-album" :: _ =>
-      Usage("use photo agent rename-album")
-    case "set-description" :: _ =>
-      Usage("use photo agent set-description")
-    case "set-date" :: _ =>
-      Usage("use photo agent set-date")
-    case "download-item" :: _ =>
-      Usage("use photo agent download-item")
-    case "move-item" :: _ =>
-      Usage("use photo agent move-item")
-    case "delete-item" :: _ =>
-      Usage("use photo agent delete-item")
-    case "upload-item" :: _ =>
-      Usage("use photo agent upload-item")
-    case name :: rest =>
-      requestCommands.find(_.name == name) match
-        case None => Usage(s"unknown command '$name'")
-        case Some(command) => parseCommand(command, rest, front)
-
   private def agentHelp: String =
-    val lines: List[String] = agentCommands.flatMap: command =>
-      if command.name == "album-file" then List(lineOf(command), requestLine) else List(lineOf(command))
-    (List(agentLine, "") ++ lines).mkString("\n")
-
-  private def requestHelp: String =
-    (List(requestLine, "") ++ requestCommands.map(lineOf)).mkString("\n")
+    (List(agentLine, "") ++ agentCommands.map(lineOf)).mkString("\n")
 
   private def commandHelp(command: Command): String =
     val positionals: String =
@@ -2241,11 +2208,6 @@ object Cli:
       // readMcpFields already rejected a mismatched JSON type.
       throw IllegalStateException(s"argument '${mcpParamName(param)}' has the wrong type")
 
-  // No request action remains. photo agent request does not append.
-  // Command stays private, so the empty-arm check is the names.
-  private val requestCommands: List[Command] = Nil
-  private[photo] def requestCommandNames: List[String] = requestCommands.map(_.name)
-
   private val helpCommand: Command = Command(
     name = "help",
     help = "print command help",
@@ -2330,8 +2292,6 @@ object Cli:
     flags = List(Flag("dry-run", None, BooleanKind, "print copy and keep lines and write nothing")),
     build = (values, args) => CardCopy(bool(values, "dry-run"), args.headOption)
   )
-
-  private val requestLine: String = "request  redirect that does not append"
 
   private def cursorOnly(session: Session, name: String): Option[Result] = session.style match
     case PathStyle.Cursor =>
