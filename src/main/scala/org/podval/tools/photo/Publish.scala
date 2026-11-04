@@ -441,29 +441,27 @@ object Publish:
     tempDirectory: File
   ): Work =
     val titles: Seq[String] = picture.albums
-    if titles.exists(title => albums(title).album.external) then SkipExternal(picture.path)
+    val targets: Seq[String] = titles.filterNot(title => albums(title).album.external)
+    if targets.isEmpty then SkipExternal(picture.path)
+    else if fact.metadata.uploader.isDefined then SkipUploader(picture.path)
+    else if twoNormals(fact) then Broken(picture.path, targets.mkString(","), "too many normal extensions")
     else
-      val targets: Seq[String] = titles.filterNot(title => albums(title).album.external)
-      if targets.isEmpty then SkipExcluded(picture.path)
-      else if fact.metadata.uploader.isDefined then SkipUploader(picture.path)
-      else if twoNormals(fact) then Broken(picture.path, targets.mkString(","), "too many normal extensions")
-      else
-        val directory: File = fact.directory
-        val name: String = fact.name
-        val metadataFile: File = File(directory, s"$name.toml")
-        val metadata: Metadata = fact.metadata
-        if metadata.`already-in-google`.contains(true) then AlreadyInGoogle(picture.path)
-        else metadata.`google-media-item-id`.filter(_.nonEmpty) match
-          case Some(id) => FileExisting(picture.path, id, targets)
-          case None =>
-            literalUpload(directory, name) match
-              case Left(message) => Broken(picture.path, targets.mkString(","), message)
-              case Right(None) => StayLocal(picture.path)
-              case Right(Some((source, ext))) =>
-                ExifOverride(source, ext, metadata, tempDirectory) match
-                  case Left(message) => Broken(picture.path, targets.mkString(","), message)
-                  case Right((bytes, argv)) =>
-                    UploadNew(picture.path, targets, metadata, metadataFile, source, bytes, ext, argv)
+      val directory: File = fact.directory
+      val name: String = fact.name
+      val metadataFile: File = File(directory, s"$name.toml")
+      val metadata: Metadata = fact.metadata
+      if metadata.`already-in-google`.contains(true) then AlreadyInGoogle(picture.path)
+      else metadata.`google-media-item-id`.filter(_.nonEmpty) match
+        case Some(id) => FileExisting(picture.path, id, targets)
+        case None =>
+          literalUpload(directory, name) match
+            case Left(message) => Broken(picture.path, targets.mkString(","), message)
+            case Right(None) => StayLocal(picture.path)
+            case Right(Some((source, ext))) =>
+              ExifOverride(source, ext, metadata, tempDirectory) match
+                case Left(message) => Broken(picture.path, targets.mkString(","), message)
+                case Right((bytes, argv)) =>
+                  UploadNew(picture.path, targets, metadata, metadataFile, source, bytes, ext, argv)
 
   private def cleanup(picture: UploadNew): Unit =
     if picture.bytes.getPath != picture.source.getPath && picture.bytes.isFile then picture.bytes.delete()

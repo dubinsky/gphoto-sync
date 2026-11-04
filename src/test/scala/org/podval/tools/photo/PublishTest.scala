@@ -64,9 +64,104 @@ class PublishTest extends AnyFlatSpec, Matchers:
       best.publishedTitle shouldBe "Best"
       out should include ("uploaded=1 filed=2 skipped-excluded=0 skipped-external=0 skipped-uploader=0 skipped-exists=0 failed=0")
 
-  it should "not upload a picture claimed by an external album" in :
+  it should "not upload a picture claimed only by an external album" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val eventFile: File = write(originals, "2009/03/10/Party.toml", "external = true\ninclude = [\"all\"]\n")
+      val eventBytes: Seq[Byte] = bytes(eventFile)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.batchCreates shouldBe empty
+      fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      bytes(eventFile) shouldBe eventBytes
+      File(originals, "2009/03/10/2412.toml").isFile shouldBe false
+      out should include (
+        "uploaded=0 filed=0 skipped-excluded=0 skipped-external=1 skipped-uploader=0 skipped-exists=0 failed=0"
+      )
+
+  it should "count an only-external picture ahead of a set uploader" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val sidecar: File = write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
+      val sidecarBytes: Seq[Byte] = bytes(sidecar)
+      val eventFile: File = write(originals, "2009/03/10/Party.toml", "external = true\ninclude = [\"all\"]\n")
+      val eventBytes: Seq[Byte] = bytes(eventFile)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.batchCreates shouldBe empty
+      fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      bytes(sidecar) shouldBe sidecarBytes
+      bytes(eventFile) shouldBe eventBytes
+      out should include (
+        "uploaded=0 filed=0 skipped-excluded=0 skipped-external=1 skipped-uploader=0 skipped-exists=0 failed=0"
+      )
+
+  it should "skip a mixed picture when the sidecar sets uploader" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val sidecar: File = write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
+      val sidecarBytes: Seq[Byte] = bytes(sidecar)
+      val eventFile: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "external = true\ninclude = [\"all\"]\ngoogle-title = \"Hawaii \"\nowner = \"Ada Owner\"\n"
+      )
+      val eventBytes: Seq[Byte] = bytes(eventFile)
+      val bestFile: File = write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
+      val bestBytes: Seq[Byte] = bytes(bestFile)
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.batchCreates shouldBe empty
+      fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      bytes(sidecar) shouldBe sidecarBytes
+      bytes(eventFile) shouldBe eventBytes
+      bytes(bestFile) shouldBe bestBytes
+      out should include (
+        "uploaded=0 filed=0 skipped-excluded=0 skipped-external=0 skipped-uploader=1 skipped-exists=0 failed=0"
+      )
+
+  it should "file a stored media id into the client album only" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val sidecar: File = write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"existing-id\"\n")
+      val sidecarBytes: Seq[Byte] = bytes(sidecar)
+      val eventFile: File = write(originals, "2009/03/10/Party.toml", "external = true\ninclude = [\"all\"]\n")
+      val eventBytes: Seq[Byte] = bytes(eventFile)
+      write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads shouldBe empty
+      fake.batchCreates shouldBe empty
+      fake.adds should have size 1
+      fake.adds.head._2 shouldBe Seq("existing-id")
+      val best: Album = Album.read(originals, File(originals, "Best.toml"))
+      fake.adds.map(_._1).toSeq shouldBe Seq(best.googleAlbumId)
+      fake.createdAlbums.toSeq shouldBe Seq("Best")
+      bytes(sidecar) shouldBe sidecarBytes
+      bytes(eventFile) shouldBe eventBytes
+      out should include (
+        "uploaded=0 filed=1 skipped-excluded=0 skipped-external=0 skipped-uploader=0 skipped-exists=1 failed=0"
+      )
+
+  it should "not batchAdd a mixed picture when already-in-google is set beside a media id" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val sidecar: File = write(
+        originals,
+        "2009/03/10/2412.toml",
+        "already-in-google = true\ngoogle-media-item-id = \"existing-id\"\n"
+      )
+      val sidecarBytes: Seq[Byte] = bytes(sidecar)
       val eventFile: File = write(originals, "2009/03/10/Party.toml", "external = true\ninclude = [\"all\"]\n")
       val eventBytes: Seq[Byte] = bytes(eventFile)
       val bestFile: File = write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
@@ -77,12 +172,45 @@ class PublishTest extends AnyFlatSpec, Matchers:
       fake.uploads shouldBe empty
       fake.batchCreates shouldBe empty
       fake.adds shouldBe empty
+      fake.createdAlbums shouldBe empty
+      bytes(sidecar) shouldBe sidecarBytes
       bytes(eventFile) shouldBe eventBytes
       bytes(bestFile) shouldBe bestBytes
-      File(originals, "2009/03/10/2412.toml").isFile shouldBe false
-      out should include ("skipped-external=1")
-      out should include ("uploaded=0")
-      out should include ("filed=0")
+      out should include (
+        "uploaded=0 filed=0 skipped-excluded=0 skipped-external=0 skipped-uploader=0 skipped-exists=1 failed=0"
+      )
+
+  it should "upload an unknown sidecar into the client album only" in :
+    withOriginals: originals =>
+      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
+      val eventFile: File = write(originals, "2009/03/10/Party.toml", "external = true\ninclude = [\"all\"]\n")
+      val eventBytes: Seq[Byte] = bytes(eventFile)
+      write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
+      val fake: Fake = Fake()
+      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
+      expectOk(thrown, out)
+      fake.uploads should have size 1
+      fake.batchCreates should have size 1
+      fake.batchCreates.head should have size 1
+      fake.events.toSeq shouldBe Seq("upload", "batchCreate", "owns")
+      val id: String = metadata(originals, "2009/03/10/2412").`google-media-item-id`.getOrElse(fail("no media id"))
+      metadata(originals, "2009/03/10/2412").`already-in-google` shouldBe None
+      val sidecarText: String = Files.read(File(originals, "2009/03/10/2412.toml"))
+      sidecarText should not include ("external")
+      fake.adds should have size 1
+      fake.adds.flatMap(_._2).toSeq shouldBe Seq(id)
+      val best: Album = Album.read(originals, File(originals, "Best.toml"))
+      fake.adds.map(_._1).toSeq shouldBe Seq(best.googleAlbumId)
+      fake.createdAlbums.toSeq shouldBe Seq("Best")
+      bytes(eventFile) shouldBe eventBytes
+      Option(File(originals, "2009/03/10").listFiles).toSeq.flatten.map(_.getName).sorted shouldBe Seq(
+        "2412.jpg",
+        "2412.toml",
+        "Party.toml"
+      )
+      out should include (
+        "uploaded=1 filed=1 skipped-excluded=0 skipped-external=0 skipped-uploader=0 skipped-exists=0 failed=0"
+      )
 
   it should "skip upload when the sidecar sets uploader" in :
     withOriginals: originals =>
@@ -105,27 +233,6 @@ class PublishTest extends AnyFlatSpec, Matchers:
       out should include (
         "uploaded=0 filed=0 skipped-excluded=0 skipped-external=0 skipped-uploader=1 skipped-exists=0 failed=0"
       )
-
-  it should "count an external album ahead of a set uploader" in :
-    withOriginals: originals =>
-      writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
-      write(
-        originals,
-        "2009/03/10/Party.toml",
-        "external = true\ninclude = [\"all\"]\ngoogle-title = \"Hawaii \"\nowner = \"Ada Owner\"\n"
-      )
-      write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
-      val fake: Fake = Fake()
-      val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
-      expectOk(thrown, out)
-      fake.uploads shouldBe empty
-      fake.adds shouldBe empty
-      fake.createdAlbums shouldBe empty
-      out should include ("skipped-external=1")
-      out should include ("skipped-uploader=0")
-      out should include ("uploaded=0")
-      out should include ("failed=0")
 
   it should "upload a picture whose sidecar does not set uploader" in :
     withOriginals: originals =>
