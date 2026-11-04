@@ -19,8 +19,3 @@ object RawConverter:
   object DCRaw extends RawConverter:
     override protected def process(rawFile: File, file: File): ProcessBuilder =
       Process(s"dcraw -c $rawFile").#|(Process(s"convert - $file"))
-
-  // Note: coder for crw (dng, digital negative) is not installed by default...
-  object ImageMagic extends RawConverter:
-    override protected def process(rawFile: File, file: File): ProcessBuilder =
-      Process(s"magick $rawFile $file")
