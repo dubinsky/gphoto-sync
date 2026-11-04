@@ -147,7 +147,7 @@ private[photo] object WebRoutes:
       case None =>
         Left(Rejected(400, "not a day"))
       case Some(text) =>
-        val parsed: Day = AgentCommands.parseDay(start, text)
+        val parsed: Day = AgentSupport.parseDay(start, text)
         val archive: File = start.root.configuration.archive
         val shown: String = Title.dayText(parsed.date)
         openDirectory(archive, shown, Rejected(404, "no such day")).flatMap: resolved =>
@@ -185,7 +185,7 @@ private[photo] object WebRoutes:
     val archive: File = start.root.configuration.archive
     val loaded: Album = Album.read(archive, file)
     val dates: Seq[LocalDate] =
-      loaded.span.map(AgentCommands.eachDay).getOrElse(curatedDays(loaded.include))
+      loaded.span.map(AgentSupport.eachDay).getOrElse(curatedDays(loaded.include))
     // Not loadGrouped: a missing day is a gap, and a symlink is resolved before listFiles.
     groupedDays(archive, dates).map: rows =>
       val observed: Observed = observe(archive, view, file, loaded)
@@ -330,7 +330,7 @@ private[photo] object WebRoutes:
 
   private def curatedDays(include: Seq[Include.Entry]): Seq[LocalDate] =
     include.flatMap:
-      case Include.Entry.Dates(span, _, _) => AgentCommands.eachDay(span)
+      case Include.Entry.Dates(span, _, _) => AgentSupport.eachDay(span)
       case _ => Nil
     .distinct
 
@@ -423,10 +423,10 @@ private[photo] object WebRoutes:
       case Joined.One(found) if found.error.isDefined =>
         Observed(Some("error"), Set.empty, Seq.empty, view.next)
       case Joined.One(found) =>
-        val (gathered, hits, nonHits) = AgentCommands.gather(view.next, found)
+        val (gathered, hits, nonHits) = AgentSupport.gather(view.next, found)
         val pairs: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
         val misses: Seq[Json] = nonHits.collect:
-          case AgentCommands.NonHit.Miss(date, filename, _) =>
+          case AgentSupport.NonHit.Miss(date, filename, _) =>
             Json.Obj(Seq(
               "filename" -> Json.Str(filename),
               "day" -> date.fold(Json.Null)(day => Json.Str(Title.dayText(day)))
@@ -724,7 +724,7 @@ private[photo] object WebRoutes:
                     Left(Rejected(400, s"$path is outside ${loaded.title}"))
                   else
                     val dates: Seq[LocalDate] = loaded.span match
-                      case Some(span) => AgentCommands.eachDay(span)
+                      case Some(span) => AgentSupport.eachDay(span)
                       case None => (curatedDays(loaded.include) :+ pair._1).distinct
                     stemUniverse(archive, dates).flatMap: universe =>
                       val stems: Set[String] = universe.getOrElse(pair._1, Set.empty)
@@ -786,12 +786,12 @@ private[photo] object WebRoutes:
       case Seq(found) if found.autoAdd || found.error.isDefined =>
         Left(Rejected(400, "catalog album is not readable"))
       case Seq(found) =>
-        val (gathered, hits, _) = AgentCommands.gather(session, found)
+        val (gathered, hits, _) = AgentSupport.gather(session, found)
         Web.publish(session, gathered)
         val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
         if claimed.exists(pair => !span.contains(pair._1)) then
           throw IllegalArgumentException("matched day outside the span")
-        stemUniverse(archive, AgentCommands.eachDay(span)).map: universe =>
+        stemUniverse(archive, AgentSupport.eachDay(span)).map: universe =>
           val include: Seq[Include.Entry] =
             if claimed.isEmpty then Seq.empty
             else Include.compress(Some(span), claimed, universe)

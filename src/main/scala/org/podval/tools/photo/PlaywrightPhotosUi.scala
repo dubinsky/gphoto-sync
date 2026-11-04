@@ -237,7 +237,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
             case Some(found) => Map(added.head -> found)
             case None => Map.empty
         else Map.empty
-      AgentCommands.confirmedAdd(before, after, named, current) match
+      AgentChrome.confirmedAdd(before, after, named, current) match
         case Some(found) => found
         case None => throw Refresh.ActMiss("live key differs", confirmed = true)
     catch
@@ -358,7 +358,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
               case Some(found) => Map(added.head -> found)
               case None => Map.empty
           else Map.empty
-        AgentCommands.confirmedAdd(before, after, named, current) match
+        AgentChrome.confirmedAdd(before, after, named, current) match
           case Some(found) => found
           case None if System.currentTimeMillis >= deadline =>
             throw Refresh.ActMiss("live key differs", confirmed = true)

@@ -148,7 +148,7 @@ object Reconcile:
           titleCount.getOrElse(album.title, 0) > 1
       if !blocked then
         try
-          val (parsed, monthFile) = AgentCommands.place(album)
+          val (parsed, monthFile) = AgentAlbumFile.place(album)
           val dest: File = Title.file(archive, parsed)
           val rel: String = Album.relative(archive, dest)
           if !dest.getParentFile.isDirectory then refused(album.id) = "no such directory"
@@ -336,22 +336,22 @@ object Reconcile:
     span: Option[Title.Span],
     monthFlag: Boolean
   ): (Session, Prepared) =
-    val (matchedSession, hits, _) = AgentCommands.gather(session, album)
+    val (matchedSession, hits, _) = AgentSupport.gather(session, album)
     val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
     if span.exists(dates => claimed.exists(pair => !dates.contains(pair._1))) then
       (matchedSession, Prepared.Refuse("span"))
     else
-      val days: Seq[LocalDate] = span.fold(album.items.flatMap(_.date).distinct.sorted)(AgentCommands.eachDay)
-      val (scanned, universe) = AgentCommands.scanDays(matchedSession, days)
+      val days: Seq[LocalDate] = span.fold(album.items.flatMap(_.date).distinct.sorted)(AgentSupport.eachDay)
+      val (scanned, universe) = AgentSupport.scanDays(matchedSession, days)
       val monthPassed: Boolean =
-        monthFlag && span.exists(dates => AgentCommands.monthAllowsAll(dates, claimed, universe))
+        monthFlag && span.exists(dates => AgentAlbumFile.monthAllowsAll(dates, claimed, universe))
       val include: Seq[Include.Entry] =
         if claimed.isEmpty then Seq.empty
         else if monthPassed then Seq(Include.Entry.All(Seq.empty))
         else if monthFlag then Include.compress(None, claimed, universe)
         else Include.compress(span, claimed, universe)
       try
-        AgentCommands.requireInclude(monthPassed, span, include, claimed, universe)
+        AgentAlbumFile.requireInclude(monthPassed, span, include, claimed, universe)
         (scanned, Prepared.Ready(MatchSet(include, claimed, universe)))
       catch
         case _: IllegalArgumentException =>
@@ -365,7 +365,7 @@ object Reconcile:
 
   private def samePlace(archive: File, album: Catalog.Album, rel: String): Boolean =
     try
-      val (parsed, _) = AgentCommands.place(album)
+      val (parsed, _) = AgentAlbumFile.place(album)
       Album.relative(archive, Title.file(archive, parsed)) == rel
     catch
       case _: IllegalArgumentException => false

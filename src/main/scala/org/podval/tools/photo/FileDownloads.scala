@@ -129,12 +129,12 @@ object FileDownloads:
       val grouped: Map[String, Set[String]] =
         try
           val (loaded, rows, _) =
-            AgentCommands.loadGrouped(session, AgentCommands.civilDay(session.root, neighbor))
+            AgentSupport.loadGrouped(session, AgentSupport.civilDay(session.root, neighbor))
           if loaded ne session then DirectoryIndex.replace(loaded)
           rows.toMap
         catch case _: IllegalArgumentException =>
           Map.empty
-      AgentCommands.resolve(grouped, stem, extension).map: local =>
+      AgentSupport.resolve(grouped, stem, extension).map: local =>
         Title.dayText(neighbor) -> local
 
   // commitFile moves with REPLACE_EXISTING and would overwrite an archive original.
