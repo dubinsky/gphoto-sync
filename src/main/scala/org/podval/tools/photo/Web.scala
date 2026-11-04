@@ -880,7 +880,8 @@ object Web:
         case None =>
           Left(Rejected(400, s"not an album title: $title"))
         case Some(parsed) =>
-          picturePair(path) match
+          (try Album.picturePath(path)
+          catch case _: DateTimeException => None) match
             case None =>
               Left(Rejected(400, s"not a picture path: $path"))
             case Some(pair) =>
@@ -912,37 +913,33 @@ object Web:
                         ))))
 
   private def createAlbum(exchange: HttpExchange): Either[Rejected, (Int, Json)] =
-    try createBody(exchange)
-    catch case error: IllegalArgumentException => createFailure(error)
-
-  private def createBody(exchange: HttpExchange): Either[Rejected, (Int, Json)] =
-    val session: Session = currentSession()
-    val archive: File = session.root.configuration.archive
-    readJsonBody(exchange).flatMap(bodyFields).flatMap: fields =>
-      dayField(fields, "start").flatMap: startDay =>
-        dayField(fields, "end").flatMap: endDay =>
-          nameField(fields).flatMap: name =>
-            if endDay.isBefore(startDay) then Left(Rejected(400, "not a span"))
-            else createdTitle(startDay, endDay, name).flatMap: parsed =>
-              val dest: File = Title.file(archive, parsed)
-              val parent: File = dest.getParentFile
-              if parent == null || !parent.isDirectory then Left(Rejected(400, "no such directory"))
-              else if dest.exists then Left(Rejected(409, s"album already exists: ${parsed.title}"))
-              else seedAlbum(session, archive, parsed).flatMap: (album, seed) =>
-                val written: File = Album.create(archive, album)
-                Right((201, Json.Obj(Seq(
-                  "title" -> Json.Str(parsed.title),
-                  "path" -> Json.Str(Album.relative(archive, written)),
-                  "external" -> Json.Bool(album.external),
-                  "seed" -> Json.Str(seed)
-                ))))
-
-  private def createFailure(error: IllegalArgumentException): Either[Rejected, (Int, Json)] =
-    val message: String = Operation.messageOf(error)
-    val shown: String = if message.contains("AF1Qip") then "failed" else message
-    if shown.startsWith("album already exists:") then Left(Rejected(409, shown))
-    else if serverFailure(shown) then Left(Rejected(500, shown))
-    else Left(Rejected(400, shown))
+    try
+      val session: Session = currentSession()
+      val archive: File = session.root.configuration.archive
+      readJsonBody(exchange).flatMap(bodyFields).flatMap: fields =>
+        dayField(fields, "start").flatMap: startDay =>
+          dayField(fields, "end").flatMap: endDay =>
+            nameField(fields).flatMap: name =>
+              if endDay.isBefore(startDay) then Left(Rejected(400, "not a span"))
+              else createdTitle(startDay, endDay, name).flatMap: parsed =>
+                val dest: File = Title.file(archive, parsed)
+                val parent: File = dest.getParentFile
+                if parent == null || !parent.isDirectory then Left(Rejected(400, "no such directory"))
+                else if dest.exists then Left(Rejected(409, s"album already exists: ${parsed.title}"))
+                else seedAlbum(session, archive, parsed).flatMap: (album, seed) =>
+                  val written: File = Album.create(archive, album)
+                  Right((201, Json.Obj(Seq(
+                    "title" -> Json.Str(parsed.title),
+                    "path" -> Json.Str(Album.relative(archive, written)),
+                    "external" -> Json.Bool(album.external),
+                    "seed" -> Json.Str(seed)
+                  ))))
+    catch case error: IllegalArgumentException =>
+      val message: String = Operation.messageOf(error)
+      val shown: String = if message.contains("AF1Qip") then "failed" else message
+      if shown.startsWith("album already exists:") then Left(Rejected(409, shown))
+      else if serverFailure(shown) then Left(Rejected(500, shown))
+      else Left(Rejected(400, shown))
 
   // No catalog title is all and not external. A readable match is external, with no google-album-id.
   private def seedAlbum(
@@ -1034,10 +1031,6 @@ object Web:
         catch case _: DateTimeException => None
       case _ =>
         None
-
-  private def picturePair(path: String): Option[(LocalDate, String)] =
-    try Album.picturePath(path)
-    catch case _: DateTimeException => None
 
   private def stemUniverse(
     archive: File,
