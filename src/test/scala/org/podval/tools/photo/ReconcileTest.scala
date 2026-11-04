@@ -692,8 +692,11 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
 
   private def withArchive(body: File => Unit): Unit =
     val archive: File = JFiles.createTempDirectory("reconcile").toFile
-    try body(archive)
-    finally deleteTree(archive)
+    val runtime: File = JFiles.createTempDirectory("reconcile-lock").toFile
+    try Album.withWriteLockDirectory(runtime)(body(archive))
+    finally
+      deleteTree(archive)
+      deleteTree(runtime)
 
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))

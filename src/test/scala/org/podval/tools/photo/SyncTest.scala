@@ -528,9 +528,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
   private def withOriginals(body: File => Unit): Unit =
     val root: File = JFiles.createTempDirectory("sync").toFile
     val originals: File = File(root, "originals")
+    val runtime: File = JFiles.createTempDirectory("sync-lock").toFile
     originals.mkdirs()
-    try body(originals)
-    finally deleteTree(root)
+    try Album.withWriteLockDirectory(runtime)(body(originals))
+    finally
+      deleteTree(root)
+      deleteTree(runtime)
 
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))

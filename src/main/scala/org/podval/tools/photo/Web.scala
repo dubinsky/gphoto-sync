@@ -8,7 +8,7 @@ import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
 import java.nio.charset.{CharacterCodingException, CodingErrorAction, StandardCharsets}
 import java.nio.file.{FileSystemException, Files as NFiles, NoSuchFileException, StandardOpenOption}
 import java.nio.file.attribute.PosixFilePermissions
-import java.time.{Instant, LocalDate}
+import java.time.{DateTimeException, Instant, LocalDate}
 import java.util.concurrent.{CountDownLatch, ExecutorService, Executors}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import scala.annotation.tailrec
@@ -66,7 +66,9 @@ object Web:
     Route("GET", "/api/day", exchange => api(exchange)(day(exchange))),
     Route("GET", "/api/album", exchange => api(exchange)(album(exchange))),
     Route("GET", "/api/thumb", exchange => guard(exchange)(serveThumb(exchange))),
-    Route("GET", "/api/file", exchange => guard(exchange)(serveFile(exchange)))
+    Route("GET", "/api/file", exchange => guard(exchange)(serveFile(exchange))),
+    Route("POST", "/api/toggle", exchange => post(exchange)(toggle(exchange))),
+    Route("POST", "/api/albums", exchange => post(exchange)(createAlbum(exchange)))
   )
 
   private[photo] def handlerRuntime: Option[File] = runtimeRef.get
@@ -825,3 +827,223 @@ object Web:
     finally
       in.close()
       out.close()
+
+  private def post(exchange: HttpExchange)(body: => Either[Rejected, (Int, Json)]): Unit =
+    try
+      body match
+        case Left(rejected) =>
+          if rejected.status >= 500 then Console.err.println(rejected.message)
+          sendError(exchange, rejected.status, rejected.message)
+        case Right((status, json)) =>
+          val bytes: Array[Byte] = Serve.write(json).getBytes(StandardCharsets.UTF_8)
+          send(exchange, status, "application/json; charset=utf-8", bytes)
+    catch case error: IllegalArgumentException =>
+      val message: String = Operation.messageOf(error)
+      val shown: String = if message.contains("AF1Qip") then "failed" else message
+      val status: Int = if serverFailure(shown) then 500 else 400
+      if status >= 500 then Console.err.println(shown)
+      sendError(exchange, status, shown)
+
+  private def serverFailure(message: String): Boolean =
+    message == "album file is busy" ||
+      message.contains("include array does not end") ||
+      message.contains("include is not a single array")
+
+  private def readJsonBody(exchange: HttpExchange): Either[Rejected, Json] =
+    val header: String = Option(exchange.getRequestHeaders.getFirst("Content-Type")).getOrElse("")
+    val media: String = header.takeWhile(_ != ';').trim.toLowerCase
+    if media != "application/json" then Left(Rejected(415, "unsupported media type"))
+    else
+      val text: String =
+        val in = exchange.getRequestBody
+        try new String(in.readAllBytes(), StandardCharsets.UTF_8)
+        finally in.close()
+      Serve.readJson(text) match
+        case Right((value, rest)) if rest.forall(_.isWhitespace) => Right(value)
+        case _ => Left(Rejected(400, "not json"))
+
+  private def bodyFields(json: Json): Either[Rejected, Seq[(String, Json)]] = json match
+    case Json.Obj(fields) => Right(fields)
+    case _ => Left(Rejected(400, "not json"))
+
+  private def stringField(fields: Seq[(String, Json)], key: String): Option[String] =
+    fields.collectFirst:
+      case (name, Json.Str(value)) if name == key => value
+
+  // Read, toggle, and splice share one lock. An include taken before tryLock is not written.
+  private def toggle(exchange: HttpExchange): Either[Rejected, (Int, Json)] =
+    val archive: File = currentSession().root.configuration.archive
+    readJsonBody(exchange).flatMap(bodyFields).flatMap: fields =>
+      val title: String = stringField(fields, "title").getOrElse("")
+      val path: String = stringField(fields, "path").getOrElse("")
+      Title.parse(title) match
+        case None =>
+          Left(Rejected(400, s"not an album title: $title"))
+        case Some(parsed) =>
+          picturePair(path) match
+            case None =>
+              Left(Rejected(400, s"not a picture path: $path"))
+            case Some(pair) =>
+              val file: File = Title.file(archive, parsed)
+              Album.withWriteLock:
+                if !file.isFile then Left(Rejected(404, s"no such album: ${parsed.title}"))
+                else
+                  val loaded: Album = Album.read(archive, file)
+                  if loaded.span.exists(span => !span.contains(pair._1)) then
+                    Left(Rejected(400, s"$path is outside ${loaded.title}"))
+                  else
+                    val dates: Seq[LocalDate] = loaded.span match
+                      case Some(span) => AgentCommands.eachDay(span)
+                      case None => (curatedDays(loaded.include) :+ pair._1).distinct
+                    stemUniverse(archive, dates).flatMap: universe =>
+                      val stems: Set[String] = universe.getOrElse(pair._1, Set.empty)
+                      if !stems.contains(pair._2) then Left(Rejected(400, s"no such picture: $path"))
+                      else
+                        val next: Seq[Include.Entry] =
+                          Include.toggle(loaded.include, loaded.span, pair, universe)
+                        Album.spliceInclude(file, next)
+                        val desired: Boolean =
+                          next.exists(entry => Include.claims(loaded.span, entry, pair._1, pair._2))
+                        Right((200, Json.Obj(Seq(
+                          "title" -> Json.Str(loaded.title),
+                          "path" -> Json.Str(path),
+                          "desired" -> Json.Bool(desired),
+                          "include" -> Json.Arr(next.map(entry => Json.Str(Include.logical(entry))))
+                        ))))
+
+  private def createAlbum(exchange: HttpExchange): Either[Rejected, (Int, Json)] =
+    try createBody(exchange)
+    catch case error: IllegalArgumentException => createFailure(error)
+
+  private def createBody(exchange: HttpExchange): Either[Rejected, (Int, Json)] =
+    val session: Session = currentSession()
+    val archive: File = session.root.configuration.archive
+    readJsonBody(exchange).flatMap(bodyFields).flatMap: fields =>
+      dayField(fields, "start").flatMap: startDay =>
+        dayField(fields, "end").flatMap: endDay =>
+          nameField(fields).flatMap: name =>
+            if endDay.isBefore(startDay) then Left(Rejected(400, "not a span"))
+            else createdTitle(startDay, endDay, name).flatMap: parsed =>
+              val dest: File = Title.file(archive, parsed)
+              val parent: File = dest.getParentFile
+              if parent == null || !parent.isDirectory then Left(Rejected(400, "no such directory"))
+              else if dest.exists then Left(Rejected(409, s"album already exists: ${parsed.title}"))
+              else seedAlbum(session, archive, parsed).flatMap: (album, seed) =>
+                val written: File = Album.create(archive, album)
+                Right((201, Json.Obj(Seq(
+                  "title" -> Json.Str(parsed.title),
+                  "path" -> Json.Str(Album.relative(archive, written)),
+                  "external" -> Json.Bool(album.external),
+                  "seed" -> Json.Str(seed)
+                ))))
+
+  private def createFailure(error: IllegalArgumentException): Either[Rejected, (Int, Json)] =
+    val message: String = Operation.messageOf(error)
+    val shown: String = if message.contains("AF1Qip") then "failed" else message
+    if shown.startsWith("album already exists:") then Left(Rejected(409, shown))
+    else if serverFailure(shown) then Left(Rejected(500, shown))
+    else Left(Rejected(400, shown))
+
+  // No catalog title is all and not external. A readable match is external, with no google-album-id.
+  private def seedAlbum(
+    session: Session,
+    archive: File,
+    parsed: Title.Parsed
+  ): Either[Rejected, (Album, String)] =
+    val span: Title.Span = parsed.span.getOrElse(throw IllegalArgumentException("not a span"))
+    val view: CatalogView = viewCatalog(session)
+    if view.present && !view.readable then Left(Rejected(400, "catalog is unreadable"))
+    else view.albums.filter(_.title == parsed.title) match
+      case matched if matched.sizeIs > 1 =>
+        Left(Rejected(400, "ambiguous catalog title"))
+      case Seq(found) if found.autoAdd || found.error.isDefined =>
+        Left(Rejected(400, "catalog album is not readable"))
+      case Seq(found) =>
+        val (gathered, hits, _) = AgentCommands.gather(session, found)
+        publish(session, gathered)
+        val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
+        if claimed.exists(pair => !span.contains(pair._1)) then
+          throw IllegalArgumentException("matched day outside the span")
+        stemUniverse(archive, AgentCommands.eachDay(span)).map: universe =>
+          val include: Seq[Include.Entry] =
+            if claimed.isEmpty then Seq.empty
+            else Include.compress(Some(span), claimed, universe)
+          val (googleTitle, owner) = found.owner match
+            case Some(label) => (found.title, Some(label))
+            case None => ("", None)
+          val album: Album = Album(
+            title = parsed.title,
+            span = Some(span),
+            include = include,
+            external = true,
+            googleAlbumId = "",
+            publishedTitle = "",
+            googleTitle = googleTitle,
+            owner = owner
+          )
+          (album, "matched")
+      case _ =>
+        Right((
+          Album(
+            title = parsed.title,
+            span = Some(span),
+            include = Seq(Include.Entry.All(Seq.empty)),
+            external = false,
+            googleAlbumId = "",
+            publishedTitle = "",
+            googleTitle = "",
+            owner = None
+          ),
+          "all"
+        ))
+
+  private def createdTitle(
+    start: LocalDate,
+    end: LocalDate,
+    name: Option[String]
+  ): Either[Rejected, Title.Parsed] =
+    val parsed: Title.Parsed = Title.Parsed(Some(Title.Span(start, end, Title.Grain.Day)), name)
+    Title.parse(parsed.title) match
+      case Some(again) if again.title == parsed.title => Right(parsed)
+      case _ => Left(Rejected(400, s"not an album title: ${parsed.title}"))
+
+  private def dayField(fields: Seq[(String, Json)], key: String): Either[Rejected, LocalDate] =
+    stringField(fields, key).flatMap(civilDay) match
+      case Some(day) => Right(day)
+      case None => Left(Rejected(400, "not a day"))
+
+  private def nameField(fields: Seq[(String, Json)]): Either[Rejected, Option[String]] =
+    fields.collectFirst { case ("name", value) => value } match
+      case None =>
+        Right(None)
+      case Some(Json.Str("")) =>
+        Right(None)
+      case Some(Json.Str(text)) if Title.legalName(text) =>
+        Right(Some(text))
+      case Some(Json.Str(text)) =>
+        Left(Rejected(400, s"not an album name: $text"))
+      case Some(_) =>
+        Left(Rejected(400, "not an album name"))
+
+  private def civilDay(text: String): Option[LocalDate] =
+    text.split('/') match
+      case Array(year, month, day)
+          if year.length == 4 && month.length == 2 && day.length == 2 &&
+            year.forall(_.isDigit) && month.forall(_.isDigit) && day.forall(_.isDigit) =>
+        try Some(LocalDate.of(year.toInt, month.toInt, day.toInt))
+        catch case _: DateTimeException => None
+      case _ =>
+        None
+
+  private def picturePair(path: String): Option[(LocalDate, String)] =
+    try Album.picturePath(path)
+    catch case _: DateTimeException => None
+
+  private def stemUniverse(
+    archive: File,
+    dates: Seq[LocalDate]
+  ): Either[Rejected, Map[LocalDate, Set[String]]] =
+    groupedDays(archive, dates).map: rows =>
+      rows.foldLeft(Map.empty[LocalDate, Set[String]]): (acc, row) =>
+        val names: Set[String] = row._2.map(_._1).toSet
+        if names.isEmpty then acc else acc.updated(row._1, names)

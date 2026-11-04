@@ -576,8 +576,11 @@ class RepairTest extends AnyFlatSpec, Matchers:
 
   private def withOriginals(body: File => Unit): Unit =
     val originals: File = JFiles.createTempDirectory("repair").toFile
-    try body(originals)
-    finally deleteTree(originals)
+    val runtime: File = JFiles.createTempDirectory("repair-lock").toFile
+    try Album.withWriteLockDirectory(runtime)(body(originals))
+    finally
+      deleteTree(originals)
+      deleteTree(runtime)
 
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))

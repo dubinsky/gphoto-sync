@@ -13,8 +13,9 @@ import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles, StandardOpenOption}
 import java.nio.file.attribute.PosixFilePermissions
-import java.time.{Duration, Instant, ZoneId}
-import java.util.concurrent.atomic.AtomicReference
+import java.time.{Duration, Instant, LocalDate, ZoneId}
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 class WebTest extends AnyFlatSpec, Matchers:
   @targetName("outcomeCanEqual")
@@ -726,6 +727,479 @@ class WebTest extends AnyFlatSpec, Matchers:
       deleteTree(runtime)
       deleteTree(cacheHome)
 
+  it should "toggle include lines and reject a path the file does not claim" in :
+    val archive: File = JFiles.createTempDirectory("web-toggle").toFile
+    val outside: File = JFiles.createTempDirectory("web-toggle-out").toFile
+    val runtime: File = JFiles.createTempDirectory("web-toggle-rt").toFile
+    val port: Int = freePort()
+    val xdgExisted: Boolean = xdgWriteLock.exists(_.isFile)
+    val kept: String =
+      "# keep\n" +
+      "external = true\n" +
+      "include = [\n" +
+      "  'all',\n" +
+      "]\n"
+    val outsideText: String =
+      "# stay\n" +
+      "external = true\n" +
+      "include = [\n" +
+      "  'all',\n" +
+      "]\n"
+    val mixedText: String =
+      "include = [\n" +
+      "  'all',\n" +
+      "  '2010/07/04 1000',\n" +
+      "]\n"
+    val linesText: String =
+      "include = [\n" +
+      "  '2010/07/04 1000..1002',\n" +
+      "]\n"
+    val portraits: String =
+      "include = [\n" +
+      "  '2010/07/04-05 1000',\n" +
+      "]\n"
+    val gapText: String =
+      "include = [\n" +
+      "  '2010/09/06-07 1000',\n" +
+      "]\n"
+    val linkText: String =
+      "include = [\n" +
+      "  '2010/09/03-04 1000',\n" +
+      "]\n"
+    val badText: String = "include = [\"2009/03/10 2412\",\n\"2009/01/01 0000\"]\n"
+    val outsideFile: File = File(archive, "2010/07/04/Outside.toml")
+    val mixedFile: File = File(archive, "2010/07/04/Mixed.toml")
+    val linesFile: File = File(archive, "2010/07/04/Lines.toml")
+    val shotFile: File = File(archive, "Shot.toml")
+    val badFile: File = File(archive, "Bad.toml")
+    val linkFile: File = File(archive, "Link.toml")
+    val datedLink: File = File(archive, "2010/09/03/to-04.toml")
+    try
+      touch(File(archive, "2010/07/04"), "1000.jpg")
+      touch(File(archive, "2010/07/04"), "1001.jpg")
+      touch(File(archive, "2010/07/04"), "1002.jpg")
+      touch(File(archive, "2010/07/05"), "1000.jpg")
+      touch(File(archive, "2010/08/01"), "1000.jpg")
+      touch(File(archive, "2010/08/02"), "1000.jpg")
+      touch(File(archive, "2010/09/01"), "1000.jpg")
+      touch(File(archive, "2010/09/01"), "1001.jpg")
+      touch(File(archive, "2010/09/03"), "1000.jpg")
+      touch(File(archive, "2010/09/06"), "1000.jpg")
+      touch(File(archive, "2010/11/02"), "2412.jpg")
+      touch(File(archive, "2010/11/03"), "1000.jpg")
+      touch(File(archive, "2009/03/10"), "2412.jpg")
+      touch(outside, "9998.jpg")
+      writeText(File(archive, "2010/07/04/album.toml"), kept)
+      writeText(outsideFile, outsideText)
+      writeText(mixedFile, mixedText)
+      writeText(linesFile, linesText)
+      writeText(File(archive, "2010/09/01/album.toml"), "# day\n")
+      writeText(shotFile, "")
+      writeText(File(archive, "2010/11/03/album.toml"), "")
+      writeText(File(archive, "2010/08/01/to-02.toml"), "include = [\n  'all',\n]\n")
+      writeText(File(archive, "Portraits.toml"), portraits)
+      writeText(File(archive, "Gap.toml"), gapText)
+      writeText(File(archive, "2010/09/06/to-07.toml"), "include = [\n  'all',\n]\n")
+      writeText(linkFile, linkText)
+      writeText(datedLink, "include = [\n  'all',\n]\n")
+      writeText(badFile, badText)
+      val (_, _, ended) = running(runtime, port):
+        Web.useSession(sessionFor(archive))
+        def flipped(
+          title: String,
+          path: String,
+          desired: Boolean,
+          include: Seq[String],
+          contentType: Option[String] = Some("application/json")
+        ): HttpResponse[String] =
+          val response: HttpResponse[String] =
+            postJson(port, "/api/toggle", s"""{"title":"$title","path":"$path"}""", contentType)
+          response.statusCode shouldBe 200
+          val parsed: Json = json(response)
+          field(parsed, "title") shouldBe Json.Str(title)
+          field(parsed, "path") shouldBe Json.Str(path)
+          field(parsed, "desired") shouldBe Json.Bool(desired)
+          arr(field(parsed, "include")).map(str) shouldBe include
+          response
+        flipped(
+          "2010/07/04",
+          "2010/07/04/1001",
+          desired = false,
+          Seq("all except 1001"),
+          Some("Application/JSON; charset=utf-8")
+        )
+        val dropped: String = readText(File(archive, "2010/07/04/album.toml"))
+        dropped should startWith ("# keep\nexternal = true\n")
+        dropped should include ("all except 1001")
+        flipped("2010/07/04/Lines", "2010/07/04/1001", desired = false, Seq("2010/07/04 1000", "2010/07/04 1002"))
+        readText(linesFile) should not include ("all except")
+        flipped("2010/09/01", "2010/09/01/1000", desired = true, Seq("2010/09/01 1000"))
+        val twoStems: String = readText(File(archive, "2010/09/01/album.toml"))
+        twoStems should startWith ("# day\n")
+        twoStems should not include ("'all'")
+        flipped("Shot", "2010/11/02/2412", desired = true, Seq("2010/11/02 2412"))
+        readText(shotFile) should not include ("'all'")
+        flipped("2010/11/03", "2010/11/03/1000", desired = true, Seq("all"))
+        flipped("2010/08/01-02", "2010/08/01/1000", desired = false, Seq("2010/08/02 1000"))
+        readText(File(archive, "2010/08/01/to-02.toml")) should not include ("all except")
+        tilesOf(album(port, "Portraits")).map(tile => (tile._1, tile._2)) shouldBe Seq(
+          ("2010/07/04", "1000"),
+          ("2010/07/05", "1000")
+        )
+        flipped("Portraits", "2010/07/04/1000", desired = false, Seq("2010/07/05 1000"))
+        Album.read(archive, File(archive, "Portraits.toml")).claims(LocalDate.of(2010, 7, 5), "1000") shouldBe true
+        tilesOf(album(port, "Portraits")).map(tile => (tile._1, tile._2)) shouldBe Seq(("2010/07/05", "1000"))
+        val gap: HttpResponse[String] = getq(port, "/api/album", "title", "Gap")
+        gap.statusCode shouldBe 200
+        gap.body should not include ("no such day")
+        tilesOf(json(gap)).map(tile => (tile._1, tile._2)) shouldBe Seq(("2010/09/06", "1000"))
+        flipped("Gap", "2010/09/06/1000", desired = false, Seq.empty)
+        val datedGap: HttpResponse[String] = getq(port, "/api/album", "title", "2010/09/06-07")
+        datedGap.statusCode shouldBe 200
+        datedGap.body should not include ("no such day")
+        flipped("2010/09/06-07", "2010/09/06/1000", desired = false, Seq.empty)
+        val stayed: String = readText(outsideFile)
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/07/04/Outside","path":"2010/07/08/1000"}"""),
+          400,
+          "2010/07/08/1000 is outside 2010/07/04/Outside"
+        )
+        readText(outsideFile) shouldBe stayed
+        val unspliced: HttpResponse[String] =
+          postJson(port, "/api/toggle", """{"title":"Bad","path":"2009/03/10/2412"}""")
+        unspliced.statusCode shouldBe 500
+        unspliced.body should include ("include array does not end on its own line")
+        readText(badFile) shouldBe badText
+        error(postJson(port, "/api/toggle", """{"title":"2010/07/04-03","path":"2010/07/04/1000"}"""), 400, "not an album title: 2010/07/04-03")
+        error(postJson(port, "/api/toggle", """{"title":"2010/02/31","path":"2010/07/04/1000"}"""), 400, "not an album title: 2010/02/31")
+        error(postJson(port, "/api/toggle", """{"title":"Gone","path":"2010/07/04/1000"}"""), 404, "no such album: Gone")
+        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"nope"}"""), 400, "not a picture path: nope")
+        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04"}"""), 400, "not a picture path: 2010/07/04")
+        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/02/31/1000"}"""), 400, "not a picture path: 2010/02/31/1000")
+        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04/9999"}"""), 400, "no such picture: 2010/07/04/9999")
+        error(postJson(port, "/api/toggle", """{"title":"2010/07/04/Mixed","path":"2010/07/04/1000"}"""), 400, "include mixes all with other lines")
+        readText(mixedFile) shouldBe mixedText
+        error(postJson(port, "/api/toggle", "{", None), 415, "unsupported media type")
+        error(postJson(port, "/api/toggle", "{", Some("text/plain")), 415, "unsupported media type")
+        error(postJson(port, "/api/toggle", "{"), 400, "not json")
+        error(postJson(port, "/api/toggle", "[]"), 400, "not json")
+        error(get(port, "/api/toggle"), 405, "method not allowed")
+        JFiles.createSymbolicLink(File(archive, "2010/09/04").toPath, outside.toPath)
+        val linkedBytes: String = readText(linkFile)
+        val datedBytes: String = readText(datedLink)
+        val curatedEscape: HttpResponse[String] =
+          postJson(port, "/api/toggle", """{"title":"Link","path":"2010/09/03/1000"}""")
+        error(curatedEscape, 400, escape)
+        curatedEscape.body should not include ("9998")
+        readText(linkFile) shouldBe linkedBytes
+        val datedEscape: HttpResponse[String] =
+          postJson(port, "/api/toggle", """{"title":"2010/09/03-04","path":"2010/09/03/1000"}""")
+        error(datedEscape, 400, escape)
+        datedEscape.body should not include ("9998")
+        readText(datedLink) shouldBe datedBytes
+        val shotText: String = readText(shotFile)
+        val held = new CountDownLatch(1)
+        val release = new CountDownLatch(1)
+        val holder = new Thread(() => {
+          Album.withWriteLockDirectory(runtime):
+            Album.withWriteLock:
+              held.countDown()
+              release.await(8, TimeUnit.SECONDS)
+              ()
+        }, "album-hold")
+        holder.setDaemon(true)
+        holder.start()
+        try
+          assert(held.await(5, TimeUnit.SECONDS))
+          error(
+            postJson(port, "/api/toggle", """{"title":"Shot","path":"2010/11/02/2412"}"""),
+            500,
+            "album file is busy"
+          )
+          readText(shotFile) shouldBe shotText
+        finally
+          release.countDown()
+          holder.join(5000)
+        holder.isAlive shouldBe false
+        assertRuntimeLock(runtime, xdgExisted)
+      ended shouldBe Right(())
+    finally
+      deleteTree(archive)
+      deleteTree(outside)
+      deleteTree(runtime)
+
+  it should "splice a stale include that waited, and re-read a toggle that waited" in :
+    val archive: File = JFiles.createTempDirectory("web-overlap").toFile
+    val runtime: File = JFiles.createTempDirectory("web-overlap-rt").toFile
+    val port: Int = freePort()
+    val xdgExisted: Boolean = xdgWriteLock.exists(_.isFile)
+    val day: LocalDate = LocalDate.of(2010, 7, 4)
+    val file: File = File(archive, "2010/07/04/album.toml")
+    val original: String =
+      "include = [\n" +
+      "  '2010/07/04 1000',\n" +
+      "  '2010/07/04 1001',\n" +
+      "]\n"
+    val universe: Map[LocalDate, Set[String]] = Map(day -> Set("1000", "1001"))
+    Album.afterCompute = () => ()
+    try
+      touch(File(archive, "2010/07/04"), "1000.jpg")
+      touch(File(archive, "2010/07/04"), "1001.jpg")
+      writeText(file, original)
+      val loaded: Album = Album.read(archive, file)
+      val stale: Seq[Include.Entry] = Include.toggle(loaded.include, loaded.span, day -> "1000", universe)
+      val (_, _, ended) = running(runtime, port):
+        Web.useSession(sessionFor(archive))
+        def claims(stem: String): Boolean = Album.read(archive, file).claims(day, stem)
+        def overlap(wait: => Unit): Unit =
+          val entered = new CountDownLatch(1)
+          val queued = new AtomicBoolean(false)
+          val failed = new AtomicReference[Throwable](null)
+          val store = new Thread(() => {
+            try
+              Album.withWriteLockDirectory(runtime):
+                Album.afterCompute = () =>
+                  Album.afterCompute = () => ()
+                  entered.countDown()
+                  val deadline: Long = System.nanoTime() + 3000000000L
+                  def loop(): Unit =
+                    if Album.writeWaiters > 0 then queued.set(true)
+                    else if System.nanoTime() >= deadline then throw IllegalStateException("waiter not queued")
+                    else
+                      Thread.sleep(20)
+                      loop()
+                  loop()
+                Album.storeRemovals(file, archive, Seq(day -> "1001"), universe)
+            catch
+              case error: Throwable =>
+                Album.afterCompute = () => ()
+                entered.countDown()
+                failed.set(error)
+          }, "album-store")
+          store.setDaemon(true)
+          store.start()
+          try
+            assert(entered.await(5, TimeUnit.SECONDS))
+            if failed.get != null then throw failed.get
+            wait
+          finally store.join(15000)
+          store.isAlive shouldBe false
+          if failed.get != null then throw failed.get
+          queued.get shouldBe true
+        writeText(file, original)
+        overlap:
+          val waiterFailed = new AtomicReference[Throwable](null)
+          val waiter = new Thread(() => {
+            try Album.withWriteLockDirectory(runtime)(Album.putInclude(file, stale))
+            catch case error: Throwable => waiterFailed.set(error)
+          }, "album-stale")
+          waiter.setDaemon(true)
+          waiter.start()
+          waiter.join(15000)
+          waiter.isAlive shouldBe false
+          if waiterFailed.get != null then throw waiterFailed.get
+        Album.read(archive, file).include.map(Include.logical) shouldBe Seq("2010/07/04 1001")
+        claims("1001") shouldBe true
+        claims("1000") shouldBe false
+        writeText(file, original)
+        val correct = new AtomicReference[HttpResponse[String]](null)
+        overlap:
+          correct.set(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04/1000"}"""))
+        val reread: HttpResponse[String] = correct.get
+        reread.statusCode shouldBe 200
+        field(json(reread), "desired") shouldBe Json.Bool(false)
+        field(json(reread), "include") shouldBe Json.Arr(Seq.empty[Json])
+        claims("1000") shouldBe false
+        claims("1001") shouldBe false
+        readText(file) should include ("include = []")
+        writeText(file, original)
+        Album.afterCompute = () => ()
+        Album.withWriteLockDirectory(runtime):
+          Album.storeRemovals(file, archive, Seq(day -> "1001"), universe)
+        val sequential: HttpResponse[String] =
+          postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04/1000"}""")
+        sequential.statusCode shouldBe 200
+        field(json(sequential), "desired") shouldBe Json.Bool(false)
+        field(json(sequential), "include") shouldBe Json.Arr(Seq.empty[Json])
+        claims("1000") shouldBe false
+        claims("1001") shouldBe false
+        assertRuntimeLock(runtime, xdgExisted)
+      ended shouldBe Right(())
+    finally
+      Album.afterCompute = () => ()
+      deleteTree(archive)
+      deleteTree(runtime)
+
+  it should "seed a new album from a catalog match or from all and write nothing on failure" in :
+    val archive: File = JFiles.createTempDirectory("web-create").toFile
+    val runtime: File = JFiles.createTempDirectory("web-create-rt").toFile
+    val port: Int = freePort()
+    val xdgExisted: Boolean = xdgWriteLock.exists(_.isFile)
+    val existing: File = File(archive, "2010/07/04/album.toml")
+    val existingText: String = "# kept\ninclude = [\n  'all',\n]\n"
+    try
+      touch(File(archive, "2010/07/04"), "2412.jpg")
+      touch(File(archive, "2010/07/04"), "1000.jpg")
+      touch(File(archive, "2010/07/05"), "1000.jpg")
+      writeText(existing, existingText)
+      File(archive, "2010/07/20").mkdirs() shouldBe true
+      File(archive, "2010/07/21").mkdirs() shouldBe true
+      val (_, _, ended) = running(runtime, port):
+        Web.useSession(sessionFor(archive))
+        def tomlTexts: Map[String, String] =
+          def walk(dir: File): Seq[File] =
+            Option(dir.listFiles).toSeq.flatten.flatMap: child =>
+              if JFiles.isSymbolicLink(child.toPath) then Seq.empty
+              else if child.isDirectory then walk(child)
+              else if child.getName.endsWith(".toml") then Seq(child)
+              else Seq.empty
+          walk(archive).map(file => archive.toPath.relativize(file.toPath).toString -> readText(file)).toMap
+        def rejectCreate(
+          body: String,
+          status: Int,
+          message: String,
+          contentType: Option[String] = Some("application/json")
+        ): Unit =
+          val before: Map[String, String] = tomlTexts
+          val response: HttpResponse[String] = postJson(port, "/api/albums", body, contentType)
+          error(response, status, message)
+          response.body should not include ("AF1Qip")
+          tomlTexts shouldBe before
+        def created(body: String): Json =
+          val response: HttpResponse[String] = postJson(port, "/api/albums", body)
+          response.statusCode shouldBe 201
+          response.body should not include ("AF1Qip")
+          json(response)
+        rejectCreate("""{"start":"2010-07-04","end":"2010-07-04"}""", 400, "not a day")
+        rejectCreate("""{"start":"2010/07/05","end":"2010/07/04"}""", 400, "not a span")
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"bad/name"}""", 400, "not an album name: bad/name")
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04"}""", 415, "unsupported media type", None)
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04"}""", 415, "unsupported media type", Some("text/plain"))
+        rejectCreate("[]", 400, "not json")
+        rejectCreate("{", 400, "not json")
+        rejectCreate("""{"start":"2011/01/02","end":"2011/01/02","name":"Nope"}""", 400, "no such directory")
+        File(archive, "2011").exists shouldBe false
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04"}""", 409, "album already exists: 2010/07/04")
+        readText(existing) shouldBe existingText
+        writeCatalog(
+          archive,
+          "album\tAF1QipWebFixture\t1\t2010/07/04-18/Cape Cod",
+          "owner\tAF1QipWebFixture\tAda",
+          "item\tAF1QipWebFixture\t2412.jpg\t2010-07-04\tAF1QipHit\t-"
+        )
+        val cape: Json = created("""{"start":"2010/07/04","end":"2010/07/18","name":"Cape Cod"}""")
+        field(cape, "title") shouldBe Json.Str("2010/07/04-18/Cape Cod")
+        field(cape, "path") shouldBe Json.Str("2010/07/04/to-18 Cape Cod.toml")
+        field(cape, "external") shouldBe Json.Bool(true)
+        field(cape, "seed") shouldBe Json.Str("matched")
+        val capeFile: File = File(archive, "2010/07/04/to-18 Cape Cod.toml")
+        val capeText: String = readText(capeFile)
+        capeText shouldBe
+          """external = true
+            |google-title = "2010/07/04-18/Cape Cod"
+            |owner = "Ada"
+            |include = [
+            |  '2010/07/04 2412',
+            |]
+            |""".stripMargin
+        capeText should not include ("google-album-id")
+        capeText should not include ("published-title")
+        capeText should not include ("AF1Qip")
+        perms(capeFile) shouldBe "rw-------"
+        File(archive, "2010/07/18").exists shouldBe false
+        File(File(archive, ".gphoto-sync"), "album-links.tsv").exists shouldBe false
+        rejectCreate(
+          """{"start":"2010/07/04","end":"2010/07/18","name":"Cape Cod"}""",
+          409,
+          "album already exists: 2010/07/04-18/Cape Cod"
+        )
+        readText(capeFile) shouldBe capeText
+        writeCatalog(
+          archive,
+          "album\tAF1QipWebFixture\t1\t2010/07/04/Plain",
+          "item\tAF1QipWebFixture\t1000.jpg\t2010-07-04\tAF1QipPlain\t-"
+        )
+        val plain: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Plain"}""")
+        field(plain, "external") shouldBe Json.Bool(true)
+        field(plain, "seed") shouldBe Json.Str("matched")
+        val plainText: String = readText(File(archive, "2010/07/04/Plain.toml"))
+        plainText shouldBe
+          """external = true
+            |include = [
+            |  '2010/07/04 1000',
+            |]
+            |""".stripMargin
+        plainText should not include ("google-title")
+        plainText should not include ("google-album-id")
+        writeCatalog(archive, "album\tAF1QipWebFixture\t0\t2010/07/04/Empty")
+        val empty: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Empty"}""")
+        field(empty, "external") shouldBe Json.Bool(true)
+        field(empty, "seed") shouldBe Json.Str("matched")
+        readText(File(archive, "2010/07/04/Empty.toml")) shouldBe "external = true\n"
+        writeCatalog(archive, "album\tAF1QipWebFixture\t0\tSomeone Else")
+        val local: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Local"}""")
+        field(local, "external") shouldBe Json.Bool(false)
+        field(local, "seed") shouldBe Json.Str("all")
+        readText(File(archive, "2010/07/04/Local.toml")) shouldBe "include = [\n  'all',\n]\n"
+        catalogFile(archive).delete() shouldBe true
+        val absent: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Absent"}""")
+        field(absent, "external") shouldBe Json.Bool(false)
+        field(absent, "seed") shouldBe Json.Str("all")
+        readText(File(archive, "2010/07/04/Absent.toml")) should not include ("external")
+        val unnamed: Json = created("""{"start":"2010/07/20","end":"2010/07/20","name":""}""")
+        field(unnamed, "title") shouldBe Json.Str("2010/07/20")
+        field(unnamed, "path") shouldBe Json.Str("2010/07/20/album.toml")
+        field(unnamed, "external") shouldBe Json.Bool(false)
+        field(unnamed, "seed") shouldBe Json.Str("all")
+        val omitted: Json = created("""{"start":"2010/07/21","end":"2010/07/21"}""")
+        field(omitted, "title") shouldBe Json.Str("2010/07/21")
+        field(omitted, "path") shouldBe Json.Str("2010/07/21/album.toml")
+        field(omitted, "seed") shouldBe Json.Str("all")
+        writeText(catalogFile(archive), "not a header\n")
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"Unread"}""", 400, "catalog is unreadable")
+        File(archive, "2010/07/04/Unread.toml").exists shouldBe false
+        writeCatalog(
+          archive,
+          "album\tAF1QipOne\t0\t2010/07/04/Dup",
+          "album\tAF1QipTwo\t0\t2010/07/04/Dup"
+        )
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"Dup"}""", 400, "ambiguous catalog title")
+        File(archive, "2010/07/04/Dup.toml").exists shouldBe false
+        writeCatalog(
+          archive,
+          "album\tAF1QipWebFixture\t1\t2010/07/04/Broken",
+          "error\tAF1QipWebFixture\t1\t1\t0",
+          "item\tAF1QipWebFixture\t2412.jpg\t2010-07-04\tAF1QipHit\t-"
+        )
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"Broken"}""", 400, "catalog album is not readable")
+        File(archive, "2010/07/04/Broken.toml").exists shouldBe false
+        writeCatalog(
+          archive,
+          "album\tAF1QipWebFixture\t0\t2010/07/04/Auto",
+          "auto-add\tAF1QipWebFixture"
+        )
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"Auto"}""", 400, "catalog album is not readable")
+        File(archive, "2010/07/04/Auto.toml").exists shouldBe false
+        writeCatalog(
+          archive,
+          "album\tAF1QipWebFixture\t1\t2010/07/04/Wide",
+          "item\tAF1QipWebFixture\t1000.jpg\t2010-07-05\tAF1QipOut\t-"
+        )
+        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"Wide"}""", 400, "matched day outside the span")
+        File(archive, "2010/07/04/Wide.toml").exists shouldBe false
+        def partialNames(dir: File): Seq[String] =
+          Option(dir.listFiles).toSeq.flatten.flatMap: child =>
+            if JFiles.isSymbolicLink(child.toPath) then Seq.empty
+            else if child.isDirectory then partialNames(child)
+            else if child.getName.startsWith(".") && child.getName.endsWith(".partial") then Seq(child.getName)
+            else Seq.empty
+        partialNames(archive) shouldBe Seq.empty[String]
+        assertRuntimeLock(runtime, xdgExisted)
+      ended shouldBe Right(())
+    finally
+      deleteTree(archive)
+      deleteTree(runtime)
+
   private def rejected(archive: File, raw: String): Unit =
     Web.reject(archive, raw) shouldBe Left(Web.Rejected(400, escape))
 
@@ -775,6 +1249,18 @@ class WebTest extends AnyFlatSpec, Matchers:
       .build()
     client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
 
+  private def postJson(
+    port: Int,
+    path: String,
+    body: String,
+    contentType: Option[String] = Some("application/json")
+  ): HttpResponse[String] =
+    val builder: HttpRequest.Builder = HttpRequest.newBuilder(URI.create(s"http://$loopback:$port$path"))
+      .timeout(Duration.ofSeconds(15))
+      .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+    contentType.foreach(value => builder.header("Content-Type", value))
+    client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
+
   private def freePort(): Int =
     val socket = new java.net.ServerSocket(0)
     try socket.getLocalPort
@@ -782,6 +1268,14 @@ class WebTest extends AnyFlatSpec, Matchers:
 
   private def perms(file: File): String =
     PosixFilePermissions.toString(JFiles.getPosixFilePermissions(file.toPath))
+
+  private def xdgWriteLock: Option[File] =
+    Option(System.getenv("XDG_RUNTIME_DIR")).map(_.trim).filter(_.nonEmpty).map: dir =>
+      File(File(dir, "org.podval.tools.photo"), "album-write.lock")
+
+  private def assertRuntimeLock(runtime: File, xdgExisted: Boolean): Unit =
+    perms(File(runtime, "album-write.lock")) shouldBe "rw-------"
+    if !xdgExisted then xdgWriteLock.foreach(file => file.isFile shouldBe false)
 
   private def text(bytes: ByteArrayOutputStream): String =
     new String(bytes.toByteArray, StandardCharsets.UTF_8)

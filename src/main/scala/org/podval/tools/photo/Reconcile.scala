@@ -35,7 +35,7 @@ object Reconcile:
   private[photo] enum Touch:
     case CreateFile(dest: File, text: String)
     case EditTitles(file: File, googleTitle: Option[Option[String]], publishedTitle: Option[String])
-    case EditInclude(file: File, include: Seq[Include.Entry])
+    case EditInclude(file: File, matched: MatchSet)
     case RemoveFile(file: File)
 
   private[photo] final case class Plan(actions: Seq[Action], links: Seq[AlbumLinks.Row], touches: Seq[Touch])
@@ -48,7 +48,7 @@ object Reconcile:
     rel: String
   )
 
-  private final case class MatchSet(
+  private[photo] final case class MatchSet(
     include: Seq[Include.Entry],
     claimed: Set[(LocalDate, String)],
     universe: Map[LocalDate, Set[String]]
@@ -303,7 +303,9 @@ object Reconcile:
         if googleArg.isDefined || published.isDefined then
           Some(Touch.EditTitles(row.file, googleArg, published))
         else None
-      val include: Option[Touch] = includeArg.map(entries => Touch.EditInclude(row.file, entries))
+      // The touch carries the set edit already computed. perform does not gather again.
+      val include: Option[Touch] =
+        if includeArg.isDefined then Some(Touch.EditInclude(row.file, matched)) else None
       val fileTouches: Seq[Touch] = title.toSeq ++ include.toSeq
       if fileTouches.isEmpty then Edit.Pure else Edit.Write(fileTouches)
 
@@ -415,9 +417,17 @@ object Reconcile:
       case Touch.EditTitles(file, googleTitle, publishedTitle) =>
         Album.spliceTitles(file, googleTitle, publishedTitle)
         wrote += Album.relative(archive, file)
-      case Touch.EditInclude(file, include) =>
-        Album.putInclude(file, include)
-        wrote += Album.relative(archive, file)
+      case Touch.EditInclude(file, matched) =>
+        // The re-read only gates the write. The bytes are matched.include from edit, not a second gather.
+        val changed: Boolean = Album.withWriteLock:
+          val current: Album = Album.read(archive, file)
+          includeChange(file, current, matched) match
+            case Some(_) =>
+              Album.spliceInclude(file, matched.include)
+              true
+            case None =>
+              false
+        if changed then wrote += Album.relative(archive, file)
       case Touch.RemoveFile(file) =>
         wrote += Album.relative(archive, file)
         NFiles.deleteIfExists(file.toPath)

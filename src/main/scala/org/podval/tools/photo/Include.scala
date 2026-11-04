@@ -149,6 +149,72 @@ object Include:
 
   def lengthSum(entries: Seq[Entry]): Int = entries.map(entry => logical(entry).length).sum
 
+  // Album-level all is only an empty include or a lone Entry.All on add, and only a lone Entry.All on remove.
+  // A lone Entry.Dates uses compress(None). An empty after does not call compress: empty equals empty would be all.
+  def toggle(
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]]
+  ): Seq[Entry] =
+    val (alls, others) = include.partition:
+      case Entry.All(_) => true
+      case Entry.Dates(_, _, _) => false
+    if alls.nonEmpty && others.nonEmpty then throw IllegalArgumentException("include mixes all with other lines")
+    val widened: Map[LocalDate, Set[String]] =
+      universe.updated(pair._1, universe.getOrElse(pair._1, Set.empty) + pair._2)
+    val on: Boolean = include.exists(entry => claims(albumSpan, entry, pair._1, pair._2))
+    val before: Set[(LocalDate, String)] =
+      include.flatMap(entry => expand(albumSpan, entry, widened)).toSet
+    if on then removeOne(include, albumSpan, pair, widened, before - pair)
+    else addOne(include, albumSpan, pair, widened, before + pair)
+
+  private def removeOne(
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]],
+    after: Set[(LocalDate, String)]
+  ): Seq[Entry] =
+    if after.isEmpty then Seq.empty
+    else include match
+      case Seq(Entry.All(_)) =>
+        compress(albumSpan, after, universe)
+      case _ =>
+        spliceTouched(include, entry => claims(albumSpan, entry, pair._1, pair._2)): hit =>
+          val pairs: Set[(LocalDate, String)] =
+            hit.flatMap(entry => expand(albumSpan, entry, universe)).toSet - pair
+          if pairs.isEmpty then Seq.empty else compress(None, pairs, universe)
+
+  private def addOne(
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]],
+    after: Set[(LocalDate, String)]
+  ): Seq[Entry] =
+    include match
+      case Seq() =>
+        compress(albumSpan, after, universe)
+      case Seq(Entry.All(_)) =>
+        compress(albumSpan, after, universe)
+      case _ =>
+        spliceTouched(include, entry => expand(albumSpan, entry, universe).exists(item => item._1.equals(pair._1))): hit =>
+          // compress(None) so a subset cannot become album-level all.
+          // expand of the whole entry keeps a multi-day line's other days.
+          val pairs: Set[(LocalDate, String)] =
+            hit.flatMap(entry => expand(albumSpan, entry, universe)).toSet + pair
+          compress(None, pairs, universe)
+
+  // Untouched entries stay in order. The touched group is recompressed at the first touched index.
+  private def spliceTouched(
+    include: Seq[Entry],
+    touched: Entry => Boolean
+  )(replaced: Seq[Entry] => Seq[Entry]): Seq[Entry] =
+    val (prefix, tail) = include.span(entry => !touched(entry))
+    val (hit, kept) = tail.partition(touched)
+    prefix ++ replaced(hit) ++ kept
+
   private def add(
     include: Seq[Entry],
     albumSpan: Option[Title.Span],

@@ -5,9 +5,18 @@ import io.github.wasabithumb.jtoml.key.TomlKey
 import io.github.wasabithumb.jtoml.value.TomlValue
 import io.github.wasabithumb.jtoml.value.primitive.TomlPrimitive
 import io.github.wasabithumb.jtoml.value.table.TomlTable
+import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.{IteratorHasAsScala, ListHasAsScala, SetHasAsScala}
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
+import java.nio.charset.StandardCharsets
+import java.nio.file.{FileAlreadyExistsException, Files as NFiles, StandardCopyOption, StandardOpenOption}
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDate
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 
 // One album. The title is not the path: the file sits in the start folder, and a span's end is `to-` in the name.
 final case class Album(
@@ -120,29 +129,35 @@ object Album:
       Files.write(joinLines(spliceGoogle(file, splitLines(text), values, present)), file)
 
   // Recompress each include entry that claims one of these stems. An empty album writes include = [].
+  // The read is inside the lock. A next include computed before tryLock is not spliced.
   def storeRemovals(
     file: File,
     originals: File,
     removals: Seq[(LocalDate, String)],
     universe: Map[LocalDate, Set[String]]
   ): Unit =
-    val album: Album = read(originals, file)
-    val next: Seq[Include.Entry] = removals.foldLeft(album.include): (include, pair) =>
-      Include.drop(include, album.span, pair, universe).sortBy(Include.logical)
-    if !sameEntries(next, album.include) then putInclude(file, next)
+    withWriteLock:
+      val album: Album = read(originals, file)
+      val next: Seq[Include.Entry] = removals.foldLeft(album.include): (include, pair) =>
+        Include.drop(include, album.span, pair, universe).sortBy(Include.logical)
+      // Held here, the file is still the bytes just read. The rename is the splice below.
+      afterCompute()
+      if !sameEntries(next, album.include) then spliceInclude(file, next)
 
   // Curated include paths, before any picture moves. A bad curated file fails first.
+  // Each file is re-read inside its own lock. The picture set stays outside that lock.
   def rewriteInclude(originals: File, from: String, to: String): Unit =
     if from != to then
       val fromPair: (LocalDate, String) = splitPath(from)
       val toPair: (LocalDate, String) = splitPath(to)
       val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
-      val loaded: Seq[(File, Album)] = curatedFiles(originals).map(file => file -> read(originals, file))
-      val changes: Seq[(File, Seq[Include.Entry])] = loaded.flatMap: (file, album) =>
-        val next: Seq[Include.Entry] = Include.relocate(album.include, album.span, fromPair, toPair, universe)
-        Option.when(!sameEntries(next, album.include))(file -> next)
-      changes.foreach: (file, include) =>
-        putInclude(file, include)
+      val files: Seq[File] = curatedFiles(originals)
+      files.foreach(file => read(originals, file))
+      files.foreach: file =>
+        withWriteLock:
+          val album: Album = read(originals, file)
+          val next: Seq[Include.Entry] = Include.relocate(album.include, album.span, fromPair, toPair, universe)
+          if !sameEntries(next, album.include) then spliceInclude(file, next)
 
   def picturePath(path: String): Option[(LocalDate, String)] =
     path.split('/').filter(_.nonEmpty).toSeq match
@@ -168,7 +183,13 @@ object Album:
     else throw IllegalArgumentException(s"$file: not an album file")
 
   // Empty include writes `include = []`. Callers that mean "no key" must not call this for a missing span.
+  // The include argument was computed inside this same lock. The toggle handler does not call this.
   private[photo] def putInclude(file: File, include: Seq[Include.Entry]): Unit =
+    withWriteLock:
+      spliceInclude(file, include)
+
+  // Unlocked splice. Equal text skips the rename. The caller holds the write lock.
+  private[photo] def spliceInclude(file: File, include: Seq[Include.Entry]): Unit =
     val text: String = Files.read(file)
     val lines: Seq[TextLine] = splitLines(text)
     val block: Seq[TextLine] =
@@ -179,7 +200,129 @@ object Album:
       case None if includePresent(text) =>
         throw IllegalArgumentException(s"$file: include array does not end on its own line")
       case None => appendBlock(lines, block)
-    Files.write(joinLines(next), file)
+    val rendered: String = joinLines(next)
+    if rendered != text then replaceAtomic(file, rendered, replace = true)
+
+  // Checks and the create share one lock, so two creates of the same title cannot both pass.
+  private[photo] def create(originals: File, album: Album): File =
+    val parsed: Title.Parsed = Title.parse(album.title).getOrElse(
+      throw IllegalArgumentException(s"not an album title: ${album.title}")
+    )
+    val file: File = Title.file(originals, parsed)
+    withWriteLock:
+      if file.exists then throw IllegalArgumentException(s"album already exists: ${album.title}")
+      val parent: File = file.getParentFile
+      if parent == null || !parent.isDirectory then throw IllegalArgumentException("no such directory")
+      try replaceAtomic(file, renderFile(album), replace = false)
+      catch case _: FileAlreadyExistsException =>
+        throw IllegalArgumentException(s"album already exists: ${album.title}")
+    file
+
+  // The scope is the whole call, not one lock. withWriteLock reads it and does not clear it.
+  private[photo] def withWriteLockDirectory[A](directory: File)(body: => A): A =
+    val previous: Option[File] = writeLockDirectory.get
+    writeLockDirectory.set(Some(directory))
+    try body
+    finally
+      if previous == null then writeLockDirectory.remove()
+      else writeLockDirectory.set(previous)
+
+  // One deadline covers the in-process nest and the file lock. The same thread reenters and does not open a channel.
+  private[photo] def withWriteLock[A](body: => A): A =
+    val deadline: Long = System.nanoTime() + writeWaitNanos
+    val acquired: Boolean =
+      try writeGate.tryLock(math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
+      catch case _: InterruptedException =>
+        Thread.currentThread.interrupt()
+        false
+    if !acquired then throw IllegalArgumentException("album file is busy")
+    try
+      if writeGate.getHoldCount > 1 then body
+      else withFileLock(deadline)(body)
+    finally writeGate.unlock()
+
+  private[photo] def writeWaiters: Int = writeGate.getQueueLength
+
+  @volatile private[photo] var afterCompute: () => Unit = () => ()
+
+  private val writeGate: ReentrantLock = new ReentrantLock()
+  private val writeLockDirectory = new ThreadLocal[Option[File]]
+  private val writeWaitNanos: Long = 5000000000L
+  private val lockName: String = "album-write.lock"
+  private val lockMode: String = "rw-------"
+
+  private def withFileLock[A](deadline: Long)(body: => A): A =
+    lockPlace() match
+      case Left(_) =>
+        body
+      case Right(dir) =>
+        Serve.prepare(dir)
+        val lockFile: File = File(dir, lockName)
+        // One channel for the whole wait. Closing it would drop this JVM's fcntl lock.
+        val channel: FileChannel = FileChannel.open(
+          lockFile.toPath,
+          StandardOpenOption.CREATE,
+          StandardOpenOption.READ,
+          StandardOpenOption.WRITE
+        )
+        try
+          NFiles.setPosixFilePermissions(lockFile.toPath, PosixFilePermissions.fromString(lockMode))
+          val lock: FileLock = pollLock(channel, deadline)
+          try body
+          finally if lock.isValid then lock.release()
+        finally channel.close()
+
+  @tailrec
+  private def pollLock(channel: FileChannel, deadline: Long): FileLock =
+    val locked: FileLock =
+      try channel.tryLock()
+      catch case _: OverlappingFileLockException => null
+    if locked != null then locked
+    else if System.nanoTime() >= deadline then throw IllegalArgumentException("album file is busy")
+    else
+      try Thread.sleep(20)
+      catch case _: InterruptedException =>
+        Thread.currentThread.interrupt()
+        throw IllegalArgumentException("album file is busy")
+      pollLock(channel, deadline)
+
+  // ThreadLocal when the caller set it, else the running web server, else the serve runtime directory.
+  private def lockPlace(): Either[String, File] =
+    val chosen: Option[File] = writeLockDirectory.get
+    if chosen != null && chosen.isDefined then Right(chosen.get)
+    else Web.handlerRuntime match
+      case Some(dir) => Right(dir)
+      case None => Serve.runtimeDirectory()
+
+  private def replaceAtomic(file: File, text: String, replace: Boolean): Unit =
+    val parent: File = file.getParentFile
+    val temp: File = File(parent, s".${file.getName}.${UUID.randomUUID}.partial")
+    var renamed: Boolean = false
+    try
+      writeForced(temp, text)
+      if replace then
+        NFiles.move(
+          temp.toPath,
+          file.toPath,
+          StandardCopyOption.ATOMIC_MOVE,
+          StandardCopyOption.REPLACE_EXISTING
+        )
+      else NFiles.move(temp.toPath, file.toPath, StandardCopyOption.ATOMIC_MOVE)
+      renamed = true
+    finally if !renamed then NFiles.deleteIfExists(temp.toPath)
+
+  private def writeForced(file: File, text: String): Unit =
+    val channel: FileChannel = FileChannel.open(
+      file.toPath,
+      StandardOpenOption.CREATE_NEW,
+      StandardOpenOption.WRITE
+    )
+    try
+      NFiles.setPosixFilePermissions(file.toPath, PosixFilePermissions.fromString(lockMode))
+      val bytes: ByteBuffer = ByteBuffer.wrap(text.getBytes(StandardCharsets.UTF_8))
+      while bytes.hasRemaining do channel.write(bytes)
+      channel.force(true)
+    finally channel.close()
 
   // jtoml sorts keys and drops comments, so a title change is one assignment line.
   // googleTitle None leaves that key. Some(None) removes it. Some(Some(text)) sets it.

@@ -361,6 +361,91 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       caught.getMessage should include ("google-album-id is not a single line")
       Files.read(file) shouldBe body
 
+  "toggle" should "drop one stem from all without forgetting the other day" in :
+    val day: LocalDate = LocalDate.of(2010, 7, 4)
+    val next: LocalDate = day.plusDays(1)
+    val span: Option[Title.Span] = Title.parse("2010/07/04-05").getOrElse(fail("span")).span
+    Include.logical(Include.parse("all except 1001")).length shouldBe 15
+    val oneDay: Map[LocalDate, Set[String]] = Map(day -> Set("1000", "1001", "1002"))
+    Include.toggle(Seq(Include.parse("all")), Title.parse("2010/07/04").get.span, day -> "1001", oneDay)
+      .map(Include.logical) shouldBe Seq("all except 1001")
+    val both: Map[LocalDate, Set[String]] = Map(day -> Set("1000"), next -> Set("1000"))
+    Include.toggle(Seq(Include.parse("all")), span, day -> "1000", both).map(Include.logical) shouldBe
+      Seq("2010/07/05 1000")
+    val dates: Include.Entry = Include.parse("2010/07/04-05 1000..1002")
+    val wide: Map[LocalDate, Set[String]] = Map(
+      day -> Set("1000", "1001", "1002", "1003"),
+      next -> Set("1000", "1001", "1002")
+    )
+    Include.toggle(Seq(dates), span, day -> "1003", wide).map(Include.logical) shouldBe Seq(
+      "2010/07/04 1000..1003",
+      "2010/07/05 1000..1002"
+    )
+
+  it should "keep an untouched day and not promote a one-day line to all except" in :
+    val day: LocalDate = LocalDate.of(2010, 7, 4)
+    val next: LocalDate = day.plusDays(1)
+    val span: Option[Title.Span] = Title.parse("2010/07/04-05").getOrElse(fail("span")).span
+    val kept: Include.Entry = Include.parse("2010/07/05 2000")
+    val universe: Map[LocalDate, Set[String]] = Map(
+      day -> Set("1000", "1001", "1002"),
+      next -> Set("2000")
+    )
+    val removed: Seq[Include.Entry] = Include.toggle(
+      Seq(Include.parse("2010/07/04 1000..1002"), kept),
+      span,
+      day -> "1001",
+      universe
+    )
+    removed.map(Include.logical) shouldBe Seq("2010/07/04 1000", "2010/07/04 1002", "2010/07/05 2000")
+    assert(removed.last eq kept)
+    val one: Option[Title.Span] = Title.parse("2010/07/04").get.span
+    val stems: Map[LocalDate, Set[String]] = Map(day -> Set("1000", "1001", "1002"))
+    Include.toggle(Seq(Include.parse("2010/07/04 1000..1002")), one, day -> "1001", stems)
+      .map(Include.logical) shouldBe Seq("2010/07/04 1000", "2010/07/04 1002")
+    Include.toggle(Seq.empty, None, day -> "2412", Map(day -> Set("2412"))).map(Include.logical) shouldBe
+      Seq("2010/07/04 2412")
+    Include.toggle(Seq.empty, one, day -> "1000", Map(day -> Set("1000", "1001"))).map(Include.logical) shouldBe
+      Seq("2010/07/04 1000")
+    Include.toggle(Seq.empty, one, day -> "1000", Map(day -> Set("1000"))).map(Include.logical) shouldBe Seq("all")
+    Include.toggle(Seq(Include.parse("2010/07/04 1000")), one, day -> "1000", Map(day -> Set("1000")))
+      .map(Include.logical) shouldBe Seq.empty[String]
+
+  it should "reject all mixed with another line and leave that file untouched" in :
+    val day: LocalDate = LocalDate.of(2010, 7, 4)
+    val mixed: Seq[Include.Entry] = Seq(Include.parse("all"), Include.parse("2010/07/04 1000"))
+    val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+      Include.toggle(mixed, Title.parse("2010/07/04").get.span, day -> "1000", Map(day -> Set("1000")))
+    caught.getMessage shouldBe "include mixes all with other lines"
+
+  it should "splice a toggle inside the lock and keep a leading external line" in :
+    withOriginals: originals =>
+      val day: LocalDate = LocalDate.of(2010, 7, 4)
+      val text: String =
+        "# keep\n" +
+        "external = true\n" +
+        "include = [\n" +
+        "  'all',\n" +
+        "]\n"
+      val file: File = write(originals, "2010/07/04/album.toml", text)
+      val universe: Map[LocalDate, Set[String]] = Map(day -> Set("1000", "1001", "1002"))
+      Album.withWriteLock:
+        val album: Album = Album.read(originals, file)
+        val next: Seq[Include.Entry] = Include.toggle(album.include, album.span, day -> "1001", universe)
+        Album.spliceInclude(file, next)
+      val written: String = Files.read(file)
+      written should startWith ("# keep\nexternal = true\n")
+      Album.read(originals, file).include.map(Include.logical) shouldBe Seq("all except 1001")
+      val outside: String = Files.read(file)
+      val rejected: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+        Album.withWriteLock:
+          val album: Album = Album.read(originals, file)
+          if album.span.exists(span => !span.contains(day.plusDays(1))) then
+            throw IllegalArgumentException(s"2010/07/05/1000 is outside ${album.title}")
+          Album.spliceInclude(file, album.include)
+      rejected.getMessage should include ("is outside")
+      Files.read(file) shouldBe outside
+
   private def roundTrip(title: String, relative: String): Unit =
     val parsed: Title.Parsed = Title.parse(title).getOrElse(fail(title))
     parsed.title shouldBe title
@@ -380,8 +465,11 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
 
   private def withOriginals(body: File => Unit): Unit =
     val originals: File = JFiles.createTempDirectory("album-file").toFile
-    try body(originals)
-    finally deleteTree(originals)
+    val runtime: File = JFiles.createTempDirectory("album-lock").toFile
+    try Album.withWriteLockDirectory(runtime)(body(originals))
+    finally
+      deleteTree(originals)
+      deleteTree(runtime)
 
   private def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))
