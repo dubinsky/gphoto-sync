@@ -94,8 +94,11 @@ The parser accepts unnecessary quotes.
 Album membership uses the folder day.
 It does not use a filename clock.
 
-Hand-written keys, in order, are `external`, `google-title`, `owner`, `google-album-id`, `published-title`, and
+Client files start with `external = false`.
+External files omit the key.
+The remaining hand-written keys, in order, are `google-title`, `owner`, `google-album-id`, `published-title`, and
 `include`.
+A legacy `external = true` line is not rewritten.
 Do not pass that file through jtoml.
 jtoml rewrites sort keys and drops comments.
 `google-title`, when set, is the Google Photos title, stored exactly, including spaces.
@@ -230,7 +233,9 @@ An empty claim and an excluded-only claim both print `albums=-`.
 `--span` is a date span with no name.
 `--name` is an album name.
 A span starts as `include` `all` and does not create the later days of the span.
-A name with no span writes an empty file and omits `include`.
+That file starts with `external = false`.
+A name with no span writes the line `external = false` and omits `include`.
+It is not an empty file.
 An existing title is left unchanged.
 `--dry-run` prints the actions and writes nothing.
 
@@ -262,10 +267,14 @@ later file is refused, and nothing is written.
 `photo publish [path]` uploads `jpg`, `jpeg`, and video other than `m4v` into albums and files existing media ids.
 A year or the archive root requires `--recursive`.
 `--dry-run` prints the local plan and does not call Google.
-A picture is added to every non-external album that lists it.
-A picture in any external album is not uploaded.
+A picture is added to every client album that lists it.
+An external album is not a publish target.
+Upload follows the sidecar and runs only when a client album will receive the picture.
+A picture listed only by external albums is not uploaded.
 An unclaimed picture is left out of the summary.
 A picture excluded from every album that matches it counts as skipped-excluded and is not uploaded.
+`skipped-external` counts a picture whose claims are all external.
+A picture claimed by both kinds is not that count.
 A picture sidecar `uploader`, when set, is not uploaded, and the summary counts `skipped-uploader`.
 
 `photo sync [path]` reads Google and turns removals into local except lists.
@@ -275,7 +284,8 @@ An except line is `except`, the album title, and the stem in quotes.
 A remove line is `remove`, the album title, and the stem in quotes.
 
 `photo push` edits external albums through the Photos UI.
-An album file with `external = true` and no `owner` line is in scope.
+Push scope is an external file with no `owner` line.
+External is a missing key or `external = true`.
 An `owner` line is skipped.
 App-created albums stay on `photo publish` and `photo sync`.
 The album order is the archive-relative path, in byte order, then the title.
@@ -397,11 +407,14 @@ The album is an exact catalog title.
 A stem found only on the previous or next civil day is a date mismatch, not a match and not a missing item.
 The line is `date-mismatch <catalog-day> <filename> <archive-day> <stem>`.
 `photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines and writes nothing.
-`photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] <album>` writes one external album
-file.
+`photo agent album-file [--id <id>] [--dry-run] [--replace] [--google-title <exact>] <album>` writes one album file.
+A create is external and omits the key.
 `--dry-run` prints that file and writes nothing.
 `--replace` overwrites an existing file.
 When the album has no owner, it keeps the Google id and published title.
+`--replace` that keeps an id writes `external = false` with that id.
+`--replace` that does not keep an id writes an external file, including a replace of a pending client file.
+`--replace` of an owner still clears the id and writes an external file.
 `--google-title` stores that exact string.
 When the album has no owner and `--google-title` is absent, the command prints `rename yes` when the catalog title
 differs from the path title, and `rename no` when those titles are the same.
@@ -590,10 +603,11 @@ In the end, while chasing ever-changing cloud, I neglected the management of the
 this repository finally delivers.
 
 This client publishes albums whose files I have written.
-Historical albums are marked `external`.
+The archive files are external.
 Ones I own are renamed by hand.
 Ones I do not own have `owner` and `google-title` and are not renamed.
 Publish does not upload or rename an external album, and it does not call `updateAlbumTitle` for an album with `owner`.
+A client album is `external = false`.
 Cron is out of scope.
 
 == TODO

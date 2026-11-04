@@ -518,8 +518,10 @@ This section is its procedure.
 
 Match one catalog album to the archive and write one album file.
 Title grammar and on-disk paths are the archive-layout section of `README.adoc` in this repository.
-A historical album file is `external = true`.
-Leave `google-album-id` unset.
+A historical album file is external.
+The key may be absent.
+`external = true` is still external.
+`google-album-id` stays unset.
 
 `photo reconcile` links every catalog album to the files already in the archive.
 It is not `photo agent album-file`.
@@ -659,8 +661,9 @@ A stem range is a maximal contiguous slice of that day's scanned stems, of equal
 Quote a stem only when a bare token would be wrong: a space, `"`, `\`, `..`, or the word `except`.
 Write the bare form otherwise.
 `include = ["all"]` is the local spelling of `all`.
-Publish still omits a stem that an external album also claims.
-That skip is not a reason to avoid `all`.
+A client album still receives the stem.
+`all` is still legal.
+The external claim is not a reason to leave the stem out of the client album.
 
 Both albums may list a shared stem.
 There is no narrower-wins rule.
@@ -690,8 +693,11 @@ A day span that already reaches a later month stays a day span.
 
 ### Toml
 
-Write keys in this order: `external = true`, then quoted `google-title` and `owner` when set, then `google-album-id` and
-`published-title` when they are already set, then `include`, one string per line.
+Client files start with `external = false`.
+External files omit the key.
+Then write quoted `google-title` and `owner` when set, then `google-album-id` and `published-title` when they are
+already set, then `include`, one string per line.
+A legacy `external = true` line is not rewritten.
 Quote a stem inside an include entry only when a bare token would be wrong.
 Store `google-title` and `owner` exactly, with their spaces.
 Leave the file as written.
@@ -720,7 +726,8 @@ The link grammar is Album links.
 `photo reconcile` does not call `photo agent album-file`.
 A rename is `photo agent rename-album`.
 
-Pending means `external` left false and `google-album-id` empty.
+Pending means the file contains `external = false` and the id is empty.
+A missing key is not pending.
 There is no pending key.
 Reconcile does not create, rewrite, or delete a pending file.
 A pending album has no link row.
@@ -761,7 +768,8 @@ It does not write `google-album-id`.
 An empty catalog title is not written.
 Reconcile skips that album instead of storing `google-title = ""` or an empty `published-title`.
 
-A published client album is `external` false with `google-album-id` set.
+A published client album contains the line `external = false` and the id.
+A file with the id and without that line does not read.
 The first link is `published-title`, the title the client last wrote.
 The UI id is stored only in `album-links.tsv`.
 It is not copied into `google-album-id`.
@@ -823,7 +831,8 @@ Other people's items that the Download control can fetch stay on `photo agent do
 It is not part of `photo publish`.
 It does not create a Library API album, does not write `google-album-id`, and does not call `batchCreate`.
 
-An album file with `external = true` and no `owner` line is in scope.
+Push scope is an external file with no `owner` line.
+External is a missing key or `external = true`.
 An `owner` line is skipped.
 An app-created album stays on `photo publish` and `photo sync`.
 A file with no `album-links.tsv` row is skipped.
