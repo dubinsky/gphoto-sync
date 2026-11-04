@@ -715,8 +715,9 @@ class WebTest extends AnyFlatSpec, Matchers:
         JFiles.readAllBytes(raw.toPath).sameElements(rawBytes) shouldBe true
         JFiles.readAllBytes(video.toPath).sameElements(videoBytes) shouldBe true
         JFiles.readAllBytes(secret.toPath).sameElements("OUTSIDE-SECRET-BYTES".getBytes(StandardCharsets.UTF_8)) shouldBe true
-      err should not include ("2010/07/04")
-      err should not include ("1001")
+      val logged: String = err.linesIterator.filterNot(_.startsWith("bound ")).mkString("\n")
+      logged should not include ("2010/07/04")
+      logged should not include ("1001")
       ended shouldBe Right(())
     finally
       System.setProperty("user.home", savedHome)

@@ -789,13 +789,10 @@ object Web:
   private def dateStem(decoded: String): Option[(String, String)] =
     segments(decoded, Nil) match
       case year :: month :: day :: stem :: Nil
-        if isNumber(year, 4) && isMonth(month) && isDay(day) && stemOk(stem) =>
+        if isNumber(year, 4) && isMonth(month) && isDay(day) && !stem.contains('.') =>
           Some(s"$year/$month/$day" -> stem)
       case _ =>
         None
-
-  private def stemOk(stem: String): Boolean =
-    stem.nonEmpty && !stem.contains('.') && stem != ".gphoto-sync" && stem != ".upload"
 
   private def openSources(
     archive: File,

@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as NFiles, StandardCopyOption, StandardOpenOption}
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, Semaphore, TimeUnit}
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.{IIOImage, ImageIO, ImageWriteParam}
@@ -275,9 +276,11 @@ object Thumb:
             "-vf", s"scale=$edge:$edge:force_original_aspect_ratio=decrease",
             "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"
           ).redirectError(ProcessBuilder.Redirect.DISCARD).start())
-        catch case _: IOException =>
-          ffmpegMissing.set(true)
-          logOnce(ffmpegLogged, "ffmpeg is missing")
+        catch case error: IOException =>
+          // EMFILE and other spawn errors are this request only. A missing binary stays missing.
+          if Option(error.getMessage).exists(_.contains("No such file or directory")) then
+            ffmpegMissing.set(true)
+            logOnce(ffmpegLogged, "ffmpeg is missing")
           None
       started match
         case None =>
@@ -379,7 +382,7 @@ object Thumb:
 
   private def sha256(text: String): String =
     val digest: Array[Byte] = MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8))
-    digest.map(byte => f"${byte & 0xff}%02x").mkString
+    HexFormat.of().formatHex(digest)
 
   private def isJpeg(bytes: Array[Byte]): Boolean =
     bytes.length >= 2 && (bytes(0) & 0xff) == 0xff && (bytes(1) & 0xff) == 0xd8
