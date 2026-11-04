@@ -3,6 +3,7 @@ package org.podval.tools.photo
 import scala.annotation.tailrec
 import java.io.{File, InputStream, OutputStream}
 import java.nio.charset.StandardCharsets
+import org.podval.tools.photo.chrome.PlaywrightPhotosUi
 
 private[photo] object Mcp:
   // Incoming cap. The byte past this is not stored, and a tool result is not cut to it.

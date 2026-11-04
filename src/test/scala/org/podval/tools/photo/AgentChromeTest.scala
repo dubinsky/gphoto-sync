@@ -6,6 +6,7 @@ import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles, StandardOpenOption}
 import java.time.LocalDate
+import org.podval.tools.photo.chrome.{AgentChrome, AlbumCard, PhotosAct, PlaywrightPhotosUi}
 
 class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
   "rename-album" should "leave the catalog unchanged when the step throws" in :

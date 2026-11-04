@@ -9,6 +9,10 @@ import org.jline.reader.{
 }
 import org.jline.reader.impl.DefaultParser
 import org.jline.terminal.TerminalBuilder
+import org.podval.tools.photo.chrome.{
+  AgentAdd, AgentCreate, AgentDelete, AgentDeleteAlbum, AgentDownload, AgentMove, AgentRemove, AgentRename,
+  AgentSetDate, AgentSetDescription, AgentUpload, PlaywrightPhotosUi
+}
 
 object Cli:
   private[photo] sealed trait Outcome

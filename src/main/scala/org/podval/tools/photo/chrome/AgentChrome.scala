@@ -1,9 +1,12 @@
-package org.podval.tools.photo
+package org.podval.tools.photo.chrome
 
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles}
 import java.time.{DateTimeException, LocalDate}
+import org.podval.tools.photo.{
+  AgentSupport, Album, Catalog, Files, Json, Operation, Pictures, Publish, Refresh, RefreshPlan, Result, Session, Title
+}
 
 
 private[photo] final class AgentRename(

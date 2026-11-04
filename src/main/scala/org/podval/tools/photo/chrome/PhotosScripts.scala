@@ -1,4 +1,4 @@
-package org.podval.tools.photo
+package org.podval.tools.photo.chrome
 
 private[photo] object PhotosScripts:
   private[photo] val focusTitleScript: String =

@@ -8,6 +8,7 @@ import java.io.{File, ByteArrayOutputStream}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles}
 import java.time.{LocalDate, ZoneId}
+import org.podval.tools.photo.chrome.{AlbumCard, PhotosAct}
 
 class PushTest extends AnyFlatSpec, Matchers:
   @targetName("outcomeCanEqual")

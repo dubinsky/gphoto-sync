@@ -4,6 +4,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import java.io.File
 import java.nio.file.{Files as JFiles}
 import java.time.LocalDate
+import org.podval.tools.photo.chrome.AgentChrome
 
 class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
   "agent album-file" should "place leftover names from the catalog title" in :

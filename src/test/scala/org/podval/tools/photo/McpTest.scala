@@ -15,6 +15,7 @@ import java.time.ZoneId
 import java.util.concurrent.{ConcurrentLinkedQueue, CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import javax.imageio.ImageIO
+import org.podval.tools.photo.chrome.{AlbumCard, PhotosAct}
 
 class McpTest extends AnyFlatSpec, Matchers:
   // strictEquality does not relate a sealed parent to its cases.

@@ -1,4 +1,4 @@
-package org.podval.tools.photo
+package org.podval.tools.photo.chrome
 
 import com.microsoft.playwright.{BrowserContext, BrowserType, FileChooser, Locator, Page, Playwright}
 import com.microsoft.playwright.options.{AriaRole, WaitUntilState}
@@ -9,6 +9,7 @@ import java.nio.file.Paths
 import java.time.{LocalDate, Month}
 import java.time.format.TextStyle
 import java.util.Locale
+import org.podval.tools.photo.{Catalog, Operation, Refresh}
 
 // Gradle tests construct a fake PhotosUi. Nothing in the test suite calls open.
 private[photo] object PlaywrightPhotosUi:

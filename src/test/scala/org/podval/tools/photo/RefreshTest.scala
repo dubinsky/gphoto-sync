@@ -11,6 +11,7 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.time.{LocalDate, ZoneId}
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.AtomicReference
+import org.podval.tools.photo.chrome.{AlbumCard, PhotosUi}
 
 class RefreshTest extends AnyFlatSpec, Matchers:
   @targetName("outcomeCanEqual")

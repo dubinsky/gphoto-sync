@@ -2,6 +2,7 @@ package org.podval.tools.photo
 
 import java.io.File
 import java.time.{DateTimeException, LocalDate}
+import org.podval.tools.photo.chrome.PlaywrightPhotosUi
 
 private[photo] object AgentSupport:
 

@@ -3,6 +3,7 @@ package org.podval.tools.photo
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
+import org.podval.tools.photo.chrome.{AgentChrome, PhotosAct, PlaywrightPhotosUi}
 
 private[photo] object AgentPush:
 

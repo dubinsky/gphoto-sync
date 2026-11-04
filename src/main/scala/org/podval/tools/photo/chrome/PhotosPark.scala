@@ -1,4 +1,4 @@
-package org.podval.tools.photo
+package org.podval.tools.photo.chrome
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as NFiles, Paths}
