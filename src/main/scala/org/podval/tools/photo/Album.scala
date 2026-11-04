@@ -348,7 +348,7 @@ object Album:
                 val stems: Set[String] =
                   Pictures.grouped(Files.listFiles(day.directory).filter(accepted)).map(_._1).toSet
                 if stems.isEmpty then universe
-                else universe.updated(day.date, stems)
+                else universe.updated(LocalDate.of(month.year, month.month, day.day), stems)
 
   // Album files only. Archive.scan also lists pictures with NameMode.Leave.
   private def planningAlbums(originals: File): Seq[Loaded] =

@@ -1,7 +1,6 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.time.LocalDate
 
 private[photo] object DateTree:
   def isNumber(name: String, length: Int): Boolean =
@@ -15,7 +14,7 @@ private[photo] object DateTree:
 
   final case class YearDir(directory: File, year: Int)
   final case class MonthDir(directory: File, year: Int, month: Int)
-  final case class DayDir(directory: File, date: LocalDate)
+  final case class DayDir(directory: File, day: Int)
 
   def years(root: File): Seq[YearDir] =
     directories(root).filter(dir => isNumber(dir.getName, 4)).map: dir =>
@@ -27,11 +26,7 @@ private[photo] object DateTree:
 
   def days(month: MonthDir): Seq[DayDir] =
     directories(month.directory).filter(dir => isDay(dir.getName)).map: dir =>
-      DayDir(dir, LocalDate.of(month.year, month.month, dir.getName.toInt))
+      DayDir(dir, dir.getName.toInt)
 
   private def directories(directory: File): Seq[File] =
-    Option(directory.listFiles) match
-      case None =>
-        throw IllegalArgumentException(s"$directory: cannot list directory")
-      case Some(listed) =>
-        listed.toSeq.filter(_.isDirectory).sortBy(_.getName)
+    Option(directory.listFiles).map(_.toSeq).getOrElse(Seq.empty).filter(_.isDirectory).sortBy(_.getName)

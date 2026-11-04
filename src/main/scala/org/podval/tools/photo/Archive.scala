@@ -46,7 +46,7 @@ object Archive:
         months.foldLeft(scan): (scan, month) =>
           val monthAlbums: Seq[Album.Loaded] = loadMonth(originals, month.directory)
           DateTree.days(month).foldLeft(Scan(scan.albums ++ monthAlbums, scan.pictures)):
-            (scan, day) => scan ++ loadDay(originals, day)
+            (scan, day) => scan ++ loadDay(originals, month, day)
 
   private def loadRoot(originals: File): Seq[Album.Loaded] =
     val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(originals, filesOnly = false)
@@ -87,11 +87,11 @@ object Archive:
         ))
         albums
 
-  private def loadDay(originals: File, day: DateTree.DayDir): Scan =
+  private def loadDay(originals: File, month: DateTree.MonthDir, day: DateTree.DayDir): Scan =
     val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(day.directory, filesOnly = true)
     DirectoryIndex.now.cached(day.directory) match
       case Some(entry) if entry.fingerprint == fingerprint =>
-        Scan(entry.albums, picturesFrom(originals, day, entry.grouped))
+        Scan(entry.albums, picturesFrom(originals, month, day, entry.grouped))
       case _ =>
         // Grouped, not group: a warm albums must not print WRONG NAME. Listing, if any, is stale.
         val grouped: Seq[(String, Set[String])] = Pictures.grouped(Files.listFiles(day.directory))
@@ -100,14 +100,14 @@ object Archive:
           day.directory,
           DirEntry(fingerprint, grouped, albums, None)
         ))
-        Scan(albums, picturesFrom(originals, day, grouped))
+        Scan(albums, picturesFrom(originals, month, day, grouped))
 
   // Pictures only. The migrator uses this while album files still have the old keys.
   def pictures(originals: File): Seq[Picture] =
     DateTree.years(originals).flatMap: year =>
       DateTree.months(year).flatMap: month =>
         DateTree.days(month).flatMap: day =>
-          dayPictures(originals, day)
+          dayPictures(originals, month, day)
 
   def universe(pictures: Seq[Picture]): Map[LocalDate, Set[String]] =
     pictures.foldLeft(Map.empty[LocalDate, Set[String]]): (acc, picture) =>
@@ -122,21 +122,22 @@ object Archive:
     val albums: Seq[Album.Loaded] = albumFiles(month.directory).map: file =>
       Album.Loaded(file, Album.read(originals, file))
     DateTree.days(month).foldLeft(Scan(albums, Seq.empty)):
-      (scan, day) => scan ++ scanDay(originals, day)
+      (scan, day) => scan ++ scanDay(originals, month, day)
 
-  private def scanDay(originals: File, day: DateTree.DayDir): Scan =
-    Scan(dayAlbums(originals, day.directory), dayPictures(originals, day))
+  private def scanDay(originals: File, month: DateTree.MonthDir, day: DateTree.DayDir): Scan =
+    Scan(dayAlbums(originals, day.directory), dayPictures(originals, month, day))
 
-  private def dayPictures(originals: File, day: DateTree.DayDir): Seq[Picture] =
+  private def dayPictures(originals: File, month: DateTree.MonthDir, day: DateTree.DayDir): Seq[Picture] =
     val files: Seq[File] = Files.listFiles(day.directory)
-    picturesFrom(originals, day, Pictures.group(files, NameMode.Leave))
+    picturesFrom(originals, month, day, Pictures.group(files, NameMode.Leave))
 
   private def picturesFrom(
     originals: File,
+    month: DateTree.MonthDir,
     day: DateTree.DayDir,
     grouped: Seq[(String, Set[String])]
   ): Seq[Picture] =
-    val folderDay: LocalDate = day.date
+    val folderDay: LocalDate = LocalDate.of(month.year, month.month, day.day)
     grouped.flatMap: (name, extensions) =>
       Option.when(extensions.exists(pictureExtensions.contains)):
         Picture(
@@ -144,7 +145,7 @@ object Archive:
           name = name,
           directory = day.directory,
           folderDay = folderDay,
-          yearMonth = YearMonth.of(folderDay.getYear, folderDay.getMonthValue),
+          yearMonth = YearMonth.of(month.year, month.month),
           extensions = extensions,
           metadata = readMetadata(day.directory, name, extensions)
         )
