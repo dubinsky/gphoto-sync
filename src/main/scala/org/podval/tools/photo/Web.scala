@@ -8,6 +8,7 @@ import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
 import java.nio.charset.{CharacterCodingException, CodingErrorAction, StandardCharsets}
 import java.nio.file.{FileSystemException, Files as NFiles, NoSuchFileException, StandardOpenOption}
 import java.nio.file.attribute.PosixFilePermissions
+import java.time.{Instant, LocalDate}
 import java.util.concurrent.{CountDownLatch, ExecutorService, Executors}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import scala.annotation.tailrec
@@ -18,11 +19,15 @@ final case class Web(port: Int) extends Operation:
       case Left(message) =>
         (session, Result.Usage(message))
       case Right(runtime) =>
-        Web.start(runtime, port) match
-          case Left(message) =>
-            (session, Result.Usage(message))
-          case Right(_) =>
-            (session, Result.Ok("", Json.Null))
+        Web.useSession(session)
+        try
+          Web.start(runtime, port) match
+            case Left(message) =>
+              (session, Result.Usage(message))
+            case Right(_) =>
+              (session, Result.Ok("", Json.Null))
+        finally
+          Web.sessionRef.set(null)
 
 object Web:
   private[photo] val defaultPort: Int = 8765
@@ -44,6 +49,9 @@ object Web:
   private val runtimeRef = new AtomicReference[Option[File]](None)
   private val gate = new AtomicReference[CountDownLatch](null)
   private val signalsInstalled = new AtomicBoolean(false)
+  private val catalogLogged = new AtomicBoolean(false)
+  // One process session. gather reuses its DirectoryIndex. It is not serve's index.
+  private val sessionRef = new AtomicReference[Session](null)
   // A collected channel is closed, and that close drops this JVM's fcntl lock on web.lock.
   private var pinned: List[FileChannel] = Nil
 
@@ -51,10 +59,22 @@ object Web:
   private val routes: List[Route] = List(
     Route("GET", "/", exchange => sendResource(exchange, "index.html", "text/html; charset=utf-8")),
     Route("GET", "/app.js", exchange => sendResource(exchange, "app.js", "text/javascript; charset=utf-8")),
-    Route("GET", "/app.css", exchange => sendResource(exchange, "app.css", "text/css; charset=utf-8"))
+    Route("GET", "/app.css", exchange => sendResource(exchange, "app.css", "text/css; charset=utf-8")),
+    Route("GET", "/api/tree", exchange => api(exchange)(tree(exchange))),
+    Route("GET", "/api/day", exchange => api(exchange)(day(exchange))),
+    Route("GET", "/api/album", exchange => api(exchange)(album(exchange)))
   )
 
   private[photo] def handlerRuntime: Option[File] = runtimeRef.get
+
+  private[photo] def useSession(session: Session): Unit =
+    sessionRef.set(session.copy(style = PathStyle.OneShot, cursor = session.root))
+
+  private[photo] def sessionNow: Option[Session] = Option(sessionRef.get)
+
+  // unknown never disagrees. in and out disagree only when desired does not match the mark.
+  private[photo] def disagree(desired: Boolean, observed: String): Boolean =
+    (observed == "in" || observed == "out") && desired != (observed == "in")
 
   private[photo] def start(runtime: File, port: Int): Either[String, Unit] =
     if port < 1 || port > 65535 then Left("port must be 1 to 65535")
@@ -141,6 +161,7 @@ object Web:
       if server != null then server.stop(0)
       if pool != null then pool.shutdownNow()
       if gate.get eq latch then gate.set(null)
+      sessionRef.set(null)
 
   private def daemons(): ExecutorService =
     val ids = new AtomicInteger
@@ -202,6 +223,456 @@ object Web:
     val body = exchange.getResponseBody
     try body.write(bytes)
     finally body.close()
+
+  private def sendJson(exchange: HttpExchange, json: Json): Unit =
+    send(exchange, 200, "application/json; charset=utf-8", Serve.write(json).getBytes(StandardCharsets.UTF_8))
+
+  private def api(exchange: HttpExchange)(body: => Either[Rejected, Json]): Unit =
+    try
+      body match
+        case Left(rejected) =>
+          sendError(exchange, rejected.status, rejected.message)
+        case Right(json) =>
+          sendJson(exchange, json)
+    catch case error: IllegalArgumentException =>
+      val message: String = Operation.messageOf(error)
+      val shown: String = if message.contains("AF1Qip") then "failed" else message
+      sendError(exchange, 400, shown)
+
+  private def currentSession(): Session =
+    val seen: Session = sessionRef.get
+    if seen != null then seen else throw IllegalStateException("photo web has no archive session")
+
+  // getAndUpdate can retry. The listing that produced next stays outside this function.
+  private def publish(start: Session, next: Session): Unit =
+    sessionRef.getAndUpdate(seen => if seen eq start then next else seen)
+
+  private def tree(exchange: HttpExchange): Either[Rejected, Json] =
+    val start: Session = currentSession()
+    val view: CatalogView = viewCatalog(start)
+    queryValue(exchange, "at").flatMap: at =>
+      val where: String = at.getOrElse("")
+      branchOf(where).flatMap: branch =>
+        val archive: File = start.root.configuration.archive
+        val relative: String = branch match
+          case Branch.Years => ""
+          case Branch.Months(year) => year
+          case Branch.Days(year, month) => s"$year/$month"
+        openDirectory(archive, relative, Rejected(400, "not a branch")).flatMap: resolved =>
+          directories(resolved).flatMap: children =>
+            val entries: Either[Rejected, Seq[Json]] = branch match
+              case Branch.Years =>
+                Right(children.filter(dir => isNumber(dir.getName, 4)).map: dir =>
+                  entryJson(dir.getName, dir.getName, None)
+                )
+              case Branch.Months(year) =>
+                Right(children.filter(dir => isMonth(dir.getName)).map: dir =>
+                  entryJson(dir.getName, s"$year/${dir.getName}", None)
+                )
+              case Branch.Days(year, month) =>
+                dayCounts(archive, year, month, children)
+            entries.map: listed =>
+              val folder: File = resolved.toFile
+              val albums: Seq[Json] = branch match
+                case Branch.Days(_, _) =>
+                  tomlAlbums(archive, folder).map(pair => albumJson(archive, pair._1, pair._2))
+                case _ =>
+                  Seq.empty
+              // A year has no album files. Root curated titles stay on curated, not albums.
+              val curated: Seq[Json] = branch match
+                case Branch.Years =>
+                  tomlAlbums(archive, folder).map(pair => albumJson(archive, pair._1, pair._2))
+                case _ =>
+                  Seq.empty
+              Json.Obj(Seq(
+                "at" -> Json.Str(where),
+                "kind" -> Json.Str(branch.kind),
+                "entries" -> Json.Arr(listed),
+                "albums" -> Json.Arr(albums),
+                "curated" -> Json.Arr(curated),
+                "catalog" -> catalogJson(start, view)
+              ))
+
+  private def day(exchange: HttpExchange): Either[Rejected, Json] =
+    val start: Session = currentSession()
+    val view: CatalogView = viewCatalog(start)
+    publish(start, view.next)
+    queryValue(exchange, "day").flatMap:
+      case None =>
+        Left(Rejected(400, "not a day"))
+      case Some(text) =>
+        lexical(text).flatMap: _ =>
+          val parsed: Day = AgentCommands.parseDay(start, text)
+          val archive: File = start.root.configuration.archive
+          val shown: String = Title.dayText(parsed.date)
+          openDirectory(archive, shown, Rejected(404, "no such day")).flatMap: resolved =>
+            val curated: Seq[Album] = tomlAlbums(archive, archive).map(_._2)
+            val stems: Seq[Json] = pictureStems(resolved).map: (stem, extensions) =>
+              val claimed: Seq[String] = curated.filter(_.claims(parsed.date, stem)).map(_.title)
+              stemJson(shown, stem, extensions, claimed)
+            val albums: Seq[Json] =
+              dayAlbumFiles(archive, resolved).map(pair => albumJson(archive, pair._1, pair._2))
+            Right(Json.Obj(Seq(
+              "day" -> Json.Str(shown),
+              "stems" -> Json.Arr(stems),
+              "albums" -> Json.Arr(albums),
+              "curated" -> Json.Arr(curated.map(album => Json.Str(album.title))),
+              "catalog" -> catalogJson(start, view)
+            )))
+
+  private def album(exchange: HttpExchange): Either[Rejected, Json] =
+    val start: Session = currentSession()
+    val view: CatalogView = viewCatalog(start)
+    queryValue(exchange, "title").flatMap:
+      case None =>
+        Left(Rejected(400, "not an album title"))
+      case Some(text) =>
+        Title.parse(text) match
+          case None =>
+            Left(Rejected(400, "not an album title"))
+          case Some(parsed) =>
+            val archive: File = start.root.configuration.archive
+            val file: File = Title.file(archive, parsed)
+            if !file.isFile then Left(Rejected(404, s"no such album: ${parsed.title}"))
+            else albumResponse(start, view, parsed, file)
+
+  private def albumResponse(start: Session, view: CatalogView, parsed: Title.Parsed, file: File): Either[Rejected, Json] =
+    val archive: File = start.root.configuration.archive
+    val loaded: Album = Album.read(archive, file)
+    val dates: Seq[LocalDate] =
+      loaded.span.map(AgentCommands.eachDay).getOrElse(curatedDays(loaded.include))
+    // Not loadGrouped: a missing day is a gap, and a symlink is resolved before listFiles.
+    groupedDays(archive, dates).map: rows =>
+      val observed: Observed = observe(archive, view, file, loaded)
+      publish(start, observed.next)
+      val shown: Title.Parsed = Title.parse(loaded.title).getOrElse(parsed)
+      Json.Obj(Seq(
+        "title" -> Json.Str(shown.title),
+        "span" -> shown.span.fold(Json.Null)(span => Json.Str(Title.renderSpan(span))),
+        "name" -> shown.name.fold(Json.Null)(Json.Str.apply),
+        "curated" -> Json.Bool(shown.span.isEmpty),
+        "external" -> Json.Bool(loaded.external),
+        "owner" -> loaded.owner.fold(Json.Null)(Json.Str.apply),
+        "path" -> Json.Str(Album.relative(archive, file)),
+        "membership" -> membershipJson(observed.reason),
+        "tiles" -> Json.Arr(tileRows(loaded, rows, observed)),
+        "unmatched" -> Json.Arr(observed.unmatched),
+        "include" -> Json.Arr(loaded.include.map(entry => Json.Str(Include.logical(entry)))),
+        "catalog" -> catalogJson(start, view)
+      ))
+
+  private enum Branch:
+    case Years
+    case Months(year: String)
+    case Days(year: String, month: String)
+
+    def kind: String = this match
+      case Years => "years"
+      case Months(_) => "months"
+      case Days(_, _) => "days"
+
+  private enum Joined:
+    case One(found: Catalog.Album)
+    case Unknown(reason: String)
+
+  private final case class CatalogView(present: Boolean, readable: Boolean, albums: Seq[Catalog.Album], next: Session)
+
+  private final case class Observed(
+    reason: Option[String],
+    hits: Set[(LocalDate, String)],
+    unmatched: Seq[Json],
+    next: Session
+  )
+
+  private def branchOf(at: String): Either[Rejected, Branch] =
+    if at.isEmpty then Right(Branch.Years)
+    else lexical(at).flatMap:
+      case year :: Nil if isNumber(year, 4) =>
+        Right(Branch.Months(year))
+      case year :: month :: Nil if isNumber(year, 4) && isMonth(month) =>
+        Right(Branch.Days(year, month))
+      case _ =>
+        Left(Rejected(400, "not a branch"))
+
+  private def openDirectory(archive: File, relative: String, missing: Rejected): Either[Rejected, java.nio.file.Path] =
+    val directory: File = if relative.isEmpty then archive else File(archive, relative)
+    // toRealPath throws when the path is absent. A gap is not that call.
+    if !directory.isDirectory then Left(missing)
+    else
+      try
+        val root: java.nio.file.Path = archive.toPath.toRealPath()
+        val resolved: java.nio.file.Path = directory.toPath.toRealPath()
+        if contained(root, resolved) then Right(resolved) else Left(Rejected(400, escapeMessage))
+      catch
+        case _: NoSuchFileException => Left(missing)
+        case _: FileSystemException => Left(Rejected(400, escapeMessage))
+
+  private def directories(resolved: java.nio.file.Path): Either[Rejected, Seq[File]] =
+    try Right(Files.listDirectories(resolved.toFile))
+    catch case _: IllegalArgumentException => Left(Rejected(500, "stray file"))
+
+  private def dayCounts(
+    archive: File,
+    year: String,
+    month: String,
+    children: Seq[File]
+  ): Either[Rejected, Seq[Json]] =
+    val root: java.nio.file.Path = archive.toPath.toRealPath()
+    children.filter(dir => isDay(dir.getName)).foldLeft[Either[Rejected, List[Json]]](Right(Nil)): (acc, directory) =>
+      acc.flatMap: soFar =>
+        val name: String = directory.getName
+        if !directory.isDirectory then Right(soFar)
+        else
+          try
+            val resolved: java.nio.file.Path = directory.toPath.toRealPath()
+            if !contained(root, resolved) then Left(Rejected(400, escapeMessage))
+            else
+              val count: Int = pictureStems(resolved).length
+              Right(soFar :+ entryJson(name, s"$year/$month/$name", Some(count)))
+          catch
+            case _: NoSuchFileException => Right(soFar)
+            case _: FileSystemException => Left(Rejected(400, escapeMessage))
+
+  private def entryJson(name: String, path: String, count: Option[Int]): Json =
+    val fields: Seq[(String, Json)] = Seq("name" -> Json.Str(name), "path" -> Json.Str(path))
+    Json.Obj(count.fold(fields)(value => fields :+ ("count" -> Json.Long(value))))
+
+  private def albumJson(archive: File, file: File, album: Album): Json =
+    Json.Obj(Seq(
+      "title" -> Json.Str(album.title),
+      "path" -> Json.Str(Album.relative(archive, file))
+    ))
+
+  private def stemJson(day: String, stem: String, extensions: Seq[String], curated: Seq[String]): Json =
+    Json.Obj(Seq(
+      "stem" -> Json.Str(stem),
+      "path" -> Json.Str(s"$day/$stem"),
+      "extensions" -> Json.Arr(extensions.map(Json.Str.apply)),
+      "kind" -> Json.Str(kindOf(extensions)),
+      "uploadable" -> Json.Bool(canUpload(extensions)),
+      "curated" -> Json.Arr(curated.map(Json.Str.apply))
+    ))
+
+  private def tomlAlbums(archive: File, directory: File): Seq[(File, Album)] =
+    Option(directory.listFiles).map(_.toSeq).getOrElse(Seq.empty)
+      .filter(file => file.isFile && file.getName.endsWith(".toml"))
+      .map(file => file -> Album.read(archive, file))
+      .sortBy(_._2.title)
+
+  private def dayAlbumFiles(archive: File, directory: java.nio.file.Path): Seq[(File, Album)] =
+    tomlAlbums(archive, directory.toFile).filter: (file, _) =>
+      !Files.nameAndExtension(file)._1.headOption.exists(_.isDigit)
+
+  private val pictureExtensions: Set[String] =
+    (Extension.normal ++ Extension.raw ++ Extension.image).map(_.name)
+
+  private def pictureStems(resolved: java.nio.file.Path): Seq[(String, Seq[String])] =
+    Pictures.grouped(Files.listFiles(resolved.toFile)).flatMap: (stem, extensions) =>
+      val names: Seq[String] = extensions.toSeq.sorted
+      if names.exists(pictureExtensions.contains) then Some(stem -> names) else None
+
+  private def kindOf(extensions: Seq[String]): String =
+    val names: Set[String] = extensions.toSet
+    if names.contains(Extension.JPG.name) || names.contains(Extension.JPEG.name) then "jpeg"
+    else if names.contains(Extension.GIF.name) then "gif"
+    else if names.contains(Extension.PNG.name) then "png"
+    else if names.exists(previewExtension) then "preview"
+    else if names.exists(name => Extension.video.exists(_.name == name)) then "video"
+    else "none"
+
+  private def previewExtension(name: String): Boolean =
+    name == Extension.WEBP.name || name == Extension.HEIC.name || name == Extension.HEIF.name ||
+      name == Extension.AVIF.name || Extension.raw.exists(_.name == name)
+
+  private def canUpload(extensions: Seq[String]): Boolean =
+    extensions.exists(Publish.uploadable.contains)
+
+  private def curatedDays(include: Seq[Include.Entry]): Seq[LocalDate] =
+    include.flatMap:
+      case Include.Entry.Dates(span, _, _) => AgentCommands.eachDay(span)
+      case _ => Nil
+    .distinct
+
+  private def groupedDays(
+    archive: File,
+    dates: Seq[LocalDate]
+  ): Either[Rejected, List[(LocalDate, Seq[(String, Seq[String])])]] =
+    val root: java.nio.file.Path = archive.toPath.toRealPath()
+    dates.foldLeft[Either[Rejected, List[(LocalDate, Seq[(String, Seq[String])])]]](Right(Nil)): (acc, date) =>
+      acc.flatMap: soFar =>
+        val directory: File = File(archive, Title.dayText(date))
+        if !directory.isDirectory then Right(soFar)
+        else
+          try
+            val resolved: java.nio.file.Path = directory.toPath.toRealPath()
+            if !contained(root, resolved) then Left(Rejected(400, escapeMessage))
+            else Right(soFar :+ (date -> pictureStems(resolved)))
+          catch
+            case _: NoSuchFileException => Right(soFar)
+            case _: FileSystemException => Left(Rejected(400, escapeMessage))
+
+  private def tileRows(
+    album: Album,
+    rows: List[(LocalDate, Seq[(String, Seq[String])])],
+    observed: Observed
+  ): Seq[Json] =
+    val universe: Map[LocalDate, Set[String]] = rows.foldLeft(Map.empty[LocalDate, Set[String]]): (acc, row) =>
+      val names: Set[String] = row._2.map(_._1).toSet
+      if names.isEmpty then acc else acc.updated(row._1, names)
+    val claimed: Option[Set[(LocalDate, String)]] = album.span match
+      case Some(_) =>
+        None
+      case None =>
+        Some(album.include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
+          acc ++ Include.expand(None, entry, universe)
+        )
+    rows.flatMap: (date, stems) =>
+      stems.flatMap: (stem, extensions) =>
+        if claimed.forall(_.contains(date -> stem)) then
+          Some(tileJson(date, stem, extensions, album.claims(date, stem), mark(observed, date, stem)))
+        else None
+
+  private def tileJson(
+    day: LocalDate,
+    stem: String,
+    extensions: Seq[String],
+    desired: Boolean,
+    observed: String
+  ): Json =
+    val shown: String = Title.dayText(day)
+    Json.Obj(Seq(
+      "day" -> Json.Str(shown),
+      "stem" -> Json.Str(stem),
+      "path" -> Json.Str(s"$shown/$stem"),
+      "desired" -> Json.Bool(desired),
+      "observed" -> Json.Str(observed),
+      "extensions" -> Json.Arr(extensions.map(Json.Str.apply)),
+      "kind" -> Json.Str(kindOf(extensions)),
+      "uploadable" -> Json.Bool(canUpload(extensions))
+    ))
+
+  private def mark(observed: Observed, day: LocalDate, stem: String): String =
+    if observed.reason.isDefined then "unknown"
+    else if observed.hits.contains(day -> stem) then "in"
+    else "out"
+
+  private def membershipJson(reason: Option[String]): Json =
+    val (joined, ambiguous) = reason match
+      case None => (true, false)
+      case Some("ambiguous") => (false, true)
+      case Some("error") => (true, false)
+      case Some("auto-add") => (true, false)
+      case Some(_) => (false, false)
+    Json.Obj(Seq(
+      "joined" -> Json.Bool(joined),
+      "ambiguous" -> Json.Bool(ambiguous),
+      "observed" -> Json.Str(if reason.isEmpty then "known" else "unknown"),
+      "reason" -> reason.fold(Json.Null)(Json.Str.apply)
+    ))
+
+  private def observe(archive: File, view: CatalogView, file: File, album: Album): Observed =
+    if !view.readable then
+      val reason: String = if view.present then "unreadable" else "missing"
+      Observed(Some(reason), Set.empty, Seq.empty, view.next)
+    else join(archive, file, album, view.albums, AlbumLinks.read(archive)) match
+      case Joined.Unknown(reason) =>
+        Observed(Some(reason), Set.empty, Seq.empty, view.next)
+      case Joined.One(found) if found.autoAdd =>
+        Observed(Some("auto-add"), Set.empty, Seq.empty, view.next)
+      case Joined.One(found) if found.error.isDefined =>
+        Observed(Some("error"), Set.empty, Seq.empty, view.next)
+      case Joined.One(found) =>
+        val (gathered, hits, nonHits) = AgentCommands.gather(view.next, found)
+        val pairs: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
+        val misses: Seq[Json] = nonHits.collect:
+          case AgentCommands.NonHit.Miss(date, filename, _) =>
+            Json.Obj(Seq(
+              "filename" -> Json.Str(filename),
+              "day" -> date.fold(Json.Null)(day => Json.Str(Title.dayText(day)))
+            ))
+        Observed(None, pairs, misses, gathered)
+
+  private def join(
+    archive: File,
+    file: File,
+    album: Album,
+    catalog: Seq[Catalog.Album],
+    links: Seq[AlbumLinks.Row]
+  ): Joined =
+    val relative: String = Album.relative(archive, file)
+    links.find(_.path == relative) match
+      case Some(row) =>
+        catalog.find(_.id == row.id) match
+          case Some(found) => Joined.One(found)
+          case None => Joined.Unknown("link-absent")
+      case None =>
+        val key: String = album.desiredGoogleTitle
+        catalog.filter(_.title == key) match
+          case Seq(one) => Joined.One(one)
+          case Seq() => Joined.Unknown("unjoined")
+          case _ => Joined.Unknown("ambiguous")
+
+  private def viewCatalog(session: Session): CatalogView =
+    try
+      val (next, albums) = session.loadCatalog
+      CatalogView(present = true, readable = true, albums, next)
+    catch
+      case error: IllegalArgumentException if Operation.messageOf(error) == "catalog is absent" =>
+        CatalogView(present = false, readable = false, Seq.empty, session)
+      case error: IllegalArgumentException =>
+        logUnreadable(Operation.messageOf(error))
+        CatalogView(present = true, readable = false, Seq.empty, session)
+
+  private def logUnreadable(message: String): Unit =
+    if catalogLogged.compareAndSet(false, true) then
+      val line: String =
+        if message.contains("AF1Qip") then "catalog is unreadable"
+        else s"catalog is unreadable: $message"
+      Console.err.println(line)
+
+  private def catalogJson(session: Session, view: CatalogView): Json =
+    val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
+    val mtime: Json =
+      if !file.isFile then Json.Null else Json.Str(Instant.ofEpochMilli(file.lastModified).toString)
+    Json.Obj(Seq(
+      "present" -> Json.Bool(view.present),
+      "readable" -> Json.Bool(view.readable),
+      "mtime" -> mtime,
+      "zone" -> Json.Str(session.root.configuration.zoneId.toString)
+    ))
+
+  private def queryValue(exchange: HttpExchange, key: String): Either[Rejected, Option[String]] =
+    val raw: String = Option(exchange.getRequestURI.getRawQuery).getOrElse("")
+    if raw.isEmpty then Right(None)
+    else decodeParams(raw.split("&").toList, Nil).map: pairs =>
+      pairs.collectFirst { case (name, value) if name == key => value }
+
+  @tailrec
+  private def decodeParams(rest: List[String], acc: List[(String, String)]): Either[Rejected, List[(String, String)]] =
+    rest match
+      case Nil =>
+        Right(acc.reverse)
+      case head :: tail =>
+        val (keyRaw, valueRaw) = head.span(_ != '=')
+        val valuePart: String = if valueRaw.isEmpty then "" else valueRaw.drop(1)
+        percentDecode(keyRaw) match
+          case Left(rejected) =>
+            Left(rejected)
+          case Right(key) =>
+            percentDecode(valuePart) match
+              case Left(rejected) =>
+                Left(rejected)
+              case Right(value) =>
+                decodeParams(tail, (key -> value) :: acc)
+
+  private def isNumber(name: String, length: Int): Boolean =
+    name.length == length && name.forall(_.isDigit)
+
+  private def isMonth(name: String): Boolean =
+    isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 12
+
+  private def isDay(name: String): Boolean =
+    isNumber(name, 2) && name.toInt >= 1 && name.toInt <= 31
 
   private def percentDecode(raw: String): Either[Rejected, String] =
     decodeBytes(raw, Nil) match
