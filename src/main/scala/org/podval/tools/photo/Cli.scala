@@ -1813,7 +1813,9 @@ object Cli:
     ("item-set", List("item", "set"), itemCommands.find(_.name == "set").get),
     ("album-new", List("album", "new"), albumCommands.find(_.name == "new").get),
     ("album-rm", List("album", "rm"), albumCommands.find(_.name == "rm").get),
-    ("album-mv", List("album", "mv"), albumCommands.find(_.name == "mv").get)
+    ("album-mv", List("album", "mv"), albumCommands.find(_.name == "mv").get),
+    ("album-include", List("album", "include"), albumCommands.find(_.name == "include").get),
+    ("album-exclude", List("album", "exclude"), albumCommands.find(_.name == "exclude").get)
   )
 
   private[photo] def mcpTools: List[McpTool] =
@@ -1856,6 +1858,8 @@ object Cli:
         List("title", "item", "current")
       else if command.name == "upload-item" then List("path", "dest")
       else if command.name == "create-album" || command.name == "delete-album" then List("title")
+      else if toolName == "album-include" || toolName == "album-exclude" then
+        List("title", "picture")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
     val outputSchema: Option[Json] =
