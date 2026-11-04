@@ -31,20 +31,26 @@ final case class ListPictures(
 
   private def listed(session: Session): Json =
     val raw: String = path.getOrElse("")
-    // A one-segment name has no parent slice, and Pictures.item throws when that stem is absent.
+    val segments: List[String] = raw.split('/').toList.filter(_.nonEmpty)
     session.style match
-      case PathStyle.Cursor
-          if !raw.startsWith("/") &&
-            session.cursor.isInstanceOf[UploadDirectory] &&
-            raw.nonEmpty && raw != "." && raw != ".." && !raw.startsWith("../") =>
-        throw IllegalArgumentException("not a date-tree path")
-      case _ =>
-        ()
-    val slash: Int = raw.lastIndexOf('/')
-    if slash > 0 then
-      session.parse(raw.take(slash)) match
-        case _: UploadDirectory => throw IllegalArgumentException("not a date-tree path")
-        case _ => ()
+      // Root.parse keeps '.' and '..' as names, so the first segment is the whole check.
+      case PathStyle.OneShot | PathStyle.Serve =>
+        if segments.headOption.contains(UploadDirectory.directoryName) then
+          throw IllegalArgumentException("not a date-tree path")
+      // Pictures.item throws when the stem is absent, and Leave would print before the real walk.
+      case PathStyle.Cursor =>
+        val start: Directory = if raw.startsWith("/") then session.root else session.cursor
+        val _: (Directory, Boolean) =
+          segments.foldLeft((start, true)):
+            case ((current, live), segment) =>
+              if !live then (current, false)
+              else if current.isInstanceOf[Pictures] && segment != "." && segment != ".." then
+                if current.isInstanceOf[UploadDirectory] then
+                  throw IllegalArgumentException("not a date-tree path")
+                else (current, false)
+              else session.copy(cursor = current).parse(segment) match
+                case directory: Directory => (directory, true)
+                case _ => (current, false)
     val parsed: Path = session.parse(raw)
     val propertyAndValue: Option[Property.AndValue[?]] = property.map(Cli.parsePropertyAndValue)
     parsed match

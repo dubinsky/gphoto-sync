@@ -162,24 +162,46 @@ class ListingTest extends AnyFlatSpec, Matchers:
 
   it should "reject the inbox" in :
     withArchive: archive =>
+      JFiles.createDirectories(archive.toPath.resolve("2010/07"))
       jpeg(File(archive, ".upload/2412.jpg"))
       val root: Root = rootFor(archive)
       val session: Session = Session(root)
+      val serve: Session = Session(root, PathStyle.Serve, root)
       def usage(current: Session, args: String*): Unit =
         execute(current, args*)._2 match
           case Result.Usage(message) => message shouldBe "not a date-tree path"
           case other => fail(other.toString)
-      usage(session, "ls", ".upload")
-      usage(session, "ls", ".upload/2412")
-      usage(session, "ls", ".upload/missing")
+      List(session, serve).foreach: current =>
+        usage(current, "ls", ".upload")
+        usage(current, "ls", ".upload/2412")
+        usage(current, "ls", ".upload/missing")
+        usage(current, "ls", ".upload/missing/extra")
+        usage(current, "ls", ".upload/../2010")
+        usage(current, "ls", ".upload/./2412")
+        usage(current, "ls", ".upload/2412/extra")
       val atInbox: Session = Session(root, PathStyle.Cursor, root.item(".upload"))
       usage(atInbox, "ls")
       usage(atInbox, "ls", "2412")
       usage(atInbox, "ls", "missing")
+      usage(atInbox, "ls", "missing/extra")
+      val rootListing: Result = Result.Ok(
+        "2010\n",
+        directories(entry("2010", "months", 1))
+      )
+      val yearListing: Result = Result.Ok(
+        "2010/07\n",
+        directories(entry("2010/07", "days", 0))
+      )
+      execute(atInbox, "ls", "..")._2 shouldBe rootListing
+      execute(atInbox, "ls", "../2010")._2 shouldBe yearListing
+      execute(atInbox, "ls", "./..")._2 shouldBe rootListing
+      execute(atInbox, "ls", "./../2010")._2 shouldBe yearListing
+      execute(atInbox, "ls", "././../2010")._2 shouldBe yearListing
       val year: Year = root.year(2010)
       val atYear: Session = Session(root, PathStyle.Cursor, year)
       usage(atYear, "ls", "../.upload")
       usage(atYear, "ls", "../.upload/2412")
+      usage(atYear, "ls", "../.upload/missing/extra")
 
   private def rootFor(archive: File): Root =
     val home: File = File(System.getProperty("user.home"))
