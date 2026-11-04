@@ -341,7 +341,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       val dest: File = File(archive, "2010/07/album.toml")
       JFiles.writeString(
         dest.toPath,
-        """external = true
+        """external = false
           |google-album-id = "gid-keep"
           |published-title = "Published Keep"
           |google-title = "Old Title"
@@ -377,7 +377,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       val dest: File = File(archive, "Friends.toml")
       JFiles.writeString(
         dest.toPath,
-        """external = true
+        """external = false
           |google-album-id = "gid-own"
           |published-title = "Published Own"
           |google-title = "Old"
@@ -448,8 +448,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
       JFiles.readString(File(archive, "Friends.toml").toPath) shouldBe
-        """external = true
-          |google-title = "Friends "
+        """google-title = "Friends "
           |owner = "Ada"
           |""".stripMargin
       requests(archive).exists shouldBe false
@@ -481,8 +480,7 @@ class AgentWriteTest extends AnyFlatSpec, Matchers:
       dry match
         case Result.Ok(text, value) =>
           text shouldBe
-            """external = true
-              |rename yes
+            """rename yes
               |""".stripMargin
           noIds(text, "alb07")
           field(value, "path") shouldBe Json.Str("2010/07/album.toml")

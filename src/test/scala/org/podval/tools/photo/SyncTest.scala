@@ -13,12 +13,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
       )
       val best: File = write(
         originals,
         "Best.toml",
-        "include = [\"2009/03/10 2412\", \"2009/05/01 0001\"]\n" +
+        "external = false\ninclude = [\"2009/03/10 2412\", \"2009/05/01 0001\"]\n" +
           "google-album-id = \"album-best\"\npublished-title = \"Best shots\"\n" +
           "google-title = \"Desired\"\n"
       )
@@ -54,12 +54,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n"
       )
       val best: File = write(
         originals,
         "Best.toml",
-        "include = [\"2009/05/01 0001\", \"2009/03/10 except 2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "external = false\ninclude = [\"2009/05/01 0001\", \"2009/03/10 except 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -92,7 +92,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        "include = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "external = false\ninclude = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val beforeEvent: Seq[Byte] = bytes(event)
       val fake: Fake = Fake(
@@ -120,7 +120,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "external = true\ninclude = [\"all\"]\ngoogle-album-id = \"album-ext\"\n"
+        "external = true\ninclude = [\"all\"]\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(albums = Map("album-ext" -> Set.empty), library = Set("media-1"))
@@ -142,11 +142,11 @@ class SyncTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2413.jpg", Array[Byte](2))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
       write(originals, "2009/03/10/2413.toml", "google-media-item-id = \"media-2\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
       write(
         originals,
         "Best.toml",
-        "include = [\"2009/03/10 2412\", \"2009/03/10 2413 except 2413\"]\ngoogle-album-id = \"album-best\"\n"
+        "external = false\ninclude = [\"2009/03/10 2412\", \"2009/03/10 2413 except 2413\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -168,18 +168,18 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
       )
       val best: File = write(
         originals,
         "Best.toml",
-        "include = [\"2009/03/10 2412\", \"2009/08/01 0008\"]\n" +
+        "external = false\ninclude = [\"2009/03/10 2412\", \"2009/08/01 0008\"]\n" +
           "google-album-id = \"album-best\"\npublished-title = \"Best shots\"\n"
       )
       val shared: File = write(
         originals,
         "Shared.toml",
-        "external = true\ninclude = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-shared\"\n"
+        "external = true\ninclude = [\"2009/03/10 2412\"]\n"
       )
       val sharedBytes: Seq[Byte] = bytes(shared)
       val fake: Fake = Fake(
@@ -217,7 +217,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(albums = Map("album-party" -> Set.empty), library = Set("media-1"))
       var opened: Boolean = false
@@ -242,11 +242,11 @@ class SyncTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
       write(originals, "2009/03/11/2413.toml", "google-media-item-id = \"media-2\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
       val other: File = write(
         originals,
         "2009/03/11/Other.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-other\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-other\"\n"
       )
       val otherBytes: Seq[Byte] = bytes(other)
       val fake: Fake = Fake(
@@ -275,12 +275,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        s"include = [${Album.quote(entry)}]\ngoogle-album-id = \"album-best\"\n"
+        s"external = false\ninclude = [${Album.quote(entry)}]\ngoogle-album-id = \"album-best\"\n"
       )
       val event: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val ids: Set[String] = names.map(name => s"id-$name").toSet
@@ -305,8 +305,8 @@ class SyncTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"media-1\"\n")
-      write(originals, "2009/03/10/Dinner.toml", "include = [\"all\"]\ngoogle-album-id = \"album-dinner\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
+      write(originals, "2009/03/10/Dinner.toml", "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-dinner\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n")
       val fake: Fake = Fake(albums = Map("album-dinner" -> Set.empty, "album-party" -> Set.empty), library = Set("media-1"))
       var opened: Boolean = false
       val (out, thrown) = capture:
@@ -326,7 +326,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        "include = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "external = false\ninclude = [\"2009/03/10 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -349,7 +349,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        "include = [\"2009/03/10 except 2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "external = false\ninclude = [\"2009/03/10 except 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -379,12 +379,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val purim: File = write(
         originals,
         "2009/03/10/to-12 Purim Seuda.toml",
-        "include = [\"all except 2420\"]\ngoogle-album-id = \"album-purim\"\n"
+        "external = false\ninclude = [\"all except 2420\"]\ngoogle-album-id = \"album-purim\"\n"
       )
       val day: File = write(
         originals,
         "2009/03/11/album.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-day\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-day\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -412,7 +412,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val best: File = write(
         originals,
         "Best.toml",
-        "include = [\"2009/03/10 except 2412\", \"2011/06/29 2412\"]\ngoogle-album-id = \"album-best\"\n"
+        "external = false\ninclude = [\"2009/03/10 except 2412\", \"2011/06/29 2412\"]\ngoogle-album-id = \"album-best\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -436,7 +436,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val month: File = write(
         originals,
         "2009/03/Trip.toml",
-        s"include = [\"all except $stem\"]\ngoogle-album-id = \"album-trip\"\n"
+        s"external = false\ninclude = [\"all except $stem\"]\ngoogle-album-id = \"album-trip\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(
@@ -458,7 +458,7 @@ class SyncTest extends AnyFlatSpec, Matchers:
       val month: File = write(
         originals,
         "2009/03/album.toml",
-        s"include = [\"all except $stem\"]\ngoogle-album-id = \"album-month\"\n"
+        s"external = false\ninclude = [\"all except $stem\"]\ngoogle-album-id = \"album-month\"\n"
       )
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake(

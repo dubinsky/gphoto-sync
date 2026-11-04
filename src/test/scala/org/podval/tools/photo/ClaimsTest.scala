@@ -120,7 +120,7 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
         "owner must be a non-empty display name"
       )
       reject(
-        "google-title = \"X\"\nowner = \"Ada Owner\"\n",
+        "external = false\ngoogle-title = \"X\"\nowner = \"Ada Owner\"\n",
         "owner requires external = true"
       )
       reject(
@@ -145,7 +145,7 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
         "google-album-id = \"abc\"\n" +
         "google-title = \"Keep me\"\n" +
         "include = [\"2009/03/10 2412\", \"2009/01/01 0000\"]\n" +
-        "external = true\n" +
+        "external = false\n" +
         "published-title = \"The Best\"\n"
       val owned: String =
         "external = true\n" +
@@ -164,7 +164,7 @@ class ClaimsTest extends AnyFlatSpec, Matchers:
       rewritten should not include ("2009/03/10")
       val curated: Album = Album.read(originals, File(originals, "Best.toml"))
       curated.include.map(Include.logical) shouldBe Seq("2009/01/01 0000", "2009/03/11 2412")
-      curated.external shouldBe true
+      curated.external shouldBe false
       curated.googleAlbumId shouldBe "abc"
       curated.publishedTitle shouldBe "The Best"
       curated.googleTitle shouldBe "Keep me"

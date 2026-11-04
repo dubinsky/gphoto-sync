@@ -392,6 +392,8 @@ object Publish:
     val album: Album = loaded.album
     if album.owner.nonEmpty then
       Left(s"${album.title} is owned by someone else")
+    else if album.external then
+      Left(s"${album.title} is external")
     else
       val desired: String = album.desiredGoogleTitle
       val resolved: Either[String, (String, Seq[(String, String)], Map[String, String], Boolean)] =

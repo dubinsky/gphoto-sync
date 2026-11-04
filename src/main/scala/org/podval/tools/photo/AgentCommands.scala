@@ -2291,7 +2291,7 @@ private[photo] object AgentCommands:
       title = pathTitle,
       span = parsed.span,
       include = include,
-      external = true,
+      external = keptId.isEmpty,
       googleAlbumId = keptId,
       publishedTitle = keptPublished,
       googleTitle = googleTitle,

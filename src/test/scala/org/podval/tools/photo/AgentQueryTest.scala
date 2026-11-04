@@ -389,7 +389,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
 
   it should "report a pending file and write nothing" in :
     withArchive: archive =>
-      writeRaw(archive, "Pending.toml", "")
+      writeRaw(archive, "Pending.toml", "external = false\n")
       writeCatalog(archive)
       val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
       text shouldBe "pending Pending.toml\n"

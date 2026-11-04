@@ -25,7 +25,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
           |2010/07/04/to-18.toml
           |""".stripMargin
       value shouldBe json("dryRun" -> Json.Bool(false), "title" -> Json.Str("2010/07/04-18"), "path" -> Json.Str("2010/07/04/to-18.toml"))
-      Files.read(File(archive, "2010/07/04/to-18.toml")) shouldBe allFile
+      Files.read(File(archive, "2010/07/04/to-18.toml")) shouldBe "external = false\n" + allFile
       File(archive, "2010/07/05").exists shouldBe false
       File(archive, "2010/07/18").exists shouldBe false
       val (dryText, dryValue) = ok(archive, "album", "new", "--dry-run", "--span", "2010/08")
@@ -45,8 +45,8 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
           |""".stripMargin
       value shouldBe json("dryRun" -> Json.Bool(false), "title" -> Json.Str("Best"), "path" -> Json.Str("Best.toml"))
       val file: File = File(archive, "Best.toml")
-      Files.read(file) shouldBe ""
-      file.length shouldBe 0
+      Files.read(file) shouldBe "external = false\n"
+      file.length shouldBe "external = false\n".length
       val (shown, showValue) = ok(archive, "album", "show", "Best")
       shown shouldBe
         """path: Best.toml
@@ -73,7 +73,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
   it should "write both a span and a name, and show an unnamed month" in :
     withOriginals: archive =>
       ok(archive, "album", "new", "--span", "2010/07", "--name", "Cape Cod")
-      Files.read(File(archive, "2010/07/Cape Cod.toml")) shouldBe allFile
+      Files.read(File(archive, "2010/07/Cape Cod.toml")) shouldBe "external = false\n" + allFile
       val (monthText, monthValue) = ok(archive, "album", "new", "--span", "2010/08")
       monthText shouldBe
         """create 2010/08
@@ -177,7 +177,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
 
   it should "delete a local album, leave the picture, and prune the empty day" in :
     withOriginals: archive =>
-      val album: File = write(archive, "2010/07/04/album.toml", allFile)
+      val album: File = write(archive, "2010/07/04/album.toml", "external = false\n" + allFile)
       val picture: File = write(archive, "2010/07/05/2412.jpg", "")
       val (dryText, dryValue) = ok(archive, "album", "rm", "--dry-run", "2010/07/04")
       val expected: String =
@@ -202,7 +202,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
 
   it should "not remove the archive root" in :
     withOriginals: archive =>
-      write(archive, "Best.toml", "")
+      write(archive, "Best.toml", "external = false\n")
       val (text, value) = ok(archive, "album", "rm", "Best")
       text shouldBe
         """delete Best
@@ -220,19 +220,20 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       usage(archive, "album", "mv", "Hawaii", "Somewhere") shouldBe "refusing external album Hawaii"
       Files.read(externalFile) shouldBe external
       File(archive, "Somewhere.toml").exists shouldBe false
-      val outside: String = "include = [\n  '2010/07/04 2412',\n]\n"
+      val outside: String = "external = false\ninclude = [\n  '2010/07/04 2412',\n]\n"
       val source: File = write(archive, "2010/07/album.toml", outside)
       usage(archive, "album", "mv", "2010/07", "2010/08") shouldBe "include is outside 2010/08: 2010/07/04 2412"
       Files.read(source) shouldBe outside
       File(archive, "2010/08").exists shouldBe false
-      val all: File = write(archive, "2010/06/album.toml", allFile)
+      val kept: String = "external = false\n" + allFile
+      val all: File = write(archive, "2010/06/album.toml", kept)
       usage(archive, "album", "mv", "2010/06", "Best") shouldBe "include is outside Best: all"
-      Files.read(all) shouldBe allFile
+      Files.read(all) shouldBe kept
       File(archive, "Best.toml").exists shouldBe false
 
   it should "move the bytes and keep a comment and google-title" in :
     withOriginals: archive =>
-      val body: String = "# keep\ngoogle-title = \"Kept\"\ninclude = [\n  'all',\n]\n"
+      val body: String = "# keep\nexternal = false\ngoogle-title = \"Kept\"\ninclude = [\n  'all',\n]\n"
       val source: File = write(archive, "2010/07/Cape Cod.toml", body)
       val (dryText, dryValue) = ok(archive, "album", "mv", "--dry-run", "2010/07/Cape Cod", "2010/08/Cape Cod")
       val expected: String =
@@ -423,6 +424,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
     withOriginals: archive =>
       val body: String =
         """# keep
+          |external = false
           |google-album-id = "abc"
           |published-title = "Kept"
           |include = [
@@ -430,7 +432,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
           |]
           |""".stripMargin
       val earlier: File = write(archive, "2010/12/album.toml", body)
-      val later: File = write(archive, "2011/01/album.toml", allFile)
+      val later: File = write(archive, "2011/01/album.toml", "external = false\n" + allFile)
       write(archive, "2010/12/01/2412.jpg", "")
       File(archive, "2011/02").mkdirs() shouldBe true
       val expected: String =
@@ -473,15 +475,16 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
 
   it should "reject the first failing check and leave both albums" in :
     val external: String = "external = true\n" + allFile
-    val google: String = "google-album-id = \"abc\"\n" + allFile
+    val google: String = "external = false\ngoogle-album-id = \"abc\"\n" + allFile
+    val client: String = "external = false\n" + allFile
     withClue("name mismatch"):
       withOriginals: archive =>
-        val named: File = write(archive, "2010/07/Cape Cod.toml", allFile)
-        val later: File = write(archive, "2010/08/album.toml", allFile)
+        val named: File = write(archive, "2010/07/Cape Cod.toml", client)
+        val later: File = write(archive, "2010/08/album.toml", client)
         usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/08") shouldBe
           "name mismatch: 2010/07/Cape Cod and 2010/08"
-        Files.read(named) shouldBe allFile
-        Files.read(later) shouldBe allFile
+        Files.read(named) shouldBe client
+        Files.read(later) shouldBe client
     withClue("gap"):
       withOriginals: archive =>
         val left: File = write(archive, "2010/07/album.toml", allFile)
@@ -492,10 +495,10 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
     withClue("one external"):
       withOriginals: archive =>
         val left: File = write(archive, "2010/07/album.toml", external)
-        val right: File = write(archive, "2010/08/album.toml", allFile)
+        val right: File = write(archive, "2010/08/album.toml", client)
         usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe "refusing external album 2010/07"
         Files.read(left) shouldBe external
-        Files.read(right) shouldBe allFile
+        Files.read(right) shouldBe client
     withClue("both external"):
       withOriginals: archive =>
         val first: File = write(archive, "2010/08/album.toml", external)
@@ -511,24 +514,24 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
         Files.read(file) shouldBe google
     withClue("result exists"):
       withOriginals: archive =>
-        val left: File = write(archive, "2010/07/album.toml", allFile)
-        val right: File = write(archive, "2010/08/album.toml", allFile)
+        val left: File = write(archive, "2010/07/album.toml", client)
+        val right: File = write(archive, "2010/08/album.toml", client)
         val occupied: File = write(archive, "2010/07/to-08.toml", "kept\n")
         usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe "album already exists: 2010/07-08"
-        Files.read(left) shouldBe allFile
-        Files.read(right) shouldBe allFile
+        Files.read(left) shouldBe client
+        Files.read(right) shouldBe client
         Files.read(occupied) shouldBe "kept\n"
     withClue("later google"):
       withOriginals: archive =>
-        val left: File = write(archive, "2010/07/album.toml", allFile)
+        val left: File = write(archive, "2010/07/album.toml", client)
         val right: File = write(archive, "2010/08/album.toml", google)
         usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe
           "refusing album 2010/08 with google metadata"
-        Files.read(left) shouldBe allFile
+        Files.read(left) shouldBe client
         Files.read(right) shouldBe google
     withClue("day external"):
       withOriginals: archive =>
-        val day: String = "external = true\ngoogle-album-id = \"abc\"\n" + allFile
+        val day: String = "external = true\n" + allFile
         val left: File = write(archive, "2010/07/04/album.toml", day)
         val right: File = write(archive, "2010/08/album.toml", allFile)
         usage(archive, "album", "merge", "2010/07/04", "2010/08") shouldBe "not a month album: 2010/07/04"
@@ -560,26 +563,26 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
     withClue("external before name"):
       withOriginals: archive =>
         val left: File = write(archive, "2010/07/Cape Cod.toml", external)
-        val right: File = write(archive, "2010/08/album.toml", allFile)
+        val right: File = write(archive, "2010/08/album.toml", client)
         usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/08") shouldBe
           "refusing external album 2010/07/Cape Cod"
         Files.read(left) shouldBe external
-        Files.read(right) shouldBe allFile
+        Files.read(right) shouldBe client
     withClue("name before google"):
       withOriginals: archive =>
-        val left: File = write(archive, "2010/07/Cape Cod.toml", allFile)
+        val left: File = write(archive, "2010/07/Cape Cod.toml", client)
         val right: File = write(archive, "2010/08/album.toml", google)
         usage(archive, "album", "merge", "2010/07/Cape Cod", "2010/08") shouldBe
           "name mismatch: 2010/07/Cape Cod and 2010/08"
-        Files.read(left) shouldBe allFile
+        Files.read(left) shouldBe client
         Files.read(right) shouldBe google
     withClue("result before google"):
       withOriginals: archive =>
-        val left: File = write(archive, "2010/07/album.toml", allFile)
+        val left: File = write(archive, "2010/07/album.toml", client)
         val right: File = write(archive, "2010/08/album.toml", google)
         val occupied: File = write(archive, "2010/07/to-08.toml", "kept\n")
         usage(archive, "album", "merge", "2010/07", "2010/08") shouldBe "album already exists: 2010/07-08"
-        Files.read(left) shouldBe allFile
+        Files.read(left) shouldBe client
         Files.read(right) shouldBe google
         Files.read(occupied) shouldBe "kept\n"
 

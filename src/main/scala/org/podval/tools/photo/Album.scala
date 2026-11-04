@@ -77,7 +77,7 @@ object Album:
   // Hand-written order.
   def renderFile(album: Album): String =
     val lines: Seq[String] = Seq(
-      Option.when(album.external)(Seq("external = true")).getOrElse(Seq.empty),
+      Option.when(!album.external)(Seq("external = false")).getOrElse(Seq.empty),
       Option.when(album.googleTitle.nonEmpty)(Seq(s"google-title = ${quote(album.googleTitle)}")).getOrElse(Seq.empty),
       album.owner.map(name => s"owner = ${quote(name)}").toSeq,
       if album.googleAlbumId.isEmpty then Seq.empty
@@ -523,7 +523,7 @@ object Album:
     common
 
   private def readCommon(file: File, values: Map[String, TomlValue]): Common = Common(
-    external = boolean(file, values, "external", default = false),
+    external = boolean(file, values, "external", default = true),
     googleAlbumId = string(file, values, "google-album-id", default = ""),
     publishedTitle = string(file, values, "published-title", default = ""),
     googleTitle = string(file, values, "google-title", default = ""),
@@ -539,6 +539,8 @@ object Album:
       else if !common.external then failGoogle(file, "owner requires external = true")
       else if common.googleAlbumId.nonEmpty then failGoogle(file, "owner must not be combined with google-album-id")
       else if common.googleTitle.isEmpty then failGoogle(file, "owner requires a non-empty google-title")
+    if common.googleAlbumId.nonEmpty && common.external then
+      failGoogle(file, "google-album-id requires external = false")
 
   private def rejectControl(file: File, key: String, text: String): Unit =
     if text.exists(ch => ch == '\t' || ch == '\r' || ch == '\n') then
@@ -613,7 +615,7 @@ object Album:
     Seq("include = [") ++ include.map(entry => s"  ${quoteInclude(Include.render(entry))},") ++ Seq("]")
 
   private def blankGoogle(id: String, title: String): String =
-    s"google-album-id = ${quote(id)}\npublished-title = ${quote(title)}\n"
+    s"external = false\ngoogle-album-id = ${quote(id)}\npublished-title = ${quote(title)}\n"
 
   private def hasKey(table: TomlTable, name: String): Boolean =
     table.keys(false).asScala.exists(key => keyName(key) == name)

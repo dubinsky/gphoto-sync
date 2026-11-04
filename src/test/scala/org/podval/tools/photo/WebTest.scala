@@ -1102,8 +1102,7 @@ class WebTest extends AnyFlatSpec, Matchers:
         val capeFile: File = File(archive, "2010/07/04/to-18 Cape Cod.toml")
         val capeText: String = readText(capeFile)
         capeText shouldBe
-          """external = true
-            |google-title = "2010/07/04-18/Cape Cod"
+          """google-title = "2010/07/04-18/Cape Cod"
             |owner = "Ada"
             |include = [
             |  '2010/07/04 2412',
@@ -1131,8 +1130,7 @@ class WebTest extends AnyFlatSpec, Matchers:
         field(plain, "seed") shouldBe Json.Str("matched")
         val plainText: String = readText(File(archive, "2010/07/04/Plain.toml"))
         plainText shouldBe
-          """external = true
-            |include = [
+          """include = [
             |  '2010/07/04 1000',
             |]
             |""".stripMargin
@@ -1142,17 +1140,18 @@ class WebTest extends AnyFlatSpec, Matchers:
         val empty: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Empty"}""")
         field(empty, "external") shouldBe Json.Bool(true)
         field(empty, "seed") shouldBe Json.Str("matched")
-        readText(File(archive, "2010/07/04/Empty.toml")) shouldBe "external = true\n"
+        readText(File(archive, "2010/07/04/Empty.toml")) shouldBe ""
         writeCatalog(archive, "album\tAF1QipWebFixture\t0\tSomeone Else")
         val local: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Local"}""")
         field(local, "external") shouldBe Json.Bool(false)
         field(local, "seed") shouldBe Json.Str("all")
-        readText(File(archive, "2010/07/04/Local.toml")) shouldBe "include = [\n  'all',\n]\n"
+        readText(File(archive, "2010/07/04/Local.toml")) shouldBe
+          "external = false\ninclude = [\n  'all',\n]\n"
         catalogFile(archive).delete() shouldBe true
         val absent: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Absent"}""")
         field(absent, "external") shouldBe Json.Bool(false)
         field(absent, "seed") shouldBe Json.Str("all")
-        readText(File(archive, "2010/07/04/Absent.toml")) should not include ("external")
+        readText(File(archive, "2010/07/04/Absent.toml")) should include ("external = false")
         val unnamed: Json = created("""{"start":"2010/07/20","end":"2010/07/20","name":""}""")
         field(unnamed, "title") shouldBe Json.Str("2010/07/20")
         field(unnamed, "path") shouldBe Json.Str("2010/07/20/album.toml")

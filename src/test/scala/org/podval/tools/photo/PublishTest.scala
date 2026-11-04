@@ -10,7 +10,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   "publish" should "reject a year or the root without --recursive and write nothing" in :
     withOriginals: originals =>
       val jpeg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2, 3))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake()
       var opened: Boolean = false
@@ -33,7 +33,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "accept --recursive on a year" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009"), recursive = true))
       expectOk(thrown, out)
@@ -43,8 +43,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "upload one jpeg into an event and Best" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
-      write(originals, "Best.toml", "include = [\"2009/03/10 2412\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
+      write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -69,7 +69,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val eventFile: File = write(originals, "2009/03/10/Party.toml", "external = true\ninclude = [\"all\"]\n")
       val eventBytes: Seq[Byte] = bytes(eventFile)
-      val bestFile: File = write(originals, "Best.toml", "include = [\"2009/03/10 2412\"]\n")
+      val bestFile: File = write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
       val bestBytes: Seq[Byte] = bytes(bestFile)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -89,7 +89,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
       val sidecarBytes: Seq[Byte] = bytes(sidecar)
-      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val album: File = write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val albumBytes: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -115,7 +115,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
         "2009/03/10/Party.toml",
         "external = true\ninclude = [\"all\"]\ngoogle-title = \"Hawaii \"\nowner = \"Ada Owner\"\n"
       )
-      write(originals, "Best.toml", "include = [\"2009/03/10 2412\"]\n")
+      write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -131,7 +131,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -147,7 +147,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all except 2412\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all except 2412\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -163,7 +163,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2, 3))
       write(originals, "2009/03/10/2412.toml", "uploader = \"Ada\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake()
       var opened: Boolean = false
@@ -187,7 +187,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val payload: Array[Byte] = Array[Byte](9, 8, 7, 6)
       val source: File = writeBytes(originals, "2009/03/10/2412.jpg", payload)
       write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       var argv: Seq[String] = Seq.empty
       val (out, thrown) = capture:
@@ -213,7 +213,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val payload: Array[Byte] = Array[Byte](5, 4, 3)
       val source: File = writeBytes(originals, "2009/03/10/1000.mov", payload)
       write(originals, "2009/03/10/1000.toml", "timestamp = \"2009-03-10T19:00\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       var argv: Seq[String] = Seq.empty
       val (out, thrown) = capture:
@@ -238,7 +238,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/1000.mov", Array[Byte](1, 2))
       write(originals, "2009/03/10/1000.toml", "orientation = \"Rotate 90 CW\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -254,7 +254,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "upload a video with no override as itself" in :
     withOriginals: originals =>
       val video: File = writeBytes(originals, "2009/03/10/1000.mov", Array[Byte](3, 4))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -266,7 +266,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       write(originals, "2009/03/10/2412.toml", "google-media-item-id = \"existing-id\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -283,7 +283,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "already-in-google = true\n")
       val sidecarBytes: Seq[Byte] = bytes(sidecar)
-      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val album: File = write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val albumBytes: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -299,8 +299,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "not call Google or write files on a dry run" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2, 3))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
-      write(originals, "Best.toml", "include = [\"2009/03/10 2412\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
+      write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
       val before: Map[String, Seq[Byte]] = snapshot(originals)
       val fake: Fake = Fake()
       var opened: Boolean = false
@@ -323,7 +323,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1, 2))
       writeBytes(originals, "2009/03/10/1000.jpg", Array[Byte](3))
-      write(originals, "2009/03/10/Party.toml", "include = [\"2009/03/10 2412\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -334,7 +334,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "count a picture excluded from its only album and not upload it" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all except 2412\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all except 2412\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -362,7 +362,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
       val before: Seq[Byte] = bytes(sidecar)
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake(missingId = true)
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -379,7 +379,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "write the album id before uploading" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val album: File = write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       fake.onUpload = _ =>
         val event: Album = Album.read(originals, album)
@@ -393,7 +393,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val jpg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       writeBytes(originals, "2009/03/10/2412.heic", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -403,7 +403,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
 
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/1006.heic", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -418,7 +418,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/1000.jpg", Array[Byte](1))
       writeBytes(originals, "2009/03/10/1000.cr2", Array[Byte](2))
       writeBytes(originals, "2009/03/10/1001.gif", Array[Byte](3))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -429,8 +429,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
-      write(originals, "2009/03/11/Other.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
+      write(originals, "2009/03/11/Other.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("/2009/03/10")))
       expectOk(thrown, out)
@@ -441,7 +441,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val img: File = writeBytes(originals, "2009/03/10/IMG_2412.jpg", Array[Byte](1))
       val upper: File = writeBytes(originals, "2009/03/10/2413.JPG", Array[Byte](2))
-      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val album: File = write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val before: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -461,7 +461,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "fail an already-literal non-digit name" in :
     withOriginals: originals =>
       val picture: File = writeBytes(originals, "2009/03/10/Screenshot_1.jpg", Array[Byte](1))
-      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val album: File = write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val before: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -480,7 +480,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "fail a misnamed VID upload and not rename it" in :
     withOriginals: originals =>
       val vid: File = writeBytes(originals, "2009/03/10/VID_0063.MP4", Array[Byte](1))
-      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val album: File = write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val before: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -501,7 +501,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/1002.cr2", Array[Byte](2))
       writeBytes(originals, "2009/03/10/1003.thm", Array[Byte](3))
       writeBytes(originals, "2009/03/10/1004.tif", Array[Byte](4))
-      val album: File = write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      val album: File = write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val before: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -516,7 +516,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val names: Seq[String] = (0 until 51).map(n => f"$n%04d")
       names.foreach(name => writeBytes(originals, s"2009/03/10/$name.jpg", Array[Byte](1)))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake(failCreateAfter = Some(1))
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -534,7 +534,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake(missingId = true, statusMessage = Some("expired upload token"))
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -548,7 +548,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val sidecar: File = write(originals, "2009/03/10/2412.toml", "timestamp = \"2009-03-10T19:00\"\n")
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake(unowned = true)
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -565,9 +565,9 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "publish a labeled month without --recursive" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/01/1000.jpg", Array[Byte](1))
-      write(originals, "2009/03/Trip.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/Trip.toml", "external = false\ninclude = [\"all\"]\n")
       writeBytes(originals, "2009/04/02/2000.jpg", Array[Byte](2))
-      write(originals, "2009/04/album.toml", "include = [\"all\"]\n")
+      write(originals, "2009/04/album.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03"), recursive = false))
       expectOk(thrown, out)
@@ -581,7 +581,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Party\"\n"
       )
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
@@ -596,7 +596,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "create an album at google-title and keep that title on the file" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -611,7 +611,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "send a leading space to createAlbum and keep it on the file" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-title = \" Party night\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \" Party night\"\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -627,7 +627,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n" +
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n" +
           "published-title = \"2009/03/10/Party\"\ngoogle-title = \"Party night\"\n"
       )
       val fake: Fake = Fake()
@@ -646,7 +646,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val album: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\n" +
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\n" +
           "published-title = \"Party night\"\ngoogle-title = \"Party night\"\n"
       )
       val before: Seq[Byte] = bytes(album)
@@ -663,7 +663,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val album: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\npublished-title = \"Party night\"\ngoogle-title = \"Party night\"\n"
+        "external = false\ninclude = [\"all\"]\npublished-title = \"Party night\"\ngoogle-title = \"Party night\"\n"
       )
       val before: Seq[Byte] = bytes(album)
       val fake: Fake = Fake()
@@ -680,7 +680,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "adopt the remote album titled with google-title" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
       val fake: Fake = Fake(initialRemote =
         Seq("album-path" -> "2009/03/10/Party", "album-night" -> "Party night")
       )
@@ -702,14 +702,14 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val party: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Old\"\ngoogle-title = \"Party night\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Old\"\ngoogle-title = \"Party night\"\n"
       )
       val other: File = write(
         originals,
         "2009/03/11/Other.toml",
-        "include = [\"all\"]\ngoogle-title = \"Party night\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n"
       )
-      write(originals, "2009/03/12/Third.toml", "include = [\"all\"]\ngoogle-title = \"Third night\"\n")
+      write(originals, "2009/03/12/Third.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Third night\"\n")
       val partyBefore: Seq[Byte] = bytes(party)
       val otherBefore: Seq[Byte] = bytes(other)
       val fake: Fake = Fake()
@@ -733,12 +733,12 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val party: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Keep party\"\ngoogle-title = \"Party night\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Keep party\"\ngoogle-title = \"Party night\"\n"
       )
       val other: File = write(
         originals,
         "2009/03/11/Other.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-other\"\npublished-title = \"Keep other\"\ngoogle-title = \"Party night\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-other\"\npublished-title = \"Keep other\"\ngoogle-title = \"Party night\"\n"
       )
       val partyBefore: Seq[Byte] = bytes(party)
       val otherBefore: Seq[Byte] = bytes(other)
@@ -757,7 +757,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "not let an external google title block a client album" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
       val shared: File = write(
         originals,
         "Shared.toml",
@@ -774,8 +774,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
-      write(originals, "2009/03/11/Other.toml", "include = [\"all\"]\ngoogle-title = \"Other night\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "2009/03/11/Other.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Other night\"\n")
       val fake: Fake = Fake(failCreateTitles = Set("Party night"))
       val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -791,12 +791,12 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val party: File = write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Old party\"\ngoogle-title = \"Party night\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Old party\"\ngoogle-title = \"Party night\"\n"
       )
       write(
         originals,
         "2009/03/11/Other.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-other\"\npublished-title = \"Old other\"\ngoogle-title = \"Other night\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-other\"\npublished-title = \"Old other\"\ngoogle-title = \"Other night\"\n"
       )
       val partyBefore: Seq[Byte] = bytes(party)
       val fake: Fake = Fake(failUpdateTitles = Set("Party night"))
@@ -854,11 +854,38 @@ class PublishTest extends AnyFlatSpec, Matchers:
       fake.uploads shouldBe empty
       bytes(file) shouldBe before
 
+  it should "refuse ensureOne for an external album before any transport call" in :
+    withOriginals: originals =>
+      val file: File = write(
+        originals,
+        "2009/03/10/Party.toml",
+        "external = true\ninclude = [\"all\"]\n"
+      )
+      val before: Seq[Byte] = bytes(file)
+      val album: Album = Album(
+        title = "2009/03/10/Party",
+        span = Some(Title.Span(LocalDate.of(2009, 3, 10), LocalDate.of(2009, 3, 10), Title.Grain.Day)),
+        include = Seq(Include.Entry.All(Seq.empty)),
+        external = true,
+        googleAlbumId = "",
+        publishedTitle = "",
+        googleTitle = "",
+        owner = None
+      )
+      val fake: Fake = Fake()
+      Publish.ensureOne(Album.Loaded(file, album), Seq.empty, Map.empty, fake) match
+        case Left(message) => message should include ("is external")
+        case other => fail(other.toString)
+      fake.createdAlbums shouldBe empty
+      fake.updatedAlbums shouldBe empty
+      fake.uploads shouldBe empty
+      bytes(file) shouldBe before
+
   it should "print a google line only under an open album whose title differs" in :
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
-      write(originals, "Best.toml", "include = [\"2009/03/10 2412\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "Best.toml", "external = false\ninclude = [\"2009/03/10 2412\"]\n")
       val fake: Fake = Fake()
       var opened: Boolean = false
       val (out, thrown) = capture:
@@ -878,8 +905,8 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       writeBytes(originals, "2009/03/11/2413.jpg", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
-      write(originals, "2009/03/11/Other.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "2009/03/11/Other.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
       val fake: Fake = Fake()
       var opened: Boolean = false
       val (out, thrown) = capture:
@@ -904,10 +931,10 @@ class PublishTest extends AnyFlatSpec, Matchers:
       write(
         originals,
         "2009/03/10/Party.toml",
-        "include = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Old\"\ngoogle-title = \"Party night\"\n"
+        "external = false\ninclude = [\"all\"]\ngoogle-album-id = \"album-party\"\npublished-title = \"Old\"\ngoogle-title = \"Party night\"\n"
       )
-      write(originals, "2009/03/11/Other.toml", "include = [\"all\"]\ngoogle-title = \"Party night\"\n")
-      write(originals, "2009/03/12/Third.toml", "include = [\"all\"]\ngoogle-title = \"Third night\"\n")
+      write(originals, "2009/03/11/Other.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Party night\"\n")
+      write(originals, "2009/03/12/Third.toml", "external = false\ninclude = [\"all\"]\ngoogle-title = \"Third night\"\n")
       val fake: Fake = Fake(failList = true)
       val (out, thrown) = capture(run(originals, fake, Some("2009/03")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -932,7 +959,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val still: File = writeBytes(originals, "2019/12/20/20191220_141955.jpg", Array[Byte](1))
       val video: File = writeBytes(originals, "2019/12/20/VID_20191220_141955.mp4", Array[Byte](2))
-      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2019/12/20/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         Archive.scan(originals).pictures.map(_.name).sorted shouldBe Seq(
           "20191220_141955",
@@ -956,7 +983,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.gif", Array[Byte](1))
       val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
       expectOk(thrown, out)
@@ -969,7 +996,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val still: File = writeBytes(originals, "2009/03/10/IMG_2412.jpg", Array[Byte](1))
       val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -984,7 +1011,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val still: File = writeBytes(originals, "2009/03/10/2412.JPG", Array[Byte](1))
       val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -999,7 +1026,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val still: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val video: File = writeBytes(originals, "2009/03/10/2412.mp4", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10/2412")))
       expectOk(thrown, out)
@@ -1013,7 +1040,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val still: File = writeBytes(originals, "2019/12/20/20191220_141955.jpg", Array[Byte](1))
       val mp4: File = writeBytes(originals, "2019/12/20/20191220_141955.mp4", Array[Byte](2))
       val mov: File = writeBytes(originals, "2019/12/20/20191220_141955.mov", Array[Byte](3))
-      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2019/12/20/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         Archive.scan(originals).pictures.map(_.name) shouldBe Seq("20191220_141955")
       expectOk(scanThrown, scanOut)
@@ -1032,7 +1059,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2019/12/20/20191220_141955v.mp4", Array[Byte](1))
       writeBytes(originals, "2019/12/20/20191220_141955v.mov", Array[Byte](2))
-      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2019/12/20/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         val pictures: Seq[Archive.Picture] = Archive.scan(originals).pictures
         pictures.map(_.name) shouldBe Seq("20191220_141955v")
@@ -1049,7 +1076,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       writeBytes(originals, "2009/03/10/2412.gif", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]
@@ -1062,7 +1089,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val jpg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val gif: File = writeBytes(originals, "2009/03/10/IMG_2412.gif", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       expectOk(thrown, out)
@@ -1077,7 +1104,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2026/06/03/PXL_20260603_120000000.MP.jpg", Array[Byte](1))
       writeBytes(originals, "2026/06/03/PXL_20260603_120000000.jpg", Array[Byte](2))
       val video: File = writeBytes(originals, "2026/06/03/PXL_20260603_120000000.mp4", Array[Byte](3))
-      write(originals, "2026/06/03/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2026/06/03/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         Archive.scan(originals).pictures.map(_.name).sorted shouldBe Seq(
           "20260603_120000000",
@@ -1102,7 +1129,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2019/12/20/20191220_141955.jpg", Array[Byte](1))
       val occupant: File = writeBytes(originals, "2019/12/20/20191220_141955v.mp4", Array[Byte](2))
       val incoming: File = writeBytes(originals, "2019/12/20/VID_20191220_141955.mp4", Array[Byte](3))
-      write(originals, "2019/12/20/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2019/12/20/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         Archive.scan(originals).pictures.map(_.name).sorted shouldBe Seq(
           "20191220_141955",
@@ -1125,7 +1152,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val first: File = writeBytes(originals, "2009/03/10/IMG_2412.jpg", Array[Byte](1))
       val second: File = writeBytes(originals, "2009/03/10/MVIMG_2412.jpg", Array[Byte](2))
       val raw: File = writeBytes(originals, "2009/03/10/IMG_2412.CR2", Array[Byte](3))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         Archive.scan(originals).pictures shouldBe empty
       expectOk(scanThrown, scanOut)
@@ -1144,7 +1171,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
     withOriginals: originals =>
       val jpg: File = writeBytes(originals, "2009/03/10/2412.jpg", Array[Byte](1))
       val raw: File = writeBytes(originals, "2009/03/10/IMG_2412.CR2", Array[Byte](2))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         val pictures: Seq[Archive.Picture] = Archive.scan(originals).pictures
         pictures.map(_.name) shouldBe Seq("2412")
@@ -1164,7 +1191,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       val jpg: File = writeBytes(originals, "2009/03/10/IMG_1.jpg", Array[Byte](1))
       val gif: File = writeBytes(originals, "2009/03/10/IMG_1.gif", Array[Byte](2))
       val raw: File = writeBytes(originals, "2009/03/10/IMG_1.CR2", Array[Byte](3))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         Archive.scan(originals).pictures shouldBe empty
       expectOk(scanThrown, scanOut)
@@ -1186,7 +1213,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
       writeBytes(originals, "2009/03/10/1005.toml", Array[Byte]())
       writeBytes(originals, "2009/03/10/1003.thm", Array[Byte](2))
       writeBytes(originals, "2009/03/10/1004.tif", Array[Byte](3))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val (scanOut, scanThrown) = capture:
         Archive.scan(originals).pictures.map(_.name) shouldBe Seq("1002")
       expectOk(scanThrown, scanOut)
@@ -1204,7 +1231,7 @@ class PublishTest extends AnyFlatSpec, Matchers:
   it should "fail a refused non-digit rename instead of staying local" in :
     withOriginals: originals =>
       val picture: File = writeBytes(originals, "2009/03/10/IMG_VID_1.jpg", Array[Byte](1))
-      write(originals, "2009/03/10/Party.toml", "include = [\"all\"]\n")
+      write(originals, "2009/03/10/Party.toml", "external = false\ninclude = [\"all\"]\n")
       val fake: Fake = Fake()
       val (out, thrown) = capture(run(originals, fake, Some("2009/03/10")))
       thrown.get shouldBe a[IllegalArgumentException]

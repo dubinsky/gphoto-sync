@@ -467,10 +467,11 @@ class McpTest extends AnyFlatSpec, Matchers:
           field(createdValue, "path") shouldBe Json.Str("Cape Cod.toml")
           val createdFile: File = File(archive, "Cape Cod.toml")
           createdFile.isFile shouldBe true
-          createdFile.length shouldBe 0
-          JFiles.readString(createdFile.toPath) shouldBe ""
+          val createdText: String = "external = false\n"
+          createdFile.length shouldBe createdText.length
+          JFiles.readString(createdFile.toPath) shouldBe createdText
 
-          val body: String = "google-title = \"Kept\"\n"
+          val body: String = "external = false\ngoogle-title = \"Kept\"\n"
           val source: File = File(archive, "Hawaii.toml")
           JFiles.writeString(source.toPath, body)
           val moved: Json = assertToolOk(driver.round(callLine(

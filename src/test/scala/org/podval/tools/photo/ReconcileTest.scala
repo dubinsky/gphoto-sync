@@ -112,6 +112,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
         archive,
         "Trip.toml",
         """# keep
+          |external = false
           |google-album-id = "library-1"
           |published-title = "Trip"
           |""".stripMargin
@@ -128,6 +129,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       valueHas(result, "cid-client")
       readToml(archive, "Trip.toml") shouldBe
         """# keep
+          |external = false
           |google-title = "Trip Renamed"
           |google-album-id = "library-1"
           |published-title = "Trip Renamed"
@@ -138,7 +140,8 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       writeToml(
         archive,
         "Trip.toml",
-        """google-album-id = "library-1"
+        """external = false
+          |google-album-id = "library-1"
           |google-title = "Trip"
           |published-title = "Away"
           |""".stripMargin
@@ -151,14 +154,16 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           |wrote Trip.toml
           |""".stripMargin
       readToml(archive, "Trip.toml") shouldBe
-        """google-album-id = "library-1"
+        """external = false
+          |google-album-id = "library-1"
           |published-title = "Trip"
           |""".stripMargin
 
   it should "skip an owner that checkGoogle would reject and still record the link" in :
     withArchive: archive =>
       val before: String =
-        """google-album-id = "library-9"
+        """external = false
+          |google-album-id = "library-9"
           |published-title = "Shared"
           |""".stripMargin
       writeToml(archive, "Shared.toml", before)
@@ -181,7 +186,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
 
   it should "leave a pending file and an unlinked external file in place" in :
     withArchive: archive =>
-      writeToml(archive, "Pending.toml", "")
+      writeToml(archive, "Pending.toml", "external = false\n")
       val extra: String = "external = true\n"
       writeToml(archive, "Extra.toml", extra)
       writeCatalog(archive)
@@ -190,7 +195,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
         """pending Pending.toml
           |skipped Extra.toml unlinked
           |""".stripMargin
-      readToml(archive, "Pending.toml") shouldBe ""
+      readToml(archive, "Pending.toml") shouldBe "external = false\n"
       readToml(archive, "Extra.toml") shouldBe extra
       links(archive) shouldBe ""
       File(archive, ".gphoto-sync/album-links.tsv").isFile shouldBe false
@@ -233,7 +238,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           |google-title = "Old Title"
           |""".stripMargin
       )
-      writeToml(archive, "Pending.toml", "")
+      writeToml(archive, "Pending.toml", "external = false\n")
       val extra: String = "external = true\n"
       writeToml(archive, "Extra.toml", extra)
       mkdir(archive, "2010/07/19")
@@ -275,7 +280,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           |wrote .gphoto-sync/album-links.tsv
           |""".stripMargin
       quiet(real, "cid-notes")
-      readToml(archive, "Notes.toml") shouldBe "external = true\n"
+      readToml(archive, "Notes.toml") shouldBe ""
       readToml(archive, "Notes.toml") should not include ("google-album-id")
       readToml(archive, "Notes.toml") should not include ("include")
       links(archive) shouldBe "# gphoto-album-links 1\ncid-notes\tNotes.toml\n"
@@ -419,7 +424,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           |wrote .gphoto-sync/album-links.tsv
           |""".stripMargin
       quiet(text, "cid-hawaii", "cid-notes", "cid-gap")
-      readToml(archive, "Notes.toml") shouldBe "external = true\n"
+      readToml(archive, "Notes.toml") shouldBe ""
       File(archive, "Notes .toml").exists shouldBe false
       readToml(archive, "Hawaii.toml") shouldBe
         """# keep
@@ -458,7 +463,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       readToml(archive, "2010/07/19/Picnic.toml") shouldBe before
       File(archive, "Picnic.toml").exists shouldBe false
       links(archive) shouldBe "# gphoto-album-links 1\ncid-trip\tTrip.toml\n"
-      readToml(archive, "Trip.toml") shouldBe "external = true\n"
+      readToml(archive, "Trip.toml") shouldBe ""
 
   it should "not store an empty catalog title on an owner file" in :
     withArchive: archive =>
@@ -486,7 +491,8 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
   it should "not set an empty published-title from an empty catalog title" in :
     withArchive: archive =>
       val before: String =
-        """google-album-id = "library-1"
+        """external = false
+          |google-album-id = "library-1"
           |google-title = "Away"
           |published-title = "Away"
           |""".stripMargin

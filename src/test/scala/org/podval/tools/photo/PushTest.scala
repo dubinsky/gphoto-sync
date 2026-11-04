@@ -275,7 +275,7 @@ class PushTest extends AnyFlatSpec, Matchers:
     write(archive, "2010/06/01/4141.jpg", "pic")
     write(archive, "2010/08/album.toml", "external = true\ngoogle-title = \"Owned\"\nowner = \"Ada\"\ninclude = ['2010/08/01 4242']\n")
     write(archive, "2010/08/01/4242.jpg", "pic")
-    write(archive, "2010/09/album.toml", "include = ['2010/09/01 4343']\n")
+    write(archive, "2010/09/album.toml", "external = false\ninclude = ['2010/09/01 4343']\n")
     write(archive, "2010/09/01/4343.jpg", "pic")
     write(archive, "2010/10/album.toml", external("2010/10/01 4444"))
     write(archive, "2010/10/01/4444.jpg", "pic")

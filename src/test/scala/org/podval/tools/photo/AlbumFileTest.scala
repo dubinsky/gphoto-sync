@@ -188,6 +188,7 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       Files.write(Album.renderFile(album), file)
       val text: String = Files.read(file)
       text shouldBe
+        "external = false\n" +
         "include = [\n" +
         "  '2009/07/03 \"2009-07-03 13.02.37\"',\n" +
         "  '2009/07/03 4217',\n" +
@@ -220,6 +221,7 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       Files.write(Album.renderFile(album), file)
       val text: String = Files.read(file)
       text shouldBe
+        "external = false\n" +
         "include = [\n" +
         "  \"2009/03/10 O'Brien\",\n" +
         "  \"2009/03/10 \\\"O'Brien day\\\"\",\n" +
@@ -239,7 +241,7 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
         "include = [\n" +
         "  '2009/03/10 2412',\n" +
         "]\n" +
-        "external = true\n"
+        "external = false\n"
       val file: File = write(originals, "Best.toml", original)
       Album.rewriteInclude(originals, "2009/03/10/2412", "2009/03/11/2412")
       Album.storeGoogle(file, "abc2", "Renamed")
@@ -353,13 +355,23 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
 
   it should "not write when an escaped multiline delimiter is not a closer" in :
     withOriginals: originals =>
-      val body: String = "google-album-id = \"\"\"x\\\"\"\"\\\ny\"\"\"\n"
+      val body: String = "external = false\ngoogle-album-id = \"\"\"x\\\"\"\"\\\ny\"\"\"\n"
       val file: File = write(originals, "Best.toml", body)
       Album.read(originals, file).googleAlbumId shouldBe "x\"\"\"y"
       val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
         Album.storeGoogle(file, "next", "Title")
       caught.getMessage should include ("google-album-id is not a single line")
       Files.read(file) shouldBe body
+
+  it should "write external = false when storing google on a blank file" in :
+    withOriginals: originals =>
+      val file: File = write(originals, "Best.toml", "")
+      Album.storeGoogle(file, "abc", "Title")
+      Files.read(file) shouldBe "external = false\ngoogle-album-id = \"abc\"\npublished-title = \"Title\"\n"
+      val album: Album = Album.read(originals, file)
+      album.external shouldBe false
+      album.googleAlbumId shouldBe "abc"
+      album.publishedTitle shouldBe "Title"
 
   "toggle" should "drop one stem from all without forgetting the other day" in :
     val day: LocalDate = LocalDate.of(2010, 7, 4)
