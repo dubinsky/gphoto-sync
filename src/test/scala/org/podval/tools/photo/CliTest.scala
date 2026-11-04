@@ -309,7 +309,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |help  print command help
         |shell  start a session
         |serve  listen on the per-user Unix socket
-        |mcp  expose agent queries on MCP stdio
+        |mcp  expose agent commands and local archive writes on MCP stdio
         |agent  query the catalog and the archive""".stripMargin
     helpOf("-h") shouldBe top
     helpOf("--help", "ls") shouldBe top
@@ -975,7 +975,8 @@ class CliTest extends AnyFlatSpec, Matchers:
     tools.map(_.name) shouldBe List(
       "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "rename-album",
       "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
-      "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing"
+      "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing",
+      "item-set"
     )
     List(
       "album-file",
@@ -987,7 +988,10 @@ class CliTest extends AnyFlatSpec, Matchers:
       "login", "status", "logout",
       "ls", "album",
       "help", "cd", "pwd", "exit",
-      "serve", "shell", "mcp"
+      "serve", "shell", "mcp",
+      "show", "set", "month", "into", "new", "rm", "mv", "exclude", "merge",
+      "item-show", "item-month", "item-into", "album-ls", "album-show", "album-claims", "album-merge",
+      "album-new", "album-rm", "album-mv", "album-include", "album-exclude"
     ).foreach: name =>
       withClue(name):
         tools.exists(_.name == name) shouldBe false
@@ -1024,7 +1028,9 @@ class CliTest extends AnyFlatSpec, Matchers:
         "drift",
         ambiguous = false
       ),
-      "missing" -> described("list catalog items absent from the day folder", "missing", ambiguous = false)
+      "missing" -> described("list catalog items absent from the day folder", "missing", ambiguous = false),
+      "item-set" ->
+        s"set one sidecar property; date= moves the picture (photo item set). $echo"
     )
     val properties: Map[String, Seq[(String, Json)]] = Map(
       "stems" -> Seq("day" -> mcpStringSchema),
@@ -1095,7 +1101,12 @@ class CliTest extends AnyFlatSpec, Matchers:
       "create-album" -> Seq("title" -> mcpStringSchema),
       "delete-album" -> Seq("title" -> mcpStringSchema, "id" -> mcpStringSchema),
       "drift" -> Seq.empty,
-      "missing" -> Seq.empty
+      "missing" -> Seq.empty,
+      "item-set" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "property" -> mcpStringSchema,
+        "picture" -> mcpStringSchema
+      )
     )
     val required: Map[String, Seq[String]] = Map(
       "stems" -> Seq("day"),
@@ -1120,7 +1131,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       "create-album" -> Seq("title"),
       "delete-album" -> Seq("title"),
       "drift" -> Seq.empty,
-      "missing" -> Seq.empty
+      "missing" -> Seq.empty,
+      "item-set" -> Seq("property", "picture")
     )
     tools.foreach: tool =>
       tool.description shouldBe descriptions(tool.name)
@@ -1247,6 +1259,76 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(mcpArgv("drift", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentDriftArgs)
     Cli.parse(mcpArgv("missing", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMissingArgs)
 
+    val itemSet: List[String] = mcpArgv("item-set", Seq(
+      "dry-run" -> Json.Bool(true),
+      "property" -> Json.Str("date=2010/08/01"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    itemSet shouldBe List("item", "set", "--dry-run", "date=2010/08/01", "2010/07/04/2412")
+    Cli.parse(itemSet, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = true, "date=2010/08/01", "2010/07/04/2412"))
+    Cli.parse(itemSet, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    val badRaw: List[String] = mcpArgv("item-set", Seq(
+      "dry-run" -> Json.Bool(false),
+      "property" -> Json.Str("bad-raw=true"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    badRaw shouldBe List("item", "set", "bad-raw=true", "2010/07/04/2412")
+    Cli.parse(badRaw, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "bad-raw=true", "2010/07/04/2412"))
+    mcpArgv("item-set", Seq(
+      "property" -> Json.Str("bad-raw=true"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe badRaw
+    val cleared: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("bad-raw"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    cleared shouldBe List("item", "set", "bad-raw", "2010/07/04/2412")
+    Cli.parse(cleared, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "bad-raw", "2010/07/04/2412"))
+    val rotated: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("orientation=Rotate 90 CW"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    rotated shouldBe List("item", "set", "orientation=Rotate 90 CW", "2010/07/04/2412")
+    val source: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("source=scan"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    source shouldBe List("item", "set", "source=scan", "2010/07/04/2412")
+    Cli.parse(source, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "source=scan", "2010/07/04/2412"))
+    mcpArgv("item-set", Seq(
+      "property" -> Json.Str("timestamp=2011-06-29T09:45:00"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe List("item", "set", "timestamp=2011-06-29T09:45:00", "2010/07/04/2412")
+    mcpArgv("item-set", Seq(
+      "property" -> Json.Str("google-media-item-id=media-1"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe List("item", "set", "google-media-item-id=media-1", "2010/07/04/2412")
+    Cli.mcpArgv(mcpTool("item-set"), Seq(
+      "dry-run" -> Json.Str("true"),
+      "property" -> Json.Str("date=2010/08/01"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe Left("argument 'dry-run' has the wrong type")
+    val missingPicture: List[String] = mcpArgv("item-set", Seq("property" -> Json.Str("date=2010/08/01")))
+    missingPicture shouldBe List("item", "set", "date=2010/08/01")
+    Cli.parse(missingPicture, Cli.Front.Serve) shouldBe Cli.Usage("missing picture")
+    val itemHelpArgv: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("--help"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    itemHelpArgv shouldBe List("item", "set", "--help", "2010/07/04/2412")
+    val itemHelp: Cli.Outcome = Cli.parse(itemHelpArgv, Cli.Front.Serve)
+    itemHelp shouldBe a [Cli.Help]
+    itemHelp should not be a [Cli.Run]
+    itemHelp should not be a [Cli.Usage]
+    Cli.parse(List("agent", "item-set"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'item-set'")
+    Cli.parse(List("item-set"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'item-set'")
+
     Cli.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Long(2010))) shouldBe
       Left("argument 'day' has the wrong type")
     Cli.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Null)) shouldBe
@@ -1270,6 +1352,8 @@ class CliTest extends AnyFlatSpec, Matchers:
       params = List(Cli.McpParam.BoolFlag("dry-run"), Cli.McpParam.StringPos("album")),
       required = List("album"),
       readOnlyHint = false,
+      destructiveHint = false,
+      argvHead = List("agent", "probe"),
       outputSchema = None
     )
     mcpProperties(boolTool) shouldBe Seq(
@@ -1305,11 +1389,18 @@ class CliTest extends AnyFlatSpec, Matchers:
       Cli.mcpReadOnly.contains(name) shouldBe false
       tools.exists(_.name == name) shouldBe true
     tools.foreach: tool =>
+      (tool.readOnlyHint && tool.destructiveHint) shouldBe false
       if Cli.mcpReadOnly.contains(tool.name) then
         tool.readOnlyHint shouldBe true
+        tool.destructiveHint shouldBe false
         tool.outputSchema.isDefined shouldBe true
+      else if tool.name == "item-set" then
+        tool.readOnlyHint shouldBe false
+        tool.destructiveHint shouldBe true
+        tool.outputSchema shouldBe None
       else
         tool.readOnlyHint shouldBe false
+        tool.destructiveHint shouldBe false
         tool.outputSchema shouldBe None
 
     val error: Json = Json.Obj(Seq(

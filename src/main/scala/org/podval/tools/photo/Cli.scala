@@ -1802,22 +1802,46 @@ object Cli:
     params: List[McpParam],
     required: List[String],
     readOnlyHint: Boolean,
+    destructiveHint: Boolean,
+    argvHead: List[String],
     outputSchema: Option[Json]
   ):
     def inputSchema: Json = mcpSchema(params, required)
 
+  // .get fails initialization when the command is missing, instead of dropping the tool.
+  private val archiveWrites: List[(String, List[String], Command)] = List(
+    ("item-set", List("item", "set"), itemCommands.find(_.name == "set").get)
+  )
+
   private[photo] def mcpTools: List[McpTool] =
-    agentCommands.flatMap: command =>
-      if mcpToolNames.contains(command.name) then Some(mcpTool(command)) else None
+    agentCommands.flatMap { command =>
+      if mcpToolNames.contains(command.name) then
+        Some(mcpTool(
+          command,
+          command.name,
+          List("agent", command.name),
+          readOnly = mcpReadOnly.contains(command.name),
+          destructive = false
+        ))
+      else None
+    } ++ archiveWrites.map { case (toolName, head, command) =>
+      mcpTool(command, toolName, head, readOnly = false, destructive = true)
+    }
 
   private[photo] def mcpArgv(
     tool: McpTool,
     arguments: Seq[(String, Json)]
   ): Either[String, List[String]] =
     readMcpFields(tool.params, arguments).map: values =>
-      List("agent", tool.name) ++ mcpTokens(tool.params, values)
+      tool.argvHead ++ mcpTokens(tool.params, values)
 
-  private def mcpTool(command: Command): McpTool =
+  private def mcpTool(
+    command: Command,
+    toolName: String,
+    argvHead: List[String],
+    readOnly: Boolean,
+    destructive: Boolean
+  ): McpTool =
     val params: List[McpParam] = command.flags.map(mcpFlag) ++ command.positionals.map(mcpPositional)
     val required: List[String] =
       if command.name == "rename-album" then List("title", "current", "new")
@@ -1831,7 +1855,6 @@ object Cli:
       else if command.name == "create-album" || command.name == "delete-album" then List("title")
       else command.positionals.collect:
         case Required(name, _) => mcpIdent(name)
-    val readOnly: Boolean = mcpReadOnly.contains(command.name)
     val outputSchema: Option[Json] =
       if !readOnly then None
       else Some(command.name match
@@ -1850,7 +1873,10 @@ object Cli:
         case other =>
           throw IllegalStateException(s"$other is read-only and has no output schema")
       )
-    McpTool(command.name, mcpDescription(command), params, required, readOnly, outputSchema)
+    val description: String =
+      if argvHead == List("agent", command.name) then mcpDescription(command)
+      else s"${command.help} (photo ${argvHead.mkString(" ")}). $mcpDoNotEcho"
+    McpTool(toolName, description, params, required, readOnly, destructive, argvHead, outputSchema)
 
   private def mcpDescription(command: Command): String =
     val base: String = s"${command.help} (photo agent ${command.name}). $mcpDoNotEcho"
@@ -2252,7 +2278,7 @@ object Cli:
 
   private val serveLine: String = "serve  listen on the per-user Unix socket"
 
-  private val mcpLine: String = "mcp  expose agent queries on MCP stdio"
+  private val mcpLine: String = "mcp  expose agent commands and local archive writes on MCP stdio"
 
   private val agentLine: String = "agent  query the catalog and the archive"
 

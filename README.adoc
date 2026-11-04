@@ -476,8 +476,14 @@ Tools are `agent stems`, `agent years`, `agent months`, `agent days`, `agent cla
 `agent match`, `agent locate`, `agent include`, `agent rename-album`, `agent set-description`, `agent set-date`,
 `agent download-item`, `agent add-to-album`, `agent remove-from-album`, `agent move-item`, `agent delete-item`,
 `agent upload-item`, `agent create-album`, `agent delete-album`, `agent drift`, and `agent missing`.
+The local archive write is `item set` (`item-set`).
+It sets `destructiveHint` and keeps `--dry-run`.
+The host confirms.
+This program adds no confirmation file and no second path flag.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
-Album files, repair, publish, sync, refresh, reconcile, file, card, and web are not tools.
+`agent album-file`, `album new`, `album rm`, `album mv`, `album include`, `album exclude`, `ls`, `item show`, `album ls`,
+`album show`, `album claims`, `item month`, `item into`, `album merge`, `repair`, `publish`, `sync`, `refresh`,
+`reconcile`, `file`, `card`, and `web` are not tools.
 Tool JSON may contain album ids and item keys.
 Chat should not.
 The user adds the server.
