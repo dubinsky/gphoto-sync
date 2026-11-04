@@ -17,6 +17,10 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import javax.imageio.ImageIO
 
 class McpTest extends AnyFlatSpec, Matchers:
+  // strictEquality does not relate a sealed parent to its cases.
+  @targetName("outcomeCanEqual")
+  private given [A <: Cli.Outcome, B <: Cli.Outcome] => CanEqual[A, B] = CanEqual.derived
+
   @targetName("jsonCanEqual")
   private given [A <: Json, B <: Json] => CanEqual[A, B] = CanEqual.derived
 
@@ -1050,6 +1054,956 @@ class McpTest extends AnyFlatSpec, Matchers:
         Refresh.openAct = previousAct
         deleteTree(parent)
 
+  "mcpTools" should "derive the query commands and the in-process writes, and reject everything else" in :
+    val tools: List[Mcp.McpTool] = Mcp.mcpTools
+    tools.map(_.name) shouldBe List(
+      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "rename-album",
+      "set-description", "set-date", "download-item", "add-to-album", "remove-from-album",
+      "move-item", "delete-item", "upload-item", "create-album", "delete-album", "drift", "missing",
+      "item-set", "album-new", "album-rm", "album-mv", "album-include", "album-exclude"
+    )
+    List(
+      "album-file",
+      "request",
+      "requests",
+      "results",
+      "apply-requests",
+      "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "card", "item",
+      "login", "status", "logout",
+      "ls", "album",
+      "help", "cd", "pwd", "exit",
+      "serve", "shell", "mcp",
+      "show", "set", "month", "into", "new", "rm", "mv", "exclude", "merge",
+      "item-show", "item-month", "item-into", "album-ls", "album-show", "album-claims", "album-merge"
+    ).foreach: name =>
+      withClue(name):
+        tools.exists(_.name == name) shouldBe false
+
+    val echo: String = "Do not echo album ids, item keys, or google-media-item-id in chat."
+    val passId: String = "Pass id when catalog reports ambiguous: true."
+    def described(help: String, name: String, ambiguous: Boolean): String =
+      val base: String = s"$help (photo agent $name). $echo"
+      if ambiguous then s"$base $passId" else base
+    val descriptions: Map[String, String] = Map(
+      "stems" -> described("list one day's grouped stems", "stems", ambiguous = false),
+      "years" -> described("list archive years", "years", ambiguous = false),
+      "months" -> described("list the months of one year", "months", ambiguous = false),
+      "days" -> described("list the days of one month", "days", ambiguous = false),
+      "claims" -> described("list album claims for one day", "claims", ambiguous = false),
+      "catalog" -> described("list catalog albums", "catalog", ambiguous = false),
+      "items" -> described("list catalog items for one album", "items", ambiguous = true),
+      "match" -> described("match catalog items to local stems", "match", ambiguous = true),
+      "locate" -> described("list catalog rows that match one local stem", "locate", ambiguous = false),
+      "include" -> described("compress include lines", "include", ambiguous = false),
+      "rename-album" -> described("rename an album", "rename-album", ambiguous = true),
+      "set-description" -> described("set an item description", "set-description", ambiguous = false),
+      "set-date" -> described("set an item date", "set-date", ambiguous = false),
+      "download-item" -> described("download an item", "download-item", ambiguous = true),
+      "add-to-album" -> described("add an item to an album", "add-to-album", ambiguous = true),
+      "remove-from-album" -> described("remove an item from an album", "remove-from-album", ambiguous = true),
+      "move-item" -> described("move an item to another album", "move-item", ambiguous = true),
+      "delete-item" -> described("delete an item", "delete-item", ambiguous = true),
+      "upload-item" -> described("upload one archive file into an album", "upload-item", ambiguous = true),
+      "create-album" -> described("create an album", "create-album", ambiguous = false),
+      "delete-album" -> described("delete an album", "delete-album", ambiguous = true),
+      "drift" -> described(
+        "report create, update, gone, pending, pending-rename, and skipped",
+        "drift",
+        ambiguous = false
+      ),
+      "missing" -> described("list catalog items absent from the day folder", "missing", ambiguous = false),
+      "item-set" ->
+        s"set one sidecar property; date= moves the picture (photo item set). $echo",
+      "album-new" -> s"create a local album (photo album new). $echo",
+      "album-rm" -> s"delete an album file and leave the pictures (photo album rm). $echo",
+      "album-mv" -> s"change an album title and move its file (photo album mv). $echo",
+      "album-include" -> s"add pictures to one album and recompress include (photo album include). $echo",
+      "album-exclude" -> s"remove pictures from one album and recompress include (photo album exclude). $echo"
+    )
+    val properties: Map[String, Seq[(String, Json)]] = Map(
+      "stems" -> Seq("day" -> mcpStringSchema),
+      "years" -> Seq.empty,
+      "months" -> Seq("year" -> mcpStringSchema),
+      "days" -> Seq("month" -> mcpStringSchema),
+      "claims" -> Seq("path" -> mcpStringSchema),
+      "catalog" -> Seq.empty,
+      "items" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
+      "match" -> Seq("id" -> mcpStringSchema, "album" -> mcpStringSchema),
+      "locate" -> Seq("day" -> mcpStringSchema, "stem" -> mcpStringSchema),
+      "include" -> Seq("span" -> mcpStringSchema, "paths" -> mcpPathsSchema),
+      "rename-album" -> Seq(
+        "title" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "new" -> mcpStringSchema,
+        "id" -> mcpStringSchema
+      ),
+      "set-description" -> Seq(
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "new" -> mcpStringSchema
+      ),
+      "set-date" -> Seq(
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "new" -> mcpStringSchema
+      ),
+      "download-item" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "id" -> mcpStringSchema
+      ),
+      "add-to-album" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "dest" -> mcpStringSchema,
+        "id" -> mcpStringSchema,
+        "dest-id" -> mcpStringSchema
+      ),
+      "remove-from-album" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "id" -> mcpStringSchema
+      ),
+      "move-item" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "dest" -> mcpStringSchema,
+        "id" -> mcpStringSchema,
+        "dest-id" -> mcpStringSchema
+      ),
+      "delete-item" -> Seq(
+        "title" -> mcpStringSchema,
+        "item" -> mcpStringSchema,
+        "current" -> mcpStringSchema,
+        "id" -> mcpStringSchema
+      ),
+      "upload-item" -> Seq(
+        "dest" -> mcpStringSchema,
+        "dest-id" -> mcpStringSchema,
+        "path" -> mcpStringSchema
+      ),
+      "create-album" -> Seq("title" -> mcpStringSchema),
+      "delete-album" -> Seq("title" -> mcpStringSchema, "id" -> mcpStringSchema),
+      "drift" -> Seq.empty,
+      "missing" -> Seq.empty,
+      "item-set" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "property" -> mcpStringSchema,
+        "picture" -> mcpStringSchema
+      ),
+      "album-new" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "span" -> mcpStringSchema,
+        "name" -> mcpStringSchema
+      ),
+      "album-rm" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "title" -> mcpStringSchema
+      ),
+      "album-mv" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "old" -> mcpStringSchema,
+        "new" -> mcpStringSchema
+      ),
+      "album-include" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "title" -> mcpStringSchema,
+        "picture" -> mcpPathsSchema
+      ),
+      "album-exclude" -> Seq(
+        "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+        "title" -> mcpStringSchema,
+        "picture" -> mcpPathsSchema
+      )
+    )
+    val required: Map[String, Seq[String]] = Map(
+      "stems" -> Seq("day"),
+      "years" -> Seq.empty,
+      "months" -> Seq("year"),
+      "days" -> Seq("month"),
+      "claims" -> Seq("path"),
+      "catalog" -> Seq.empty,
+      "items" -> Seq("album"),
+      "match" -> Seq("album"),
+      "locate" -> Seq("day", "stem"),
+      "include" -> Seq.empty,
+      "rename-album" -> Seq("title", "current", "new"),
+      "set-description" -> Seq("item", "current", "new"),
+      "set-date" -> Seq("item", "current", "new"),
+      "download-item" -> Seq("title", "item", "current"),
+      "add-to-album" -> Seq("title", "item", "current", "dest"),
+      "remove-from-album" -> Seq("title", "item", "current"),
+      "move-item" -> Seq("title", "item", "current", "dest"),
+      "delete-item" -> Seq("title", "item", "current"),
+      "upload-item" -> Seq("path", "dest"),
+      "create-album" -> Seq("title"),
+      "delete-album" -> Seq("title"),
+      "drift" -> Seq.empty,
+      "missing" -> Seq.empty,
+      "item-set" -> Seq("property", "picture"),
+      "album-new" -> Seq.empty,
+      "album-rm" -> Seq("title"),
+      "album-mv" -> Seq("old", "new"),
+      "album-include" -> Seq("title", "picture"),
+      "album-exclude" -> Seq("title", "picture")
+    )
+    tools.foreach: tool =>
+      tool.description shouldBe descriptions(tool.name)
+      val schema: Json = tool.inputSchema
+      schema match
+        case Json.Obj(fields) =>
+          fields.map(_._1).toSet shouldBe Set("type", "additionalProperties", "properties", "required")
+        case other =>
+          fail(other.toString)
+      jsonField(schema, "type") shouldBe Json.Str("object")
+      jsonField(schema, "additionalProperties") shouldBe Json.Bool(false)
+      mcpProperties(tool) shouldBe properties(tool.name)
+      mcpRequired(tool) shouldBe required(tool.name)
+      (mcpProperties(tool).map(_._1) ++ mcpRequired(tool)).foreach: name =>
+        name.matches("^[A-Za-z_][A-Za-z0-9_-]*$") shouldBe true
+
+    val stems: List[String] = mcpArgv("stems", Seq("day" -> Json.Str("2010/07/19")))
+    stems shouldBe List("agent", "stems", "2010/07/19")
+    Cli.parse(stems, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentStemsArgs("2010/07/19"))
+
+    val years: List[String] = mcpArgv("years", Seq.empty)
+    years shouldBe List("agent", "years")
+    Cli.parse(years, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentYearsArgs)
+    val months: List[String] = mcpArgv("months", Seq("year" -> Json.Str("2010")))
+    months shouldBe List("agent", "months", "2010")
+    Cli.parse(months, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMonthsArgs("2010"))
+    val days: List[String] = mcpArgv("days", Seq("month" -> Json.Str("2010/07")))
+    days shouldBe List("agent", "days", "2010/07")
+    Cli.parse(days, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentDaysArgs("2010/07"))
+    val claims: List[String] = mcpArgv("claims", Seq("path" -> Json.Str("2010/07/19")))
+    claims shouldBe List("agent", "claims", "2010/07/19")
+    Cli.parse(claims, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentClaimsArgs("2010/07/19"))
+
+    val catalog: List[String] = mcpArgv("catalog", Seq.empty)
+    catalog shouldBe List("agent", "catalog")
+    Cli.parse(catalog, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentCatalogArgs)
+
+    val items: List[String] = mcpArgv("items", Seq(
+      "album" -> Json.Str("2010/07"),
+      "id" -> Json.Str("a1")
+    ))
+    items shouldBe List("agent", "items", "--id", "a1", "2010/07")
+    Cli.parse(items, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentItemsArgs(Some("a1"), "2010/07"))
+    val itemsTitle: List[String] = mcpArgv("items", Seq("album" -> Json.Str("2010/07")))
+    Cli.parse(itemsTitle, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentItemsArgs(None, "2010/07"))
+
+    val matched: List[String] = mcpArgv("match", Seq(
+      "album" -> Json.Str("2010/07"),
+      "id" -> Json.Str("a1")
+    ))
+    matched shouldBe List("agent", "match", "--id", "a1", "2010/07")
+    Cli.parse(matched, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMatchArgs(Some("a1"), "2010/07"))
+
+    val located: List[String] = mcpArgv("locate", Seq(
+      "stem" -> Json.Str("2412"),
+      "day" -> Json.Str("2010/07/19")
+    ))
+    located shouldBe List("agent", "locate", "2010/07/19", "2412")
+    Cli.parse(located, Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentLocateArgs("2010/07/19", "2412"))
+
+    val include: List[String] = mcpArgv("include", Seq(
+      "paths" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"), Json.Str("2010/07/20/2413"))),
+      "span" -> Json.Str("2010/07")
+    ))
+    include shouldBe List("agent", "include", "--span", "2010/07", "2010/07/19/2412", "2010/07/20/2413")
+    Cli.parse(include, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
+    val includeEmpty: List[String] = mcpArgv("include", Seq(
+      "span" -> Json.Str("2010/07"),
+      "paths" -> Json.Arr(Nil)
+    ))
+    includeEmpty shouldBe List("agent", "include", "--span", "2010/07")
+    Cli.parse(mcpArgv("include", Seq.empty), Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AgentIncludeArgs(None, Seq.empty))
+
+    val descriptionArgv: List[String] = mcpArgv("set-description", Seq(
+      "item" -> Json.Str("k1"),
+      "current" -> Json.Str("a.jpg"),
+      "new" -> Json.Str("")
+    ))
+    descriptionArgv shouldBe List("agent", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "")
+    Cli.parse(descriptionArgv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("")))
+    val dateArgv: List[String] = mcpArgv("set-date", Seq(
+      "item" -> Json.Str("k1"),
+      "current" -> Json.Str("a.jpg"),
+      "new" -> Json.Str("2010-07-19 09:05")
+    ))
+    dateArgv shouldBe List("agent", "set-date", "--item", "k1", "--current", "a.jpg", "--new", "2010-07-19 09:05")
+    Cli.parse(dateArgv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.SetDateArgs(Some("k1"), Some("a.jpg"), Some("2010-07-19 09:05")))
+    val downloadArgv: List[String] = mcpArgv("download-item", Seq(
+      "title" -> Json.Str("Trip"),
+      "item" -> Json.Str("k1"),
+      "current" -> Json.Str("a.jpg"),
+      "id" -> Json.Str("a1")
+    ))
+    downloadArgv shouldBe List(
+      "agent", "download-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
+    )
+    Cli.parse(downloadArgv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.DownloadItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
+    val uploadArgv: List[String] = mcpArgv("upload-item", Seq(
+      "dest" -> Json.Str("Trip"),
+      "dest-id" -> Json.Str("a2"),
+      "path" -> Json.Str("2010/07/01/a.jpg")
+    ))
+    uploadArgv shouldBe List(
+      "agent", "upload-item", "--dest", "Trip", "--dest-id", "a2", "2010/07/01/a.jpg"
+    )
+    Cli.parse(uploadArgv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.UploadItemArgs(Some("2010/07/01/a.jpg"), Some("Trip"), Some("a2")))
+    val createArgv: List[String] = mcpArgv("create-album", Seq("title" -> Json.Str("Probe")))
+    createArgv shouldBe List("agent", "create-album", "--title", "Probe")
+    Cli.parse(createArgv, Cli.Front.Serve) shouldBe Cli.Run(Cli.CreateAlbumArgs(Some("Probe")))
+    val deleteAlbumArgv: List[String] = mcpArgv("delete-album", Seq(
+      "title" -> Json.Str("Probe"),
+      "id" -> Json.Str("a1")
+    ))
+    deleteAlbumArgv shouldBe List("agent", "delete-album", "--title", "Probe", "--id", "a1")
+    Cli.parse(deleteAlbumArgv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.DeleteAlbumArgs(Some("Probe"), Some("a1")))
+
+    Cli.parse(mcpArgv("drift", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentDriftArgs)
+    Cli.parse(mcpArgv("missing", Seq.empty), Cli.Front.Serve) shouldBe Cli.Run(Cli.AgentMissingArgs)
+
+    val itemSet: List[String] = mcpArgv("item-set", Seq(
+      "dry-run" -> Json.Bool(true),
+      "property" -> Json.Str("date=2010/08/01"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    itemSet shouldBe List("item", "set", "--dry-run", "date=2010/08/01", "2010/07/04/2412")
+    Cli.parse(itemSet, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = true, "date=2010/08/01", "2010/07/04/2412"))
+    Cli.parse(itemSet, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    val badRaw: List[String] = mcpArgv("item-set", Seq(
+      "dry-run" -> Json.Bool(false),
+      "property" -> Json.Str("bad-raw=true"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    badRaw shouldBe List("item", "set", "bad-raw=true", "2010/07/04/2412")
+    Cli.parse(badRaw, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "bad-raw=true", "2010/07/04/2412"))
+    mcpArgv("item-set", Seq(
+      "property" -> Json.Str("bad-raw=true"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe badRaw
+    val cleared: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("bad-raw"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    cleared shouldBe List("item", "set", "bad-raw", "2010/07/04/2412")
+    Cli.parse(cleared, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "bad-raw", "2010/07/04/2412"))
+    val rotated: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("orientation=Rotate 90 CW"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    rotated shouldBe List("item", "set", "orientation=Rotate 90 CW", "2010/07/04/2412")
+    val source: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("source=scan"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    source shouldBe List("item", "set", "source=scan", "2010/07/04/2412")
+    Cli.parse(source, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.ItemSetArgs(dryRun = false, "source=scan", "2010/07/04/2412"))
+    mcpArgv("item-set", Seq(
+      "property" -> Json.Str("timestamp=2011-06-29T09:45:00"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe List("item", "set", "timestamp=2011-06-29T09:45:00", "2010/07/04/2412")
+    mcpArgv("item-set", Seq(
+      "property" -> Json.Str("google-media-item-id=media-1"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe List("item", "set", "google-media-item-id=media-1", "2010/07/04/2412")
+    Mcp.mcpArgv(mcpTool("item-set"), Seq(
+      "dry-run" -> Json.Str("true"),
+      "property" -> Json.Str("date=2010/08/01"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe Left("argument 'dry-run' has the wrong type")
+    val missingPicture: List[String] = mcpArgv("item-set", Seq("property" -> Json.Str("date=2010/08/01")))
+    missingPicture shouldBe List("item", "set", "date=2010/08/01")
+    Cli.parse(missingPicture, Cli.Front.Serve) shouldBe Cli.Usage("missing picture")
+    val itemHelpArgv: List[String] = mcpArgv("item-set", Seq(
+      "property" -> Json.Str("--help"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    ))
+    itemHelpArgv shouldBe List("item", "set", "--help", "2010/07/04/2412")
+    val itemHelp: Cli.Outcome = Cli.parse(itemHelpArgv, Cli.Front.Serve)
+    itemHelp shouldBe a [Cli.Help]
+    itemHelp should not be a [Cli.Run]
+    itemHelp should not be a [Cli.Usage]
+    Cli.parse(List("agent", "item-set"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'item-set'")
+    Cli.parse(List("item-set"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'item-set'")
+
+    val albumNewDry: List[String] = mcpArgv("album-new", Seq(
+      "dry-run" -> Json.Bool(true),
+      "span" -> Json.Str("2010/07")
+    ))
+    albumNewDry shouldBe List("album", "new", "--dry-run", "--span", "2010/07")
+    Cli.parse(albumNewDry, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = true, Some("2010/07"), None))
+    Cli.parse(albumNewDry, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    val albumNewName: List[String] = mcpArgv("album-new", Seq("name" -> Json.Str("Cape Cod")))
+    albumNewName shouldBe List("album", "new", "--name", "Cape Cod")
+    Cli.parse(albumNewName, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = false, None, Some("Cape Cod")))
+    mcpArgv("album-new", Seq(
+      "dry-run" -> Json.Bool(false),
+      "span" -> Json.Str("2010/07")
+    )) shouldBe List("album", "new", "--span", "2010/07")
+    val albumNewBoth: List[String] = mcpArgv("album-new", Seq(
+      "name" -> Json.Str("Cape Cod"),
+      "span" -> Json.Str("2010/07")
+    ))
+    albumNewBoth shouldBe List("album", "new", "--span", "2010/07", "--name", "Cape Cod")
+    Cli.parse(albumNewBoth, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = false, Some("2010/07"), Some("Cape Cod")))
+    val albumNewNeither: List[String] = mcpArgv("album-new", Seq.empty)
+    albumNewNeither shouldBe List("album", "new")
+    Cli.parse(albumNewNeither, Cli.Front.Serve) shouldBe Cli.Usage("missing span or name")
+    Cli.parse(List("agent", "album-new"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-new'")
+    Cli.parse(List("album-new"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-new'")
+
+    val albumRm: List[String] = mcpArgv("album-rm", Seq(
+      "dry-run" -> Json.Bool(true),
+      "title" -> Json.Str("Cape Cod")
+    ))
+    albumRm shouldBe List("album", "rm", "--dry-run", "Cape Cod")
+    Cli.parse(albumRm, Cli.Front.Serve) shouldBe Cli.Run(Cli.AlbumRmArgs(dryRun = true, "Cape Cod"))
+    Cli.parse(albumRm, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    mcpArgv("album-rm", Seq(
+      "dry-run" -> Json.Bool(false),
+      "title" -> Json.Str("2010/07")
+    )) shouldBe List("album", "rm", "2010/07")
+    Cli.parse(List("agent", "album-rm"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-rm'")
+    Cli.parse(List("album-rm"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-rm'")
+
+    val albumMv: List[String] = mcpArgv("album-mv", Seq(
+      "dry-run" -> Json.Bool(true),
+      "old" -> Json.Str("Cape Cod"),
+      "new" -> Json.Str("Best Of")
+    ))
+    albumMv shouldBe List("album", "mv", "--dry-run", "Cape Cod", "Best Of")
+    Cli.parse(albumMv, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumMvArgs(dryRun = true, "Cape Cod", "Best Of"))
+    Cli.parse(albumMv, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    mcpArgv("album-mv", Seq(
+      "old" -> Json.Str("2010/07/Cape Cod"),
+      "new" -> Json.Str("2010/08/Cape Cod")
+    )) shouldBe List("album", "mv", "2010/07/Cape Cod", "2010/08/Cape Cod")
+    Cli.parse(List("agent", "album-mv"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-mv'")
+    Cli.parse(List("album-mv"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-mv'")
+
+    val albumInclude: List[String] = mcpArgv("album-include", Seq(
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Arr(Seq(Json.Str("2010/07/04/2412"), Json.Str("2010/07/05/1000")))
+    ))
+    albumInclude shouldBe List("album", "include", "2010/07", "2010/07/04/2412", "2010/07/05/1000")
+    Cli.parse(albumInclude, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumIncludeArgs(dryRun = false, "2010/07", Seq("2010/07/04/2412", "2010/07/05/1000")))
+    Cli.parse(albumInclude, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    mcpArgv("album-include", Seq(
+      "dry-run" -> Json.Bool(true),
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Arr(Seq(Json.Str("2010/07/04/2412"), Json.Str("2010/07/05/1000")))
+    )) shouldBe List("album", "include", "--dry-run", "2010/07", "2010/07/04/2412", "2010/07/05/1000")
+    val albumIncludeEmpty: List[String] = mcpArgv("album-include", Seq(
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Arr(Nil)
+    ))
+    albumIncludeEmpty shouldBe List("album", "include", "2010/07")
+    Cli.parse(albumIncludeEmpty, Cli.Front.Serve) shouldBe Cli.Usage("missing picture")
+    Cli.parse(mcpArgv("album-include", Seq("title" -> Json.Str("2010/07"))), Cli.Front.Serve) shouldBe
+      Cli.Usage("missing picture")
+    Mcp.mcpArgv(mcpTool("album-include"), Seq(
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe Left("argument 'picture' has the wrong type")
+    Cli.parse(List("agent", "album-include"), Cli.Front.Serve) shouldBe
+      Cli.Usage("unknown command 'album-include'")
+    Cli.parse(List("album-include"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-include'")
+
+    val albumExclude: List[String] = mcpArgv("album-exclude", Seq(
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Arr(Seq(Json.Str("2010/07/04/2412"), Json.Str("2010/07/05/1000")))
+    ))
+    albumExclude shouldBe List("album", "exclude", "2010/07", "2010/07/04/2412", "2010/07/05/1000")
+    Cli.parse(albumExclude, Cli.Front.Serve) shouldBe
+      Cli.Run(Cli.AlbumExcludeArgs(dryRun = false, "2010/07", Seq("2010/07/04/2412", "2010/07/05/1000")))
+    Cli.parse(albumExclude, Cli.Front.Serve) match
+      case Cli.Run(parsed) => Cli.inProcessWrite(parsed) shouldBe false
+      case other => fail(other.toString)
+    mcpArgv("album-exclude", Seq(
+      "dry-run" -> Json.Bool(true),
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Arr(Seq(Json.Str("2010/07/04/2412"), Json.Str("2010/07/05/1000")))
+    )) shouldBe List("album", "exclude", "--dry-run", "2010/07", "2010/07/04/2412", "2010/07/05/1000")
+    val albumExcludeEmpty: List[String] = mcpArgv("album-exclude", Seq(
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Arr(Nil)
+    ))
+    albumExcludeEmpty shouldBe List("album", "exclude", "2010/07")
+    Cli.parse(albumExcludeEmpty, Cli.Front.Serve) shouldBe Cli.Usage("missing picture")
+    Mcp.mcpArgv(mcpTool("album-exclude"), Seq(
+      "title" -> Json.Str("2010/07"),
+      "picture" -> Json.Str("2010/07/04/2412")
+    )) shouldBe Left("argument 'picture' has the wrong type")
+    Cli.parse(List("agent", "album-exclude"), Cli.Front.Serve) shouldBe
+      Cli.Usage("unknown command 'album-exclude'")
+    Cli.parse(List("album-exclude"), Cli.Front.Serve) shouldBe Cli.Usage("unknown command 'album-exclude'")
+
+    Mcp.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Long(2010))) shouldBe
+      Left("argument 'day' has the wrong type")
+    Mcp.mcpArgv(mcpTool("stems"), Seq("day" -> Json.Null)) shouldBe
+      Left("argument 'day' has the wrong type")
+    Mcp.mcpArgv(mcpTool("include"), Seq("paths" -> Json.Str("2010/07/19/2412"))) shouldBe
+      Left("argument 'paths' has the wrong type")
+    Mcp.mcpArgv(mcpTool("include"), Seq(
+      "paths" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"), Json.Long(1)))
+    )) shouldBe Left("argument 'paths' has the wrong type")
+    Mcp.mcpArgv(mcpTool("catalog"), Seq("dry-run" -> Json.Bool(true))) shouldBe
+      Left("unexpected argument 'dry-run'")
+    Mcp.mcpArgv(mcpTool("items"), Seq(
+      "album" -> Json.Str("2010/07"),
+      "replace" -> Json.Bool(true)
+    )) shouldBe Left("unexpected argument 'replace'")
+
+    // None of the query tools have a boolean flag. BoolFlag is what BooleanKind derives.
+    val boolTool: Mcp.McpTool = Mcp.McpTool(
+      name = "probe",
+      description = "probe",
+      params = List(Mcp.McpParam.BoolFlag("dry-run"), Mcp.McpParam.StringPos("album")),
+      required = List("album"),
+      readOnlyHint = false,
+      destructiveHint = false,
+      argvHead = List("agent", "probe"),
+      outputSchema = None
+    )
+    mcpProperties(boolTool) shouldBe Seq(
+      "dry-run" -> Json.Obj(Seq("type" -> Json.Str("boolean"))),
+      "album" -> mcpStringSchema
+    )
+    mcpRequired(boolTool) shouldBe Seq("album")
+    Mcp.mcpArgv(boolTool, Seq("dry-run" -> Json.Str("true"), "album" -> Json.Str("Trip"))) shouldBe
+      Left("argument 'dry-run' has the wrong type")
+    Mcp.mcpArgv(boolTool, Seq(
+      "album" -> Json.Str("Trip"),
+      "dry-run" -> Json.Bool(true)
+    )) shouldBe Right(List("agent", "probe", "--dry-run", "Trip"))
+    Mcp.mcpArgv(boolTool, Seq("dry-run" -> Json.Bool(false), "album" -> Json.Str("Trip"))) shouldBe
+      Right(List("agent", "probe", "Trip"))
+
+    val helpArgv: List[String] = mcpArgv("stems", Seq("day" -> Json.Str("--help")))
+    helpArgv shouldBe List("agent", "stems", "--help")
+    val help: Cli.Outcome = Cli.parse(helpArgv, Cli.Front.Serve)
+    help shouldBe a [Cli.Help]
+    help should not be a [Cli.Run]
+    help should not be a [Cli.Usage]
+
+  "mcpTools" should "mark reads read-only and accept the values those commands emit" in :
+    val tools: List[Mcp.McpTool] = Mcp.mcpTools
+    Mcp.mcpReadOnly shouldBe Set(
+      "stems", "years", "months", "days", "claims", "catalog", "items", "match", "locate", "include", "drift", "missing"
+    )
+    List(
+      "rename-album", "set-description", "set-date", "download-item", "add-to-album",
+      "remove-from-album", "move-item", "delete-item", "upload-item", "create-album", "delete-album"
+    ).foreach: name =>
+      Mcp.mcpReadOnly.contains(name) shouldBe false
+      tools.exists(_.name == name) shouldBe true
+    val archiveWrites: Set[String] = Set(
+      "item-set", "album-new", "album-rm", "album-mv", "album-include", "album-exclude"
+    )
+    tools.foreach: tool =>
+      (tool.readOnlyHint && tool.destructiveHint) shouldBe false
+      if Mcp.mcpReadOnly.contains(tool.name) then
+        tool.readOnlyHint shouldBe true
+        tool.destructiveHint shouldBe false
+        tool.outputSchema.isDefined shouldBe true
+      else if archiveWrites.contains(tool.name) then
+        tool.readOnlyHint shouldBe false
+        tool.destructiveHint shouldBe true
+        tool.outputSchema shouldBe None
+      else
+        tool.readOnlyHint shouldBe false
+        tool.destructiveHint shouldBe false
+        tool.outputSchema shouldBe None
+
+    val error: Json = Json.Obj(Seq(
+      "got" -> Json.Long(1),
+      "of" -> Json.Long(2),
+      "nameFailures" -> Json.Long(1)
+    ))
+    val fixtures: Map[String, Seq[Json]] = Map(
+      "stems" -> Seq(Json.Obj(Seq(
+        "day" -> Json.Str("2010/07/19"),
+        "stems" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "stem" -> Json.Str("2412"),
+            "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
+            "metadata" -> Json.Obj(Seq(
+              "source" -> Json.Str("camera"),
+              "timestamp" -> Json.Str("2010-07-19T09:05:00"),
+              "date" -> Json.Str("2010-07-19"),
+              "orientation" -> Json.Str("Rotate 90 CW"),
+              "google-media-item-id" -> Json.Str("media-1"),
+              "uploader" -> Json.Str("Ada"),
+              "bad-raw" -> Json.Bool(true),
+              "already-in-google" -> Json.Bool(false)
+            ))
+          )),
+          Json.Obj(Seq(
+            "stem" -> Json.Str("2413"),
+            "extensions" -> Json.Arr(Seq(Json.Str("jpg"), Json.Str("cr2"))),
+            "metadata" -> Json.Obj(Seq(
+              "source" -> Json.Str("scan"),
+              "bad-raw" -> Json.Bool(false)
+            ))
+          ))
+        ))
+      ))),
+      "years" -> Seq(
+        Json.Obj(Seq("years" -> Json.Arr(Seq(Json.Str("2009"), Json.Str("2010"))))),
+        Json.Obj(Seq("years" -> Json.Arr(Seq.empty)))
+      ),
+      "months" -> Seq(
+        Json.Obj(Seq(
+          "year" -> Json.Str("2010"),
+          "present" -> Json.Bool(true),
+          "months" -> Json.Arr(Seq(Json.Str("2010/07"), Json.Str("2010/08")))
+        )),
+        Json.Obj(Seq(
+          "year" -> Json.Str("2099"),
+          "present" -> Json.Bool(false),
+          "months" -> Json.Arr(Seq.empty)
+        ))
+      ),
+      "days" -> Seq(
+        Json.Obj(Seq(
+          "month" -> Json.Str("2010/07"),
+          "present" -> Json.Bool(true),
+          "days" -> Json.Arr(Seq(Json.Str("2010/07/19"), Json.Str("2010/07/20")))
+        )),
+        Json.Obj(Seq(
+          "month" -> Json.Str("2010/07"),
+          "present" -> Json.Bool(false),
+          "days" -> Json.Arr(Seq.empty)
+        ))
+      ),
+      "claims" -> Seq(
+        Json.Obj(Seq(
+          "path" -> Json.Str("2010/07/19"),
+          "present" -> Json.Bool(true),
+          "claims" -> Json.Arr(Seq(Json.Obj(Seq(
+            "path" -> Json.Str("2010/07/19/2412"),
+            "stem" -> Json.Str("2412"),
+            "albums" -> Json.Arr(Seq(Json.Str("2010/07/19/Party"), Json.Str("Best"))),
+            "excludedOnly" -> Json.Bool(false)
+          ))))
+        )),
+        Json.Obj(Seq(
+          "path" -> Json.Str("2010/07/19"),
+          "present" -> Json.Bool(true),
+          "claims" -> Json.Arr(Seq(Json.Obj(Seq(
+            "path" -> Json.Str("2010/07/19/2413"),
+            "stem" -> Json.Str("2413"),
+            "albums" -> Json.Arr(Seq.empty),
+            "excludedOnly" -> Json.Bool(true)
+          ))))
+        )),
+        Json.Obj(Seq(
+          "path" -> Json.Str("2099/01/01"),
+          "present" -> Json.Bool(false),
+          "claims" -> Json.Arr(Seq.empty)
+        ))
+      ),
+      "catalog" -> Seq(Json.Obj(Seq(
+        "albums" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "id" -> Json.Str("a1"),
+            "title" -> Json.Str("June"),
+            "count" -> Json.Long(1),
+            "owned" -> Json.Bool(true),
+            "owner" -> Json.Null,
+            "autoAdd" -> Json.Bool(false),
+            "error" -> Json.Null,
+            "unset" -> Json.Long(0),
+            "items" -> Json.Long(1),
+            "ambiguous" -> Json.Bool(false)
+          )),
+          Json.Obj(Seq(
+            "id" -> Json.Str("a2"),
+            "title" -> Json.Str("Shared"),
+            "count" -> Json.Long(2),
+            "owned" -> Json.Bool(false),
+            "owner" -> Json.Str("Ada"),
+            "autoAdd" -> Json.Bool(false),
+            "error" -> error,
+            "unset" -> Json.Long(1),
+            "items" -> Json.Long(1),
+            "ambiguous" -> Json.Bool(true)
+          ))
+        ))
+      ))),
+      "items" -> Seq(Json.Obj(Seq(
+        "id" -> Json.Str("a1"),
+        "error" -> error,
+        "items" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "filename" -> Json.Str("one.jpg"),
+            "date" -> Json.Null,
+            "key" -> Json.Str("k1"),
+            "uploader" -> Json.Null
+          )),
+          Json.Obj(Seq(
+            "filename" -> Json.Str("two.jpg"),
+            "date" -> Json.Str("2010-07-19"),
+            "key" -> Json.Str("k2"),
+            "uploader" -> Json.Str("Ada")
+          ))
+        )),
+        "unsets" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "date" -> Json.Null,
+            "key" -> Json.Str("u1"),
+            "uploader" -> Json.Str("Ada")
+          )),
+          Json.Obj(Seq(
+            "date" -> Json.Str("2010-07-20"),
+            "key" -> Json.Str("u2"),
+            "uploader" -> Json.Null
+          ))
+        ))
+      ))),
+      "match" -> Seq(Json.Obj(Seq(
+        "id" -> Json.Str("a1"),
+        "matched" -> Json.Arr(Seq(Json.Obj(Seq(
+          "day" -> Json.Str("2010/07/19"),
+          "stem" -> Json.Str("2412")
+        )))),
+        "unmatched" -> Json.Arr(Seq(Json.Str("k9"))),
+        "dateMismatches" -> Json.Arr(Seq(Json.Obj(Seq(
+          "catalogDay" -> Json.Str("2010/07/19"),
+          "filename" -> Json.Str("8888.jpg"),
+          "archiveDay" -> Json.Str("2010/07/18"),
+          "stem" -> Json.Str("8888")
+        ))))
+      ))),
+      "locate" -> Seq(
+        Json.Obj(Seq(
+          "day" -> Json.Str("2099/01/01"),
+          "stem" -> Json.Str("2412"),
+          "directory" -> Json.Bool(false),
+          "present" -> Json.Bool(false),
+          "ambiguous" -> Json.Bool(false),
+          "matches" -> Json.Arr(Seq.empty)
+        )),
+        Json.Obj(Seq(
+          "day" -> Json.Str("2010/07/19"),
+          "stem" -> Json.Str("2412"),
+          "directory" -> Json.Bool(true),
+          "present" -> Json.Bool(true),
+          "ambiguous" -> Json.Bool(false),
+          "matches" -> Json.Arr(Seq(Json.Obj(Seq(
+            "title" -> Json.Str("June"),
+            "date" -> Json.Str("2010-07-19"),
+            "filename" -> Json.Str("one.jpg"),
+            "uploader" -> Json.Str("-"),
+            "id" -> Json.Str("a1"),
+            "key" -> Json.Str("k1")
+          ))))
+        )),
+        Json.Obj(Seq(
+          "day" -> Json.Str("2010/07/19"),
+          "stem" -> Json.Str("2412"),
+          "directory" -> Json.Bool(true),
+          "present" -> Json.Bool(true),
+          "ambiguous" -> Json.Bool(true),
+          "matches" -> Json.Arr(Seq(
+            Json.Obj(Seq(
+              "title" -> Json.Str("Alpha"),
+              "date" -> Json.Str("2010-07-19"),
+              "filename" -> Json.Str("IMG_2412.jpg"),
+              "uploader" -> Json.Str("-"),
+              "id" -> Json.Str("album-alpha"),
+              "key" -> Json.Str("item-alpha")
+            )),
+            Json.Obj(Seq(
+              "title" -> Json.Str("Beta"),
+              "date" -> Json.Str("2010-07-19"),
+              "filename" -> Json.Str("2412.jpg"),
+              "uploader" -> Json.Str("Ada"),
+              "id" -> Json.Str("album-beta"),
+              "key" -> Json.Str("item-beta")
+            ))
+          ))
+        ))
+      ),
+      "include" -> Seq(
+        Json.Obj(Seq(
+          "rendered" -> Json.Arr(Seq(Json.Str("2010/07/19/2412"))),
+          "logical" -> Json.Arr(Seq(Json.Str("2010/07/19/2412")))
+        )),
+        Json.Obj(Seq(
+          "rendered" -> Json.Arr(Seq.empty),
+          "logical" -> Json.Arr(Seq.empty)
+        ))
+      ),
+      "drift" -> Seq(Json.Obj(Seq(
+        "actions" -> Json.Arr(Seq(
+          Json.Obj(Seq(
+            "class" -> Json.Str("create"),
+            "title" -> Json.Str("Trip"),
+            "path" -> Json.Str("2010/07/19"),
+            "reason" -> Json.Null,
+            "id" -> Json.Null
+          )),
+          Json.Obj(Seq(
+            "class" -> Json.Str("pending-rename"),
+            "title" -> Json.Str("July"),
+            "path" -> Json.Str("2010/07"),
+            "reason" -> Json.Str("leftover"),
+            "id" -> Json.Str("a1")
+          ))
+        ))
+      ))),
+      "missing" -> Seq(Json.Obj(Seq(
+        "missing" -> Json.Arr(Seq(Json.Obj(Seq(
+          "title" -> Json.Str("June"),
+          "date" -> Json.Str("-"),
+          "filename" -> Json.Str("one.jpg"),
+          "uploader" -> Json.Str("-"),
+          "key" -> Json.Str("k1")
+        ))))
+      )))
+    )
+    Mcp.mcpReadOnly.foreach: name =>
+      val schema: Json = tools.find(_.name == name).flatMap(_.outputSchema).getOrElse(fail(name))
+      fixtures(name).foreach: value =>
+        withClue(s"$name $value"):
+          outputMismatch(schema, value) shouldBe None
+
+    val drift: Json = tools.find(_.name == "drift").flatMap(_.outputSchema).getOrElse(fail("drift"))
+    outputMismatch(drift, Json.Obj(Seq(
+      "actions" -> Json.Arr(Seq.empty),
+      "links" -> Json.Arr(Seq.empty)
+    ))).isDefined shouldBe true
+    outputMismatch(drift, Json.Obj(Seq(
+      "actions" -> Json.Arr(Seq(Json.Obj(Seq(
+        "class" -> Json.Str("create"),
+        "title" -> Json.Str("Trip"),
+        "path" -> Json.Str("2010/07/19")
+      ))))
+    ))).isDefined shouldBe true
+    val missing: Json = tools.find(_.name == "missing").flatMap(_.outputSchema).getOrElse(fail("missing"))
+    outputMismatch(missing, Json.Obj(Seq(
+      "missing" -> Json.Arr(Seq(Json.Obj(Seq(
+        "title" -> Json.Str("June"),
+        "date" -> Json.Null,
+        "filename" -> Json.Str("one.jpg"),
+        "uploader" -> Json.Str("-"),
+        "key" -> Json.Str("k1")
+      ))))
+    ))).isDefined shouldBe true
+    val matchedSchema: Json = tools.find(_.name == "match").flatMap(_.outputSchema).getOrElse(fail("match"))
+    def matchWith(element: Json): Json = Json.Obj(Seq(
+      "id" -> Json.Str("a1"),
+      "matched" -> Json.Arr(Seq(Json.Obj(Seq(
+        "day" -> Json.Str("2010/07/19"),
+        "stem" -> Json.Str("2412")
+      )))),
+      "unmatched" -> Json.Arr(Seq(Json.Str("k9"))),
+      "dateMismatches" -> Json.Arr(Seq(element))
+    ))
+    outputMismatch(matchedSchema, matchWith(Json.Obj(Seq(
+      "catalogDay" -> Json.Str("2010/07/19"),
+      "filename" -> Json.Str("8888.jpg"),
+      "archiveDay" -> Json.Str("2010/07/18")
+    )))).isDefined shouldBe true
+    outputMismatch(matchedSchema, matchWith(Json.Obj(Seq(
+      "catalogDay" -> Json.Str("2010/07/19"),
+      "filename" -> Json.Str("8888.jpg"),
+      "archiveDay" -> Json.Str("2010/07/18"),
+      "stem" -> Json.Str("8888"),
+      "extra" -> Json.Str("no")
+    )))).isDefined shouldBe true
+    outputMismatch(matchedSchema, matchWith(Json.Obj(Seq(
+      "catalogDay" -> Json.Null,
+      "filename" -> Json.Str("8888.jpg"),
+      "archiveDay" -> Json.Str("2010/07/18"),
+      "stem" -> Json.Str("8888")
+    )))).isDefined shouldBe true
+    val locate: Json = tools.find(_.name == "locate").flatMap(_.outputSchema).getOrElse(fail("locate"))
+    outputMismatch(locate, Json.Obj(Seq(
+      "day" -> Json.Str("2010/07/19"),
+      "stem" -> Json.Str("2412"),
+      "directory" -> Json.Bool(true),
+      "present" -> Json.Bool(true),
+      "ambiguous" -> Json.Bool(false),
+      "matches" -> Json.Arr(Seq(Json.Obj(Seq(
+        "title" -> Json.Str("June"),
+        "date" -> Json.Null,
+        "filename" -> Json.Str("one.jpg"),
+        "uploader" -> Json.Str("-"),
+        "id" -> Json.Str("a1"),
+        "key" -> Json.Str("k1")
+      ))))
+    ))).isDefined shouldBe true
+
+  private val mcpStringSchema: Json = Json.Obj(Seq("type" -> Json.Str("string")))
+
+  private val mcpPathsSchema: Json = Json.Obj(Seq(
+    "type" -> Json.Str("array"),
+    "items" -> Json.Obj(Seq("type" -> Json.Str("string")))
+  ))
+
+  private def mcpTool(name: String): Mcp.McpTool =
+    Mcp.mcpTools.find(_.name == name).getOrElse(fail(name))
+
+  private def mcpArgv(name: String, arguments: Seq[(String, Json)]): List[String] =
+    Mcp.mcpArgv(mcpTool(name), arguments) match
+      case Right(argv) => argv
+      case Left(message) => fail(message)
+
+  private def mcpProperties(tool: Mcp.McpTool): Seq[(String, Json)] =
+    jsonField(tool.inputSchema, "properties") match
+      case Json.Obj(fields) => fields
+      case other => fail(other.toString)
+
+  private def mcpRequired(tool: Mcp.McpTool): Seq[String] =
+    jsonField(tool.inputSchema, "required") match
+      case Json.Arr(values) =>
+        values.map:
+          case Json.Str(name) => name
+          case other => fail(other.toString)
+      case other =>
+        fail(other.toString)
+
+  private def jsonField(value: Json, name: String): Json = value match
+    case Json.Obj(fields) =>
+      fields.find(_._1 == name).map(_._2).getOrElse(fail(s"missing $name"))
+    case other =>
+      fail(other.toString)
+
   private def callLine(id: Json, name: String, arguments: Option[Json]): String =
     val params: Seq[(String, Json)] =
       Seq("name" -> Json.Str(name)) ++ arguments.toSeq.map(value => "arguments" -> value)
@@ -1061,7 +2015,7 @@ class McpTest extends AnyFlatSpec, Matchers:
     )))
 
   private def advertisedSchema(name: String): Json =
-    Cli.mcpTools.find(_.name == name).flatMap(_.outputSchema).getOrElse(fail(s"no output schema for $name"))
+    Mcp.mcpTools.find(_.name == name).flatMap(_.outputSchema).getOrElse(fail(s"no output schema for $name"))
 
   private def assertAdvertised(json: Json): Unit = json match
     case Json.Arr(tools) =>
@@ -1071,11 +2025,11 @@ class McpTest extends AnyFlatSpec, Matchers:
       val archiveWrites: Set[String] = Set(
         "item-set", "album-new", "album-rm", "album-mv", "album-include", "album-exclude"
       )
-      Cli.mcpReadOnly.subsetOf(tools.map(toolName).toSet) shouldBe true
+      Mcp.mcpReadOnly.subsetOf(tools.map(toolName).toSet) shouldBe true
       tools.foreach: tool =>
         val name: String = toolName(tool)
         val obj: Json.Obj = asObj(tool)
-        if Cli.mcpReadOnly.contains(name) then
+        if Mcp.mcpReadOnly.contains(name) then
           asObj(field(tool, "annotations")).fields.map(_._1) shouldBe Seq("readOnlyHint", "openWorldHint")
           field(field(tool, "annotations"), "readOnlyHint") shouldBe Json.Bool(true)
           field(field(tool, "annotations"), "openWorldHint") shouldBe Json.Bool(false)

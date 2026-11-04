@@ -48,7 +48,7 @@ class WebTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("web", "extra")) shouldBe Cli.Usage("extra argument 'extra'")
     Cli.parse(List("web", "--port", "8766", "--port", "8767")) shouldBe Cli.Usage("repeated option '--port'")
     Cli.toOperation(Cli.WebArgs(8766)) shouldBe Web(8766)
-    Cli.mcpTools.exists(_.name == "web") shouldBe false
+    Mcp.mcpTools.exists(_.name == "web") shouldBe false
 
   it should "serve the shell and refuse a second start or a taken port" in :
     val runtime: File = JFiles.createTempDirectory("web-rt").toFile

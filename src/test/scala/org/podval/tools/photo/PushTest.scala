@@ -31,7 +31,7 @@ class PushTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("push", "--dry-run", "--dry-run")) shouldBe Cli.Usage("repeated option '--dry-run'")
     Cli.parse(List("agent", "push")) shouldBe Cli.Usage("unknown command 'push'")
     Cli.toOperation(Cli.PushArgs(dryRun = true)) shouldBe Push(dryRun = true)
-    Cli.mcpTools.exists(_.name == "push") shouldBe false
+    Mcp.mcpTools.exists(_.name == "push") shouldBe false
     withArchive: archive =>
       val (_, served) = Cli.serveResponse(
         sessionFor(archive),
