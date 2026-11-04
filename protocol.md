@@ -707,7 +707,7 @@ When the month heuristic passes, the expansion equals the local universe of the 
 every day that has pictures has a match, and the number of missing `(day, stem)` pairs is at most the cap in the File
 section.
 A failed check writes no file.
-From this repository, run `./gradlew run --args='albums YYYY/MM' --quiet`.
+From this repository, run `./gradlew run --args='album claims YYYY/MM' --quiet`.
 That line stays as a human check.
 The picture line's `albums=` value contains the title just written, with no spaces after commas.
 There is no `dated=` column.

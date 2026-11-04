@@ -248,7 +248,7 @@ class ServeTest extends AnyFlatSpec, Matchers:
         case Cli.Help(text) => text
         case other => fail(other.toString)
       help.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
-        "ls", "repair", "item", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
+        "ls", "repair", "item", "album", "publish", "sync", "push", "refresh", "reconcile", "file",
         "web", "card", "login", "status", "logout", "help", "agent"
       )
       help should not include ("shell  start a session")

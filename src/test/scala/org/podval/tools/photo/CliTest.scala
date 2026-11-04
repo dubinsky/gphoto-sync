@@ -106,8 +106,33 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.inProcessWrite(Cli.ItemShowArgs("2010/07/04/2412")) shouldBe false
     Cli.inProcessWrite(Cli.ItemSetArgs(dryRun = true, "date=", "2010/07/04/2412")) shouldBe false
 
-    Cli.parse(List("albums")) shouldBe Cli.Run(Cli.Albums(None))
-    Cli.parse(List("albums", "2009")) shouldBe Cli.Run(Cli.Albums(Some("2009")))
+    Cli.parse(List("album", "ls")) shouldBe Cli.Run(Cli.AlbumLsArgs(None))
+    Cli.parse(List("album", "ls", "2009")) shouldBe Cli.Run(Cli.AlbumLsArgs(Some("2009")))
+    Cli.parse(List("album", "show", "Best")) shouldBe Cli.Run(Cli.AlbumShowArgs("Best"))
+    Cli.parse(List("album", "claims")) shouldBe Cli.Run(Cli.AlbumClaimsArgs(None))
+    Cli.parse(List("album", "claims", "2009")) shouldBe Cli.Run(Cli.AlbumClaimsArgs(Some("2009")))
+    Cli.parse(List("album", "new", "--span", "2010/07")) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = false, Some("2010/07"), None))
+    Cli.parse(List("album", "new", "--name", "Cape Cod")) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = false, None, Some("Cape Cod")))
+    Cli.parse(List("album", "new", "--dry-run", "--span", "2010/07", "--name", "Cape Cod")) shouldBe
+      Cli.Run(Cli.AlbumNewArgs(dryRun = true, Some("2010/07"), Some("Cape Cod")))
+    Cli.parse(List("album", "rm", "--dry-run", "2010/07")) shouldBe
+      Cli.Run(Cli.AlbumRmArgs(dryRun = true, "2010/07"))
+    Cli.parse(List("album", "mv", "--dry-run", "2010/07", "2010/08")) shouldBe
+      Cli.Run(Cli.AlbumMvArgs(dryRun = true, "2010/07", "2010/08"))
+    Cli.parse(List("album", "include", "--dry-run", "2010/07", "2010/07/04/2412")) shouldBe
+      Cli.Run(Cli.AlbumIncludeArgs(dryRun = true, "2010/07", Seq("2010/07/04/2412")))
+    Cli.parse(List("album", "exclude", "2010/07", "2010/07/04/2412", "2010/07/05/1000")) shouldBe
+      Cli.Run(Cli.AlbumExcludeArgs(dryRun = false, "2010/07", Seq("2010/07/04/2412", "2010/07/05/1000")))
+    Cli.inProcessWrite(Cli.AlbumLsArgs(None)) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumShowArgs("Best")) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumClaimsArgs(None)) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumNewArgs(dryRun = true, Some("2010/07"), None)) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumRmArgs(dryRun = false, "2010/07")) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumMvArgs(dryRun = false, "2010/07", "2010/08")) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumIncludeArgs(dryRun = false, "2010/07", Seq("2010/07/04/2412"))) shouldBe false
+    Cli.inProcessWrite(Cli.AlbumExcludeArgs(dryRun = true, "2010/07", Seq("2010/07/04/2412"))) shouldBe false
 
     Cli.parse(List("publish")) shouldBe publish(None, recursive = false, dryRun = false)
     Cli.parse(List("publish", "2009")) shouldBe publish(Some("2009"), recursive = false, dryRun = false)
@@ -260,7 +285,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |ls  list the date tree
         |repair  repair picture names, raw files, timestamps, or day folders
         |item  show or change a picture
-        |albums  list album claims
+        |album  list or change an album
         |publish  publish albums to Google Photos
         |sync  sync album removals into local except lists
         |push  push external albums
@@ -347,15 +372,39 @@ class CliTest extends AnyFlatSpec, Matchers:
         |--dry-run  boolean  print the actions and write nothing""".stripMargin
     helpOf("item", "set", "-h") shouldBe helpOf("item", "set", "--help")
 
-    helpOf("albums", "--help") shouldBe
-      """albums  list album claims
+    val album: String =
+      """album  list or change an album
+        |
+        |ls  list album titles
+        |show  show one album file
+        |claims  list album claims
+        |new  create a local album
+        |rm  delete an album file and leave the pictures
+        |mv  change an album title and move its file
+        |include  add pictures to one album and recompress include
+        |exclude  remove pictures from one album and recompress include""".stripMargin
+    helpOf("album", "--help") shouldBe album
+    helpOf("album", "-h") shouldBe album
+    helpOf("help", "album") shouldBe album
+    helpOf("album", "ls", "--help") shouldBe
+      """ls  list album titles
         |
         |Positionals:
         |path  optional
         |
         |Flags:
         |none""".stripMargin
-    helpOf("albums", "-h") shouldBe helpOf("albums", "--help")
+    helpOf("help", "album", "new") shouldBe
+      """new  create a local album
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |--dry-run  boolean  print the actions and write nothing
+        |--span  text  date span with no name
+        |--name  text  album name""".stripMargin
+    helpOf("album", "new", "--help") shouldBe helpOf("help", "album", "new")
 
     helpOf("publish", "--help") shouldBe
       """publish  publish albums to Google Photos
@@ -695,7 +744,21 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("lsd") -> "unknown command 'lsd'",
       List("lsd", "2009") -> "unknown command 'lsd'",
       List("lsd", "--bogus") -> "unknown command 'lsd'",
-      List("albums", "--bogus") -> "unknown option '--bogus'",
+      List("albums") -> "unknown command 'albums'",
+      List("albums", "--bogus") -> "unknown command 'albums'",
+      List("albums", "2009", "2010") -> "unknown command 'albums'",
+      List("album") -> "missing album command",
+      List("album", "foo") -> "unknown command 'foo'",
+      List("album", "new") -> "missing span or name",
+      List("album", "new", "--span", "2010/07", "extra") -> "extra argument 'extra'",
+      List("album", "rm") -> "missing title",
+      List("album", "rm", "--dry-run") -> "missing title",
+      List("album", "mv", "2010/07") -> "missing new",
+      List("album", "include", "2010/07") -> "missing picture",
+      List("album", "rm", "2010/07", "--dry-run") -> "extra argument '--dry-run'",
+      List("album", "include", "2010/07", "2010/07/04/2412", "--dry-run") -> "extra argument '--dry-run'",
+      List("help", "album", "new", "extra") -> "extra argument 'extra'",
+      List("help", "album", "nope") -> "unknown command 'nope'",
       List("ls", "--dry-run", "2009") -> "unknown option '--dry-run'",
       List("ls", "--fix", "2009") -> "unknown option '--fix'",
       List("repair") -> "missing path",
@@ -716,7 +779,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       List("item", "set", "date=2010/08/01", "2010/07/04/2412", "--dry-run") -> "extra argument '--dry-run'",
       List("help", "item", "show", "extra") -> "extra argument 'extra'",
       List("login", "extra") -> "extra argument 'extra'",
-      List("albums", "2009", "2010") -> "extra argument '2010'",
+
       List("ls", "2009/03/10", "--fix") -> "extra argument '--fix'",
       List("ls", "path", "--help") -> "extra argument '--help'",
       List("ls", "path", "-h") -> "extra argument '-h'",
@@ -835,7 +898,18 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.toOperation(Cli.LoginArgs) shouldBe Login
     Cli.toOperation(Cli.StatusArgs) shouldBe Status
     Cli.toOperation(Cli.LogoutArgs) shouldBe Logout
-    Cli.toOperation(Cli.Albums(None)) shouldBe ListAlbums(None)
+    Cli.toOperation(Cli.AlbumClaimsArgs(None)) shouldBe ListAlbums(None)
+    Cli.toOperation(Cli.AlbumLsArgs(Some("2009"))) shouldBe AlbumLs(Some("2009"))
+    Cli.toOperation(Cli.AlbumShowArgs("Best")) shouldBe AlbumShow("Best")
+    Cli.toOperation(Cli.AlbumNewArgs(dryRun = true, Some("2010/07"), Some("Cape Cod"))) shouldBe
+      AlbumNew(dryRun = true, Some("2010/07"), Some("Cape Cod"))
+    Cli.toOperation(Cli.AlbumRmArgs(dryRun = false, "2010/07")) shouldBe AlbumRm(dryRun = false, "2010/07")
+    Cli.toOperation(Cli.AlbumMvArgs(dryRun = false, "2010/07", "2010/08")) shouldBe
+      AlbumMv(dryRun = false, "2010/07", "2010/08")
+    Cli.toOperation(Cli.AlbumIncludeArgs(dryRun = false, "2010/07", Seq("2010/07/04/2412"))) shouldBe
+      AlbumEdit(dryRun = false, exclude = false, "2010/07", Seq("2010/07/04/2412"))
+    Cli.toOperation(Cli.AlbumExcludeArgs(dryRun = true, "Best", Seq("2010/07/04/2412"))) shouldBe
+      AlbumEdit(dryRun = true, exclude = true, "Best", Seq("2010/07/04/2412"))
     Cli.toOperation(Cli.PublishArgs(None, recursive = true, dryRun = false)) shouldBe
       Publish(None, recursive = true, dryRun = false)
     Cli.toOperation(Cli.SyncArgs(None, recursive = false, dryRun = true)) shouldBe
@@ -887,7 +961,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       "apply-requests",
       "repair", "publish", "sync", "push", "refresh", "reconcile", "file", "card", "item",
       "login", "status", "logout",
-      "ls", "albums",
+      "ls", "album",
       "help", "cd", "pwd", "exit",
       "serve", "shell", "mcp"
     ).foreach: name =>

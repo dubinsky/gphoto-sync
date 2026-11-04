@@ -29,7 +29,14 @@ object Cli:
   ) extends Parsed
   private[photo] final case class ItemShowArgs(picture: String) extends Parsed
   private[photo] final case class ItemSetArgs(dryRun: Boolean, property: String, picture: String) extends Parsed
-  private[photo] final case class Albums(path: Option[String]) extends Parsed
+  private[photo] final case class AlbumLsArgs(path: Option[String]) extends Parsed
+  private[photo] final case class AlbumShowArgs(title: String) extends Parsed
+  private[photo] final case class AlbumClaimsArgs(path: Option[String]) extends Parsed
+  private[photo] final case class AlbumNewArgs(dryRun: Boolean, span: Option[String], name: Option[String]) extends Parsed
+  private[photo] final case class AlbumRmArgs(dryRun: Boolean, title: String) extends Parsed
+  private[photo] final case class AlbumMvArgs(dryRun: Boolean, from: String, to: String) extends Parsed
+  private[photo] final case class AlbumIncludeArgs(dryRun: Boolean, title: String, pictures: Seq[String]) extends Parsed
+  private[photo] final case class AlbumExcludeArgs(dryRun: Boolean, title: String, pictures: Seq[String]) extends Parsed
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class RefreshArgs(
@@ -362,7 +369,14 @@ object Cli:
     case _: Ls => false
     case _: ItemShowArgs => false
     case _: ItemSetArgs => false
-    case _: Albums => false
+    case _: AlbumLsArgs => false
+    case _: AlbumShowArgs => false
+    case _: AlbumClaimsArgs => false
+    case _: AlbumNewArgs => false
+    case _: AlbumRmArgs => false
+    case _: AlbumMvArgs => false
+    case _: AlbumIncludeArgs => false
+    case _: AlbumExcludeArgs => false
     case _: PublishArgs => false
     case _: SyncArgs => false
     case _: RepairArgs => false
@@ -475,6 +489,8 @@ object Cli:
       agentCommands.find(_.name == name).map(command => (command, rest, List("agent", name)))
     case "item" :: name :: rest =>
       itemCommands.find(_.name == name).map(command => (command, rest, List("item", name)))
+    case "album" :: name :: rest =>
+      albumCommands.find(_.name == name).map(command => (command, rest, List("album", name)))
     case name :: rest =>
       registry.find(_.name == name).map(command => (command, rest, List(name)))
     case Nil =>
@@ -626,6 +642,8 @@ object Cli:
       parseAgent(rest, front)
     case "item" :: rest =>
       parseItem(rest, front)
+    case "album" :: rest =>
+      parseAlbum(rest, front)
     case "card" :: rest =>
       parseCard(rest, front)
     case name :: rest =>
@@ -660,8 +678,22 @@ object Cli:
       ItemShow(picture)
     case ItemSetArgs(dryRun, property, picture) =>
       ItemSet(dryRun, property, picture)
-    case Albums(path) =>
+    case AlbumLsArgs(path) =>
+      AlbumLs(path)
+    case AlbumShowArgs(title) =>
+      AlbumShow(title)
+    case AlbumClaimsArgs(path) =>
       ListAlbums(path)
+    case AlbumNewArgs(dryRun, span, name) =>
+      AlbumNew(dryRun, span, name)
+    case AlbumRmArgs(dryRun, title) =>
+      AlbumRm(dryRun, title)
+    case AlbumMvArgs(dryRun, from, to) =>
+      AlbumMv(dryRun, from, to)
+    case AlbumIncludeArgs(dryRun, title, pictures) =>
+      AlbumEdit(dryRun, exclude = false, title, pictures)
+    case AlbumExcludeArgs(dryRun, title, pictures) =>
+      AlbumEdit(dryRun, exclude = true, title, pictures)
     case PublishArgs(path, recursive, dryRun) =>
       Publish(path, recursive = recursive, dryRun = dryRun)
     case SyncArgs(path, recursive, dryRun) =>
@@ -751,6 +783,12 @@ object Cli:
     else command.build(values, positionals) match
       case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
         Usage("missing repair action")
+      case AlbumNewArgs(_, None, None) =>
+        Usage("missing span or name")
+      case AlbumIncludeArgs(_, _, pictures) if pictures.isEmpty =>
+        Usage("missing picture")
+      case AlbumExcludeArgs(_, _, pictures) if pictures.isEmpty =>
+        Usage("missing picture")
       case other =>
         Run(other)
 
@@ -772,6 +810,12 @@ object Cli:
       Help(itemHelp)
     case "item" :: verb :: Nil =>
       itemCommands.find(_.name == verb) match
+        case None => Usage(s"unknown command '$verb'")
+        case Some(found) => Help(commandHelp(found))
+    case "album" :: Nil =>
+      Help(albumHelp)
+    case "album" :: verb :: Nil =>
+      albumCommands.find(_.name == verb) match
         case None => Usage(s"unknown command '$verb'")
         case Some(found) => Help(commandHelp(found))
     case "agent" :: Nil =>
@@ -916,9 +960,9 @@ object Cli:
       case Front.Shell | Front.Serve =>
         Nil
     val (beforeLogin, fromLogin) = commands.span(_.name != "login")
-    val (beforeAlbums, fromAlbums) = beforeLogin.span(_.name != "albums")
+    val (beforePublish, fromPublish) = beforeLogin.span(_.name != "publish")
     val lines: List[String] =
-      beforeAlbums.map(lineOf) ++ List(itemLine) ++ fromAlbums.map(lineOf) ++ List(cardLine) ++
+      beforePublish.map(lineOf) ++ List(itemLine, albumLine) ++ fromPublish.map(lineOf) ++ List(cardLine) ++
         fromLogin.map(lineOf) ++ List(lineOf(helpCommand)) ++
         frontLines ++
         List(agentLine) ++
@@ -946,6 +990,16 @@ object Cli:
       Help(itemHelp)
     case name :: rest =>
       itemCommands.find(_.name == name) match
+        case None => Usage(s"unknown command '$name'")
+        case Some(command) => parseCommand(command, rest, front)
+
+  private def parseAlbum(args: List[String], front: Front): Outcome = args match
+    case Nil =>
+      Usage("missing album command")
+    case ("--help" | "-h") :: _ =>
+      Help(albumHelp)
+    case name :: rest =>
+      albumCommands.find(_.name == name) match
         case None => Usage(s"unknown command '$name'")
         case Some(command) => parseCommand(command, rest, front)
 
@@ -1115,6 +1169,72 @@ object Cli:
     )
   )
 
+  private val albumDryRun: Flag =
+    Flag("dry-run", None, BooleanKind, "print the actions and write nothing")
+
+  private val albumCommands: List[Command] = List(
+    Command(
+      name = "ls",
+      help = "list album titles",
+      positionals = List(Optional("path", path = true)),
+      flags = Nil,
+      build = (_, args) => AlbumLsArgs(args.headOption)
+    ),
+    Command(
+      name = "show",
+      help = "show one album file",
+      positionals = List(Required("title")),
+      flags = Nil,
+      build = (_, args) => AlbumShowArgs(args.head)
+    ),
+    Command(
+      name = "claims",
+      help = "list album claims",
+      positionals = List(Optional("path", path = true)),
+      flags = Nil,
+      build = (_, args) => AlbumClaimsArgs(args.headOption)
+    ),
+    Command(
+      name = "new",
+      help = "create a local album",
+      positionals = Nil,
+      flags = List(
+        albumDryRun,
+        Flag("span", None, TextKind, "date span with no name"),
+        Flag("name", None, TextKind, "album name")
+      ),
+      build = (values, _) => AlbumNewArgs(bool(values, "dry-run"), values.texts.get("span"), values.texts.get("name"))
+    ),
+    Command(
+      name = "rm",
+      help = "delete an album file and leave the pictures",
+      positionals = List(Required("title")),
+      flags = List(albumDryRun),
+      build = (values, args) => AlbumRmArgs(bool(values, "dry-run"), args.head)
+    ),
+    Command(
+      name = "mv",
+      help = "change an album title and move its file",
+      positionals = List(Required("old"), Required("new")),
+      flags = List(albumDryRun),
+      build = (values, args) => AlbumMvArgs(bool(values, "dry-run"), args.head, args.drop(1).head)
+    ),
+    Command(
+      name = "include",
+      help = "add pictures to one album and recompress include",
+      positionals = List(Required("title"), Rest("picture", path = true)),
+      flags = List(albumDryRun),
+      build = (values, args) => AlbumIncludeArgs(bool(values, "dry-run"), args.head, args.drop(1))
+    ),
+    Command(
+      name = "exclude",
+      help = "remove pictures from one album and recompress include",
+      positionals = List(Required("title"), Rest("picture", path = true)),
+      flags = List(albumDryRun),
+      build = (values, args) => AlbumExcludeArgs(bool(values, "dry-run"), args.head, args.drop(1))
+    )
+  )
+
   private val commands: List[Command] = List(
     Command(
       name = "ls",
@@ -1153,13 +1273,6 @@ object Cli:
         days = bool(values, "days"),
         dryRun = bool(values, "dry-run")
       )
-    ),
-    Command(
-      name = "albums",
-      help = "list album claims",
-      positionals = List(Optional("path", path = true)),
-      flags = Nil,
-      build = (_, args) => Albums(args.headOption)
     ),
     Command(
       name = "publish",
@@ -2037,6 +2150,11 @@ object Cli:
 
   private def itemHelp: String =
     (List(itemLine, "") ++ itemCommands.map(lineOf)).mkString("\n")
+
+  private val albumLine: String = "album  list or change an album"
+
+  private def albumHelp: String =
+    (List(albumLine, "") ++ albumCommands.map(lineOf)).mkString("\n")
 
   private val cardLine: String = "card  find a camera card or copy it into .upload"
 

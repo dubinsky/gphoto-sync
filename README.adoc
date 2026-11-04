@@ -187,10 +187,48 @@ The steps run in that order, and each later step sees the files written by the e
 Clearing `date` does not move the files.
 Any other `item set` leaves the files in their folder.
 
-`photo albums [path]` lists album claims.
+`photo album ls [path]` lists album titles, one per line, in Scala string order.
+No path lists every album.
+A path keeps the titles `Album.albumMatches` selects.
+
+`photo album show <title>` prints one album file.
+`path` is archive-relative.
+A missing span or name prints `-`.
+An empty Google string prints `-`.
+A missing owner prints `-`.
+Include lines are indented two spaces.
+No include key prints `include:` and no further lines.
+
+`photo album claims [path]` lists album claims.
 Each picture line ends with `albums=` and every claiming title, in Scala string order, with no spaces after commas.
 `2009/03/10/2412 albums=2009/03/10/Party,Best` is a picture in both albums.
 An empty claim and an excluded-only claim both print `albums=-`.
+
+`photo album new` creates a local album.
+`--span` is a date span with no name.
+`--name` is an album name.
+A span starts as `include` `all` and does not create the later days of the span.
+A name with no span writes an empty file and omits `include`.
+An existing title is left unchanged.
+`--dry-run` prints the actions and writes nothing.
+
+`photo album rm <title>` deletes the album file and leaves the pictures.
+An external album is refused.
+Empty directories above the file are removed, and the climb stops at the archive root.
+`--dry-run` prints those actions and deletes nothing.
+
+`photo album mv <old> <new>` moves the album file.
+The bytes move, so a comment and `google-title` stay.
+An include line outside the new span is refused, and nothing is written.
+An external album is refused.
+`--dry-run` prints those actions and writes nothing.
+
+`photo album include <title> <picture>...` adds pictures to one album and recompresses `include`.
+`photo album exclude <title> <picture>...` removes pictures from that album and recompresses `include`.
+A picture outside the album span is refused, and nothing is written.
+A picture whose claim does not change prints nothing and writes nothing.
+Other album files stay unchanged.
+`--dry-run` prints the actions and writes nothing.
 
 `photo publish [path]` uploads `jpg`, `jpeg`, and video other than `m4v` into albums and files existing media ids.
 A year or the archive root requires `--recursive`.

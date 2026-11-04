@@ -161,8 +161,8 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       val root: Root = rootFor(archive)
       val cursor: Session = Session(root, PathStyle.Cursor, root)
 
-      val (filled, albumsText) = runOk(cursor, "albums")
-      albumsText shouldBe cold(root, "albums")
+      val (filled, albumsText) = runOk(cursor, "album", "claims")
+      albumsText shouldBe cold(root, "album", "claims")
       filled.index.get(archive).get.albums.map(_.album.title) shouldBe Seq("Best")
       val year: DirEntry = filled.index.get(File(archive, "2010")).get
       year.grouped.map(_._1) shouldBe Seq("07", "08")
@@ -192,8 +192,8 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
         File(archive, "2010/07/album.toml").toPath,
         FileTime.from(Instant.now.plusSeconds(7200))
       )
-      val (reloaded, albumsAgain) = runOk(reread, "albums")
-      albumsAgain shouldBe cold(root, "albums")
+      val (reloaded, albumsAgain) = runOk(reread, "album", "claims")
+      albumsAgain shouldBe cold(root, "album", "claims")
       albumsAgain should not include ("2412 albums=2010/07")
       (reloaded.index.get(File(archive, "2010/07")).get.albums.head eq julyMonth) shouldBe false
       reloaded.index.get(File(archive, july)).get.grouped.map(_._1) shouldBe Seq("2412")

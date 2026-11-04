@@ -37,7 +37,7 @@ class ShellTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("--help"), Cli.Front.Shell) match
       case Cli.Help(text) =>
         text.linesIterator.drop(3).map(_.takeWhile(_ != ' ')).toList shouldBe List(
-          "ls", "repair", "item", "albums", "publish", "sync", "push", "refresh", "reconcile", "file",
+          "ls", "repair", "item", "album", "publish", "sync", "push", "refresh", "reconcile", "file",
           "web", "card", "login", "status", "logout", "help", "agent", "cd", "pwd", "exit"
         )
       case other => fail(other.toString)
@@ -241,11 +241,14 @@ class ShellTest extends AnyFlatSpec, Matchers:
         session,
         Seq(
           "cd 2010",
+          "album ls",
+          "album claims",
           "ls",
           "ls 07",
           "ls --long 07",
+          "album ls 07",
           "pwd",
-          "albums 07",
+          "album claims 07",
           "publish",
           "item set uploader 07/19/2412",
           "agent include 2009/03/10/2412",
@@ -256,10 +259,13 @@ class ShellTest extends AnyFlatSpec, Matchers:
       )
       code shouldBe 0
       sent shouldBe List(
+        List("album", "ls"),
+        List("album", "claims"),
         List("ls", "2010"),
         List("ls", "2010/07"),
         List("ls", "--long", "2010/07"),
-        List("albums", "2010/07"),
+        List("album", "ls", "2010/07"),
+        List("album", "claims", "2010/07"),
         List("publish"),
         List("item", "set", "uploader", "2010/07/19/2412"),
         List("agent", "include", "2009/03/10/2412")
