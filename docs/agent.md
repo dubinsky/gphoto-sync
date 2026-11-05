@@ -307,13 +307,16 @@ Tools are `agent stems`, `agent years`, `agent months`, `agent days`, `agent cla
 `agent download-item`, `agent add-to-album`, `agent remove-from-album`, `agent move-item`, `agent delete-item`,
 `agent upload-item`, `agent create-album`, `agent delete-album`, `agent drift`, and `agent missing`.
 Local archive writes are `item set` (`item-set`), `album new` (`album-new`), `album rm` (`album-rm`), `album mv` (`album-mv`),
-`album include` (`album-include`), and `album exclude` (`album-exclude`).
+`album include` (`album-include`), `album exclude` (`album-exclude`), `item month` (`item-month`), `item into` (`item-into`),
+and `album merge` (`album-merge`).
 Each sets `destructiveHint` and keeps `--dry-run`.
 The host confirms.
 This program adds no confirmation file and no second path flag.
+Local archive reads are `album ls` (`album-ls`) and `album show` (`album-show`).
+Each sets `readOnlyHint` to true and `openWorldHint` to false.
 `cd`, `pwd`, `exit`, `serve`, and `shell` are not tools.
-`agent album-file`, `ls`, `item show`, `album ls`, `album show`, `album claims`, `item month`, `item into`,
-`album merge`, `repair`, `publish`, `sync`, `refresh`, `reconcile`, `file`, `card`, and `web` are not tools.
+`agent album-file`, `ls`, `item show`, `album claims`, `repair`, `publish`, `sync`, `refresh`, `reconcile`, `file`,
+`card`, and `web` are not tools.
 Tool JSON may contain album ids and item keys.
 Chat should not.
 The user adds the server.
