@@ -24,12 +24,14 @@ object AlbumLinks:
     else parse(TextLines.read(path, Header, VersionError))
 
   def parse(text: String): Seq[Row] =
-    TextLines.dataLines(text).foldLeft(Seq.empty[Row]): (rows, line) =>
-      if line.isEmpty then throw IllegalArgumentException("blank line")
-      val row: Row = parseRow(line)
-      if rows.exists(_.id == row.id) || rows.exists(_.path == row.path) then
-        throw IllegalArgumentException("duplicate album link")
-      rows :+ row
+    TextLines
+      .dataLines(text)
+      .foldLeft(Seq.empty[Row]): (rows, line) =>
+        if line.isEmpty then throw IllegalArgumentException("blank line")
+        val row: Row = parseRow(line)
+        if rows.exists(_.id == row.id) || rows.exists(_.path == row.path) then
+          throw IllegalArgumentException("duplicate album link")
+        rows :+ row
 
   def render(rows: Seq[Row]): String =
     val body: String = rows.map(row => s"${row.id}\t${row.path}\n").mkString
@@ -67,7 +69,9 @@ object AlbumLinks:
   private def rejectPath(path: String): Unit =
     val segments: Seq[String] = path.split("/", -1).toSeq
     val bad: Boolean =
-      path.startsWith("/") || segments.isEmpty || segments.exists(segment => segment.isEmpty || segment == "." || segment == "..")
+      path.startsWith("/") || segments.isEmpty || segments.exists(segment =>
+        segment.isEmpty || segment == "." || segment == ".."
+      )
     if bad then throw IllegalArgumentException("album link path")
 
   private def move(archive: File, dest: File, text: String, replace: Boolean): Unit =
@@ -84,11 +88,9 @@ object AlbumLinks:
           StandardCopyOption.ATOMIC_MOVE,
           StandardCopyOption.REPLACE_EXISTING
         )
-      else
-        NFiles.move(partial.toPath, dest.toPath, StandardCopyOption.ATOMIC_MOVE)
+      else NFiles.move(partial.toPath, dest.toPath, StandardCopyOption.ATOMIC_MOVE)
       renamed = true
-    finally
-      if !renamed then NFiles.deleteIfExists(partial.toPath)
+    finally if !renamed then NFiles.deleteIfExists(partial.toPath)
 
   private def writeForced(file: File, text: String): Unit =
     val channel: FileChannel = FileChannel.open(

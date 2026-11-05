@@ -17,16 +17,22 @@ private[photo] object DateTree:
   final case class DayDir(directory: File, day: Int)
 
   def years(root: File): Seq[YearDir] =
-    directories(root).filter(dir => isNumber(dir.getName, 4)).map: dir =>
-      YearDir(dir, dir.getName.toInt)
+    directories(root)
+      .filter(dir => isNumber(dir.getName, 4))
+      .map: dir =>
+        YearDir(dir, dir.getName.toInt)
 
   def months(year: YearDir): Seq[MonthDir] =
-    directories(year.directory).filter(dir => isMonth(dir.getName)).map: dir =>
-      MonthDir(dir, year.year, dir.getName.toInt)
+    directories(year.directory)
+      .filter(dir => isMonth(dir.getName))
+      .map: dir =>
+        MonthDir(dir, year.year, dir.getName.toInt)
 
   def days(month: MonthDir): Seq[DayDir] =
-    directories(month.directory).filter(dir => isDay(dir.getName)).map: dir =>
-      DayDir(dir, dir.getName.toInt)
+    directories(month.directory)
+      .filter(dir => isDay(dir.getName))
+      .map: dir =>
+        DayDir(dir, dir.getName.toInt)
 
   private def directories(directory: File): Seq[File] =
     Option(directory.listFiles).map(_.toSeq).getOrElse(Seq.empty).filter(_.isDirectory).sortBy(_.getName)

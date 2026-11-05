@@ -9,7 +9,7 @@ import java.time.LocalDate
 import org.podval.tools.photo.chrome.{AgentChrome, AlbumCard, PhotosAct, PlaywrightPhotosUi}
 
 class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
-  "rename-album" should "leave the catalog unchanged when the step throws" in :
+  "rename-album" should "leave the catalog unchanged when the step throws" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, opened) =>
@@ -20,7 +20,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+          session,
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07 ",
+          "--new",
+          "July"
         )
         result match
           case Result.Failed(text, value, message) =>
@@ -50,7 +58,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "retitle only that album line when the live title is clean" in :
+  it should "retitle only that album line when the live title is clean" in:
     withArchive: archive =>
       writePair(archive)
       withAct(archive): (session, places, opened) =>
@@ -59,7 +67,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           new RenameFake((_, _) => ()):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+          session,
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07 ",
+          "--new",
+          "July"
         )
         result match
           case Result.Ok(text, value) =>
@@ -96,19 +112,27 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "leave the partial when the retitle check fails" in :
+  it should "leave the partial when the retitle check fails" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ => new RenameFake((_, _) => ())
         val (_, result) = exec(
-          session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July\nX"
+          session,
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07 ",
+          "--new",
+          "July\nX"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
             text should not include ("album set")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
             field(value, "catalog") shouldBe Json.Str("unchanged")
@@ -118,7 +142,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         File(archive, ".gphoto-sync/catalog.txt.partial").isFile shouldBe true
         places.directory.exists shouldBe false
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       writePair(archive)
       withAct(archive): (session, places, opened) =>
@@ -129,26 +153,33 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             try
               Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
               val (_, result) = exec(
-                session, "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+                session,
+                "agent",
+                "rename-album",
+                "--title",
+                "2010/07 ",
+                "--current",
+                "2010/07 ",
+                "--new",
+                "July"
               )
               result match
                 case Result.Failed(text, value, message) =>
                   message shouldBe Refresh.AlreadyRunning
                   Cli.processCode(result) shouldBe 2
-                  text should startWith ("already running\n")
-                  text should include ("phase=items")
+                  text should startWith("already running\n")
+                  text should include("phase=items")
                   text should not include ("AF1Qip")
                   value shouldBe Json.Null
                 case other =>
                   fail(other.toString)
               opened() shouldBe false
               File(places.directory, "albums.tsv").exists shouldBe false
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
-  it should "strip every AF1Qip token on stderr and stay in the caller" in :
+  it should "strip every AF1Qip token on stderr and stay in the caller" in:
     withArchive: archive =>
       writeCatalog(archive, "album\talb07\t0\tOther")
       PlaywrightPhotosUi.redactSecrets("AF1QipAAA and AF1QipBBB_9", "2010/07 ") shouldBe "2010/07  and 2010/07 "
@@ -160,8 +191,8 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           "agent rename-album --title \"AF1QipAAA AF1QipBBB\" --current x --new y"
         )
         out shouldBe ""
-        err should include ("Photo Archive Tool:")
-        err should include ("no album titled \"album album\"")
+        err should include("Photo Archive Tool:")
+        err should include("no album titled \"album album\"")
         err should not include ("AF1Qip")
         opened() shouldBe false
         var ran = false
@@ -173,7 +204,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             (session, Result.Ok("ran\n", Json.Null))
         )
         ran shouldBe false
-        line should include ("rename-album runs in the calling process")
+        line should include("rename-album runs in the calling process")
         Refresh.openAct = _ => new RenameFake((_, _) => ())
         val sent = scala.collection.mutable.ListBuffer.empty[List[String]]
         val (code, shown, errors) = shellOf(
@@ -190,13 +221,20 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         errors should not include ("Photo Archive Tool:")
         errors should not include ("AF1Qip")
 
-  it should "run in the one-shot process while serve holds its lock" in :
+  it should "run in the one-shot process while serve holds its lock" in:
     withArchive: archive =>
       writePair(archive)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ => new RenameFake((_, _) => ())
         val argv: List[String] = List(
-          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July"
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07 ",
+          "--new",
+          "July"
         )
         val runtime: File = JFiles.createTempDirectory("rename-serve").toFile
         val channel: FileChannel = FileChannel.open(
@@ -225,18 +263,27 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           channel.close()
           deleteTree(runtime)
 
-  "set-description" should "leave the catalog unchanged when the step throws" in :
+  "set-description" should "leave the catalog unchanged when the step throws" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDescription = (_, text) =>
-            throw IllegalStateException(s"step missed AF1QipLEAK $text AF1QipOTHER")
+          new RenameFake(
+            (_, _) => (),
+            onDescription = (_, text) => throw IllegalStateException(s"step missed AF1QipLEAK $text AF1QipOTHER")
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", "Hello"
+          session,
+          "agent",
+          "set-description",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--new",
+          "Hello"
         )
         result match
           case Result.Failed(text, value, message) =>
@@ -267,23 +314,32 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "stay refresh-only when the panel does not show the description" in :
+  it should "stay refresh-only when the panel does not show the description" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDescription = (_, _) =>
-            throw new Refresh.ActMiss("panel does not show the description", confirmed = true)
+          new RenameFake(
+            (_, _) => (),
+            onDescription = (_, _) => throw new Refresh.ActMiss("panel does not show the description", confirmed = true)
           )
         val (_, result) = exec(
-          session, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", "Hello"
+          session,
+          "agent",
+          "set-description",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--new",
+          "Hello"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("panel does not show the description")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("panel does not show the description")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
             field(value, "catalog") shouldBe Json.Str("unchanged")
             field(value, "itemKey") shouldBe Json.Str("keyPic")
@@ -293,20 +349,30 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         places.directory.exists shouldBe false
 
-  it should "leave the catalog byte-identical when the description is set" in :
+  it should "leave the catalog byte-identical when the description is set" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
         val seen = scala.collection.mutable.ListBuffer.empty[String]
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDescription = (item, text) =>
-            item.filename shouldBe "pic.jpg"
-            seen += text
+          new RenameFake(
+            (_, _) => (),
+            onDescription = (item, text) =>
+              item.filename shouldBe "pic.jpg"
+              seen += text
           ):
             override def close(): Unit = closed = true
         val (kept, result) = exec(
-          session, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", "Hello"
+          session,
+          "agent",
+          "set-description",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--new",
+          "Hello"
         )
         result match
           case Result.Ok(text, value) =>
@@ -329,7 +395,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             fail(other.toString)
         kept.catalogCache.isDefined shouldBe true
         val (cleared, empty) = exec(
-          kept, "agent", "set-description", "--item", "keyPic", "--current", "pic.jpg", "--new", ""
+          kept,
+          "agent",
+          "set-description",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--new",
+          ""
         )
         empty match
           case Result.Ok(text, value) =>
@@ -346,21 +420,31 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  "set-date" should "write only that item's date when the read shows the civil day" in :
+  "set-date" should "write only that item's date when the read shows the civil day" in:
     withArchive: archive =>
       writeDated(archive)
       withAct(archive): (session, places, _) =>
         var seen: Option[String] = None
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDate = (item, local) =>
-            item.filename shouldBe "pic.jpg"
-            item.key shouldBe "keyPic"
-            seen = Some(local)
+          new RenameFake(
+            (_, _) => (),
+            onDate = (item, local) =>
+              item.filename shouldBe "pic.jpg"
+              item.key shouldBe "keyPic"
+              seen = Some(local)
           ):
             override def close(): Unit = closed = true
         val (next, result) = exec(
-          session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+          session,
+          "agent",
+          "set-date",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--new",
+          "2010-07-19 09:05"
         )
         result match
           case Result.Ok(text, value) =>
@@ -392,25 +476,34 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "leave the old bytes when the read shows a different day" in :
+  it should "leave the old bytes when the read shows a different day" in:
     withArchive: archive =>
       val catalog: String = writeDated(archive)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDate = (_, _) =>
-            throw new Refresh.ActMiss("read date differs", confirmed = true)
+          new RenameFake(
+            (_, _) => (),
+            onDate = (_, _) => throw new Refresh.ActMiss("read date differs", confirmed = true)
           )
         val (_, result) = exec(
-          session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+          session,
+          "agent",
+          "set-date",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--new",
+          "2010-07-19 09:05"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("filename \"pic.jpg\"")
-            text should include ("step Date taken, then Save, Done, or OK")
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("read date differs")
+            text should include("filename \"pic.jpg\"")
+            text should include("step Date taken, then Save, Done, or OK")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("read date differs")
             text should not include ("keyPic")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
             field(value, "catalog") shouldBe Json.Str("unchanged")
@@ -422,23 +515,32 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
         places.directory.exists shouldBe false
 
-  it should "write nothing when the date step misses before confirm" in :
+  it should "write nothing when the date step misses before confirm" in:
     withArchive: archive =>
       val catalog: String = writeDated(archive)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDate = (_, _) =>
-            throw new Refresh.ActMiss("Year is absent", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onDate = (_, _) => throw new Refresh.ActMiss("Year is absent", confirmed = false)
           )
         val (_, result) = exec(
-          session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+          session,
+          "agent",
+          "set-date",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--new",
+          "2010-07-19 09:05"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
-            text should include ("catalog unchanged")
-            text should include ("Year is absent")
+            text should include("recovery one-click")
+            text should include("catalog unchanged")
+            text should include("Year is absent")
             field(value, "recovery") shouldBe Json.Str("one-click")
           case other =>
             fail(other.toString)
@@ -446,24 +548,29 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
 
-  it should "stay refresh-only when the catalog read throws after confirm" in :
+  it should "stay refresh-only when the catalog read throws after confirm" in:
     withArchive: archive =>
       val catalog: String = writeDated(archive)
       val live: File = File(archive, ".gphoto-sync/catalog.txt")
       withAct(archive): (session, _, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDate = (_, _) =>
-            live.setReadable(false, false)
-          )
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDate = (_, _) => live.setReadable(false, false))
         try
           val (_, result) = exec(
-            session, "agent", "set-date", "--item", "keyPic", "--current", "pic.jpg", "--new", "2010-07-19 09:05"
+            session,
+            "agent",
+            "set-date",
+            "--item",
+            "keyPic",
+            "--current",
+            "pic.jpg",
+            "--new",
+            "2010-07-19 09:05"
           )
           result match
             case Result.Failed(text, value, message) =>
               message shouldBe Refresh.MutationFailed
-              text should include ("recovery refresh-only")
-              text should include ("catalog unchanged")
+              text should include("recovery refresh-only")
+              text should include("catalog unchanged")
               field(value, "recovery") shouldBe Json.Str("refresh-only")
             case other =>
               fail(other.toString)
@@ -471,10 +578,9 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           JFiles.readString(live.toPath) shouldBe catalog
           File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
           File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
-        finally
-          live.setReadable(true, false)
+        finally live.setReadable(true, false)
 
-  it should "answer both edits from the calling process" in :
+  it should "answer both edits from the calling process" in:
     withArchive: archive =>
       writePair(archive)
       withAct(archive): (session, _, _) =>
@@ -484,64 +590,66 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           """{"argv":["agent","set-description","--item","keyPic","--current","pic.jpg","--new","Hello"]}""",
           (_, _) => fail("set-description was forwarded")
         )
-        described should include ("set-description runs in the calling process")
+        described should include("set-description runs in the calling process")
         val (_, dated) = Cli.serveResponse(
           session,
           """{"argv":["agent","set-date","--item","keyPic","--current","pic.jpg","--new","2010-07-19 09:05"]}""",
           (_, _) => fail("set-date was forwarded")
         )
-        dated should include ("set-date runs in the calling process")
+        dated should include("set-date runs in the calling process")
         val (_, downloaded) = Cli.serveResponse(
           session,
           """{"argv":["agent","download-item","--title","2010/07 ","--item","keyPic","--current","pic.jpg"]}""",
           (_, _) => fail("download-item was forwarded")
         )
-        downloaded should include ("download-item runs in the calling process")
+        downloaded should include("download-item runs in the calling process")
         val (_, added) = Cli.serveResponse(
           session,
           """{"argv":["agent","add-to-album","--title","2010/07 ","--item","keyPic","--current","pic.jpg","--dest","Keep Title"]}""",
           (_, _) => fail("add-to-album was forwarded")
         )
-        added should include ("add-to-album runs in the calling process")
+        added should include("add-to-album runs in the calling process")
         val (_, removed) = Cli.serveResponse(
           session,
           """{"argv":["agent","remove-from-album","--title","2010/07 ","--item","keyPic","--current","pic.jpg"]}""",
           (_, _) => fail("remove-from-album was forwarded")
         )
-        removed should include ("remove-from-album runs in the calling process")
+        removed should include("remove-from-album runs in the calling process")
         val (_, moved) = Cli.serveResponse(
           session,
           """{"argv":["agent","move-item","--title","2010/07 ","--item","keyPic","--current","pic.jpg","--dest","Keep Title"]}""",
           (_, _) => fail("move-item was forwarded")
         )
-        moved should include ("move-item runs in the calling process")
+        moved should include("move-item runs in the calling process")
         val (_, deleted) = Cli.serveResponse(
           session,
           """{"argv":["agent","delete-item","--title","2010/07 ","--item","keyPic","--current","pic.jpg"]}""",
           (_, _) => fail("delete-item was forwarded")
         )
-        deleted should include ("delete-item runs in the calling process")
+        deleted should include("delete-item runs in the calling process")
         val (_, uploaded) = Cli.serveResponse(
           session,
           """{"argv":["agent","upload-item","--dest","Keep Title","2010/07/01/pic.jpg"]}""",
           (_, _) => fail("upload-item was forwarded")
         )
-        uploaded should include ("upload-item runs in the calling process")
+        uploaded should include("upload-item runs in the calling process")
         val (_, created) = Cli.serveResponse(
           session,
           """{"argv":["agent","create-album","--title","Probe"]}""",
           (_, _) => fail("create-album was forwarded")
         )
-        created should include ("create-album runs in the calling process")
+        created should include("create-album runs in the calling process")
         val (_, deletedAlbum) = Cli.serveResponse(
           session,
           """{"argv":["agent","delete-album","--title","Probe"]}""",
           (_, _) => fail("delete-album was forwarded")
         )
-        deletedAlbum should include ("delete-album runs in the calling process")
+        deletedAlbum should include("delete-album runs in the calling process")
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDescription = (_, text) =>
-            if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
+          new RenameFake(
+            (_, _) => (),
+            onDescription =
+              (_, text) => if text.contains("AF1Qip") then throw IllegalStateException(s"step missed $text")
           )
         val sent = scala.collection.mutable.ListBuffer.empty[List[String]]
         val (code, shown, errors) = shellOf(
@@ -559,23 +667,21 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         errors should not include ("mutation failed")
         errors should not include ("AF1Qip")
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDescription = (_, _) =>
-            throw IllegalStateException("step missed AF1QipLEAK")
-          )
+          new RenameFake((_, _) => (), onDescription = (_, _) => throw IllegalStateException("step missed AF1QipLEAK"))
         val (failed, out, err) = shellOf(
           session,
           "agent set-description --item keyPic --current pic.jpg --new Hello"
         )
         failed shouldBe 0
-        out should include ("failed set-description")
-        out should include ("recovery one-click")
+        out should include("failed set-description")
+        out should include("recovery one-click")
         out should not include ("AF1Qip")
         out should not include ("mutation failed")
         err should not include ("mutation failed")
         err should not include ("Photo Archive Tool:")
         err should not include ("AF1Qip")
 
-  "download-item" should "keep a staged file and not open Chrome" in :
+  "download-item" should "keep a staged file and not open Chrome" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -592,7 +698,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ => new RenameFake((_, _) => (), onDownload = (_, _) => fail("download called"))
         val (_, first) = exec(
-          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "IMG_pic.JPG"
+          session,
+          "agent",
+          "download-item",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "IMG_pic.JPG"
         )
         first match
           case Result.Ok(text, value) =>
@@ -608,7 +722,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           case other =>
             fail(other.toString)
         val (_, second) = exec(
-          session, "agent", "download-item", "--title", "Keep Title", "--item", "keyKeep", "--current", "IMG_pic.JPG"
+          session,
+          "agent",
+          "download-item",
+          "--title",
+          "Keep Title",
+          "--item",
+          "keyKeep",
+          "--current",
+          "IMG_pic.JPG"
         )
         second match
           case Result.Ok(text, value) =>
@@ -624,7 +746,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-  it should "keep an undated staged file" in :
+  it should "keep an undated staged file" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -639,7 +761,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ => new RenameFake((_, _) => (), onDownload = (_, _) => fail("download called"))
         val (_, result) = exec(
-          session, "agent", "download-item", "--title", "Loose", "--item", "keyPic", "--current", "IMG_pic.JPG"
+          session,
+          "agent",
+          "download-item",
+          "--title",
+          "Loose",
+          "--item",
+          "keyPic",
+          "--current",
+          "IMG_pic.JPG"
         )
         result match
           case Result.Ok(text, _) =>
@@ -649,7 +779,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readAllBytes(staged.toPath).sameElements(body) shouldBe true
         JFiles.readString(catalogFile.toPath) shouldBe catalog
 
-  it should "use that album's item when the key is on two albums" in :
+  it should "use that album's item when the key is on two albums" in:
     withArchive: archive =>
       writeFixture(archive)
       val staged: File = File(archive, ".gphoto-sync/.download/2010/07/03/pic.jpg")
@@ -659,7 +789,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ => new RenameFake((_, _) => (), onDownload = (_, _) => fail("download called"))
         val (_, result) = exec(
-          session, "agent", "download-item", "--title", "Alpha Name", "--item", "keyShare", "--current", "pic.jpg"
+          session,
+          "agent",
+          "download-item",
+          "--title",
+          "Alpha Name",
+          "--item",
+          "keyShare",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Ok(text, value) =>
@@ -670,22 +808,32 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             fail(other.toString)
         JFiles.readAllBytes(staged.toPath).sameElements(body) shouldBe true
 
-  it should "write the staging file and leave the catalog unchanged" in :
+  it should "write the staging file and leave the catalog unchanged" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
         var closed = false
         var seen: Option[File] = None
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDownload = (item, dest) =>
-            item.filename shouldBe "pic.jpg"
-            item.key shouldBe "keyPic"
-            seen = Some(dest)
-            JFiles.write(dest.toPath, Array[Byte](9, 8, 7))
+          new RenameFake(
+            (_, _) => (),
+            onDownload = (item, dest) =>
+              item.filename shouldBe "pic.jpg"
+              item.key shouldBe "keyPic"
+              seen = Some(dest)
+              JFiles.write(dest.toPath, Array[Byte](9, 8, 7))
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "download-item",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Ok(text, value) =>
@@ -713,7 +861,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "report one-click when the download writes nothing" in :
+  it should "report one-click when the download writes nothing" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
@@ -722,7 +870,15 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           new RenameFake((_, _) => (), onDownload = (_, _) => ()):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "download-item",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Failed(text, value, message) =>
@@ -755,30 +911,39 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "report one-click when Download is absent" in :
+  it should "report one-click when Download is absent" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDownload = (_, _) =>
-            throw new Refresh.ActMiss("Download is absent AF1QipLEAK", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onDownload = (_, _) => throw new Refresh.ActMiss("Download is absent AF1QipLEAK", confirmed = false)
           )
         val (_, result) = exec(
-          session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "download-item",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
+            text should include("recovery one-click")
             text should not include ("refresh-only")
-            text should include ("Download is absent")
+            text should include("Download is absent")
             text should not include ("AF1Qip")
             field(value, "recovery") shouldBe Json.Str("one-click")
           case other =>
             fail(other.toString)
         JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
@@ -789,26 +954,33 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             try
               Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
               val (_, result) = exec(
-                session, "agent", "download-item", "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+                session,
+                "agent",
+                "download-item",
+                "--title",
+                "2010/07 ",
+                "--item",
+                "keyPic",
+                "--current",
+                "pic.jpg"
               )
               result match
                 case Result.Failed(text, value, message) =>
                   message shouldBe Refresh.AlreadyRunning
                   Cli.processCode(result) shouldBe 2
-                  text should startWith ("already running\n")
-                  text should include ("phase=items")
+                  text should startWith("already running\n")
+                  text should include("phase=items")
                   text should not include ("AF1Qip")
                   value shouldBe Json.Null
                 case other =>
                   fail(other.toString)
               JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
               File(archive, ".gphoto-sync/.download/2010/07/01/pic.jpg").exists shouldBe false
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
-  "confirmedAdd" should "accept only one new key whose filename is current" in :
+  "confirmedAdd" should "accept only one new key whose filename is current" in:
     val current: String = "pic.jpg"
     val hit: Catalog.Item = Catalog.Item(current, Some(LocalDate.of(2011, 1, 2)), "keyNew", Some("Bea"))
     val wrong: Catalog.Item = Catalog.Item("other.jpg", None, "keyBad", None)
@@ -816,14 +988,14 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
     def shown(before: Set[String], after: Seq[String], named: Map[String, Catalog.Item]): String =
       AgentChrome.confirmedAdd(before, after, named, current) match
         case Some(item) => s"${item.key} ${item.filename}"
-        case None => "none"
+        case None       => "none"
     shown(Set("old"), Seq("old", "keyNew"), Map("keyNew" -> hit)) shouldBe "keyNew pic.jpg"
     shown(Set("old"), Seq("old", "keyNew"), Map.empty) shouldBe "none"
     shown(Set("old"), Seq("old", "keyBlank"), Map("keyBlank" -> blank)) shouldBe "none"
     shown(Set.empty, Seq("keyNew", "keyBad"), Map("keyNew" -> hit, "keyBad" -> wrong)) shouldBe "none"
     shown(Set("old"), Seq("old", "keyBad"), Map("keyBad" -> wrong)) shouldBe "none"
 
-  "add-to-album" should "refuse an owner line before Chrome opens" in :
+  "add-to-album" should "refuse an owner line before Chrome opens" in:
     rejectPut(
       Seq(
         "album\talbSrc\t1\tSource Title",
@@ -831,11 +1003,22 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         "album\talbDst\t0\tDest Title",
         "owner\talbDst\tAda"
       ),
-      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      Seq(
+        "agent",
+        "add-to-album",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic",
+        "--current",
+        "pic.jpg",
+        "--dest",
+        "Dest Title"
+      ),
       "destination has an owner"
     )
 
-  it should "refuse auto-add before Chrome opens" in :
+  it should "refuse auto-add before Chrome opens" in:
     rejectPut(
       Seq(
         "album\talbSrc\t1\tSource Title",
@@ -843,11 +1026,22 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         "album\talbDst\t0\tDest Title",
         "auto-add\talbDst"
       ),
-      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      Seq(
+        "agent",
+        "add-to-album",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic",
+        "--current",
+        "pic.jpg",
+        "--dest",
+        "Dest Title"
+      ),
       "destination is auto-add"
     )
 
-  it should "refuse unread names before Chrome opens" in :
+  it should "refuse unread names before Chrome opens" in:
     rejectPut(
       Seq(
         "album\talbSrc\t1\tSource Title",
@@ -856,11 +1050,22 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         "error\talbDst\t1\t2\t1",
         "unset\talbDst\t2010-07-09\tkeyUnset\t-"
       ),
-      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      Seq(
+        "agent",
+        "add-to-album",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic",
+        "--current",
+        "pic.jpg",
+        "--dest",
+        "Dest Title"
+      ),
       "destination has unread names"
     )
 
-  it should "refuse an excepted stem before Chrome opens" in :
+  it should "refuse an excepted stem before Chrome opens" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -876,23 +1081,43 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ => new RenameFake((_, _) => (), onPut = (_, _, _) => fail("opened"))
         usage(
-          session, "agent", "add-to-album",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest"
         ) shouldBe "destination excepts \"pic\""
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "refuse the source album before Chrome opens" in :
+  it should "refuse the source album before Chrome opens" in:
     rejectPut(
       Seq(
         "album\talbSrc\t1\tSource Title",
         "item\talbSrc\tpic.jpg\t2010-07-01\tkeyPic\t-"
       ),
-      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Source Title"),
+      Seq(
+        "agent",
+        "add-to-album",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic",
+        "--current",
+        "pic.jpg",
+        "--dest",
+        "Source Title"
+      ),
       "destination is the source album"
     )
 
-  it should "refuse an ambiguous destination before Chrome opens" in :
+  it should "refuse an ambiguous destination before Chrome opens" in:
     rejectPut(
       Seq(
         "album\talbSrc\t1\tSource Title",
@@ -900,11 +1125,22 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         "album\talbDst\t0\tDest Title",
         "album\talbDst2\t0\tDest Title"
       ),
-      Seq("agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"),
+      Seq(
+        "agent",
+        "add-to-album",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic",
+        "--current",
+        "pic.jpg",
+        "--dest",
+        "Dest Title"
+      ),
       "more than one album titled \"Dest Title\""
     )
 
-  it should "not refuse an except when the local file is absent" in :
+  it should "not refuse an except when the local file is absent" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -917,19 +1153,30 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var called = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            called = true
-            throw new Refresh.ActMiss("Add to album is absent", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) =>
+              called = true
+              throw new Refresh.ActMiss("Add to album is absent", confirmed = false)
           )
         val (_, result) = exec(
-          session, "agent", "add-to-album",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest"
         )
         called shouldBe true
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
+            text should include("recovery one-click")
             text should not include ("refresh-only")
             field(value, "recovery") shouldBe Json.Str("one-click")
           case other =>
@@ -937,7 +1184,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "fail one-click on New album and click nothing" in :
+  it should "fail one-click on New album and click nothing" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -949,14 +1196,23 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ => new RenameFake((_, _) => (), onPut = (_, _, _) => fail("opened"))
         val (_, result) = exec(
-          session, "agent", "add-to-album",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "New album"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "New album"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
-            text should include ("New album is not a destination")
+            text should include("recovery one-click")
+            text should include("New album is not a destination")
             text should not include ("refresh-only")
             field(value, "recovery") shouldBe Json.Str("one-click")
           case other =>
@@ -965,7 +1221,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-  it should "write the confirmed destination item and adjust an error line" in :
+  it should "write the confirmed destination item and adjust an error line" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -979,16 +1235,27 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (item, destination, current) =>
-            current shouldBe "pic.jpg"
-            item.key shouldBe "keyPic"
-            destination.title shouldBe "Dest Title"
-            Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (item, destination, current) =>
+              current shouldBe "pic.jpg"
+              item.key shouldBe "keyPic"
+              destination.title shouldBe "Dest Title"
+              Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "add-to-album",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         )
         result match
           case Result.Ok(text, value) =>
@@ -1023,7 +1290,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "write no error line when the destination has none" in :
+  it should "write no error line when the destination has none" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1034,12 +1301,22 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       )
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
           )
         val (_, result) = exec(
-          session, "agent", "add-to-album",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         )
         result match
           case Result.Ok(text, _) =>
@@ -1054,24 +1331,34 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           "album\talbKeep\t0\tKeep Title"
         )
 
-  it should "stay refresh-only when the live read is not the clean key" in :
+  it should "stay refresh-only when the live read is not the clean key" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            throw new Refresh.ActMiss("live key differs", confirmed = true)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => throw new Refresh.ActMiss("live key differs", confirmed = true)
           )
         val (_, result) = exec(
-          session, "agent", "add-to-album",
-          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Keep Title"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Keep Title"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("live key differs")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("live key differs")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
             field(value, "albumId") shouldBe Json.Str("alb07")
             field(value, "itemKey") shouldBe Json.Str("keyPic")
@@ -1082,17 +1369,27 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         places.directory.exists shouldBe false
 
-  it should "report one-click when Add to album is absent" in :
+  it should "report one-click when Add to album is absent" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            throw new Refresh.ActMiss("Add to album is absent AF1QipLEAK", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => throw new Refresh.ActMiss("Add to album is absent AF1QipLEAK", confirmed = false)
           )
         val (_, result) = exec(
-          session, "agent", "add-to-album",
-          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Keep Title"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Keep Title"
         )
         result match
           case Result.Failed(text, value, message) =>
@@ -1115,7 +1412,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             fail(other.toString)
         JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
 
-  it should "leave the catalog unchanged when the new key is already there" in :
+  it should "leave the catalog unchanged when the new key is already there" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1126,26 +1423,33 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       )
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, _, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            Catalog.Item("pic.jpg", None, "keyNew", None)
-          )
+        Refresh.openAct =
+          _ => new RenameFake((_, _) => (), onPut = (_, _, _) => Catalog.Item("pic.jpg", None, "keyNew", None))
         val (_, result) = exec(
-          session, "agent", "add-to-album",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "add-to-album",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         )
         result match
           case Result.Failed(text, _, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("repeated item key")
-            text should include ("catalog unchanged")
+            text should include("recovery refresh-only")
+            text should include("repeated item key")
+            text should include("catalog unchanged")
           case other =>
             fail(other.toString)
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
 
-  it should "stay refresh-only when the catalog read throws after confirm" in :
+  it should "stay refresh-only when the catalog read throws after confirm" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1156,30 +1460,40 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            catalogFile.setReadable(false, false)
-            Catalog.Item("pic.jpg", None, "keyNew", None)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) =>
+              catalogFile.setReadable(false, false)
+              Catalog.Item("pic.jpg", None, "keyNew", None)
           )
         try
           val (_, result) = exec(
-            session, "agent", "add-to-album",
-            "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+            session,
+            "agent",
+            "add-to-album",
+            "--title",
+            "Source Title",
+            "--item",
+            "keyPic",
+            "--current",
+            "pic.jpg",
+            "--dest",
+            "Dest Title"
           )
           result match
             case Result.Failed(text, value, message) =>
               message shouldBe Refresh.MutationFailed
-              text should include ("recovery refresh-only")
-              text should include ("catalog unchanged")
+              text should include("recovery refresh-only")
+              text should include("catalog unchanged")
               field(value, "recovery") shouldBe Json.Str("refresh-only")
             case other =>
               fail(other.toString)
           catalogFile.setReadable(true, false)
           JFiles.readString(catalogFile.toPath) shouldBe catalog
           File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
-        finally
-          catalogFile.setReadable(true, false)
+        finally catalogFile.setReadable(true, false)
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
@@ -1190,26 +1504,34 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             try
               Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
               val (_, result) = exec(
-                session, "agent", "add-to-album",
-                "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Keep Title"
+                session,
+                "agent",
+                "add-to-album",
+                "--title",
+                "2010/07 ",
+                "--item",
+                "keyPic",
+                "--current",
+                "pic.jpg",
+                "--dest",
+                "Keep Title"
               )
               result match
                 case Result.Failed(text, value, message) =>
                   message shouldBe Refresh.AlreadyRunning
                   Cli.processCode(result) shouldBe 2
-                  text should startWith ("already running\n")
-                  text should include ("phase=items")
+                  text should startWith("already running\n")
+                  text should include("phase=items")
                   text should not include ("AF1Qip")
                   value shouldBe Json.Null
                 case other =>
                   fail(other.toString)
               JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
-  "remove-from-album" should "drop the item and adjust an error line" in :
+  "remove-from-album" should "drop the item and adjust an error line" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1223,15 +1545,24 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onTake = (album, item) =>
-            album.id shouldBe "albSrc"
-            item.key shouldBe "keyPic"
-            item.uploader shouldBe Some("Bea")
+          new RenameFake(
+            (_, _) => (),
+            onTake = (album, item) =>
+              album.id shouldBe "albSrc"
+              item.key shouldBe "keyPic"
+              item.uploader shouldBe Some("Bea")
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "remove-from-album",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "remove-from-album",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Ok(text, value) =>
@@ -1259,17 +1590,22 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "report one-click and click nothing when the dialog is trash" in :
+  it should "report one-click and click nothing when the dialog is trash" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onTake = (_, _) =>
-            throw new Refresh.ActMiss("trash dialog", confirmed = false)
-          )
+          new RenameFake((_, _) => (), onTake = (_, _) => throw new Refresh.ActMiss("trash dialog", confirmed = false))
         val (_, result) = exec(
-          session, "agent", "remove-from-album",
-          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "remove-from-album",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Failed(text, value, message) =>
@@ -1290,31 +1626,39 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "stay refresh-only when the source key is still present" in :
+  it should "stay refresh-only when the source key is still present" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onTake = (_, _) =>
-            throw new Refresh.ActMiss("source key is present", confirmed = true)
+          new RenameFake(
+            (_, _) => (),
+            onTake = (_, _) => throw new Refresh.ActMiss("source key is present", confirmed = true)
           )
         val (_, result) = exec(
-          session, "agent", "remove-from-album",
-          "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "remove-from-album",
+          "--title",
+          "2010/07 ",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("source key is present")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("source key is present")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
           case other =>
             fail(other.toString)
         JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
 
-  "move-item" should "refuse an owner line before Chrome opens" in :
+  "move-item" should "refuse an owner line before Chrome opens" in:
     refuseMove(
       Seq(
         "album\talbSrc\t1\tSource Title",
@@ -1325,7 +1669,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "destination has an owner"
     )
 
-  it should "refuse auto-add before Chrome opens" in :
+  it should "refuse auto-add before Chrome opens" in:
     refuseMove(
       Seq(
         "album\talbSrc\t1\tSource Title",
@@ -1336,7 +1680,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "destination is auto-add"
     )
 
-  it should "refuse unread names before Chrome opens" in :
+  it should "refuse unread names before Chrome opens" in:
     refuseMove(
       Seq(
         "album\talbSrc\t1\tSource Title",
@@ -1348,7 +1692,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "destination has unread names"
     )
 
-  it should "refuse an excepted stem before Chrome opens" in :
+  it should "refuse an excepted stem before Chrome opens" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1367,14 +1711,23 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           called = true
           new RenameFake((_, _) => (), onPut = (_, _, _) => fail("put"), onTake = (_, _) => fail("take"))
         usage(
-          session, "agent", "move-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest"
+          session,
+          "agent",
+          "move-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest"
         ) shouldBe "destination excepts \"pic\""
         called shouldBe false
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "move the item in one session when both halves are clean" in :
+  it should "move the item in one session when both halves are clean" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1396,22 +1749,34 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         var order = ""
         Refresh.openAct = _ =>
           opened += 1
-          new RenameFake((_, _) => (), onPut = (item, destination, current) =>
-            order = order + "put"
-            current shouldBe "pic.jpg"
-            item.key shouldBe "keyPic"
-            item.uploader shouldBe Some("Bea")
-            destination.title shouldBe "Dest Title"
-            Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
-          , onTake = (album, item) =>
-            order = order + "take"
-            album.id shouldBe "albSrc"
-            item.key shouldBe "keyPic"
+          new RenameFake(
+            (_, _) => (),
+            onPut = (item, destination, current) =>
+              order = order + "put"
+              current shouldBe "pic.jpg"
+              item.key shouldBe "keyPic"
+              item.uploader shouldBe Some("Bea")
+              destination.title shouldBe "Dest Title"
+              Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+            ,
+            onTake = (album, item) =>
+              order = order + "take"
+              album.id shouldBe "albSrc"
+              item.key shouldBe "keyPic"
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "move-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "move-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         )
         opened shouldBe 1
         order shouldBe "puttake"
@@ -1452,7 +1817,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-  it should "leave the catalog unchanged when remove fails after a clean add" in :
+  it should "leave the catalog unchanged when remove fails after a clean add" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1464,23 +1829,32 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
-          , onTake = (_, _) =>
-            throw new Refresh.ActMiss("trash dialog", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None),
+            onTake = (_, _) => throw new Refresh.ActMiss("trash dialog", confirmed = false)
           )
         val (_, result) = exec(
-          session, "agent", "move-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "move-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("\"Source Title\"")
-            text should include ("\"Dest Title\"")
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("trash dialog")
+            text should include("\"Source Title\"")
+            text should include("\"Dest Title\"")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("trash dialog")
             text should not include ("one-click")
             text should not include ("keyNew")
             text should not include ("albDst")
@@ -1492,7 +1866,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) should not include ("keyNew")
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
 
-  it should "not remove when the add misses before confirm" in :
+  it should "not remove when the add misses before confirm" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1504,14 +1878,23 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var took = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            throw new Refresh.ActMiss("Add to album is absent", confirmed = false)
-          , onTake = (_, _) =>
-            took = true
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => throw new Refresh.ActMiss("Add to album is absent", confirmed = false),
+            onTake = (_, _) => took = true
           )
         val (_, result) = exec(
-          session, "agent", "move-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "move-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         )
         took shouldBe false
         result match
@@ -1527,8 +1910,8 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
                 |catalog unchanged
                 |Add to album is absent
                 |""".stripMargin
-            text should include ("\"Source Title\"")
-            text should include ("\"Dest Title\"")
+            text should include("\"Source Title\"")
+            text should include("\"Dest Title\"")
             text should not include ("refresh-only")
             field(value, "recovery") shouldBe Json.Str("one-click")
             field(value, "albumId") shouldBe Json.Str("albSrc")
@@ -1539,7 +1922,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "not remove when the add confirm is not a clean key" in :
+  it should "not remove when the add confirm is not a clean key" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1551,24 +1934,33 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, _, _) =>
         var took = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            throw new Refresh.ActMiss("live key differs", confirmed = true)
-          , onTake = (_, _) =>
-            took = true
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => throw new Refresh.ActMiss("live key differs", confirmed = true),
+            onTake = (_, _) => took = true
           )
         val (_, result) = exec(
-          session, "agent", "move-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "move-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         )
         took shouldBe false
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("\"Source Title\"")
-            text should include ("\"Dest Title\"")
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("live key differs")
+            text should include("\"Source Title\"")
+            text should include("\"Dest Title\"")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("live key differs")
             text should not include ("one-click")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
             field(value, "step") shouldBe Json.Str("More options, then Add to album, then the existing album")
@@ -1577,7 +1969,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
 
-  it should "stay refresh-only when the catalog read throws after both halves" in :
+  it should "stay refresh-only when the catalog read throws after both halves" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1589,25 +1981,35 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, _, _) =>
         var took = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) =>
-            Catalog.Item("pic.jpg", None, "keyNew", None)
-          , onTake = (_, _) =>
-            took = true
-            catalogFile.setReadable(false, false)
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => Catalog.Item("pic.jpg", None, "keyNew", None),
+            onTake = (_, _) =>
+              took = true
+              catalogFile.setReadable(false, false)
           )
         try
           val (_, result) = exec(
-            session, "agent", "move-item",
-            "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+            session,
+            "agent",
+            "move-item",
+            "--title",
+            "Source Title",
+            "--item",
+            "keyPic",
+            "--current",
+            "pic.jpg",
+            "--dest",
+            "Dest Title"
           )
           took shouldBe true
           result match
             case Result.Failed(text, value, message) =>
               message shouldBe Refresh.MutationFailed
-              text should include ("\"Source Title\"")
-              text should include ("\"Dest Title\"")
-              text should include ("recovery refresh-only")
-              text should include ("catalog unchanged")
+              text should include("\"Source Title\"")
+              text should include("\"Dest Title\"")
+              text should include("recovery refresh-only")
+              text should include("catalog unchanged")
               text should not include ("one-click")
               field(value, "recovery") shouldBe Json.Str("refresh-only")
             case other =>
@@ -1615,10 +2017,9 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           catalogFile.setReadable(true, false)
           JFiles.readString(catalogFile.toPath) shouldBe catalog
           File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
-        finally
-          catalogFile.setReadable(true, false)
+        finally catalogFile.setReadable(true, false)
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       val catalog: String = writePair(archive)
       withAct(archive): (session, places, _) =>
@@ -1629,27 +2030,35 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             try
               Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
               val (_, result) = exec(
-                session, "agent", "move-item",
-                "--title", "2010/07 ", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Keep Title"
+                session,
+                "agent",
+                "move-item",
+                "--title",
+                "2010/07 ",
+                "--item",
+                "keyPic",
+                "--current",
+                "pic.jpg",
+                "--dest",
+                "Keep Title"
               )
               result match
                 case Result.Failed(text, value, message) =>
                   message shouldBe Refresh.AlreadyRunning
                   message shouldBe "already running"
                   Cli.processCode(result) shouldBe 2
-                  text should startWith ("already running\n")
-                  text should include ("phase=items")
+                  text should startWith("already running\n")
+                  text should include("phase=items")
                   text should not include ("AF1Qip")
                   value shouldBe Json.Null
                 case other =>
                   fail(other.toString)
               JFiles.readString(File(archive, ".gphoto-sync/catalog.txt").toPath) shouldBe catalog
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
-  "delete-item" should "refuse no owner line or an uploader before Chrome opens" in :
+  "delete-item" should "refuse no owner line or an uploader before Chrome opens" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -1668,38 +2077,73 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           called = true
           new RenameFake((_, _) => (), onTrash = (_, _) => fail("trash"))
         val owner: String = usage(
-          session, "agent", "delete-item", "--title", "Owned Name", "--item", "keyOwn", "--current", "pic.jpg"
+          session,
+          "agent",
+          "delete-item",
+          "--title",
+          "Owned Name",
+          "--item",
+          "keyOwn",
+          "--current",
+          "pic.jpg"
         )
         owner shouldBe "no owner line"
         owner should not include ("owned")
         val uploader: String = usage(
-          session, "agent", "delete-item", "--title", "Uploaded Name", "--item", "keyUp", "--current", "pic.jpg"
+          session,
+          "agent",
+          "delete-item",
+          "--title",
+          "Uploaded Name",
+          "--item",
+          "keyUp",
+          "--current",
+          "pic.jpg"
         )
         uploader shouldBe "uploader is not -"
         usage(
-          session, "agent", "delete-item", "--title", "Source Title", "--item", "keyPic", "--current", "other.jpg"
+          session,
+          "agent",
+          "delete-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "other.jpg"
         ) shouldBe "current does not match \"pic.jpg\" \"other.jpg\""
         called shouldBe false
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         File(archive, ".gphoto-sync/.download").exists shouldBe false
         places.directory.exists shouldBe false
 
-  it should "remove the item line when the key is already gone and not record a trash click" in :
+  it should "remove the item line when the key is already gone and not record a trash click" in:
     withArchive: archive =>
       val catalogFile: File = deleteCatalog(archive)
       withAct(archive): (session, places, _) =>
         var clicks: List[String] = Nil
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onPut = (_, _, _) => fail("put"), onTake = (_, _) => fail("take"), onTrash = (album, item) =>
-            album.id shouldBe "albSrc"
-            item.key shouldBe "keyPic"
-            item.uploader shouldBe None
+          new RenameFake(
+            (_, _) => (),
+            onPut = (_, _, _) => fail("put"),
+            onTake = (_, _) => fail("take"),
+            onTrash = (album, item) =>
+              album.id shouldBe "albSrc"
+              item.key shouldBe "keyPic"
+              item.uploader shouldBe None
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(
-          session, "agent", "delete-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "delete-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         clicks shouldBe Nil
         closed shouldBe true
@@ -1724,18 +2168,22 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-  it should "remove the item line when the confirm leaves the key gone" in :
+  it should "remove the item line when the confirm leaves the key gone" in:
     withArchive: archive =>
       val catalogFile: File = deleteCatalog(archive)
       withAct(archive): (session, _, _) =>
         var clicks: List[String] = Nil
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onTrash = (_, _) =>
-            clicks = clicks :+ "trash"
-          )
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onTrash = (_, _) => clicks = clicks :+ "trash")
         val (_, result) = exec(
-          session, "agent", "delete-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "delete-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         clicks shouldBe List("trash")
         result match
@@ -1749,19 +2197,27 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         File(archive, ".gphoto-sync/.download").exists shouldBe false
         File(archive, ".gphoto-sync/results.tsv").exists shouldBe false
 
-  it should "report one-click and publish nothing when the control is Delete forever" in :
+  it should "report one-click and publish nothing when the control is Delete forever" in:
     withArchive: archive =>
       val catalogFile: File = deleteCatalog(archive)
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
         var clicks: List[String] = Nil
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onTrash = (_, _) =>
-            throw new Refresh.ActMiss("Delete forever", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onTrash = (_, _) => throw new Refresh.ActMiss("Delete forever", confirmed = false)
           )
         val (_, result) = exec(
-          session, "agent", "delete-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "delete-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         clicks shouldBe Nil
         result match
@@ -1791,33 +2247,41 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           "agent delete-item --title \"Source Title\" --item keyPic --current pic.jpg"
         )
         code shouldBe 0
-        out should include ("Delete forever")
-        out should include ("recovery one-click")
+        out should include("Delete forever")
+        out should include("recovery one-click")
         out should not include ("albSrc")
         out should not include ("keyPic")
         err should not include ("mutation failed")
         err should not include ("Photo Archive Tool:")
         JFiles.readString(catalogFile.toPath) shouldBe catalog
 
-  it should "stay refresh-only when the key is still present after the confirm" in :
+  it should "stay refresh-only when the key is still present after the confirm" in:
     withArchive: archive =>
       val catalogFile: File = deleteCatalog(archive)
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onTrash = (_, _) =>
-            throw new Refresh.ActMiss("source key is present", confirmed = true)
+          new RenameFake(
+            (_, _) => (),
+            onTrash = (_, _) => throw new Refresh.ActMiss("source key is present", confirmed = true)
           )
         val (_, result) = exec(
-          session, "agent", "delete-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+          session,
+          "agent",
+          "delete-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg"
         )
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("source key is present")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("source key is present")
             text should not include ("one-click")
             field(value, "step") shouldBe Json.Str("Move to trash")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
@@ -1827,25 +2291,29 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         File(archive, ".gphoto-sync/.download").exists shouldBe false
 
-  it should "stay refresh-only when the catalog read throws after a clean return" in :
+  it should "stay refresh-only when the catalog read throws after a clean return" in:
     withArchive: archive =>
       val catalogFile: File = deleteCatalog(archive)
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, _, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onTrash = (_, _) =>
-            catalogFile.setReadable(false, false)
-          )
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onTrash = (_, _) => catalogFile.setReadable(false, false))
         try
           val (_, result) = exec(
-            session, "agent", "delete-item",
-            "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+            session,
+            "agent",
+            "delete-item",
+            "--title",
+            "Source Title",
+            "--item",
+            "keyPic",
+            "--current",
+            "pic.jpg"
           )
           result match
             case Result.Failed(text, value, message) =>
               message shouldBe Refresh.MutationFailed
-              text should include ("recovery refresh-only")
-              text should include ("catalog unchanged")
+              text should include("recovery refresh-only")
+              text should include("catalog unchanged")
               text should not include ("one-click")
               field(value, "recovery") shouldBe Json.Str("refresh-only")
             case other =>
@@ -1853,10 +2321,9 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           catalogFile.setReadable(true, false)
           JFiles.readString(catalogFile.toPath) shouldBe catalog
           File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
-        finally
-          catalogFile.setReadable(true, false)
+        finally catalogFile.setReadable(true, false)
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       val catalogFile: File = deleteCatalog(archive)
       val catalog: String = JFiles.readString(catalogFile.toPath)
@@ -1868,28 +2335,34 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             try
               Refresh.openAct = _ => new RenameFake((_, _) => fail("opened while busy"))
               val (_, result) = exec(
-                session, "agent", "delete-item",
-                "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg"
+                session,
+                "agent",
+                "delete-item",
+                "--title",
+                "Source Title",
+                "--item",
+                "keyPic",
+                "--current",
+                "pic.jpg"
               )
               result match
                 case Result.Failed(text, value, message) =>
                   message shouldBe Refresh.AlreadyRunning
                   message shouldBe "already running"
                   Cli.processCode(result) shouldBe 2
-                  text should startWith ("already running\n")
-                  text should include ("phase=items")
+                  text should startWith("already running\n")
+                  text should include("phase=items")
                   text should not include ("AF1Qip")
                   value shouldBe Json.Null
                 case other =>
                   fail(other.toString)
               JFiles.readString(catalogFile.toPath) shouldBe catalog
               File(archive, ".gphoto-sync/.download").exists shouldBe false
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
-  "upload-item" should "refuse a path before Chrome opens" in :
+  "upload-item" should "refuse a path before Chrome opens" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
@@ -1926,7 +2399,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
       outside.delete()
 
-  it should "refuse a catalog item, a sidecar mark, or a destination rule before Chrome opens" in :
+  it should "refuse a catalog item, a sidecar mark, or a destination rule before Chrome opens" in:
     uploadRefuse(
       Seq(
         "album\talbOther\t1\tOther",
@@ -2025,7 +2498,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "resolve a video beside a still to the v stem" in :
+  it should "resolve a video beside a still to the v stem" in:
     uploadRefuse(
       Seq(
         "album\talbOther\t1\tOther",
@@ -2086,10 +2559,12 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var called = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (_, _, current) =>
-            called = true
-            current shouldBe "VID_1000.mp4"
-            throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (_, _, current) =>
+              called = true
+              current shouldBe "VID_1000.mp4"
+              throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
           )
         val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest", "2010/07/02/VID_1000.mp4")
         called shouldBe true
@@ -2100,22 +2575,28 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             fail(other.toString)
         places.directory.exists shouldBe false
 
-  it should "open for a file the catalog does not already have" in :
-    openedUpload(Seq(
-      "album\talbOther\t1\tOther",
-      "item\talbOther\tpic.jpg\t2010-07-02\tkeyPic\t-",
-      "album\talbDst\t0\tDest Title"
-    ))
-    openedUpload(Seq(
-      "album\talbOther\t1\tOther",
-      "item\talbOther\tother.jpg\t2010-07-01\tkeyOther\t-",
-      "album\talbDst\t0\tDest Title"
-    ))
-    openedUpload(Seq(
-      "album\talbOther\t1\tOther",
-      "item\talbOther\tIMG_IMG_pic.jpg\t2010-07-01\tkeyPic\t-",
-      "album\talbDst\t0\tDest Title"
-    ))
+  it should "open for a file the catalog does not already have" in:
+    openedUpload(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\tpic.jpg\t2010-07-02\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title"
+      )
+    )
+    openedUpload(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\tother.jpg\t2010-07-01\tkeyOther\t-",
+        "album\talbDst\t0\tDest Title"
+      )
+    )
+    openedUpload(
+      Seq(
+        "album\talbOther\t1\tOther",
+        "item\talbOther\tIMG_IMG_pic.jpg\t2010-07-01\tkeyPic\t-",
+        "album\talbDst\t0\tDest Title"
+      )
+    )
     openedUpload(
       Seq("album\talbDst\t0\tDest Title"),
       relative = "2010/07/01/2412.jpg",
@@ -2128,7 +2609,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
     openedUpload(Seq("album\talbDst\t0\tDest Title"), relative = "2010/07/01/pic.JPG")
     openedUpload(Seq("album\talbDst\t0\tDest Title"), relative = "2010/07/01/clip.3gp")
 
-  it should "write the confirmed item from the archive name and the read" in :
+  it should "write the confirmed item from the archive name and the read" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -2141,11 +2622,13 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (destination, file, current) =>
-            current shouldBe "pic.jpg"
-            file.getName shouldBe "pic.jpg"
-            destination.title shouldBe "Dest Title"
-            Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", Some("Ida"))
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (destination, file, current) =>
+              current shouldBe "pic.jpg"
+              file.getName shouldBe "pic.jpg"
+              destination.title shouldBe "Dest Title"
+              Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", Some("Ida"))
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
@@ -2175,7 +2658,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "accept an absolute path and write no error line when the read has no date" in :
+  it should "accept an absolute path and write no error line when the read has no date" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
       val picture: File = File(archive, "2010/07/01/pic.jpg")
@@ -2183,12 +2666,19 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       JFiles.write(picture.toPath, Array.emptyByteArray)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (_, _, current) =>
-            current shouldBe "pic.jpg"
-            Catalog.Item("ignored.jpg", None, "keyNew", None)
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (_, _, current) =>
+              current shouldBe "pic.jpg"
+              Catalog.Item("ignored.jpg", None, "keyNew", None)
           )
         val (_, result) = exec(
-          session, "agent", "upload-item", "--dest", "Dest Title", picture.getCanonicalPath
+          session,
+          "agent",
+          "upload-item",
+          "--dest",
+          "Dest Title",
+          picture.getCanonicalPath
         )
         result match
           case Result.Ok(text, _) =>
@@ -2204,25 +2694,26 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-  it should "fail one-click when the chooser was not reached" in :
+  it should "fail one-click when the chooser was not reached" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       touch(File(archive, "2010/07/01"), "pic.jpg")
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
-            throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (_, _, _) => throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
           )
         val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("failed upload-item")
-            text should include ("filename \"pic.jpg\"")
-            text should include ("step Add photos or Select photos, then Select from computer")
-            text should include ("recovery one-click")
-            text should include ("Add photos is absent")
+            text should include("failed upload-item")
+            text should include("filename \"pic.jpg\"")
+            text should include("step Add photos or Select photos, then Select from computer")
+            text should include("recovery one-click")
+            text should include("Add photos is absent")
             text should not include ("refresh-only")
             text should not include ("albDst")
             field(value, "action") shouldBe Json.Str("upload-item")
@@ -2237,22 +2728,23 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-  it should "stay refresh-only when the file was chosen and the read is not clean" in :
+  it should "stay refresh-only when the file was chosen and the read is not clean" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       touch(File(archive, "2010/07/01"), "pic.jpg")
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
-            throw new Refresh.ActMiss("live key differs", confirmed = true)
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (_, _, _) => throw new Refresh.ActMiss("live key differs", confirmed = true)
           )
         val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
             text should not include ("one-click")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
           case other =>
@@ -2260,56 +2752,55 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "stay one-click when the upload throws before the file is chosen" in :
+  it should "stay one-click when the upload throws before the file is chosen" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       touch(File(archive, "2010/07/01"), "pic.jpg")
       withAct(archive): (session, _, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
-            throw IllegalStateException("chooser missed")
-          )
+        Refresh.openAct =
+          _ => new RenameFake((_, _) => (), onUpload = (_, _, _) => throw IllegalStateException("chooser missed"))
         val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
-            text should include ("chooser missed")
+            text should include("recovery one-click")
+            text should include("chooser missed")
             text should not include ("refresh-only")
             field(value, "recovery") shouldBe Json.Str("one-click")
           case other =>
             fail(other.toString)
         JFiles.readString(catalogFile.toPath) shouldBe catalog
 
-  it should "stay refresh-only when the catalog write fails after the file was chosen" in :
+  it should "stay refresh-only when the catalog write fails after the file was chosen" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       touch(File(archive, "2010/07/01"), "pic.jpg")
       withAct(archive): (session, _, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
-            catalogFile.setReadable(false, false)
-            Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (_, _, _) =>
+              catalogFile.setReadable(false, false)
+              Catalog.Item("pic.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
           )
         try
           val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
           result match
             case Result.Failed(text, value, message) =>
               message shouldBe Refresh.MutationFailed
-              text should include ("recovery refresh-only")
-              text should include ("catalog unchanged")
+              text should include("recovery refresh-only")
+              text should include("catalog unchanged")
               field(value, "recovery") shouldBe Json.Str("refresh-only")
             case other =>
               fail(other.toString)
           catalogFile.setReadable(true, false)
           JFiles.readString(catalogFile.toPath) shouldBe catalog
           File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
-        finally
-          catalogFile.setReadable(true, false)
+        finally catalogFile.setReadable(true, false)
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
@@ -2331,12 +2822,11 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
                 case other =>
                   fail(other.toString)
               JFiles.readString(catalogFile.toPath) shouldBe catalog
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
-  "create-album" should "refuse a title before Chrome opens" in :
+  "create-album" should "refuse a title before Chrome opens" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbKeep\t0\tKeep Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
@@ -2377,7 +2867,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "copy the other block and append the new card" in :
+  it should "copy the other block and append the new card" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(
         archive,
@@ -2388,15 +2878,17 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onCreate = title =>
-            title shouldBe "Probe"
-            (
-              Seq(
-                AlbumCard("albOld", "Renamed", "9", "x", "y"),
-                AlbumCard("albNew", "Probe", "0", "auth", "leaf")
-              ),
-              Some(blankAlbum("albNew", 0, "Probe"))
-            )
+          new RenameFake(
+            (_, _) => (),
+            onCreate = title =>
+              title shouldBe "Probe"
+              (
+                Seq(
+                  AlbumCard("albOld", "Renamed", "9", "x", "y"),
+                  AlbumCard("albNew", "Probe", "0", "auth", "leaf")
+                ),
+                Some(blankAlbum("albNew", 0, "Probe"))
+              )
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
@@ -2428,25 +2920,25 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "fail one-click when Create album was not clicked" in :
+  it should "fail one-click when Create album was not clicked" in:
     createMiss(confirmed = false, detail = "Create album is absent", recovery = "one-click")
 
-  it should "stay refresh-only when the click already happened" in :
+  it should "stay refresh-only when the click already happened" in:
     createMiss(confirmed = true, detail = "Done is absent", recovery = "refresh-only")
 
-  it should "stay one-click when create throws before it returns" in :
+  it should "stay one-click when create throws before it returns" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onCreate = _ => throw IllegalStateException("editor missed"))
+        Refresh.openAct =
+          _ => new RenameFake((_, _) => (), onCreate = _ => throw IllegalStateException("editor missed"))
         val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
-            text should include ("editor missed")
+            text should include("recovery one-click")
+            text should include("editor missed")
             text should not include ("refresh-only")
             text should not include ("albOld")
             field(value, "recovery") shouldBe Json.Str("one-click")
@@ -2458,14 +2950,14 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         tomls(archive) shouldBe Seq.empty[String]
 
-  it should "stay refresh-only when the live card is missing" in :
+  it should "stay refresh-only when the live card is missing" in:
     createCards(
       Seq(AlbumCard("albOld", "Keep Title", "9", "", "")),
       None,
       "named card is missing"
     )
 
-  it should "stay refresh-only when the live title is ambiguous" in :
+  it should "stay refresh-only when the live title is ambiguous" in:
     createCards(
       Seq(
         AlbumCard("albNew", "Probe", "0", "", ""),
@@ -2475,33 +2967,37 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "ambiguous title"
     )
 
-  it should "leave the live catalog when the read count disagrees" in :
+  it should "leave the live catalog when the read count disagrees" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onCreate = _ =>
-            (
-              Seq(
-                AlbumCard("albOld", "Keep Title", "0", "", ""),
-                AlbumCard("albNew", "Probe", "0", "", "")
-              ),
-              Some(blankAlbum(
-                "albNew",
-                0,
-                "Probe",
-                Seq(Catalog.Item("pic.jpg", None, "keyPic", None))
-              ))
-            )
+          new RenameFake(
+            (_, _) => (),
+            onCreate = _ =>
+              (
+                Seq(
+                  AlbumCard("albOld", "Keep Title", "0", "", ""),
+                  AlbumCard("albNew", "Probe", "0", "", "")
+                ),
+                Some(
+                  blankAlbum(
+                    "albNew",
+                    0,
+                    "Probe",
+                    Seq(Catalog.Item("pic.jpg", None, "keyPic", None))
+                  )
+                )
+              )
           )
         val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include ("item count does not equal count")
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include("item count does not equal count")
             text should not include ("albNew")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
             field(value, "catalog") shouldBe Json.Str("unchanged")
@@ -2513,7 +3009,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
@@ -2534,12 +3030,11 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
                 case other =>
                   fail(other.toString)
               JFiles.readString(catalogFile.toPath) shouldBe catalog
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
-  "delete-album" should "refuse before Chrome opens" in :
+  "delete-album" should "refuse before Chrome opens" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
@@ -2594,17 +3089,19 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "copy the other blocks when the sweep is the stored ids minus this one" in :
+  it should "copy the other blocks when the sweep is the stored ids minus this one" in:
     withArchive: archive =>
       val lines: Seq[String] = survivorLines ++ deletedLines
       val catalogFile: File = writeCatalog(archive, lines*)
       withAct(archive): (session, places, _) =>
         var closed = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDelete = album =>
-            album.id shouldBe "albDel"
-            album.title shouldBe "Gone Title"
-            mutatedCards(survivorIds)
+          new RenameFake(
+            (_, _) => (),
+            onDelete = album =>
+              album.id shouldBe "albDel"
+              album.title shouldBe "Gone Title"
+              mutatedCards(survivorIds)
           ):
             override def close(): Unit = closed = true
         val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
@@ -2622,8 +3119,8 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             fail(other.toString)
         JFiles.readString(catalogFile.toPath) shouldBe catalogBody(survivorLines*)
         JFiles.readString(catalogFile.toPath) should not include ("albDel")
-        JFiles.readString(catalogFile.toPath) should include ("owner\talb001\tAda")
-        JFiles.readString(catalogFile.toPath) should include ("Title alb001")
+        JFiles.readString(catalogFile.toPath) should include("owner\talb001\tAda")
+        JFiles.readString(catalogFile.toPath) should include("Title alb001")
         JFiles.readString(catalogFile.toPath) should not include ("Nope")
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
@@ -2634,14 +3131,14 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         closed shouldBe true
         released(places)
 
-  it should "publish nothing when a second stored id is missing" in :
+  it should "publish nothing when a second stored id is missing" in:
     deleteSweep(
       survivorLines ++ deletedLines ++ Seq("album\talbMiss\t0\tMissed Title"),
       mutatedCards(survivorIds),
       "album set"
     )
 
-  it should "publish nothing when the sweep is under 250" in :
+  it should "publish nothing when the sweep is under 250" in:
     deleteSweep(
       Seq(
         "album\talbKeep\t1\tKeep Title",
@@ -2652,41 +3149,47 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "rows < 250"
     )
 
-  it should "publish nothing when the sweep has an extra card" in :
+  it should "publish nothing when the sweep has an extra card" in:
     deleteSweep(
       survivorLines ++ deletedLines,
       mutatedCards(survivorIds) :+ AlbumCard("albExtra", "Extra", "1", "", ""),
       "album set"
     )
 
-  it should "publish nothing when the deleted id is still listed" in :
+  it should "publish nothing when the deleted id is still listed" in:
     deleteSweep(
       survivorLines ++ deletedLines,
       mutatedCards(survivorIds) :+ AlbumCard("albDel", "Gone Title", "2", "", ""),
       "album set"
     )
 
-  it should "fail one-click when Delete was not clicked" in :
+  it should "fail one-click when Delete was not clicked" in:
     deleteMiss(confirmed = false, detail = "Delete album is absent", recovery = "one-click")
 
-  it should "stay refresh-only when the delete click already happened" in :
-    deleteMiss(confirmed = true, detail = "rows < 250", recovery = "refresh-only", cards = Some(Seq(
-      AlbumCard("albKeep", "Keep Title", "0", "", "")
-    )))
+  it should "stay refresh-only when the delete click already happened" in:
+    deleteMiss(
+      confirmed = true,
+      detail = "rows < 250",
+      recovery = "refresh-only",
+      cards = Some(
+        Seq(
+          AlbumCard("albKeep", "Keep Title", "0", "", "")
+        )
+      )
+    )
 
-  it should "stay one-click when delete throws before it returns" in :
+  it should "stay one-click when delete throws before it returns" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDel\t0\tGone Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDelete = _ => throw IllegalStateException("menu missed"))
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDelete = _ => throw IllegalStateException("menu missed"))
         val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
-            text should include ("menu missed")
+            text should include("recovery one-click")
+            text should include("menu missed")
             text should not include ("refresh-only")
             text should not include ("albDel")
             field(value, "recovery") shouldBe Json.Str("one-click")
@@ -2696,7 +3199,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-  it should "report already running without opening the browser" in :
+  it should "report already running without opening the browser" in:
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDel\t0\tGone Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
@@ -2717,37 +3220,38 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
                 case other =>
                   fail(other.toString)
               JFiles.readString(catalogFile.toPath) shouldBe catalog
-            finally
-              Refresh.release(channel, lock)
+            finally Refresh.release(channel, lock)
           case Refresh.Claim.Busy =>
             fail("lock was already held")
 
   private def deleteMiss(
-    confirmed: Boolean,
-    detail: String,
-    recovery: String,
-    cards: Option[Seq[AlbumCard]] = None
+      confirmed: Boolean,
+      detail: String,
+      recovery: String,
+      cards: Option[Seq[AlbumCard]] = None
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDel\t0\tGone Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDelete = _ =>
-            cards match
-              case Some(found) => found
-              case None => throw new Refresh.ActMiss(detail, confirmed)
+          new RenameFake(
+            (_, _) => (),
+            onDelete = _ =>
+              cards match
+                case Some(found) => found
+                case None        => throw new Refresh.ActMiss(detail, confirmed)
           )
         val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("failed delete-album")
-            text should include ("album \"Gone Title\"")
-            text should include ("step More options, then Delete album, then Delete")
-            text should include (s"recovery $recovery")
-            text should include ("catalog unchanged")
-            text should include (detail)
+            text should include("failed delete-album")
+            text should include("album \"Gone Title\"")
+            text should include("step More options, then Delete album, then Delete")
+            text should include(s"recovery $recovery")
+            text should include("catalog unchanged")
+            text should include(detail)
             text should not include ("albDel")
             field(value, "action") shouldBe Json.Str("delete-album")
             field(value, "recovery") shouldBe Json.Str(recovery)
@@ -2760,21 +3264,19 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-
   private def deleteSweep(lines: Seq[String], cards: Seq[AlbumCard], detail: String): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, lines*)
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onDelete = _ => cards)
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onDelete = _ => cards)
         val (_, result) = exec(session, "agent", "delete-album", "--title", "Gone Title")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include (detail)
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include(detail)
             text should not include ("albDel")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
             field(value, "catalog") shouldBe Json.Str("unchanged")
@@ -2786,9 +3288,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-
   private val survivorIds: Seq[String] = (1 to 250).map(i => f"alb$i%03d")
-
 
   private def survivorLines: Seq[String] =
     val head: Seq[String] = Seq(
@@ -2799,37 +3299,32 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
     val rest: Seq[String] = survivorIds.drop(1).map(id => s"album\t$id\t0\tTitle $id")
     head ++ rest
 
-
   private def deletedLines: Seq[String] = Seq(
     "album\talbDel\t2\tGone Title",
     "item\talbDel\tpic.jpg\t2010-07-01\tkeyPic\t-",
     "item\talbDel\tother.jpg\t2010-07-02\tkeyOther\t-"
   )
 
-
   private def mutatedCards(ids: Seq[String]): Seq[AlbumCard] =
     ids.map(id => AlbumCard(id, "Nope", "9", "auth", "leaf"))
-
 
   private def createMiss(confirmed: Boolean, detail: String, recovery: String): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onCreate = _ =>
-            throw new Refresh.ActMiss(detail, confirmed)
-          )
+        Refresh.openAct =
+          _ => new RenameFake((_, _) => (), onCreate = _ => throw new Refresh.ActMiss(detail, confirmed))
         val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("failed create-album")
-            text should include ("album \"Probe\"")
-            text should include ("step Create album, then Edit album name, Done")
-            text should include (s"recovery $recovery")
-            text should include ("catalog unchanged")
-            text should include (detail)
+            text should include("failed create-album")
+            text should include("album \"Probe\"")
+            text should include("step Create album, then Edit album name, Done")
+            text should include(s"recovery $recovery")
+            text should include("catalog unchanged")
+            text should include(detail)
             text should not include ("albOld")
             field(value, "action") shouldBe Json.Str("create-album")
             field(value, "title") shouldBe Json.Str("Probe")
@@ -2845,25 +3340,23 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         tomls(archive) shouldBe Seq.empty[String]
         released(places)
 
-
   private def createCards(
-    cards: Seq[AlbumCard],
-    read: Option[Catalog.Album],
-    detail: String
+      cards: Seq[AlbumCard],
+      read: Option[Catalog.Album],
+      detail: String
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
       val catalog: String = JFiles.readString(catalogFile.toPath)
       withAct(archive): (session, places, _) =>
-        Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onCreate = _ => (cards, read))
+        Refresh.openAct = _ => new RenameFake((_, _) => (), onCreate = _ => (cards, read))
         val (_, result) = exec(session, "agent", "create-album", "--title", "Probe")
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery refresh-only")
-            text should include ("catalog unchanged")
-            text should include (detail)
+            text should include("recovery refresh-only")
+            text should include("catalog unchanged")
+            text should include(detail)
             text should not include ("one-click")
             text should not include ("albOld")
             field(value, "recovery") shouldBe Json.Str("refresh-only")
@@ -2876,22 +3369,20 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
         released(places)
 
-
   private def blankAlbum(
-    id: String,
-    count: Int,
-    title: String,
-    items: Seq[Catalog.Item] = Seq.empty
+      id: String,
+      count: Int,
+      title: String,
+      items: Seq[Catalog.Item] = Seq.empty
   ): Catalog.Album =
     Catalog.Album(id, count, title, None, false, None, items, Seq.empty)
 
-
   private def uploadRefuse(
-    lines: Seq[String],
-    message: String,
-    prepare: File => Unit = _ => (),
-    args: Seq[String] = Seq.empty,
-    relative: String = "2010/07/01/pic.jpg"
+      lines: Seq[String],
+      message: String,
+      prepare: File => Unit = _ => (),
+      args: Seq[String] = Seq.empty,
+      relative: String = "2010/07/01/pic.jpg"
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, lines*)
@@ -2910,11 +3401,10 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-
   private def openedUpload(
-    lines: Seq[String],
-    relative: String = "2010/07/01/pic.jpg",
-    prepare: File => Unit = _ => ()
+      lines: Seq[String],
+      relative: String = "2010/07/01/pic.jpg",
+      prepare: File => Unit = _ => ()
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, lines*)
@@ -2924,22 +3414,23 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       withAct(archive): (session, places, _) =>
         var called = false
         Refresh.openAct = _ =>
-          new RenameFake((_, _) => (), onUpload = (_, _, _) =>
-            called = true
-            throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (_, _, _) =>
+              called = true
+              throw new Refresh.ActMiss("Add photos is absent", confirmed = false)
           )
         val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", relative)
         called shouldBe true
         result match
           case Result.Failed(text, value, message) =>
             message shouldBe Refresh.MutationFailed
-            text should include ("recovery one-click")
+            text should include("recovery one-click")
             field(value, "recovery") shouldBe Json.Str("one-click")
           case other =>
             fail(other.toString)
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
-
 
   private def deleteCatalog(archive: File): File =
     writeCatalog(
@@ -2953,7 +3444,6 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "owner\talbKeep\tZoe"
     )
 
-
   private def deletedBody: String =
     catalogBody(
       "album\talbSrc\t1\tSource Title",
@@ -2964,10 +3454,8 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "owner\talbKeep\tZoe"
     )
 
-
   private def catalogBody(lines: String*): String =
     (Seq("# gphoto-catalog 2") ++ lines).mkString("", "\n", "\n")
-
 
   private def refuseMove(lines: Seq[String], message: String): Unit =
     withArchive: archive =>
@@ -2979,13 +3467,21 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           called = true
           new RenameFake((_, _) => (), onPut = (_, _, _) => fail("put"), onTake = (_, _) => fail("take"))
         usage(
-          session, "agent", "move-item",
-          "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg", "--dest", "Dest Title"
+          session,
+          "agent",
+          "move-item",
+          "--title",
+          "Source Title",
+          "--item",
+          "keyPic",
+          "--current",
+          "pic.jpg",
+          "--dest",
+          "Dest Title"
         ) shouldBe message
         called shouldBe false
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
-
 
   private def rejectPut(lines: Seq[String], args: Seq[String], message: String): Unit =
     withArchive: archive =>
@@ -2997,7 +3493,6 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         JFiles.readString(catalogFile.toPath) shouldBe catalog
         places.directory.exists shouldBe false
 
-
   private def writePair(archive: File): String =
     val file: File = writeCatalog(
       archive,
@@ -3006,7 +3501,6 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       "album\talbKeep\t0\tKeep Title"
     )
     JFiles.readString(file.toPath)
-
 
   private def writeDated(archive: File): String =
     val file: File = writeCatalog(
@@ -3020,22 +3514,17 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
     )
     JFiles.readString(file.toPath)
 
-
   private class RenameFake(
-    effect: (Catalog.Album, String) => Unit,
-    onDescription: (Catalog.Item, String) => Unit = (_, _) => (),
-    onDate: (Catalog.Item, String) => Unit = (_, _) => (),
-    onDownload: (Catalog.Item, File) => Unit = (_, _) => (),
-    onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (_, _, _) =>
-      throw IllegalStateException("put"),
-    onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
-    onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
-    onUpload: (Catalog.Album, File, String) => Catalog.Item = (_, _, _) =>
-      throw IllegalStateException("upload"),
-    onCreate: String => (Seq[AlbumCard], Option[Catalog.Album]) = _ =>
-      throw IllegalStateException("create"),
-    onDelete: Catalog.Album => Seq[AlbumCard] = _ =>
-      throw IllegalStateException("delete-album")
+      effect: (Catalog.Album, String) => Unit,
+      onDescription: (Catalog.Item, String) => Unit = (_, _) => (),
+      onDate: (Catalog.Item, String) => Unit = (_, _) => (),
+      onDownload: (Catalog.Item, File) => Unit = (_, _) => (),
+      onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (_, _, _) => throw IllegalStateException("put"),
+      onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+      onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+      onUpload: (Catalog.Album, File, String) => Catalog.Item = (_, _, _) => throw IllegalStateException("upload"),
+      onCreate: String => (Seq[AlbumCard], Option[Catalog.Album]) = _ => throw IllegalStateException("create"),
+      onDelete: Catalog.Album => Seq[AlbumCard] = _ => throw IllegalStateException("delete-album")
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -3054,7 +3543,6 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
     def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) = onCreate(title)
     def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] = onDelete(album)
 
-
   private def withAct(archive: File)(body: (Session, Refresh.Places, () => Boolean) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("rename-lock").toFile
     val places: Refresh.Places = Refresh.Places(File(parent, "gphoto-sync-refresh"), File(parent, "lock"))
@@ -3071,7 +3559,6 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       Refresh.openAct = previousAct
       deleteTree(parent)
 
-
   private def released(places: Refresh.Places): Unit =
     Refresh.claim(places.lock) match
       case Refresh.Claim.Owned(channel, lock) =>
@@ -3079,11 +3566,10 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
       case Refresh.Claim.Busy =>
         fail("lock still held")
 
-
   private def shellOf(
-    session: Session,
-    line: String,
-    exchange: Option[(Session, List[String]) => Result] = None
+      session: Session,
+      line: String,
+      exchange: Option[(Session, List[String]) => Result] = None
   ): (Int, String, String) =
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream

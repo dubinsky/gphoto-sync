@@ -11,20 +11,23 @@ import java.io.File
 
 private[photo] object AlbumFile:
   private[photo] def read(
-    originals: File,
-    file: File
+      originals: File,
+      file: File
   ): (String, Option[Title.Span], Seq[Include.Entry], AlbumRole) =
-    val parsed: Title.Parsed = Title.fromLocation(directoryOf(originals, file), stemOf(file)).getOrElse(
-      throw IllegalArgumentException(s"$file: not an album file")
-    )
+    val parsed: Title.Parsed = Title
+      .fromLocation(directoryOf(originals, file), stemOf(file))
+      .getOrElse(
+        throw IllegalArgumentException(s"$file: not an album file")
+      )
     val values: Map[String, TomlValue] = checked(file, keys)
     val common: Common = commonOf(file, values)
     val span: Option[Title.Span] = parsed.span
     val include: Seq[Include.Entry] = stringSeq(file, values, "include").map: text =>
       val entry: Include.Entry =
         try Include.parse(text)
-        catch case error: IllegalArgumentException =>
-          reject(file, "include", Album.messageOf(error))
+        catch
+          case error: IllegalArgumentException =>
+            reject(file, "include", Album.messageOf(error))
       if Include.inside(span, entry) then entry
       else reject(file, "include", s"'$text' is outside the album")
     val googleTitle: Option[String] = Option.when(common.googleTitle.nonEmpty)(common.googleTitle)
@@ -67,7 +70,7 @@ private[photo] object AlbumFile:
       if include.isEmpty then Seq(TextLine("include = []", ""))
       else blockLines(includeLines(include))
     val next: Seq[TextLine] = findInclude(file, lines) match
-      case Some((from, to)) => replaceSpan(lines, from, to, block)
+      case Some((from, to))             => replaceSpan(lines, from, to, block)
       case None if includePresent(text) =>
         throw IllegalArgumentException(s"$file: include array does not end on its own line")
       case None => appendBlock(lines, block)
@@ -77,16 +80,16 @@ private[photo] object AlbumFile:
   // googleTitle None leaves that key. Some(None) removes it. Some(Some(text)) sets it.
   // publishedTitle None leaves that key.
   private[photo] def spliceTitles(
-    file: File,
-    original: String,
-    googleTitle: Option[Option[String]],
-    publishedTitle: Option[String]
+      file: File,
+      original: String,
+      googleTitle: Option[Option[String]],
+      publishedTitle: Option[String]
   ): String =
     val titled: Seq[TextLine] = googleTitle match
-      case None => splitLines(original)
+      case None        => splitLines(original)
       case Some(value) => assign(file, splitLines(original), "google-title", value)
     val next: Seq[TextLine] = publishedTitle match
-      case None => titled
+      case None       => titled
       case Some(text) => assign(file, titled, "published-title", Some(text))
     joinLines(next)
 
@@ -94,10 +97,10 @@ private[photo] object AlbumFile:
     s"external = false\ngoogle-album-id = ${Album.quote(id)}\npublished-title = ${Album.quote(title)}\n"
 
   private[photo] def spliceGoogleText(
-    file: File,
-    text: String,
-    googleAlbumId: String,
-    publishedTitle: String
+      file: File,
+      text: String,
+      googleAlbumId: String,
+      publishedTitle: String
   ): String =
     val table: TomlTable = JToml.jToml.readFromString(text)
     val values: Map[String, String] = Map(
@@ -112,10 +115,10 @@ private[photo] object AlbumFile:
 
   // None removes a present line. Leaving published-title alone is the None branch in spliceTitles.
   private def assign(
-    file: File,
-    lines: Seq[TextLine],
-    key: String,
-    value: Option[String]
+      file: File,
+      lines: Seq[TextLine],
+      key: String,
+      value: Option[String]
   ): Seq[TextLine] =
     val at: Seq[Int] = lines.zipWithIndex.collect:
       case (line, index) if singleAssignment(line.text, key) => index
@@ -132,9 +135,9 @@ private[photo] object AlbumFile:
 
   private def insertAssignment(lines: Seq[TextLine], key: String, added: TextLine): Seq[TextLine] =
     val beforeKey: Set[String] = key match
-      case "google-title" => Set("owner", "google-album-id", "published-title", "include")
+      case "google-title"    => Set("owner", "google-album-id", "published-title", "include")
       case "published-title" => Set("include")
-      case _ => Set.empty
+      case _                 => Set.empty
     val pivot: Option[Int] = lines.zipWithIndex.collectFirst:
       case (line, index) if beforeKey.exists(name => singleAssignment(line.text, name)) => index
     pivot match
@@ -149,11 +152,11 @@ private[photo] object AlbumFile:
         appendBlock(lines, Seq(added))
 
   private final case class Common(
-    external: Boolean,
-    googleAlbumId: String,
-    publishedTitle: String,
-    googleTitle: String,
-    owner: Option[String]
+      external: Boolean,
+      googleAlbumId: String,
+      publishedTitle: String,
+      googleTitle: String,
+      owner: Option[String]
   )
 
   private val keys: Set[String] =
@@ -197,8 +200,12 @@ private[photo] object AlbumFile:
   private def parsed(file: File, allowed: Set[String]): (TomlTable, Map[String, TomlValue]) =
     val text: String = Files.read(file)
     val table: TomlTable = if text.isBlank then TomlTable.create() else JToml.jToml.readFromString(text)
-    val entries: Seq[(String, TomlValue)] = table.keys(false).asScala.toSeq.flatMap: key =>
-      Option(table.get(key)).map(keyName(key) -> _)
+    val entries: Seq[(String, TomlValue)] = table
+      .keys(false)
+      .asScala
+      .toSeq
+      .flatMap: key =>
+        Option(table.get(key)).map(keyName(key) -> _)
     val unknown: Seq[String] = entries.map(_._1).filterNot(allowed.contains)
     if unknown.isEmpty then (table, entries.toMap)
     else throw IllegalArgumentException(s"$file: unknown key '${unknown.mkString(", ")}'")
@@ -213,15 +220,19 @@ private[photo] object AlbumFile:
     optionalString(file, values, key).getOrElse(default)
 
   private def boolean(file: File, values: Map[String, TomlValue], key: String, default: Boolean): Boolean =
-    values.get(key).fold(default): value =>
-      val primitive: TomlPrimitive = primitiveOf(file, key, value)
-      if primitive.isBoolean then primitive.asBoolean
-      else reject(file, key, "must be a boolean")
+    values
+      .get(key)
+      .fold(default): value =>
+        val primitive: TomlPrimitive = primitiveOf(file, key, value)
+        if primitive.isBoolean then primitive.asBoolean
+        else reject(file, key, "must be a boolean")
 
   private def stringSeq(file: File, values: Map[String, TomlValue], key: String): Seq[String] =
-    values.get(key).fold(Seq.empty): value =>
-      if !value.isArray then reject(file, key, "must be an array of strings")
-      else value.asArray.asScala.toSeq.map(asString(file, key, _))
+    values
+      .get(key)
+      .fold(Seq.empty): value =>
+        if !value.isArray then reject(file, key, "must be an array of strings")
+        else value.asArray.asScala.toSeq.map(asString(file, key, _))
 
   private def asString(file: File, key: String, value: TomlValue): String =
     val primitive: TomlPrimitive = primitiveOf(file, key, value)
@@ -269,8 +280,8 @@ private[photo] object AlbumFile:
     lines.map(line => line.text + line.ending).mkString
 
   private def blockLines(bodies: Seq[String]): Seq[TextLine] = bodies match
-    case Seq() => Seq.empty
-    case Seq(last) => Seq(TextLine(last, ""))
+    case Seq()        => Seq.empty
+    case Seq(last)    => Seq(TextLine(last, ""))
     case head +: tail => TextLine(head, "\n") +: blockLines(tail)
 
   private def appendBlock(lines: Seq[TextLine], block: Seq[TextLine]): Seq[TextLine] =
@@ -280,7 +291,7 @@ private[photo] object AlbumFile:
       case _ => lines
     val ended: Seq[TextLine] = block match
       case prefix :+ last if last.ending.isEmpty => prefix :+ last.copy(ending = "\n")
-      case _ => block
+      case _                                     => block
     base ++ ended
 
   private def replaceSpan(lines: Seq[TextLine], from: Int, to: Int, block: Seq[TextLine]): Seq[TextLine] =
@@ -288,29 +299,31 @@ private[photo] object AlbumFile:
     val (span, after) = rest.splitAt(to - from + 1)
     val ending: String = span.lastOption.map(_.ending).getOrElse("")
     val fitted: Seq[TextLine] = block match
-      case Seq() => Seq.empty
+      case Seq()          => Seq.empty
       case prefix :+ last => prefix :+ last.copy(ending = ending)
     before ++ fitted ++ after
 
   private def spliceGoogle(
-    file: File,
-    lines: Seq[TextLine],
-    values: Map[String, String],
-    present: Set[String]
+      file: File,
+      lines: Seq[TextLine],
+      values: Map[String, String],
+      present: Set[String]
   ): Seq[TextLine] =
-    val slots: Map[String, Int] = present.map: key =>
-      val found: Seq[Int] = lines.zipWithIndex.collect:
-        case (line, index) if singleAssignment(line.text, key) => index
-      if found.sizeIs != 1 then failGoogle(file, s"$key is not a single line")
-      key -> found.head
-    .toMap
+    val slots: Map[String, Int] = present
+      .map: key =>
+        val found: Seq[Int] = lines.zipWithIndex.collect:
+          case (line, index) if singleAssignment(line.text, key) => index
+        if found.sizeIs != 1 then failGoogle(file, s"$key is not a single line")
+        key -> found.head
+      .toMap
     val missing: Seq[String] = Seq("google-album-id", "published-title").filterNot(present.contains)
     val includeAt: Option[Int] = lines.zipWithIndex.collectFirst:
       case (line, index) if assignmentRest(line.text.trim, "include").isDefined => index
     val replaced: Seq[TextLine] = lines.zipWithIndex.map: (line, index) =>
-      slots.collectFirst:
-        case (key, at) if at == index => line.copy(text = s"$key = ${Album.quote(values(key))}")
-      .getOrElse(line)
+      slots
+        .collectFirst:
+          case (key, at) if at == index => line.copy(text = s"$key = ${Album.quote(values(key))}")
+        .getOrElse(line)
     val added: Seq[TextLine] = missing.map(key => TextLine(s"$key = ${Album.quote(values(key))}", "\n"))
     includeAt match
       case Some(index) =>
@@ -323,16 +336,18 @@ private[photo] object AlbumFile:
     val opens: Seq[Int] = lines.zipWithIndex.collect:
       case (line, index) if assignmentRest(line.text.trim, "include").isDefined => index
     opens match
-      case Seq() => None
+      case Seq()      => None
       case Seq(index) => Some(includeBounds(file, lines, index))
-      case _ => throw IllegalArgumentException(s"$file: include is not a single array")
+      case _          => throw IllegalArgumentException(s"$file: include is not a single array")
 
   private def includeBounds(file: File, lines: Seq[TextLine], index: Int): (Int, Int) =
     val value: String = assignmentRest(lines(index).text.trim, "include").getOrElse("")
     if value == "[" then
-      lines.zipWithIndex.drop(index + 1).collectFirst:
-        case (line, end) if line.text.trim == "]" => index -> end
-      .getOrElse(throw IllegalArgumentException(s"$file: include array does not end on its own line"))
+      lines.zipWithIndex
+        .drop(index + 1)
+        .collectFirst:
+          case (line, end) if line.text.trim == "]" => index -> end
+        .getOrElse(throw IllegalArgumentException(s"$file: include array does not end on its own line"))
     else if value.startsWith("[") && arrayClosed(value) then index -> index
     else throw IllegalArgumentException(s"$file: include array does not end on its own line")
 
@@ -378,24 +393,20 @@ private[photo] object AlbumFile:
   private def scanValues(rest: String, depth: Int): Option[String] =
     if depth == 0 then Some(rest)
     else if rest.isEmpty then None
-    else if rest.startsWith("\"\"\"") then
-      skipMlBasic(rest.substring(3)).flatMap(next => scanValues(next, depth))
-    else if rest.startsWith("'''") then
-      skipMlLiteral(rest.substring(3)).flatMap(next => scanValues(next, depth))
-    else if rest.startsWith("\"") then
-      skipBasic(rest.substring(1)).flatMap(next => scanValues(next, depth))
-    else if rest.startsWith("'") then
-      skipLiteral(rest.substring(1)).flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("\"\"\"") then skipMlBasic(rest.substring(3)).flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("'''") then skipMlLiteral(rest.substring(3)).flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("\"") then skipBasic(rest.substring(1)).flatMap(next => scanValues(next, depth))
+    else if rest.startsWith("'") then skipLiteral(rest.substring(1)).flatMap(next => scanValues(next, depth))
     else if rest.startsWith("#") then None
-    else rest.head match
-      case '[' => scanValues(rest.substring(1), depth + 1)
-      case ']' => scanValues(rest.substring(1), depth - 1)
-      case _ => scanValues(rest.substring(1), depth)
+    else
+      rest.head match
+        case '[' => scanValues(rest.substring(1), depth + 1)
+        case ']' => scanValues(rest.substring(1), depth - 1)
+        case _   => scanValues(rest.substring(1), depth)
 
   private def skipMlBasic(rest: String): Option[String] =
     if rest.isEmpty then None
-    else if rest.startsWith("\\") then
-      if rest.length == 1 then None else skipMlBasic(rest.substring(2))
+    else if rest.startsWith("\\") then if rest.length == 1 then None else skipMlBasic(rest.substring(2))
     else if rest.startsWith("\"\"\"") then Some(rest.substring(3))
     else skipMlBasic(rest.substring(1))
 
@@ -416,13 +427,13 @@ private[photo] object AlbumFile:
     loop(rest, "")
 
   private def unescapeBasic(ch: String): String = ch match
-    case "b" => "\b"
-    case "t" => "\t"
-    case "n" => "\n"
-    case "f" => "\f"
-    case "r" => "\r"
-    case "\"" => "\""
-    case "\\" => "\\"
+    case "b"   => "\b"
+    case "t"   => "\t"
+    case "n"   => "\n"
+    case "f"   => "\f"
+    case "r"   => "\r"
+    case "\""  => "\""
+    case "\\"  => "\\"
     case other => other
 
   private def skipLiteral(rest: String): Option[String] = takeLiteral(rest).map((_, after) => after)

@@ -19,7 +19,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "Root.lsd" should "prepend .upload and skip a dot-directory" in :
+  "Root.lsd" should "prepend .upload and skip a dot-directory" in:
     withArchive: archive =>
       JFiles.createDirectory(archive.toPath.resolve("2009"))
       JFiles.createDirectory(archive.toPath.resolve(".gphoto-sync"))
@@ -27,20 +27,20 @@ class ListingTest extends AnyFlatSpec, Matchers:
       JFiles.createFile(archive.toPath.resolve("Best.toml"))
       rootFor(archive).lsd.map(_.toString) shouldBe Seq("/.upload", "/2009")
 
-  it should "list .upload once when the directory exists" in :
+  it should "list .upload once when the directory exists" in:
     withArchive: archive =>
       JFiles.createDirectory(archive.toPath.resolve("2009"))
       JFiles.createDirectory(archive.toPath.resolve(".upload"))
       rootFor(archive).lsd.map(_.toString) shouldBe Seq("/.upload", "/2009")
 
-  "Year.lsd" should "skip a dot-directory and keep the month" in :
+  "Year.lsd" should "skip a dot-directory and keep the month" in:
     withArchive: archive =>
       val year: File = JFiles.createDirectory(archive.toPath.resolve("2009")).toFile
       JFiles.createDirectory(year.toPath.resolve(".secret"))
       JFiles.createDirectory(year.toPath.resolve("03"))
       rootFor(archive).year(2009).lsd.map(_.toString) shouldBe Seq("/2009/03")
 
-  "Month.lsd" should "skip a dot-directory and keep the day" in :
+  "Month.lsd" should "skip a dot-directory and keep the day" in:
     withArchive: archive =>
       val year: File = JFiles.createDirectory(archive.toPath.resolve("2009")).toFile
       val month: File = JFiles.createDirectory(year.toPath.resolve("03")).toFile
@@ -48,29 +48,29 @@ class ListingTest extends AnyFlatSpec, Matchers:
       JFiles.createDirectory(month.toPath.resolve("01"))
       rootFor(archive).year(2009).month(3).lsd.map(_.toString) shouldBe Seq("/2009/03/01")
 
-  it should "reject a visible non-numeric directory" in :
+  it should "reject a visible non-numeric directory" in:
     withArchive: archive =>
       val year: File = JFiles.createDirectory(archive.toPath.resolve("2009")).toFile
       JFiles.createDirectory(year.toPath.resolve("foo"))
-      an [NumberFormatException] should be thrownBy rootFor(archive).year(2009).lsd
+      an[NumberFormatException] should be thrownBy rootFor(archive).year(2009).lsd
 
-  "Root.item" should "route .upload to the inbox when the directory is absent" in :
+  "Root.item" should "route .upload to the inbox when the directory is absent" in:
     withArchive: archive =>
       val inbox: Directory = rootFor(archive).item(".upload")
       inbox.name shouldBe ".upload"
-      inbox shouldBe a [UploadDirectory]
+      inbox shouldBe a[UploadDirectory]
 
-  it should "reject .gphoto-sync as not a year" in :
+  it should "reject .gphoto-sync as not a year" in:
     withArchive: archive =>
       val exception: IllegalArgumentException = intercept[IllegalArgumentException]:
         rootFor(archive).item(".gphoto-sync")
-      exception.getMessage should include ("not a year")
+      exception.getMessage should include("not a year")
 
-  it should "reject the old Upload name" in :
+  it should "reject the old Upload name" in:
     withArchive: archive =>
-      an [NumberFormatException] should be thrownBy rootFor(archive).item("Upload")
+      an[NumberFormatException] should be thrownBy rootFor(archive).item("Upload")
 
-  "ls" should "list years and not the inbox or an album file" in :
+  "ls" should "list years and not the inbox or an album file" in:
     withArchive: archive =>
       JFiles.createDirectory(archive.toPath.resolve("2010"))
       JFiles.createDirectory(archive.toPath.resolve("2009"))
@@ -85,7 +85,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
         )
       )
 
-  it should "list the months of a year and not fill the day index" in :
+  it should "list the months of a year and not fill the day index" in:
     withArchive: archive =>
       jpeg(File(archive, "2010/07/04/2412.jpg"))
       JFiles.createDirectories(archive.toPath.resolve("2010/03"))
@@ -100,17 +100,19 @@ class ListingTest extends AnyFlatSpec, Matchers:
       )
       returned.index.isEmpty shouldBe true
 
-  it should "list items under -R and one picture, and not directory names" in :
+  it should "list items under -R and one picture, and not directory names" in:
     withArchive: archive =>
       jpeg(File(archive, "2010/07/04/2412.jpg"))
       val session: Session = sessionFor(archive)
-      val item: Json = Json.Obj(Seq(
-        "path" -> Json.Str("2010/07/04/2412"),
-        "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
-        "sidecar" -> Json.Str(""),
-        "assessed" -> Json.Null,
-        "wrongDay" -> Json.Bool(false)
-      ))
+      val item: Json = Json.Obj(
+        Seq(
+          "path" -> Json.Str("2010/07/04/2412"),
+          "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
+          "sidecar" -> Json.Str(""),
+          "assessed" -> Json.Null,
+          "wrongDay" -> Json.Bool(false)
+        )
+      )
       val listed: Result = Result.Ok("/2010/07/04/2412 jpg\n", items(item))
       val (_, recursive) = execute(session, "ls", "-R", "2010")
       recursive shouldBe listed
@@ -122,7 +124,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
           fail(other.toString)
       execute(session, "ls", "2010/07/04/2412")._2 shouldBe listed
 
-  it should "list wrong-day items under a month" in :
+  it should "list wrong-day items under a month" in:
     withArchive: archive =>
       jpeg(File(archive, "2010/07/04/2412.jpg"))
       jpeg(File(archive, "2010/07/04/1000.jpg"))
@@ -130,20 +132,24 @@ class ListingTest extends AnyFlatSpec, Matchers:
       val (_, result) = execute(sessionFor(archive), "ls", "--wrong-day", "2010/07")
       result match
         case Result.Ok(text, value) =>
-          text should include ("/2010/07/04/2412")
-          text should include ("WRONG DAY; SHOULD BE:")
+          text should include("/2010/07/04/2412")
+          text should include("WRONG DAY; SHOULD BE:")
           text should not include ("1000")
-          value shouldBe items(Json.Obj(Seq(
-            "path" -> Json.Str("2010/07/04/2412"),
-            "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
-            "sidecar" -> Json.Str("date=2010-08-01"),
-            "assessed" -> Json.Str("2010-08-01T00:00"),
-            "wrongDay" -> Json.Bool(true)
-          )))
+          value shouldBe items(
+            Json.Obj(
+              Seq(
+                "path" -> Json.Str("2010/07/04/2412"),
+                "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
+                "sidecar" -> Json.Str("date=2010-08-01"),
+                "assessed" -> Json.Str("2010-08-01T00:00"),
+                "wrongDay" -> Json.Bool(true)
+              )
+            )
+          )
         case other =>
           fail(other.toString)
 
-  it should "count stems without renaming and still list an album-only day" in :
+  it should "count stems without renaming and still list an album-only day" in:
     withArchive: archive =>
       jpeg(File(archive, "2010/07/19/VID_1.jpg"))
       val albumDay: File = File(archive, "2010/07/04")
@@ -160,7 +166,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/19/VID_1.jpg").isFile shouldBe true
       File(archive, "2010/07/19/1.jpg").exists shouldBe false
 
-  it should "reject the inbox" in :
+  it should "reject the inbox" in:
     withArchive: archive =>
       JFiles.createDirectories(archive.toPath.resolve("2010/07"))
       jpeg(File(archive, "2010/07/04/2412.jpg"))
@@ -171,7 +177,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
       def usage(current: Session, args: String*): Unit =
         execute(current, args*)._2 match
           case Result.Usage(message) => message shouldBe "not a date-tree path"
-          case other => fail(other.toString)
+          case other                 => fail(other.toString)
       List(session, serve).foreach: current =>
         usage(current, "ls", ".upload")
         usage(current, "ls", ".upload/2412")
@@ -207,7 +213,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
       usage(atDay, "ls", "2412/../../../../.upload/missing")
       usage(atDay, "ls", "2412/../../../../.upload/2412/extra")
 
-  it should "sort a day by assessed civil time, subseconds, and path" in :
+  it should "sort a day by assessed civil time, subseconds, and path" in:
     withArchive: archive =>
       val day: String = "2010/07/04"
       val tie: String = "timestamp = \"2010-07-04T12:00:00\"\n"
@@ -243,8 +249,8 @@ class ListingTest extends AnyFlatSpec, Matchers:
       longResult match
         case Result.Ok(text, value) =>
           picturePaths(text) shouldBe lines.map(_.takeWhile(_ != ' '))
-          text.linesIterator.find(_.startsWith("/2010/07/04/4000")).get should include ("DATE DISAGREES WITH TIMESTAMP")
-          text.linesIterator.find(_.startsWith("/2010/07/04/2000")).get should include ("NO TIMESTAMP source=FolderDay")
+          text.linesIterator.find(_.startsWith("/2010/07/04/4000")).get should include("DATE DISAGREES WITH TIMESTAMP")
+          text.linesIterator.find(_.startsWith("/2010/07/04/2000")).get should include("NO TIMESTAMP source=FolderDay")
           value shouldBe listed
         case other =>
           fail(other.toString)
@@ -266,7 +272,7 @@ class ListingTest extends AnyFlatSpec, Matchers:
         items(withSidecar*)
       )
 
-  it should "sort -R across days and leave directory lines in name order" in :
+  it should "sort -R across days and leave directory lines in name order" in:
     withArchive: archive =>
       writePicture(archive, "2010/07/05/3000.jpg", Some("timestamp = \"2010-07-04T09:00:00\"\n"))
       writePicture(archive, "2010/07/04/2000.jpg", Some("timestamp = \"2010-07-04T12:00:00\"\n"))
@@ -293,13 +299,13 @@ class ListingTest extends AnyFlatSpec, Matchers:
       plain shouldBe Result.Ok("2010/07/04\n2010/07/05\n", directoryJson)
       plain match
         case Result.Ok(text, _) => text should not include ("items=")
-        case other => fail(other.toString)
+        case other              => fail(other.toString)
       execute(session, "ls", "-l", "2010/07")._2 shouldBe Result.Ok(
         "2010/07/04 items=1\n2010/07/05 items=2\n",
         directoryJson
       )
 
-  "ListPictures.itemOrder" should "put an earlier path first for equal times and for untimed rows" in :
+  "ListPictures.itemOrder" should "put an earlier path first for equal times and for untimed rows" in:
     val when: LocalDateTime = LocalDateTime.parse("2010-07-04T12:00:00")
     Seq("2010/07/05/1000", "2010/07/04/2000")
       .sortBy(path => ListPictures.itemOrder(Some(when), path)) shouldBe
@@ -343,13 +349,15 @@ class ListingTest extends AnyFlatSpec, Matchers:
     text.linesIterator.filter(_.startsWith("/")).map(_.takeWhile(_ != ' ')).toSeq
 
   private def item(path: String, sidecar: String, assessed: Json, wrongDay: Boolean = false): Json =
-    Json.Obj(Seq(
-      "path" -> Json.Str(path),
-      "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
-      "sidecar" -> Json.Str(sidecar),
-      "assessed" -> assessed,
-      "wrongDay" -> Json.Bool(wrongDay)
-    ))
+    Json.Obj(
+      Seq(
+        "path" -> Json.Str(path),
+        "extensions" -> Json.Arr(Seq(Json.Str("jpg"))),
+        "sidecar" -> Json.Str(sidecar),
+        "assessed" -> assessed,
+        "wrongDay" -> Json.Bool(wrongDay)
+      )
+    )
 
   private def entry(path: String, key: String, count: Long): Json =
     Json.Obj(Seq("path" -> Json.Str(path), key -> Json.Long(count)))

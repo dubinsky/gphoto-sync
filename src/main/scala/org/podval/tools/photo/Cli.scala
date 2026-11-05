@@ -4,14 +4,31 @@ import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.ListHasAsScala
 import java.io.File
 import org.jline.reader.{
-  Candidate, Completer, CompletingParsedLine, EndOfFileException, LineReader, LineReaderBuilder, ParsedLine, Parser,
+  Candidate,
+  Completer,
+  CompletingParsedLine,
+  EndOfFileException,
+  LineReader,
+  LineReaderBuilder,
+  ParsedLine,
+  Parser,
   UserInterruptException
 }
 import org.jline.reader.impl.DefaultParser
 import org.jline.terminal.TerminalBuilder
 import org.podval.tools.photo.chrome.{
-  AgentAdd, AgentCreate, AgentDelete, AgentDeleteAlbum, AgentDownload, AgentMove, AgentRemove, AgentRename,
-  AgentSetDate, AgentSetDescription, AgentUpload, PlaywrightPhotosUi
+  AgentAdd,
+  AgentCreate,
+  AgentDelete,
+  AgentDeleteAlbum,
+  AgentDownload,
+  AgentMove,
+  AgentRemove,
+  AgentRename,
+  AgentSetDate,
+  AgentSetDescription,
+  AgentUpload,
+  PlaywrightPhotosUi
 }
 
 object Cli:
@@ -21,29 +38,30 @@ object Cli:
 
   private[photo] sealed trait Parsed
   private[photo] final case class Ls(
-    path: Option[String],
-    long: Boolean,
-    recursive: Boolean,
-    nameContains: Option[String],
-    hasExtension: Option[String],
-    property: Option[String],
-    timestampFromNameFormat: Option[String],
-    timestampFromName: Boolean,
-    timestampFromNameOnly: Boolean,
-    timestampsVary: Boolean,
-    hasMetadata: Boolean,
-    noNormal: Boolean,
-    noTimestamp: Boolean,
-    wrongTimestamp: Boolean,
-    wrongDay: Boolean,
-    wrong: Boolean
+      path: Option[String],
+      long: Boolean,
+      recursive: Boolean,
+      nameContains: Option[String],
+      hasExtension: Option[String],
+      property: Option[String],
+      timestampFromNameFormat: Option[String],
+      timestampFromName: Boolean,
+      timestampFromNameOnly: Boolean,
+      timestampsVary: Boolean,
+      hasMetadata: Boolean,
+      noNormal: Boolean,
+      noTimestamp: Boolean,
+      wrongTimestamp: Boolean,
+      wrongDay: Boolean,
+      wrong: Boolean
   ) extends Parsed
   private[photo] final case class ItemShowArgs(picture: String) extends Parsed
   private[photo] final case class ItemSetArgs(dryRun: Boolean, property: String, picture: String) extends Parsed
   private[photo] final case class AlbumLsArgs(path: Option[String]) extends Parsed
   private[photo] final case class AlbumShowArgs(title: String) extends Parsed
   private[photo] final case class AlbumClaimsArgs(path: Option[String]) extends Parsed
-  private[photo] final case class AlbumNewArgs(dryRun: Boolean, span: Option[String], name: Option[String]) extends Parsed
+  private[photo] final case class AlbumNewArgs(dryRun: Boolean, span: Option[String], name: Option[String])
+      extends Parsed
   private[photo] final case class AlbumRmArgs(dryRun: Boolean, title: String) extends Parsed
   private[photo] final case class AlbumMvArgs(dryRun: Boolean, from: String, to: String) extends Parsed
   private[photo] final case class AlbumIncludeArgs(dryRun: Boolean, title: String, pictures: Seq[String]) extends Parsed
@@ -54,9 +72,9 @@ object Cli:
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class RefreshArgs(
-    mode: RefreshPlan.Mode,
-    list: Boolean,
-    allowShrink: Boolean
+      mode: RefreshPlan.Mode,
+      list: Boolean,
+      allowShrink: Boolean
   ) extends Parsed
   private[photo] final case class ReconcileArgs(dryRun: Boolean, delete: Boolean) extends Parsed
   private[photo] final case class FileArgs(dryRun: Boolean) extends Parsed
@@ -65,12 +83,12 @@ object Cli:
   private[photo] final case class CardCopy(dryRun: Boolean, path: Option[String]) extends Parsed
   private[photo] final case class WebArgs(port: Int) extends Parsed
   private[photo] final case class RepairArgs(
-    path: String,
-    names: Boolean,
-    raw: Boolean,
-    timestamps: Boolean,
-    days: Boolean,
-    dryRun: Boolean
+      path: String,
+      names: Boolean,
+      raw: Boolean,
+      timestamps: Boolean,
+      days: Boolean,
+      dryRun: Boolean
   ) extends Parsed
   private[photo] case object LoginArgs extends Parsed
   private[photo] case object StatusArgs extends Parsed
@@ -89,66 +107,66 @@ object Cli:
   private[photo] final case class AgentLocateArgs(day: String, stem: String) extends Parsed
   private[photo] final case class AgentIncludeArgs(span: Option[String], paths: Seq[String]) extends Parsed
   private[photo] final case class AgentAlbumFileArgs(
-    id: Option[String],
-    dryRun: Boolean,
-    replace: Boolean,
-    googleTitle: Option[String],
-    album: String
+      id: Option[String],
+      dryRun: Boolean,
+      replace: Boolean,
+      googleTitle: Option[String],
+      album: String
   ) extends Parsed
   private[photo] final case class RenameAlbumArgs(
-    title: Option[String],
-    current: Option[String],
-    updated: Option[String],
-    id: Option[String]
+      title: Option[String],
+      current: Option[String],
+      updated: Option[String],
+      id: Option[String]
   ) extends Parsed
   private[photo] final case class SetDescriptionArgs(
-    item: Option[String],
-    current: Option[String],
-    updated: Option[String]
+      item: Option[String],
+      current: Option[String],
+      updated: Option[String]
   ) extends Parsed
   private[photo] final case class SetDateArgs(
-    item: Option[String],
-    current: Option[String],
-    updated: Option[String]
+      item: Option[String],
+      current: Option[String],
+      updated: Option[String]
   ) extends Parsed
   private[photo] final case class DownloadItemArgs(
-    title: Option[String],
-    item: Option[String],
-    current: Option[String],
-    id: Option[String]
+      title: Option[String],
+      item: Option[String],
+      current: Option[String],
+      id: Option[String]
   ) extends Parsed
   private[photo] final case class AddToAlbumArgs(
-    title: Option[String],
-    item: Option[String],
-    current: Option[String],
-    dest: Option[String],
-    id: Option[String],
-    destId: Option[String]
+      title: Option[String],
+      item: Option[String],
+      current: Option[String],
+      dest: Option[String],
+      id: Option[String],
+      destId: Option[String]
   ) extends Parsed
   private[photo] final case class RemoveFromAlbumArgs(
-    title: Option[String],
-    item: Option[String],
-    current: Option[String],
-    id: Option[String]
+      title: Option[String],
+      item: Option[String],
+      current: Option[String],
+      id: Option[String]
   ) extends Parsed
   private[photo] final case class MoveItemArgs(
-    title: Option[String],
-    item: Option[String],
-    current: Option[String],
-    dest: Option[String],
-    id: Option[String],
-    destId: Option[String]
+      title: Option[String],
+      item: Option[String],
+      current: Option[String],
+      dest: Option[String],
+      id: Option[String],
+      destId: Option[String]
   ) extends Parsed
   private[photo] final case class DeleteItemArgs(
-    title: Option[String],
-    item: Option[String],
-    current: Option[String],
-    id: Option[String]
+      title: Option[String],
+      item: Option[String],
+      current: Option[String],
+      id: Option[String]
   ) extends Parsed
   private[photo] final case class UploadItemArgs(
-    path: Option[String],
-    dest: Option[String],
-    destId: Option[String]
+      path: Option[String],
+      dest: Option[String],
+      destId: Option[String]
   ) extends Parsed
   private[photo] final case class CreateAlbumArgs(title: Option[String]) extends Parsed
   private[photo] final case class DeleteAlbumArgs(title: Option[String], id: Option[String]) extends Parsed
@@ -212,9 +230,10 @@ object Cli:
       case McpFront =>
         val session: Session =
           try Session.open(PathStyle.OneShot)
-          catch case error: IllegalArgumentException =>
-            System.err.println(usageLine(Operation.messageOf(error)))
-            sys.exit(1)
+          catch
+            case error: IllegalArgumentException =>
+              System.err.println(usageLine(Operation.messageOf(error)))
+              sys.exit(1)
         val code: Int = Mcp.run(Serve.runtimeDirectory(), session, System.in, System.out)
         if code != 0 then sys.exit(code)
       case Run(parsed) =>
@@ -231,9 +250,9 @@ object Cli:
     Iterator.continually(scala.io.StdIn.readLine()).takeWhile(_ != null)
 
   private[photo] def processCode(result: Result): Int = result match
-    case Result.Ok(_, _) => 0
+    case Result.Ok(_, _)                                                   => 0
     case Result.Failed(_, _, message) if message == Refresh.AlreadyRunning => 2
-    case _ => 1
+    case _                                                                 => 1
 
   private def render(result: Result): Unit = result match
     case Result.Ok(text, _) =>
@@ -281,11 +300,11 @@ object Cli:
           other
 
   private[photo] def shell(
-    session: Session,
-    lines: Iterator[String],
-    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session),
-    exchange: Option[(Session, List[String]) => Result] = None,
-    interactive: Boolean = false
+      session: Session,
+      lines: Iterator[String],
+      run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session),
+      exchange: Option[(Session, List[String]) => Result] = None,
+      interactive: Boolean = false
   ): Int =
     // Assigned before each readLine. Tab runs inside that read, so cd is already visible.
     var live: Session = session
@@ -297,8 +316,10 @@ object Cli:
           val sessionNow: () => Session = () => live
           val completer: Completer = (_, line, found) =>
             val words: List[String] = line.words.asScala.toList
-            Completion.candidates(sessionNow(), words, line.wordIndex).foreach: text =>
-              found.add(new Candidate(text))
+            Completion
+              .candidates(sessionNow(), words, line.wordIndex)
+              .foreach: text =>
+                found.add(new Candidate(text))
           Some(
             LineReaderBuilder.builder().terminal(terminal).parser(shellParser).completer(completer).build()
           )
@@ -317,14 +338,14 @@ object Cli:
           case Some(lineReader) =>
             try Option(lineReader.readLine(current.prompt))
             catch
-              case _: EndOfFileException => None
+              case _: EndOfFileException     => None
               case _: UserInterruptException => Some("")
         line match
           case None =>
             0
           case Some(text) =>
             step(current, text, run, exchange) match
-              case Step.Stop => 0
+              case Step.Stop           => 0
               case Step.Continue(next) => loop(next)
       loop(session)
     finally
@@ -334,17 +355,17 @@ object Cli:
 
   // The socket writes this line on the connection. serveResponse does not print it.
   private[photo] def serveResponse(
-    session: Session,
-    line: String,
-    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
+      session: Session,
+      line: String,
+      run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
   ): (Step, String) =
     val archive: String = Serve.archiveOf(session)
     def reply(
-      id: Option[String],
-      ok: Boolean,
-      text: Option[String],
-      error: Option[String],
-      value: Option[Json]
+        id: Option[String],
+        ok: Boolean,
+        text: Option[String],
+        error: Option[String],
+        value: Option[Json]
     ): String =
       Serve.render(id, ok, text, error, value, archive)
 
@@ -385,10 +406,10 @@ object Cli:
     session.copy(cursor = session.root, style = PathStyle.Serve)
 
   private def step(
-    session: Session,
-    line: String,
-    run: (Session, Parsed) => (Session, Result),
-    exchange: Option[(Session, List[String]) => Result]
+      session: Session,
+      line: String,
+      run: (Session, Parsed) => (Session, Result),
+      exchange: Option[(Session, List[String]) => Result]
   ): Step =
     splitLine(line) match
       case Left(message) =>
@@ -417,111 +438,112 @@ object Cli:
 
   private def staysLocal(parsed: Parsed): Boolean = parsed match
     case CdArgs(_) | PwdArgs | ExitArgs => true
-    case _ => false
+    case _                              => false
 
   // Every real arm is listed. Refresh, reconcile, file, push, card, and web stay off the serve thread.
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
-    case _: RefreshArgs => true
-    case _: ReconcileArgs => true
-    case _: FileArgs => true
-    case _: PushArgs => true
-    case _: CardDiscover => true
-    case _: CardCopy => true
-    case _: RenameAlbumArgs => true
-    case _: SetDescriptionArgs => true
-    case _: SetDateArgs => true
-    case _: DownloadItemArgs => true
-    case _: AddToAlbumArgs => true
+    case _: RefreshArgs         => true
+    case _: ReconcileArgs       => true
+    case _: FileArgs            => true
+    case _: PushArgs            => true
+    case _: CardDiscover        => true
+    case _: CardCopy            => true
+    case _: RenameAlbumArgs     => true
+    case _: SetDescriptionArgs  => true
+    case _: SetDateArgs         => true
+    case _: DownloadItemArgs    => true
+    case _: AddToAlbumArgs      => true
     case _: RemoveFromAlbumArgs => true
-    case _: MoveItemArgs => true
-    case _: DeleteItemArgs => true
-    case _: UploadItemArgs => true
-    case _: CreateAlbumArgs => true
-    case _: DeleteAlbumArgs => true
-    case _: WebArgs => true
-    case _: Ls => false
-    case _: ItemShowArgs => false
-    case _: ItemSetArgs => false
-    case _: ItemMonthArgs => false
-    case _: ItemIntoArgs => false
-    case _: AlbumLsArgs => false
-    case _: AlbumShowArgs => false
-    case _: AlbumClaimsArgs => false
-    case _: AlbumNewArgs => false
-    case _: AlbumRmArgs => false
-    case _: AlbumMvArgs => false
-    case _: AlbumIncludeArgs => false
-    case _: AlbumExcludeArgs => false
-    case _: AlbumMergeArgs => false
-    case _: PublishArgs => false
-    case _: SyncArgs => false
-    case _: RepairArgs => false
-    case LoginArgs => false
-    case StatusArgs => false
-    case LogoutArgs => false
-    case _: CdArgs => false
-    case PwdArgs => false
-    case ExitArgs => false
-    case _: AgentStemsArgs => false
-    case AgentYearsArgs => false
-    case _: AgentMonthsArgs => false
-    case _: AgentDaysArgs => false
-    case _: AgentClaimsArgs => false
-    case AgentCatalogArgs => false
-    case _: AgentItemsArgs => false
-    case _: AgentMatchArgs => false
-    case _: AgentLocateArgs => false
-    case _: AgentIncludeArgs => false
-    case _: AgentAlbumFileArgs => false
-    case AgentDriftArgs => false
-    case AgentMissingArgs => false
+    case _: MoveItemArgs        => true
+    case _: DeleteItemArgs      => true
+    case _: UploadItemArgs      => true
+    case _: CreateAlbumArgs     => true
+    case _: DeleteAlbumArgs     => true
+    case _: WebArgs             => true
+    case _: Ls                  => false
+    case _: ItemShowArgs        => false
+    case _: ItemSetArgs         => false
+    case _: ItemMonthArgs       => false
+    case _: ItemIntoArgs        => false
+    case _: AlbumLsArgs         => false
+    case _: AlbumShowArgs       => false
+    case _: AlbumClaimsArgs     => false
+    case _: AlbumNewArgs        => false
+    case _: AlbumRmArgs         => false
+    case _: AlbumMvArgs         => false
+    case _: AlbumIncludeArgs    => false
+    case _: AlbumExcludeArgs    => false
+    case _: AlbumMergeArgs      => false
+    case _: PublishArgs         => false
+    case _: SyncArgs            => false
+    case _: RepairArgs          => false
+    case LoginArgs              => false
+    case StatusArgs             => false
+    case LogoutArgs             => false
+    case _: CdArgs              => false
+    case PwdArgs                => false
+    case ExitArgs               => false
+    case _: AgentStemsArgs      => false
+    case AgentYearsArgs         => false
+    case _: AgentMonthsArgs     => false
+    case _: AgentDaysArgs       => false
+    case _: AgentClaimsArgs     => false
+    case AgentCatalogArgs       => false
+    case _: AgentItemsArgs      => false
+    case _: AgentMatchArgs      => false
+    case _: AgentLocateArgs     => false
+    case _: AgentIncludeArgs    => false
+    case _: AgentAlbumFileArgs  => false
+    case AgentDriftArgs         => false
+    case AgentMissingArgs       => false
 
   private def callerCommand(parsed: Parsed): String = parsed match
-    case _: RefreshArgs => "refresh"
-    case _: ReconcileArgs => "reconcile"
-    case _: FileArgs => "file"
-    case _: PushArgs => "push"
-    case _: CardDiscover => "card"
-    case _: CardCopy => "card"
-    case _: WebArgs => "web"
-    case _: RenameAlbumArgs => "rename-album"
-    case _: SetDescriptionArgs => "set-description"
-    case _: SetDateArgs => "set-date"
-    case _: DownloadItemArgs => "download-item"
-    case _: AddToAlbumArgs => "add-to-album"
+    case _: RefreshArgs         => "refresh"
+    case _: ReconcileArgs       => "reconcile"
+    case _: FileArgs            => "file"
+    case _: PushArgs            => "push"
+    case _: CardDiscover        => "card"
+    case _: CardCopy            => "card"
+    case _: WebArgs             => "web"
+    case _: RenameAlbumArgs     => "rename-album"
+    case _: SetDescriptionArgs  => "set-description"
+    case _: SetDateArgs         => "set-date"
+    case _: DownloadItemArgs    => "download-item"
+    case _: AddToAlbumArgs      => "add-to-album"
     case _: RemoveFromAlbumArgs => "remove-from-album"
-    case _: MoveItemArgs => "move-item"
-    case _: DeleteItemArgs => "delete-item"
-    case _: UploadItemArgs => "upload-item"
-    case _: CreateAlbumArgs => "create-album"
-    case _: DeleteAlbumArgs => "delete-album"
-    case _ => "command"
+    case _: MoveItemArgs        => "move-item"
+    case _: DeleteItemArgs      => "delete-item"
+    case _: UploadItemArgs      => "upload-item"
+    case _: CreateAlbumArgs     => "create-album"
+    case _: DeleteAlbumArgs     => "delete-album"
+    case _                      => "command"
 
   // Refresh, reconcile, file, push, card, and web stay off this branch.
   private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
-    case _: RenameAlbumArgs => true
-    case _: SetDescriptionArgs => true
-    case _: SetDateArgs => true
-    case _: DownloadItemArgs => true
-    case _: AddToAlbumArgs => true
+    case _: RenameAlbumArgs     => true
+    case _: SetDescriptionArgs  => true
+    case _: SetDateArgs         => true
+    case _: DownloadItemArgs    => true
+    case _: AddToAlbumArgs      => true
     case _: RemoveFromAlbumArgs => true
-    case _: MoveItemArgs => true
-    case _: DeleteItemArgs => true
-    case _: UploadItemArgs => true
-    case _: CreateAlbumArgs => true
-    case _: DeleteAlbumArgs => true
-    case _ => false
+    case _: MoveItemArgs        => true
+    case _: DeleteItemArgs      => true
+    case _: UploadItemArgs      => true
+    case _: CreateAlbumArgs     => true
+    case _: DeleteAlbumArgs     => true
+    case _                      => false
 
   private def remoteStep(
-    session: Session,
-    args: List[String],
-    exchange: (Session, List[String]) => Result
+      session: Session,
+      args: List[String],
+      exchange: (Session, List[String]) => Result
   ): Step =
     val argv: List[String] =
       try rewritePaths(session, args)
-      catch case error: IllegalArgumentException =>
-        Console.err.println(redacted(usageLine(Operation.messageOf(error))))
-        return Step.Continue(session)
+      catch
+        case error: IllegalArgumentException =>
+          Console.err.println(redacted(usageLine(Operation.messageOf(error))))
+          return Step.Continue(session)
     show(session, session, exchange(session, argv), keepReturned = false)
 
   private def show(session: Session, returned: Session, result: Result, keepReturned: Boolean): Step =
@@ -553,10 +575,8 @@ object Cli:
             val flags: List[String] = commandArgs.take(commandArgs.length - positionals.length)
             val rewrittenPositionals: List[String] =
               rewritePositionals(session, command.positionals, positionals)
-            if prefix == List("ls") && positionals.isEmpty then
-              prefix ++ flags ++ List(rootForm(session, "."))
-            else
-              prefix ++ flags ++ rewrittenPositionals
+            if prefix == List("ls") && positionals.isEmpty then prefix ++ flags ++ List(rootForm(session, "."))
+            else prefix ++ flags ++ rewrittenPositionals
 
   private def locate(args: List[String]): Option[(Command, List[String], List[String])] = args match
     case "agent" :: name :: rest =>
@@ -588,37 +608,38 @@ object Cli:
 
   private[photo] def remoteResult(runtime: File, session: Session, argv: List[String]): Result =
     Serve.client(runtime, argv, Serve.archiveOf(session)) match
-      case Serve.Attempt.Absent => Result.Usage("serve is not running")
+      case Serve.Attempt.Absent          => Result.Usage("serve is not running")
       case Serve.Attempt.Failed(message) => Result.Usage(message)
-      case Serve.Attempt.Done(response) => Serve.toResult(response)
+      case Serve.Attempt.Done(response)  => Serve.toResult(response)
 
   private[photo] def executeOneShot(
-    session: Session,
-    argv: List[String],
-    parsed: Parsed,
-    runtime: Either[String, File],
-    waitMs: Long = 5000
+      session: Session,
+      argv: List[String],
+      parsed: Parsed,
+      runtime: Either[String, File],
+      waitMs: Long = 5000
   ): Result =
     def cold: Result = toOperation(parsed).execute(session)._2
     if runsInCaller(parsed) then cold
-    else runtime match
-      case Left(_) =>
-        cold
-      case Right(dir) =>
-        Serve.client(dir, argv, Serve.archiveOf(session), waitMs = waitMs) match
-          case Serve.Attempt.Absent => cold
-          case Serve.Attempt.Failed(message) => Result.Usage(message)
-          case Serve.Attempt.Done(response) => Serve.toResult(response)
+    else
+      runtime match
+        case Left(_) =>
+          cold
+        case Right(dir) =>
+          Serve.client(dir, argv, Serve.archiveOf(session), waitMs = waitMs) match
+            case Serve.Attempt.Absent          => cold
+            case Serve.Attempt.Failed(message) => Result.Usage(message)
+            case Serve.Attempt.Done(response)  => Serve.toResult(response)
 
   private[photo] def executeStop(
-    runtime: Either[String, File],
-    waitMs: Long = 5000
+      runtime: Either[String, File],
+      waitMs: Long = 5000
   ): Either[String, Serve.Response] =
     runtime match
       case Right(dir) if dir.isDirectory =>
         Serve.client(dir, List("serve", "stop"), "", stop = true, waitMs = waitMs) match
-          case Serve.Attempt.Done(response) => Right(response)
-          case Serve.Attempt.Absent => Left("serve is not running")
+          case Serve.Attempt.Done(response)  => Right(response)
+          case Serve.Attempt.Absent          => Left("serve is not running")
           case Serve.Attempt.Failed(message) => Left(message)
       case _ =>
         Left("serve is not running")
@@ -631,24 +652,26 @@ object Cli:
   private def collect(rest: String, acc: List[String]): Either[String, List[String]] =
     val left: String = rest.dropWhile(_.isWhitespace)
     if left.isEmpty then Right(acc.reverse)
-    else readToken(left, "") match
-      case Left(message) => Left(message)
-      case Right((token, more)) => collect(more, token :: acc)
+    else
+      readToken(left, "") match
+        case Left(message)        => Left(message)
+        case Right((token, more)) => collect(more, token :: acc)
 
   private def readToken(rest: String, acc: String): Either[String, (String, String)] =
     if rest.isEmpty || rest.head.isWhitespace then Right((acc, rest))
-    else rest.head match
-      case '\\' =>
-        val more: String = rest.drop(1)
-        if more.isEmpty then Left("trailing backslash")
-        else readToken(more.drop(1), acc + more.take(1))
-      case '"' =>
-        readQuoted(rest.drop(1), acc) match
-          case Left(message) => Left(message)
-          case Right((quoted, more)) => readToken(more, quoted)
-      case _ =>
-        val (bare, more) = rest.span(ch => !ch.isWhitespace && ch != '\\' && ch != '"')
-        readToken(more, acc + bare)
+    else
+      rest.head match
+        case '\\' =>
+          val more: String = rest.drop(1)
+          if more.isEmpty then Left("trailing backslash")
+          else readToken(more.drop(1), acc + more.take(1))
+        case '"' =>
+          readQuoted(rest.drop(1), acc) match
+            case Left(message)         => Left(message)
+            case Right((quoted, more)) => readToken(more, quoted)
+        case _ =>
+          val (bare, more) = rest.span(ch => !ch.isWhitespace && ch != '\\' && ch != '"')
+          readToken(more, acc + bare)
 
   private def readQuoted(rest: String, acc: String): Either[String, (String, String)] =
     if rest.isEmpty then Left("unclosed quote")
@@ -662,8 +685,8 @@ object Cli:
         if escaped.isEmpty then Left("unclosed quote")
         else
           val taken: String = escaped.head match
-            case '\\' => "\\"
-            case '"' => "\""
+            case '\\'  => "\\"
+            case '"'   => "\""
             case other => s"\\$other"
           readQuoted(escaped.drop(1), soFar + taken)
 
@@ -725,7 +748,7 @@ object Cli:
 
   private def lookup(name: String, rest: List[String], front: Front): Outcome =
     registry.find(_.name == name) match
-      case None => Usage(s"unknown command '$name'")
+      case None          => Usage(s"unknown command '$name'")
       case Some(command) => parseCommand(command, rest, front)
 
   private[photo] def toOperation(parsed: Parsed): Operation = parsed match
@@ -792,9 +815,9 @@ object Cli:
       CopyCard(dryRun, path)
     case WebArgs(port) =>
       Web(port)
-    case LoginArgs => Login
-    case StatusArgs => Status
-    case LogoutArgs => Logout
+    case LoginArgs                                              => Login
+    case StatusArgs                                             => Status
+    case LogoutArgs                                             => Logout
     case RepairArgs(path, names, raw, timestamps, days, dryRun) =>
       Repair(path, names, raw, timestamps, days, dryRun)
     case CdArgs(path) =>
@@ -859,22 +882,23 @@ object Cli:
     else if command.name == "web" then
       webPort(values.texts.get("port")) match
         case Left(message) => Usage(message)
-        case Right(port) => Run(WebArgs(port))
-    else command.build(values, positionals) match
-      case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
-        Usage("missing repair action")
-      case AlbumNewArgs(_, None, None) =>
-        Usage("missing span or name")
-      case AlbumIncludeArgs(_, _, pictures) if pictures.isEmpty =>
-        Usage("missing picture")
-      case AlbumExcludeArgs(_, _, pictures) if pictures.isEmpty =>
-        Usage("missing picture")
-      case ItemMonthArgs(_, pictures) if pictures.isEmpty =>
-        Usage("missing picture")
-      case ItemIntoArgs(_, _, pictures) if pictures.isEmpty =>
-        Usage("missing picture")
-      case other =>
-        Run(other)
+        case Right(port)   => Run(WebArgs(port))
+    else
+      command.build(values, positionals) match
+        case RepairArgs(_, names, raw, timestamps, days, _) if !names && !raw && !timestamps && !days =>
+          Usage("missing repair action")
+        case AlbumNewArgs(_, None, None) =>
+          Usage("missing span or name")
+        case AlbumIncludeArgs(_, _, pictures) if pictures.isEmpty =>
+          Usage("missing picture")
+        case AlbumExcludeArgs(_, _, pictures) if pictures.isEmpty =>
+          Usage("missing picture")
+        case ItemMonthArgs(_, pictures) if pictures.isEmpty =>
+          Usage("missing picture")
+        case ItemIntoArgs(_, _, pictures) if pictures.isEmpty =>
+          Usage("missing picture")
+        case other =>
+          Run(other)
 
   // A non-integer, 0, and anything outside 1..65535 are the same usage error.
   private def webPort(raw: Option[String]): Either[String, Int] =
@@ -894,13 +918,13 @@ object Cli:
       Help(itemHelp)
     case "item" :: verb :: Nil =>
       itemCommands.find(_.name == verb) match
-        case None => Usage(s"unknown command '$verb'")
+        case None        => Usage(s"unknown command '$verb'")
         case Some(found) => Help(commandHelp(found))
     case "album" :: Nil =>
       Help(albumHelp)
     case "album" :: verb :: Nil =>
       albumCommands.find(_.name == verb) match
-        case None => Usage(s"unknown command '$verb'")
+        case None        => Usage(s"unknown command '$verb'")
         case Some(found) => Help(commandHelp(found))
     case "agent" :: Nil =>
       Help(agentHelp)
@@ -908,7 +932,7 @@ object Cli:
       Help(cardHelp)
     case name :: Nil =>
       registry.find(_.name == name) match
-        case None => Usage(s"unknown command '$name'")
+        case None        => Usage(s"unknown command '$name'")
         case Some(found) => Help(commandHelp(found))
     case _ :: extra :: _ =>
       Usage(s"extra argument '$extra'")
@@ -921,19 +945,19 @@ object Cli:
 
   private def parseCommand(command: Command, args: List[String], front: Front): Outcome =
     readFlags(command, args, Values()) match
-      case Left(outcome) => outcome
+      case Left(outcome)                => outcome
       case Right((values, positionals)) =>
         val rejected: Option[String] =
           if command.name == "help" then positionals.drop(2).headOption.map(extra => s"extra argument '$extra'")
           else checkPositionals(command.positionals, positionals)
         rejected match
           case Some(message) => Usage(message)
-          case None => finish(command, values, positionals, front)
+          case None          => finish(command, values, positionals, front)
 
   private def readFlags(
-    command: Command,
-    args: List[String],
-    values: Values
+      command: Command,
+      args: List[String],
+      values: Values
   ): Either[Outcome, (Values, List[String])] = args match
     case Nil =>
       Right((values, Nil))
@@ -946,22 +970,22 @@ object Cli:
         case _ if token == "--help" || token == "-h" =>
           Left(Help(commandHelp(command)))
         case Some((isLong, name, attached)) =>
-          if !isLong && name.length != 1 then
-            Left(Usage(s"unknown option '$token'"))
-          else findFlag(command.flags, isLong = isLong, name = name) match
-            case None =>
-              Left(Usage(s"unknown option '$token'"))
-            case Some(flag) if values.has(flag.name) =>
-              Left(Usage(s"repeated option '--${flag.name}'"))
-            case Some(flag) =>
-              readValue(command, flag, attached, rest, values)
+          if !isLong && name.length != 1 then Left(Usage(s"unknown option '$token'"))
+          else
+            findFlag(command.flags, isLong = isLong, name = name) match
+              case None =>
+                Left(Usage(s"unknown option '$token'"))
+              case Some(flag) if values.has(flag.name) =>
+                Left(Usage(s"repeated option '--${flag.name}'"))
+              case Some(flag) =>
+                readValue(command, flag, attached, rest, values)
 
   private def readValue(
-    command: Command,
-    flag: Flag,
-    attached: Option[String],
-    rest: List[String],
-    values: Values
+      command: Command,
+      flag: Flag,
+      attached: Option[String],
+      rest: List[String],
+      values: Values
   ): Either[Outcome, (Values, List[String])] = flag.kind match
     case BooleanKind =>
       attached match
@@ -970,11 +994,11 @@ object Cli:
         case Some(raw) =>
           parseBool(raw) match
             case Some(value) => readFlags(command, rest, values.setBool(flag.name, value))
-            case None => Left(Usage(s"invalid value '$raw' for '--${flag.name}'"))
+            case None        => Left(Usage(s"invalid value '$raw' for '--${flag.name}'"))
     case TextKind | RepeatKind =>
       def store(raw: String): Values = flag.kind match
         case RepeatKind => values.addRepeat(flag.name, raw)
-        case _ => values.setText(flag.name, raw)
+        case _          => values.setText(flag.name, raw)
       attached match
         case Some("") =>
           Left(Usage(s"missing value for '--${flag.name}'"))
@@ -1016,13 +1040,13 @@ object Cli:
 
   private def checkPositionals(expected: List[Positional], args: List[String]): Option[String] =
     (expected, args) match
-      case (Nil, Nil) => None
+      case (Nil, Nil)        => None
       case (Nil, extra :: _) => Some(s"extra argument '$extra'")
       // Rest has no "too many". A flag after a positional is still an extra argument.
       case (Rest(_, _, _) :: _, rest) =>
         rest.find(_.startsWith("-")).map(token => s"extra argument '$token'")
-      case (Required(name, _) :: _, Nil) => Some(s"missing $name")
-      case (Optional(_, _) :: _, Nil) => None
+      case (Required(name, _) :: _, Nil)      => Some(s"missing $name")
+      case (Optional(_, _) :: _, Nil)         => None
       case (_ :: restExpected, _ :: restArgs) => checkPositionals(restExpected, restArgs)
 
   private def bool(values: Values, name: String): Boolean = values.bools.getOrElse(name, false)
@@ -1081,7 +1105,7 @@ object Cli:
       Help(itemHelp)
     case name :: rest =>
       itemCommands.find(_.name == name) match
-        case None => Usage(s"unknown command '$name'")
+        case None          => Usage(s"unknown command '$name'")
         case Some(command) => parseCommand(command, rest, front)
 
   private def parseAlbum(args: List[String], front: Front): Outcome = args match
@@ -1091,7 +1115,7 @@ object Cli:
       Help(albumHelp)
     case name :: rest =>
       albumCommands.find(_.name == name) match
-        case None => Usage(s"unknown command '$name'")
+        case None          => Usage(s"unknown command '$name'")
         case Some(command) => parseCommand(command, rest, front)
 
   private def parseAgent(args: List[String], front: Front): Outcome = args match
@@ -1101,7 +1125,7 @@ object Cli:
       Help(agentHelp)
     case name :: rest =>
       agentCommands.find(_.name == name) match
-        case None => Usage(s"unknown command '$name'")
+        case None          => Usage(s"unknown command '$name'")
         case Some(command) => parseCommand(command, rest, front)
 
   private def agentHelp: String =
@@ -1127,16 +1151,16 @@ object Cli:
   private def describePositional(positional: Positional): String = positional match
     case Required(name, _) => s"$name  required"
     case Optional(name, _) => s"$name  optional"
-    case Rest(name, _, _) => s"$name  rest"
+    case Rest(name, _, _)  => s"$name  rest"
 
   private def describeFlag(flag: Flag): String =
     val names: String = flag.alias match
       case Some(alias) => s"--${flag.name}, -$alias"
-      case None => s"--${flag.name}"
+      case None        => s"--${flag.name}"
     val kind: String = flag.kind match
       case BooleanKind => "boolean"
-      case TextKind => "text"
-      case RepeatKind => "repeatable"
+      case TextKind    => "text"
+      case RepeatKind  => "repeatable"
     s"$names  $kind  ${flag.description}"
 
   private[photo] sealed trait Positional:
@@ -1144,7 +1168,8 @@ object Cli:
   private[photo] final case class Required(name: String, path: Boolean = false) extends Positional
   private[photo] final case class Optional(name: String, path: Boolean = false) extends Positional
   // schemaName is the JSON key when name is not an identifier. Help still prints name.
-  private[photo] final case class Rest(name: String, path: Boolean = false, schemaName: Option[String] = None) extends Positional
+  private[photo] final case class Rest(name: String, path: Boolean = false, schemaName: Option[String] = None)
+      extends Positional
 
   private[photo] sealed trait FlagKind
   private[photo] case object BooleanKind extends FlagKind
@@ -1154,9 +1179,9 @@ object Cli:
   private[photo] final case class Flag(name: String, alias: Option[String], kind: FlagKind, description: String)
 
   private[photo] final case class Values(
-    bools: Map[String, Boolean] = Map.empty,
-    texts: Map[String, String] = Map.empty,
-    repeats: Map[String, List[String]] = Map.empty
+      bools: Map[String, Boolean] = Map.empty,
+      texts: Map[String, String] = Map.empty,
+      repeats: Map[String, List[String]] = Map.empty
   ):
     // A repeatable flag is not a repeated option.
     def has(name: String): Boolean = bools.contains(name) || texts.contains(name)
@@ -1166,11 +1191,11 @@ object Cli:
       copy(repeats = repeats.updated(name, repeats.getOrElse(name, Nil) :+ value))
 
   private[photo] final case class Command(
-    name: String,
-    help: String,
-    positionals: List[Positional],
-    flags: List[Flag],
-    build: (Values, List[String]) => Parsed
+      name: String,
+      help: String,
+      positionals: List[Positional],
+      flags: List[Flag],
+      build: (Values, List[String]) => Parsed
   )
 
   private val lsLongFlag: Flag = Flag(
@@ -1189,14 +1214,24 @@ object Cli:
     Flag("property", None, TextKind, "keep pictures whose sidecar property matches"),
     Flag("timestamp-from-name-format", None, TextKind, "keep pictures whose filename clock uses this format"),
     Flag("timestamp-from-name", None, BooleanKind, "keep pictures whose filename encodes a time"),
-    Flag("timestamp-from-name-only", None, BooleanKind, "keep pictures with a filename clock and no usable voting capture time"),
+    Flag(
+      "timestamp-from-name-only",
+      None,
+      BooleanKind,
+      "keep pictures with a filename clock and no usable voting capture time"
+    ),
     Flag("timestamps-vary", None, BooleanKind, "keep pictures whose file times differ by more than an hour"),
     Flag("has-metadata", None, BooleanKind, "keep pictures that have a sidecar"),
     Flag("no-normal", None, BooleanKind, "keep pictures with no normal image"),
     Flag("no-timestamp", None, BooleanKind, "keep pictures with no assessed timestamp"),
     Flag("wrong-timestamp", None, BooleanKind, "keep pictures whose file mtime differs from the assessed timestamp"),
     Flag("wrong-day", None, BooleanKind, "keep pictures filed on a different day than the assessed timestamp"),
-    Flag("wrong", None, BooleanKind, "keep pictures with no normal image, no timestamp, a wrong timestamp, or a wrong day")
+    Flag(
+      "wrong",
+      None,
+      BooleanKind,
+      "keep pictures with no normal image, no timestamp, a wrong timestamp, or a wrong day"
+    )
   )
 
   private val repairFlags: List[Flag] = List(
@@ -1232,14 +1267,16 @@ object Cli:
     ),
     Command(
       name = "month",
-      help = "exclude the picture from every other dated album that claims it, then include it in YYYY/MM, creating that album when absent",
+      help =
+        "exclude the picture from every other dated album that claims it, then include it in YYYY/MM, creating that album when absent",
       positionals = List(Rest("picture", path = true)),
       flags = List(albumDryRun),
       build = (values, args) => ItemMonthArgs(bool(values, "dry-run"), args)
     ),
     Command(
       name = "into",
-      help = "include the picture in the album; when that album has a span, also exclude it from every other span album",
+      help =
+        "include the picture in the album; when that album has a span, also exclude it from every other span album",
       positionals = List(Required("title"), Rest("picture", path = true)),
       flags = List(albumDryRun),
       build = (values, args) => ItemIntoArgs(bool(values, "dry-run"), args.head, args.drop(1))
@@ -1322,38 +1359,40 @@ object Cli:
       help = "list the date tree",
       positionals = List(Optional("path", path = true)),
       flags = lsFlags,
-      build = (values, args) => Ls(
-        path = args.headOption,
-        long = bool(values, "long"),
-        recursive = bool(values, "recursive"),
-        nameContains = values.texts.get("name-contains"),
-        hasExtension = values.texts.get("has-extension"),
-        property = values.texts.get("property"),
-        timestampFromNameFormat = values.texts.get("timestamp-from-name-format"),
-        timestampFromName = bool(values, "timestamp-from-name"),
-        timestampFromNameOnly = bool(values, "timestamp-from-name-only"),
-        timestampsVary = bool(values, "timestamps-vary"),
-        hasMetadata = bool(values, "has-metadata"),
-        noNormal = bool(values, "no-normal"),
-        noTimestamp = bool(values, "no-timestamp"),
-        wrongTimestamp = bool(values, "wrong-timestamp"),
-        wrongDay = bool(values, "wrong-day"),
-        wrong = bool(values, "wrong")
-      )
+      build = (values, args) =>
+        Ls(
+          path = args.headOption,
+          long = bool(values, "long"),
+          recursive = bool(values, "recursive"),
+          nameContains = values.texts.get("name-contains"),
+          hasExtension = values.texts.get("has-extension"),
+          property = values.texts.get("property"),
+          timestampFromNameFormat = values.texts.get("timestamp-from-name-format"),
+          timestampFromName = bool(values, "timestamp-from-name"),
+          timestampFromNameOnly = bool(values, "timestamp-from-name-only"),
+          timestampsVary = bool(values, "timestamps-vary"),
+          hasMetadata = bool(values, "has-metadata"),
+          noNormal = bool(values, "no-normal"),
+          noTimestamp = bool(values, "no-timestamp"),
+          wrongTimestamp = bool(values, "wrong-timestamp"),
+          wrongDay = bool(values, "wrong-day"),
+          wrong = bool(values, "wrong")
+        )
     ),
     Command(
       name = "repair",
       help = "repair picture names, raw files, timestamps, or day folders",
       positionals = List(Required("path", path = true)),
       flags = repairFlags,
-      build = (values, args) => RepairArgs(
-        path = args.head,
-        names = bool(values, "names"),
-        raw = bool(values, "raw"),
-        timestamps = bool(values, "timestamps"),
-        days = bool(values, "days"),
-        dryRun = bool(values, "dry-run")
-      )
+      build = (values, args) =>
+        RepairArgs(
+          path = args.head,
+          names = bool(values, "names"),
+          raw = bool(values, "raw"),
+          timestamps = bool(values, "timestamps"),
+          days = bool(values, "days"),
+          dryRun = bool(values, "dry-run")
+        )
     ),
     Command(
       name = "publish",
@@ -1363,11 +1402,12 @@ object Cli:
         Flag("recursive", None, BooleanKind, "required for a year or the archive root"),
         Flag("dry-run", None, BooleanKind, "print the local plan and do not call Google")
       ),
-      build = (values, args) => PublishArgs(
-        path = args.headOption,
-        recursive = bool(values, "recursive"),
-        dryRun = bool(values, "dry-run")
-      )
+      build = (values, args) =>
+        PublishArgs(
+          path = args.headOption,
+          recursive = bool(values, "recursive"),
+          dryRun = bool(values, "dry-run")
+        )
     ),
     Command(
       name = "sync",
@@ -1377,11 +1417,12 @@ object Cli:
         Flag("recursive", None, BooleanKind, "required for a year or the archive root"),
         Flag("dry-run", None, BooleanKind, "read Google, print except and remove lines, and do not write")
       ),
-      build = (values, args) => SyncArgs(
-        path = args.headOption,
-        recursive = bool(values, "recursive"),
-        dryRun = bool(values, "dry-run")
-      )
+      build = (values, args) =>
+        SyncArgs(
+          path = args.headOption,
+          recursive = bool(values, "recursive"),
+          dryRun = bool(values, "dry-run")
+        )
     ),
     Command(
       name = "push",
@@ -1544,13 +1585,14 @@ object Cli:
         Flag("replace", None, BooleanKind, "overwrite an existing album file"),
         Flag("google-title", None, TextKind, "exact google-title")
       ),
-      build = (values, args) => AgentAlbumFileArgs(
-        id = values.texts.get("id"),
-        dryRun = bool(values, "dry-run"),
-        replace = bool(values, "replace"),
-        googleTitle = values.texts.get("google-title"),
-        album = args.head
-      )
+      build = (values, args) =>
+        AgentAlbumFileArgs(
+          id = values.texts.get("id"),
+          dryRun = bool(values, "dry-run"),
+          replace = bool(values, "replace"),
+          googleTitle = values.texts.get("google-title"),
+          album = args.head
+        )
     ),
     Command(
       name = "rename-album",
@@ -1562,12 +1604,13 @@ object Cli:
         Flag("new", None, TextKind, "new title"),
         albumIdFlag
       ),
-      build = (values, _) => RenameAlbumArgs(
-        values.texts.get("title"),
-        values.texts.get("current"),
-        values.texts.get("new"),
-        values.texts.get("id")
-      )
+      build = (values, _) =>
+        RenameAlbumArgs(
+          values.texts.get("title"),
+          values.texts.get("current"),
+          values.texts.get("new"),
+          values.texts.get("id")
+        )
     ),
     Command(
       name = "set-description",
@@ -1578,11 +1621,12 @@ object Cli:
         Flag("current", None, TextKind, "current filename"),
         Flag("new", None, TextKind, "new description")
       ),
-      build = (values, _) => SetDescriptionArgs(
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("new")
-      )
+      build = (values, _) =>
+        SetDescriptionArgs(
+          values.texts.get("item"),
+          values.texts.get("current"),
+          values.texts.get("new")
+        )
     ),
     Command(
       name = "set-date",
@@ -1593,11 +1637,12 @@ object Cli:
         Flag("current", None, TextKind, "current filename"),
         Flag("new", None, TextKind, "new local date")
       ),
-      build = (values, _) => SetDateArgs(
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("new")
-      )
+      build = (values, _) =>
+        SetDateArgs(
+          values.texts.get("item"),
+          values.texts.get("current"),
+          values.texts.get("new")
+        )
     ),
     Command(
       name = "download-item",
@@ -1609,12 +1654,13 @@ object Cli:
         Flag("current", None, TextKind, "current filename"),
         albumIdFlag
       ),
-      build = (values, _) => DownloadItemArgs(
-        values.texts.get("title"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("id")
-      )
+      build = (values, _) =>
+        DownloadItemArgs(
+          values.texts.get("title"),
+          values.texts.get("item"),
+          values.texts.get("current"),
+          values.texts.get("id")
+        )
     ),
     Command(
       name = "add-to-album",
@@ -1628,14 +1674,15 @@ object Cli:
         albumIdFlag,
         Flag("dest-id", None, TextKind, "destination album id")
       ),
-      build = (values, _) => AddToAlbumArgs(
-        values.texts.get("title"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("dest"),
-        values.texts.get("id"),
-        values.texts.get("dest-id")
-      )
+      build = (values, _) =>
+        AddToAlbumArgs(
+          values.texts.get("title"),
+          values.texts.get("item"),
+          values.texts.get("current"),
+          values.texts.get("dest"),
+          values.texts.get("id"),
+          values.texts.get("dest-id")
+        )
     ),
     Command(
       name = "remove-from-album",
@@ -1647,12 +1694,13 @@ object Cli:
         Flag("current", None, TextKind, "current filename"),
         albumIdFlag
       ),
-      build = (values, _) => RemoveFromAlbumArgs(
-        values.texts.get("title"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("id")
-      )
+      build = (values, _) =>
+        RemoveFromAlbumArgs(
+          values.texts.get("title"),
+          values.texts.get("item"),
+          values.texts.get("current"),
+          values.texts.get("id")
+        )
     ),
     Command(
       name = "move-item",
@@ -1666,14 +1714,15 @@ object Cli:
         albumIdFlag,
         Flag("dest-id", None, TextKind, "destination album id")
       ),
-      build = (values, _) => MoveItemArgs(
-        values.texts.get("title"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("dest"),
-        values.texts.get("id"),
-        values.texts.get("dest-id")
-      )
+      build = (values, _) =>
+        MoveItemArgs(
+          values.texts.get("title"),
+          values.texts.get("item"),
+          values.texts.get("current"),
+          values.texts.get("dest"),
+          values.texts.get("id"),
+          values.texts.get("dest-id")
+        )
     ),
     Command(
       name = "delete-item",
@@ -1685,12 +1734,13 @@ object Cli:
         Flag("current", None, TextKind, "current filename"),
         albumIdFlag
       ),
-      build = (values, _) => DeleteItemArgs(
-        values.texts.get("title"),
-        values.texts.get("item"),
-        values.texts.get("current"),
-        values.texts.get("id")
-      )
+      build = (values, _) =>
+        DeleteItemArgs(
+          values.texts.get("title"),
+          values.texts.get("item"),
+          values.texts.get("current"),
+          values.texts.get("id")
+        )
     ),
     Command(
       name = "upload-item",
@@ -1700,11 +1750,12 @@ object Cli:
         Flag("dest", None, TextKind, "destination album title"),
         Flag("dest-id", None, TextKind, "destination album id")
       ),
-      build = (values, args) => UploadItemArgs(
-        args.headOption,
-        values.texts.get("dest"),
-        values.texts.get("dest-id")
-      )
+      build = (values, args) =>
+        UploadItemArgs(
+          args.headOption,
+          values.texts.get("dest"),
+          values.texts.get("dest-id")
+        )
     ),
     Command(
       name = "create-album",

@@ -17,7 +17,8 @@ object Google:
 
   def newClient(): PhotosLibraryClient =
     val credentials = GoogleAuth.loadUserCredentials()
-    val settings = PhotosLibrarySettings.newBuilder()
+    val settings = PhotosLibrarySettings
+      .newBuilder()
       .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
       .build()
     PhotosLibraryClient.initialize(settings)

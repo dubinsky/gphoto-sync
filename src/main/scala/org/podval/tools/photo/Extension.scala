@@ -6,9 +6,9 @@ final class Extension(val picture: Picture, val descriptor: Extension.Descriptor
   Extension.constructed += 1
 
   def name: String = descriptor.name
-  
+
   override def toString: String = s"$picture.$name"
-  
+
   lazy val current: Instant = Dates.FromFile.get(picture, name)
 
   lazy val read: Option[Dates.Clock] =
@@ -25,8 +25,8 @@ object Extension:
   private[photo] var constructed: Long = 0
 
   sealed class Descriptor(
-    val name: String,
-    val dater: Dates.Reader
+      val name: String,
+      val dater: Dates.Reader
   ):
     override def toString: String = name
 
@@ -109,8 +109,8 @@ object Extension:
 
   val all: Set[Descriptor] = (
     normal ++
-    image ++
-    raw ++
-    thumbnail ++
-    aux
+      image ++
+      raw ++
+      thumbnail ++
+      aux
   )

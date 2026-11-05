@@ -20,11 +20,14 @@ private[photo] trait WebTestSupport extends Matchers:
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream
     val result = new AtomicReference[Either[String, Unit]](null)
-    val thread = new Thread(() =>
-      Console.withOut(out):
-        Console.withErr(err):
-          result.set(Web.start(runtime, port))
-    , "web-test")
+    val thread = new Thread(
+      () =>
+        Console.withOut(out):
+          Console.withErr(err):
+            result.set(Web.start(runtime, port))
+      ,
+      "web-test"
+    )
     thread.setDaemon(true)
     thread.start()
     try
@@ -49,7 +52,8 @@ private[photo] trait WebTestSupport extends Matchers:
   private[photo] def get(port: Int, path: String): HttpResponse[String] = send(port, path, "GET")
 
   private[photo] def send(port: Int, path: String, method: String): HttpResponse[String] =
-    val request: HttpRequest = HttpRequest.newBuilder(URI.create(s"http://$loopback:$port$path"))
+    val request: HttpRequest = HttpRequest
+      .newBuilder(URI.create(s"http://$loopback:$port$path"))
       .timeout(Duration.ofSeconds(2))
       .method(method, HttpRequest.BodyPublishers.noBody())
       .build()

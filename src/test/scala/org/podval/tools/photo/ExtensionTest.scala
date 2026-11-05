@@ -4,7 +4,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 class ExtensionTest extends AnyFlatSpec, Matchers:
-  "Extension" should "identify the new still, video, and TIFF raw descriptors" in :
+  "Extension" should "identify the new still, video, and TIFF raw descriptors" in:
     check(Extension.JPEG, "jpeg", Dates.StillExif, normal = true, video = false, raw = false, image = false)
     check(Extension.M4V, "m4v", Dates.FFProbe, normal = true, video = true, raw = false, image = false)
     check(Extension.MOV, "mov", Dates.Mov, normal = true, video = true, raw = false, image = false)
@@ -30,7 +30,7 @@ class ExtensionTest extends AnyFlatSpec, Matchers:
     Extension.all.exists(_.name == "dng") shouldBe false
     Extension.all.exists(_.name == "mkv") shouldBe false
 
-  it should "count heic, heif, avif, png, and webp as images" in :
+  it should "count heic, heif, avif, png, and webp as images" in:
     check(Extension.HEIC, "heic", Dates.StillExif, normal = false, video = false, raw = false, image = true)
     check(Extension.HEIF, "heif", Dates.StillExif, normal = false, video = false, raw = false, image = true)
     check(Extension.AVIF, "avif", Dates.StillExif, normal = false, video = false, raw = false, image = true)
@@ -41,13 +41,13 @@ class ExtensionTest extends AnyFlatSpec, Matchers:
     Extension.all.exists(_.name == "mkv") shouldBe false
 
   private def check(
-    descriptor: Extension.Descriptor,
-    name: String,
-    dater: Dates.Reader,
-    normal: Boolean,
-    video: Boolean,
-    raw: Boolean,
-    image: Boolean
+      descriptor: Extension.Descriptor,
+      name: String,
+      dater: Dates.Reader,
+      normal: Boolean,
+      video: Boolean,
+      raw: Boolean,
+      image: Boolean
   ): Unit =
     descriptor.name shouldBe name
     (descriptor.dater eq dater) shouldBe true

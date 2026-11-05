@@ -22,9 +22,9 @@ final case class CopyCard(dryRun: Boolean, path: Option[String]) extends Operati
 
 object Card:
   private[photo] def discover(
-    dryRun: Boolean,
-    lsblk: () => Either[String, String] = readLsblk,
-    mount: Seq[String] => (Int, String) = runMount
+      dryRun: Boolean,
+      lsblk: () => Either[String, String] = readLsblk,
+      mount: Seq[String] => (Int, String) = runMount
   ): Option[File] =
     val rows: Seq[Row] = judgeAll(readDocument(lsblk))
     rejectOrContinue(rows) match
@@ -46,15 +46,14 @@ object Card:
           else if dryRun then
             printRows(rows)
             None
-          else
-            mountAndReread(one.path, lsblk, mount)
+          else mountAndReread(one.path, lsblk, mount)
 
   private[photo] def copy(
-    session: Session,
-    dryRun: Boolean,
-    path: Option[String],
-    lsblk: () => Either[String, String] = readLsblk,
-    mount: Seq[String] => (Int, String) = runMount
+      session: Session,
+      dryRun: Boolean,
+      path: Option[String],
+      lsblk: () => Either[String, String] = readLsblk,
+      mount: Seq[String] => (Int, String) = runMount
   ): Unit =
     val upload: File = session.root.configuration.uploadDirectory
     path match
@@ -69,13 +68,21 @@ object Card:
             throw IllegalStateException("no mount root")
 
   private def mountAndReread(
-    device: String,
-    lsblk: () => Either[String, String],
-    mount: Seq[String] => (Int, String)
+      device: String,
+      lsblk: () => Either[String, String],
+      mount: Seq[String] => (Int, String)
   ): Option[File] =
-    val (_, stderr) = mount(Seq(
-      "udisksctl", "mount", "-b", device, "-o", "ro", "--no-user-interaction"
-    ))
+    val (_, stderr) = mount(
+      Seq(
+        "udisksctl",
+        "mount",
+        "-b",
+        device,
+        "-o",
+        "ro",
+        "--no-user-interaction"
+      )
+    )
     val rows: Seq[Row] = judgeAll(readDocument(lsblk))
     rejectOrContinue(rows) match
       case Some(message) =>
@@ -101,7 +108,7 @@ object Card:
   private def printRows(rows: Seq[Row]): Unit =
     rows.foreach:
       case row: Row.Printed => Transcript.println(row.line)
-      case _: Row.Rejected => ()
+      case _: Row.Rejected  => ()
 
   private def mountFailed(device: String, stderr: String): String =
     if stderr.isEmpty then s"mount failed: $device"
@@ -112,7 +119,7 @@ object Card:
 
   private def readDocument(lsblk: () => Either[String, String]): String =
     lsblk() match
-      case Left(_) => throw IllegalArgumentException("lsblk failed")
+      case Left(_)     => throw IllegalArgumentException("lsblk failed")
       case Right(text) => text
 
   private def judgeAll(text: String): Seq[Row] =
@@ -123,7 +130,7 @@ object Card:
       case Json.Obj(fields) =>
         fields.collectFirst { case ("blockdevices", value) => value } match
           case Some(Json.Arr(values)) => values
-          case _ => throw IllegalArgumentException("lsblk output was not JSON")
+          case _                      => throw IllegalArgumentException("lsblk output was not JSON")
       case _ =>
         throw IllegalArgumentException("lsblk output was not JSON")
     nodes.flatMap(nodeVolumes).sortBy(_.path)
@@ -140,9 +147,9 @@ object Card:
     case Json.Obj(fields) =>
       val here: Seq[Volume] = volumeOf(Json.Obj(fields)).toSeq
       val kids: Seq[Json] = fields.collectFirst { case ("children", value) => value } match
-        case None => Seq.empty
+        case None                   => Seq.empty
         case Some(Json.Arr(values)) => values
-        case Some(_) => throw IllegalArgumentException("lsblk output was not JSON")
+        case Some(_)                => throw IllegalArgumentException("lsblk output was not JSON")
       here ++ kids.flatMap(nodeVolumes)
     case _ =>
       throw IllegalArgumentException("lsblk output was not JSON")
@@ -153,16 +160,18 @@ object Card:
       value.equalsIgnoreCase("vfat") || value.equalsIgnoreCase("exfat")
     val removable: Boolean = field(obj, "rm").exists:
       case Json.Bool(true) => true
-      case Json.Long(1) => true
-      case Json.Str("1") => true
-      case _ => false
+      case Json.Long(1)    => true
+      case Json.Str("1")   => true
+      case _               => false
     if path.isDefined && fstype.isDefined && removable then
-      Some(Volume(
-        path.get,
-        stringField(obj, "label").getOrElse(""),
-        fstype.get.toLowerCase(java.util.Locale.ROOT),
-        mountsOf(obj)
-      ))
+      Some(
+        Volume(
+          path.get,
+          stringField(obj, "label").getOrElse(""),
+          fstype.get.toLowerCase(java.util.Locale.ROOT),
+          mountsOf(obj)
+        )
+      )
     else None
 
   private def mountsOf(obj: Json.Obj): Seq[String] =
@@ -170,7 +179,7 @@ object Card:
       case Some(Json.Arr(values)) =>
         values.flatMap:
           case Json.Str(value) if value.startsWith("/") => Some(value)
-          case _ => None
+          case _                                        => None
       case Some(_) =>
         throw IllegalArgumentException("lsblk output was not JSON")
       case None =>
@@ -179,7 +188,7 @@ object Card:
   private def stringField(obj: Json.Obj, name: String): Option[String] =
     field(obj, name) match
       case Some(Json.Str(value)) => Some(value)
-      case _ => None
+      case _                     => None
 
   private def field(obj: Json.Obj, name: String): Option[Json] =
     obj.fields.collectFirst { case (`name`, value) => value }
@@ -189,17 +198,16 @@ object Card:
   private def judge(volume: Volume): Row =
     val badText: Boolean =
       !oneLine(volume.label) || volume.mounts.exists(mount => !oneLine(mount))
-    if badText then
-      Row.Rejected(volume.path, s"label or mountpoint is not one line: ${volume.path}")
-    else if volume.mounts.sizeIs > 1 then
-      Row.Rejected(volume.path, s"more than one mountpoint: ${volume.path}")
-    else volume.mounts match
-      case Seq(only) =>
-        val yes: Boolean = realDcim(File(only)).sizeIs == 1
-        val dcim: String = if yes then "yes" else "no"
-        Row.Printed(volume.path, dcim, lineOf(volume, only, dcim), Some(File(only)))
-      case _ =>
-        Row.Printed(volume.path, "unknown", lineOf(volume, "unmounted", "unknown"), None)
+    if badText then Row.Rejected(volume.path, s"label or mountpoint is not one line: ${volume.path}")
+    else if volume.mounts.sizeIs > 1 then Row.Rejected(volume.path, s"more than one mountpoint: ${volume.path}")
+    else
+      volume.mounts match
+        case Seq(only) =>
+          val yes: Boolean = realDcim(File(only)).sizeIs == 1
+          val dcim: String = if yes then "yes" else "no"
+          Row.Printed(volume.path, dcim, lineOf(volume, only, dcim), Some(File(only)))
+        case _ =>
+          Row.Printed(volume.path, "unknown", lineOf(volume, "unmounted", "unknown"), None)
 
   private def oneLine(text: String): Boolean =
     text.forall(ch => ch >= ' ')
@@ -230,22 +238,26 @@ object Card:
   private def requireDcim(root: File, shown: String): File =
     if !NFiles.isDirectory(root.toPath, LinkOption.NOFOLLOW_LINKS) then
       throw IllegalArgumentException(s"not a directory: $shown")
-    val children: Seq[File] = Option(root.listFiles).map(_.toSeq).getOrElse(
-      throw IllegalArgumentException(s"not a directory: $shown")
-    )
-    children.filter: child =>
+    val children: Seq[File] = Option(root.listFiles)
+      .map(_.toSeq)
+      .getOrElse(
+        throw IllegalArgumentException(s"not a directory: $shown")
+      )
+    val dcims: Seq[File] = children.filter: child =>
       child.getName.equalsIgnoreCase("DCIM") &&
         NFiles.isDirectory(child.toPath, LinkOption.NOFOLLOW_LINKS)
-    match
+    dcims match
       case Seq(only) => only
-      case Seq() => throw IllegalArgumentException("no DCIM directory")
-      case _ => throw IllegalArgumentException("more than one DCIM directory")
+      case Seq()     => throw IllegalArgumentException("no DCIM directory")
+      case _         => throw IllegalArgumentException("more than one DCIM directory")
 
   // File.isDirectory follows links. Files.list uses it, so this walk does not.
   private def entriesUnder(parentRel: String, directory: File, enter: Boolean): Seq[Entry] =
-    val children: Seq[File] = Option(directory.listFiles).map(_.toSeq).getOrElse(
-      throw IllegalArgumentException(s"not a directory: ${directory.getPath}")
-    )
+    val children: Seq[File] = Option(directory.listFiles)
+      .map(_.toSeq)
+      .getOrElse(
+        throw IllegalArgumentException(s"not a directory: ${directory.getPath}")
+      )
     children.flatMap: child =>
       val name: String = child.getName
       if name.startsWith(".") then Seq.empty
@@ -255,16 +267,15 @@ object Card:
         else if NFiles.isDirectory(child.toPath, LinkOption.NOFOLLOW_LINKS) then
           if enter then entriesUnder(rel, child, enter = false)
           else Seq(Entry.Nested(rel))
-        else if NFiles.isRegularFile(child.toPath, LinkOption.NOFOLLOW_LINKS) then
-          Seq(Entry.Regular(child, rel))
+        else if NFiles.isRegularFile(child.toPath, LinkOption.NOFOLLOW_LINKS) then Seq(Entry.Regular(child, rel))
         else Seq(Entry.Irregular(rel))
 
   private def place(
-    upload: File,
-    file: File,
-    rel: String,
-    dryRun: Boolean,
-    claimed: Set[String]
+      upload: File,
+      file: File,
+      rel: String,
+      dryRun: Boolean,
+      claimed: Set[String]
   ): Set[String] =
     val (stem, extension) = Files.nameAndExtension(file)
     extension match
@@ -290,10 +301,8 @@ object Card:
               val same: Boolean = NFiles.size(destination.toPath) == NFiles.size(file.toPath)
               val reason: String = if same then "already copied" else "size differs"
               Transcript.println(s"keep $rel $reason")
-            else if dryRun then
-              Transcript.println(s"copy $rel .upload/${file.getName}")
-            else
-              publish(upload, file, destination, rel)
+            else if dryRun then Transcript.println(s"copy $rel .upload/${file.getName}")
+            else publish(upload, file, destination, rel)
             claimed + file.getName
 
   private def prepareUpload(upload: File, dryRun: Boolean): Unit =
@@ -302,15 +311,18 @@ object Card:
     if exists && !NFiles.isDirectory(path, LinkOption.NOFOLLOW_LINKS) then
       throw IllegalArgumentException(".upload is not a directory")
     if !dryRun && exists then
-      val children: Seq[File] = Option(upload.listFiles).map(_.toSeq).getOrElse(
-        throw IllegalArgumentException(".upload is not a directory")
-      )
+      val children: Seq[File] = Option(upload.listFiles)
+        .map(_.toSeq)
+        .getOrElse(
+          throw IllegalArgumentException(".upload is not a directory")
+        )
       children.foreach: file =>
         val name: String = file.getName
         if name.startsWith(".card-") && name.endsWith(".partial") then
           try NFiles.deleteIfExists(file.toPath)
-          catch case _: IOException =>
-            throw IllegalArgumentException(".upload is not a directory")
+          catch
+            case _: IOException =>
+              throw IllegalArgumentException(".upload is not a directory")
 
   private def publish(upload: File, from: File, destination: File, rel: String): Unit =
     Files.mkDirs(upload)
@@ -333,10 +345,11 @@ object Card:
       try
         FileDownloads.linkPartial(partial, destination)
         linked = true
-      catch case _: FileAlreadyExistsException =>
-        val same: Boolean = NFiles.size(destination.toPath) == NFiles.size(from.toPath)
-        val reason: String = if same then "already copied" else "size differs"
-        Transcript.println(s"keep $rel $reason")
+      catch
+        case _: FileAlreadyExistsException =>
+          val same: Boolean = NFiles.size(destination.toPath) == NFiles.size(from.toPath)
+          val reason: String = if same then "already copied" else "size differs"
+          Transcript.println(s"keep $rel $reason")
     finally
       source.close()
       NFiles.deleteIfExists(partial.toPath)
@@ -352,13 +365,13 @@ object Card:
 
   private def readLsblk(): Either[String, String] =
     run(Seq("lsblk", "-J", "-o", "NAME,PATH,RM,TYPE,FSTYPE,LABEL,MOUNTPOINTS")) match
-      case Left(_) => Left("lsblk failed")
+      case Left(_)                  => Left("lsblk failed")
       case Right((code, stdout, _)) =>
         if code == 0 then Right(stdout) else Left("lsblk failed")
 
   private def runMount(argv: Seq[String]): (Int, String) =
     run(argv) match
-      case Left(_) => (1, "")
+      case Left(_)                  => (1, "")
       case Right((code, _, stderr)) => (code, stderr)
 
   private def run(argv: Seq[String]): Either[String, (Int, String, String)] =
@@ -381,11 +394,12 @@ object Card:
       errThread.join()
       if failed.get then Left("failed")
       else Right((code, stdout.toString(StandardCharsets.UTF_8), stderr.toString(StandardCharsets.UTF_8)))
-    catch case _: InterruptedException =>
-      process.destroyForcibly()
-      outThread.join()
-      errThread.join()
-      Left("failed")
+    catch
+      case _: InterruptedException =>
+        process.destroyForcibly()
+        outThread.join()
+        errThread.join()
+        Left("failed")
 
   private final case class Volume(path: String, label: String, fstype: String, mounts: Seq[String])
 
@@ -400,5 +414,5 @@ object Card:
 
     def rel: String = this match
       case Regular(_, relative) => relative
-      case Nested(relative) => relative
-      case Irregular(relative) => relative
+      case Nested(relative)     => relative
+      case Irregular(relative)  => relative

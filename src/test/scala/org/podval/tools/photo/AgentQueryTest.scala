@@ -17,7 +17,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "agent catalog" should "list albums without ids and cache a parsed file" in :
+  "agent catalog" should "list albums without ids and cache a parsed file" in:
     withArchive: archive =>
       touch(File(archive, "2010/07/19"), "one.jpg")
       val file: File = writeCatalog(
@@ -71,16 +71,16 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       val (_, cached) = exec(listed, "agent", "catalog")
       cached match
         case Result.Ok(text, _) =>
-          text should include ("""owner="Ada Lovelace"""")
+          text should include("""owner="Ada Lovelace"""")
           text should not include ("Zeta")
         case other =>
           fail(other.toString)
       file.setLastModified(stamp + 120_000L) shouldBe true
       val (_, refreshed) = exec(listed, "agent", "catalog")
       refreshed match
-        case Result.Ok(text, _) => text should include ("\"Zeta\"")
-        case other => fail(other.toString)
-      kept should include ("Beta")
+        case Result.Ok(text, _) => text should include("\"Zeta\"")
+        case other              => fail(other.toString)
+      kept should include("Beta")
 
       val (same, items) = exec(listed, "agent", "items", "--id", "a1", "Alpha")
       items match
@@ -88,10 +88,13 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           text shouldBe "one.jpg 2010-07-19 -\n"
           noIds(text, "a1", "k1")
           field(value, "id") shouldBe Json.Str("a1")
-          field(field(value, "items") match
-            case Json.Arr(Seq(row)) => row
-            case other => fail(other.toString)
-          , "key") shouldBe Json.Str("k1")
+          field(
+            field(value, "items") match
+              case Json.Arr(Seq(row)) => row
+              case other              => fail(other.toString)
+            ,
+            "key"
+          ) shouldBe Json.Str("k1")
         case other =>
           fail(other.toString)
       exec(same, "agent", "items", "Alpha ")._2 match
@@ -127,13 +130,13 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       add shouldBe Result.Ok("skipped auto-add\n", emptyMatch("c1"))
       add match
         case Result.Ok(text, _) => noIds(text, "c1")
-        case other => fail(other.toString)
+        case other              => fail(other.toString)
       skippedAdd.cached(day).isEmpty shouldBe true
       val (skippedNames, unread) = exec(skippedAdd, "agent", "match", "Epsilon")
       unread shouldBe Result.Ok("skipped unread names\n", emptyMatch("e1"))
       unread match
         case Result.Ok(text, _) => noIds(text, "e1", "k3", "k4", "three.jpg")
-        case other => fail(other.toString)
+        case other              => fail(other.toString)
       skippedNames.cached(day).isEmpty shouldBe true
       val before: Long = Extension.constructed
       val (matched, shortfall) = exec(skippedNames, "agent", "match", "Delta")
@@ -144,10 +147,10 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       )
       shortfall match
         case Result.Ok(text, _) => noIds(text, "d1", "k2")
-        case other => fail(other.toString)
+        case other              => fail(other.toString)
       matched.cached(day).isDefined shouldBe true
 
-  it should "reject a catalog that is not version 2 and not cache the failure" in :
+  it should "reject a catalog that is not version 2 and not cache the failure" in:
     withArchive: archive =>
       val directory: File = File(archive, ".gphoto-sync")
       directory.mkdirs()
@@ -168,14 +171,14 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           fail(other.toString)
       ok.catalogCache.isDefined shouldBe true
 
-  it should "not create a catalog file" in :
+  it should "not create a catalog file" in:
     withArchive: archive =>
       val (session, result) = exec(Session(rootFor(archive)), "agent", "catalog")
       result shouldBe Result.Usage("catalog is absent")
       session.catalogCache.isEmpty shouldBe true
       File(archive, ".gphoto-sync").exists shouldBe false
 
-  "agent stems" should "read sidecar TOML and not EXIF" in :
+  "agent stems" should "read sidecar TOML and not EXIF" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/08/12")
       touch(day, "2412.cr2")
@@ -198,11 +201,13 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           text should not include ("Ada")
           text should not include ("bad-raw")
           field(value, "day") shouldBe Json.Str("2010/08/12")
-          field(stemRow(value, "2413"), "metadata") shouldBe Json.Obj(Seq(
-            "bad-raw" -> Json.Bool(true),
-            "google-media-item-id" -> Json.Str("media-1"),
-            "uploader" -> Json.Str("Ada")
-          ))
+          field(stemRow(value, "2413"), "metadata") shouldBe Json.Obj(
+            Seq(
+              "bad-raw" -> Json.Bool(true),
+              "google-media-item-id" -> Json.Str("media-1"),
+              "uploader" -> Json.Str("Ada")
+            )
+          )
           field(stemRow(value, "2412"), "extensions") shouldBe
             Json.Arr(Seq(Json.Str("cr2"), Json.Str("jpg")))
           field(stemRow(value, "2412"), "metadata") shouldBe Json.Obj(Seq.empty)
@@ -210,7 +215,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           fail(other.toString)
       second match
         case Result.Ok(text, _) => text shouldBe expected
-        case other => fail(other.toString)
+        case other              => fail(other.toString)
       again.cached(day).get.grouped.map(_._1) shouldBe Seq("2412", "2413", "9")
       File(day, "IMG_9.jpg").isFile shouldBe true
       File(day, "9.jpg").exists shouldBe false
@@ -225,7 +230,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       exec(again, "agent", "stems", "2010/01/32")._2 shouldBe Result.Usage("not a day")
       File(archive, ".gphoto-sync").exists shouldBe false
 
-  "agent match" should "join catalog filenames to local stems and write nothing" in :
+  "agent match" should "join catalog filenames to local stems and write nothing" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/07/19")
       touch(day, "2412.cr2")
@@ -258,17 +263,20 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           |unmatched - ghost.jpg
           |date-mismatch 2010/07/19 8888.jpg 2010/07/18 8888
           |""".stripMargin
-      result shouldBe Result.Ok(text, matchValue(
-        "m1",
-        Seq(
-          "2010/07/19" -> "2412",
-          "2010/07/19" -> "123v",
-          "2010/07/19" -> "2412.MP",
-          "2010/07/19" -> "123v"
-        ),
-        Seq("k2", "k5"),
-        Seq(("2010/07/19", "8888.jpg", "2010/07/18", "8888"))
-      ))
+      result shouldBe Result.Ok(
+        text,
+        matchValue(
+          "m1",
+          Seq(
+            "2010/07/19" -> "2412",
+            "2010/07/19" -> "123v",
+            "2010/07/19" -> "2412.MP",
+            "2010/07/19" -> "123v"
+          ),
+          Seq("k2", "k5"),
+          Seq(("2010/07/19", "8888.jpg", "2010/07/18", "8888"))
+        )
+      )
       result match
         case Result.Ok(shown, _) =>
           noIds(shown, "m1", "k1", "k2", "k3", "k4", "k5", "k6", "k7", "Ada", "Bea")
@@ -282,7 +290,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       File(day, "123v.mp4").isFile shouldBe true
       Option(File(archive, ".gphoto-sync").list()).get.toSet shouldBe Set("catalog.txt")
 
-  "agent match" should "join an m4v name to the v stem" in :
+  "agent match" should "join an m4v name to the v stem" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/07/19")
       touch(day, "123.jpg")
@@ -302,7 +310,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       File(day, "123v.m4v").isFile shouldBe true
       File(day, "123.m4v").exists shouldBe false
 
-  "agent include" should "compress against every day in the span and write nothing" in :
+  "agent include" should "compress against every day in the span and write nothing" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/07/19")
       touch(day, "2412.jpg")
@@ -317,12 +325,22 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       )
       val (_, all) = exec(
         session,
-        "agent", "include", "--span", "2010/07",
-        "2010/07/19/2412", "2010/07/19/2413", "2010/07/19/2414", "2010/07/20/9999"
+        "agent",
+        "include",
+        "--span",
+        "2010/07",
+        "2010/07/19/2412",
+        "2010/07/19/2413",
+        "2010/07/19/2414",
+        "2010/07/20/9999"
       )
       all shouldBe Result.Ok("all\n", includeValue(Seq("all"), Seq("all")))
       val (_, curated) = exec(
-        session, "agent", "include", "2010/07/19/2412", "2010/07/19/2414"
+        session,
+        "agent",
+        "include",
+        "2010/07/19/2412",
+        "2010/07/19/2414"
       )
       curated shouldBe Result.Ok(
         "2010/07/19 2412\n2010/07/19 2414\n",
@@ -339,7 +357,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       File(archive, ".gphoto-sync").exists shouldBe false
       File(day, "album.toml").exists shouldBe false
 
-  "agent drift" should "report a create and write nothing" in :
+  "agent drift" should "report a create and write nothing" in:
     withArchive: archive =>
       writeCatalog(archive, "album\tcid-notes\t0\tNotes")
       val (text, value) = unchanged(archive)(execOk(archive, "agent", "drift"))
@@ -350,7 +368,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       File(archive, "Notes.toml").exists shouldBe false
       File(archive, ".gphoto-sync/album-links.tsv").exists shouldBe false
 
-  it should "report an update and write nothing" in :
+  it should "report an update and write nothing" in:
     withArchive: archive =>
       val toml: String =
         """# keep
@@ -371,7 +389,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       value shouldBe driftValue("update", "Hawaii Trip", "Hawaii.toml", None, Some("cid-hawaii"))
       JFiles.readString(File(archive, "Hawaii.toml").toPath) shouldBe toml
 
-  it should "report a gone link and write nothing" in :
+  it should "report a gone link and write nothing" in:
     withArchive: archive =>
       writeRaw(
         archive,
@@ -387,7 +405,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       noIds(text, "cid-old")
       value shouldBe driftValue("gone", "Old Title", "Old.toml", None, Some("cid-old"))
 
-  it should "report a pending file and write nothing" in :
+  it should "report a pending file and write nothing" in:
     withArchive: archive =>
       writeRaw(archive, "Pending.toml", "external = false\n")
       writeCatalog(archive)
@@ -395,7 +413,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       text shouldBe "pending Pending.toml\n"
       value shouldBe driftValue("pending", "", "Pending.toml", None, None)
 
-  it should "report a pending rename and write nothing" in :
+  it should "report a pending rename and write nothing" in:
     withArchive: archive =>
       val toml: String = "external = true\n"
       writeRaw(archive, "Best Of.toml", toml)
@@ -405,7 +423,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       noIds(text, "cid-best")
       value shouldBe driftValue("pending-rename", "", "Best Of.toml", None, Some("cid-best"))
 
-  it should "report a skipped album and write nothing" in :
+  it should "report a skipped album and write nothing" in:
     withArchive: archive =>
       writeCatalog(
         archive,
@@ -418,7 +436,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       value shouldBe driftValue("skipped", "Travel", "", Some("auto-add"), Some("cid-travel"))
       File(archive, "Travel.toml").exists shouldBe false
 
-  "agent missing" should "list absent items, including another uploader, and not a prefix hit" in :
+  "agent missing" should "list absent items, including another uploader, and not a prefix hit" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/07/19")
       touch(day, "2412.jpg")
@@ -456,20 +474,37 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           |missing Trip - ghost.jpg -
           |missing Trip 2010-07-19 6666.PORTRAIT.jpg -
           |""".stripMargin
-      result shouldBe Result.Ok(text, Json.Obj(Seq(
-        "missing" -> Json.Arr(Seq(
-          missingRow("Trip", "2010-07-19", "1000.jpg", "-", "k-own"),
-          missingRow("Trip", "2010-07-19", "2000.jpg", "Ada", "k-ada"),
-          missingRow("Trip", "-", "ghost.jpg", "-", "k-ghost"),
-          missingRow("Trip", "2010-07-19", "6666.PORTRAIT.jpg", "-", "k-port")
-        ))
-      )))
+      result shouldBe Result.Ok(
+        text,
+        Json.Obj(
+          Seq(
+            "missing" -> Json.Arr(
+              Seq(
+                missingRow("Trip", "2010-07-19", "1000.jpg", "-", "k-own"),
+                missingRow("Trip", "2010-07-19", "2000.jpg", "Ada", "k-ada"),
+                missingRow("Trip", "-", "ghost.jpg", "-", "k-ghost"),
+                missingRow("Trip", "2010-07-19", "6666.PORTRAIT.jpg", "-", "k-port")
+              )
+            )
+          )
+        )
+      )
       result match
         case Result.Ok(shown, value) =>
           noIds(
             shown,
-            "aid-trip", "aid-eps", "aid-box",
-            "k-own", "k-ada", "k-prefix", "k-video", "k-ghost", "k-mp", "k-port", "k-kept", "k-unset"
+            "aid-trip",
+            "aid-eps",
+            "aid-box",
+            "k-own",
+            "k-ada",
+            "k-prefix",
+            "k-video",
+            "k-ghost",
+            "k-mp",
+            "k-port",
+            "k-kept",
+            "k-unset"
           )
           value.toString should not include ("aid-")
         case other =>
@@ -478,7 +513,7 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       loaded.cached(File(archive, "2010/07/20")).isDefined shouldBe true
       File(archive, "2010/07/18").exists shouldBe false
 
-  "agent years" should "list year names and skip dot directories" in :
+  "agent years" should "list year names and skip dot directories" in:
     withArchive: archive =>
       val missing: File = File(archive, "absent")
       val (untouched, empty) = exec(Session(rootFor(missing)), "agent", "years")
@@ -509,10 +544,10 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
 
       JFiles.writeString(File(archive, "readme.txt").toPath, "stray\n")
       exec(listed, "agent", "years")._2 match
-        case Result.Usage(message) => message should include ("readme.txt")
-        case other => fail(other.toString)
+        case Result.Usage(message) => message should include("readme.txt")
+        case other                 => fail(other.toString)
 
-  "agent months" should "list one year and reject anything else" in :
+  "agent months" should "list one year and reject anything else" in:
     withArchive: archive =>
       touch(File(archive, "2010/08"), "2412.jpg")
       touch(File(archive, "2010/07"), "0001.jpg")
@@ -522,37 +557,41 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       listed.cached(File(archive, "2010")).isEmpty shouldBe true
       months shouldBe Result.Ok(
         "2010/07\n2010/08\n",
-        Json.Obj(Seq(
-          "year" -> Json.Str("2010"),
-          "present" -> Json.Bool(true),
-          "months" -> Json.Arr(Seq(Json.Str("2010/07"), Json.Str("2010/08")))
-        ))
+        Json.Obj(
+          Seq(
+            "year" -> Json.Str("2010"),
+            "present" -> Json.Bool(true),
+            "months" -> Json.Arr(Seq(Json.Str("2010/07"), Json.Str("2010/08")))
+          )
+        )
       )
       JFiles.write(File(archive, "2010/readme.txt").toPath, Array.emptyByteArray)
       exec(listed, "agent", "months", "2010")._2 match
-        case Result.Usage(message) => message should include ("readme.txt")
-        case other => fail(other.toString)
+        case Result.Usage(message) => message should include("readme.txt")
+        case other                 => fail(other.toString)
 
       val (missing, absent) = exec(session, "agent", "months", "2099")
       absent shouldBe Result.Ok(
         "",
-        Json.Obj(Seq(
-          "year" -> Json.Str("2099"),
-          "present" -> Json.Bool(false),
-          "months" -> Json.Arr(Seq.empty)
-        ))
+        Json.Obj(
+          Seq(
+            "year" -> Json.Str("2099"),
+            "present" -> Json.Bool(false),
+            "months" -> Json.Arr(Seq.empty)
+          )
+        )
       )
       missing.index.isEmpty shouldBe true
       missing.catalogCache.isEmpty shouldBe true
       JFiles.write(File(archive, "2011").toPath, Array.emptyByteArray)
       exec(session, "agent", "months", "2011")._2 match
-        case Result.Usage(message) => message should include ("is not a directory")
-        case other => fail(other.toString)
+        case Result.Usage(message) => message should include("is not a directory")
+        case other                 => fail(other.toString)
       List("2010/07", "2010/07/19", "foo", ".upload", "2412v").foreach: path =>
         exec(session, "agent", "months", path)._2 shouldBe Result.Usage("not a year")
       noRequests(archive)
 
-  "agent days" should "list one month and keep an impossible directory name" in :
+  "agent days" should "list one month and keep an impossible directory name" in:
     withArchive: archive =>
       touch(File(archive, "2010/07/20"), "0001.jpg")
       touch(File(archive, "2010/07/19"), "0002.jpg")
@@ -564,35 +603,41 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       listed.cached(File(archive, "2010/07")).isEmpty shouldBe true
       days shouldBe Result.Ok(
         "2010/07/19\n2010/07/20\n",
-        Json.Obj(Seq(
-          "month" -> Json.Str("2010/07"),
-          "present" -> Json.Bool(true),
-          "days" -> Json.Arr(Seq(Json.Str("2010/07/19"), Json.Str("2010/07/20")))
-        ))
+        Json.Obj(
+          Seq(
+            "month" -> Json.Str("2010/07"),
+            "present" -> Json.Bool(true),
+            "days" -> Json.Arr(Seq(Json.Str("2010/07/19"), Json.Str("2010/07/20")))
+          )
+        )
       )
       exec(session, "agent", "days", "2010/02")._2 shouldBe Result.Ok(
         "2010/02/01\n2010/02/31\n",
-        Json.Obj(Seq(
-          "month" -> Json.Str("2010/02"),
-          "present" -> Json.Bool(true),
-          "days" -> Json.Arr(Seq(Json.Str("2010/02/01"), Json.Str("2010/02/31")))
-        ))
+        Json.Obj(
+          Seq(
+            "month" -> Json.Str("2010/02"),
+            "present" -> Json.Bool(true),
+            "days" -> Json.Arr(Seq(Json.Str("2010/02/01"), Json.Str("2010/02/31")))
+          )
+        )
       )
       val (missing, absent) = exec(session, "agent", "days", "2099/01")
       absent shouldBe Result.Ok(
         "",
-        Json.Obj(Seq(
-          "month" -> Json.Str("2099/01"),
-          "present" -> Json.Bool(false),
-          "days" -> Json.Arr(Seq.empty)
-        ))
+        Json.Obj(
+          Seq(
+            "month" -> Json.Str("2099/01"),
+            "present" -> Json.Bool(false),
+            "days" -> Json.Arr(Seq.empty)
+          )
+        )
       )
       missing.index.isEmpty shouldBe true
       List("2010", "2010/07/19", "2010/02/31", "foo").foreach: path =>
         exec(session, "agent", "days", path)._2 shouldBe Result.Usage("not a month")
       noRequests(archive)
 
-  "agent claims" should "list one day's titles and not scan an empty day" in :
+  "agent claims" should "list one day's titles and not scan an empty day" in:
     withArchive: archive =>
       val tifDay: File = File(archive, "2010/05/02")
       touch(tifDay, "2412.tif")
@@ -600,11 +645,13 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       val (tifSession, tifClaims) = exec(session, "agent", "claims", "2010/05/02")
       tifClaims shouldBe Result.Ok(
         "",
-        Json.Obj(Seq(
-          "path" -> Json.Str("2010/05/02"),
-          "present" -> Json.Bool(true),
-          "claims" -> Json.Arr(Seq.empty)
-        ))
+        Json.Obj(
+          Seq(
+            "path" -> Json.Str("2010/05/02"),
+            "present" -> Json.Bool(true),
+            "claims" -> Json.Arr(Seq.empty)
+          )
+        )
       )
       tifSession.cached(tifDay).isDefined shouldBe true
       tifSession.cached(File(archive, "2010")).isEmpty shouldBe true
@@ -644,11 +691,13 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       val (skipped, missing) = exec(session, "agent", "claims", "2099/01/01")
       missing shouldBe Result.Ok(
         "",
-        Json.Obj(Seq(
-          "path" -> Json.Str("2099/01/01"),
-          "present" -> Json.Bool(false),
-          "claims" -> Json.Arr(Seq.empty)
-        ))
+        Json.Obj(
+          Seq(
+            "path" -> Json.Str("2099/01/01"),
+            "present" -> Json.Bool(false),
+            "claims" -> Json.Arr(Seq.empty)
+          )
+        )
       )
       skipped.catalogCache.isEmpty shouldBe true
       skipped.index.isEmpty shouldBe true
@@ -661,15 +710,22 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
           |2010/06/02/2413 albums=-
           |2010/06/02/2414 albums=-
           |""".stripMargin
-      claims shouldBe Result.Ok(text, Json.Obj(Seq(
-        "path" -> Json.Str("2010/06/02"),
-        "present" -> Json.Bool(true),
-        "claims" -> Json.Arr(Seq(
-          claimRow("2010/06/02/2412", "2412", Seq("2010/06/02/Party", "Best"), excludedOnly = false),
-          claimRow("2010/06/02/2413", "2413", Seq.empty, excludedOnly = false),
-          claimRow("2010/06/02/2414", "2414", Seq.empty, excludedOnly = true)
-        ))
-      )))
+      claims shouldBe Result.Ok(
+        text,
+        Json.Obj(
+          Seq(
+            "path" -> Json.Str("2010/06/02"),
+            "present" -> Json.Bool(true),
+            "claims" -> Json.Arr(
+              Seq(
+                claimRow("2010/06/02/2412", "2412", Seq("2010/06/02/Party", "Best"), excludedOnly = false),
+                claimRow("2010/06/02/2413", "2413", Seq.empty, excludedOnly = false),
+                claimRow("2010/06/02/2414", "2414", Seq.empty, excludedOnly = true)
+              )
+            )
+          )
+        )
+      )
       claims match
         case Result.Ok(shown, value) =>
           shown should not include ("Secret Party")
@@ -684,13 +740,17 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       val (_, later) = exec(loaded, "agent", "claims", "2010/08/01")
       later shouldBe Result.Ok(
         "2010/08/01/0002 albums=2010/07/19-08/23\n",
-        Json.Obj(Seq(
-          "path" -> Json.Str("2010/08/01"),
-          "present" -> Json.Bool(true),
-          "claims" -> Json.Arr(Seq(
-            claimRow("2010/08/01/0002", "0002", Seq("2010/07/19-08/23"), excludedOnly = false)
-          ))
-        ))
+        Json.Obj(
+          Seq(
+            "path" -> Json.Str("2010/08/01"),
+            "present" -> Json.Bool(true),
+            "claims" -> Json.Arr(
+              Seq(
+                claimRow("2010/08/01/0002", "0002", Seq("2010/07/19-08/23"), excludedOnly = false)
+              )
+            )
+          )
+        )
       )
       later match
         case Result.Ok(shown, value) =>
@@ -704,13 +764,13 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       val (kept, served) = exec(serve, "agent", "claims", "2010/06/02")
       served match
         case Result.Ok(shown, _) => shown shouldBe text
-        case other => fail(other.toString)
+        case other               => fail(other.toString)
       DirectoryIndex.cursor shouldBe None
       kept.cached(day).isDefined shouldBe true
       kept.catalogCache.isEmpty shouldBe true
       noRequests(archive)
 
-  "agent locate" should "list catalog rows for one local stem and not read a catalog it cannot hit" in :
+  "agent locate" should "list catalog rows for one local stem and not read a catalog it cannot hit" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/07/19")
       touch(day, "IMG_2412.jpg")
@@ -782,15 +842,24 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
         case Result.Ok(shown, value) =>
           noIds(
             shown,
-            "aid-alpha", "aid-trip", "aid-beta", "aid-box",
-            "k-alpha", "k-ghost", "k-other", "k-video", "k-trip", "k-unset", "k-beta"
+            "aid-alpha",
+            "aid-trip",
+            "aid-beta",
+            "aid-box",
+            "k-alpha",
+            "k-ghost",
+            "k-other",
+            "k-video",
+            "k-trip",
+            "k-unset",
+            "k-beta"
           )
           shown should not include ("missing")
           shown should not include ("ambiguous")
           shown should not include ("matched")
           shown should not include ("\"")
           field(value, "ambiguous") shouldBe Json.Bool(true)
-          value.toString should include ("k-alpha")
+          value.toString should include("k-alpha")
           value.toString should not include ("k-ghost")
           value.toString should not include ("k-other")
           value.toString should not include ("k-video")
@@ -842,12 +911,14 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       noRequests(archive)
 
   private def claimRow(path: String, stem: String, albums: Seq[String], excludedOnly: Boolean): Json =
-    Json.Obj(Seq(
-      "path" -> Json.Str(path),
-      "stem" -> Json.Str(stem),
-      "albums" -> Json.Arr(albums.map(Json.Str.apply)),
-      "excludedOnly" -> Json.Bool(excludedOnly)
-    ))
+    Json.Obj(
+      Seq(
+        "path" -> Json.Str(path),
+        "stem" -> Json.Str(stem),
+        "albums" -> Json.Arr(albums.map(Json.Str.apply)),
+        "excludedOnly" -> Json.Bool(excludedOnly)
+      )
+    )
 
   private def noRequests(archive: File): Unit =
     File(archive, "requests.tsv").exists shouldBe false
@@ -858,43 +929,54 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
   private def emptyMatch(id: String): Json = matchValue(id, Seq.empty, Seq.empty)
 
   private def matchValue(
-    id: String,
-    matched: Seq[(String, String)],
-    unmatched: Seq[String],
-    mismatches: Seq[(String, String, String, String)] = Seq.empty
+      id: String,
+      matched: Seq[(String, String)],
+      unmatched: Seq[String],
+      mismatches: Seq[(String, String, String, String)] = Seq.empty
   ): Json =
-    Json.Obj(Seq(
-      "id" -> Json.Str(id),
-      "matched" -> Json.Arr(matched.map(pair => Json.Obj(Seq(
-        "day" -> Json.Str(pair._1),
-        "stem" -> Json.Str(pair._2)
-      )))),
-      "unmatched" -> Json.Arr(unmatched.map(Json.Str.apply)),
-      "dateMismatches" -> Json.Arr(mismatches.map: (catalogDay, filename, archiveDay, stem) =>
-        Json.Obj(Seq(
-          "catalogDay" -> Json.Str(catalogDay),
-          "filename" -> Json.Str(filename),
-          "archiveDay" -> Json.Str(archiveDay),
-          "stem" -> Json.Str(stem)
-        ))
+    Json.Obj(
+      Seq(
+        "id" -> Json.Str(id),
+        "matched" -> Json.Arr(
+          matched.map(pair =>
+            Json.Obj(
+              Seq(
+                "day" -> Json.Str(pair._1),
+                "stem" -> Json.Str(pair._2)
+              )
+            )
+          )
+        ),
+        "unmatched" -> Json.Arr(unmatched.map(Json.Str.apply)),
+        "dateMismatches" -> Json.Arr(mismatches.map: (catalogDay, filename, archiveDay, stem) =>
+          Json.Obj(
+            Seq(
+              "catalogDay" -> Json.Str(catalogDay),
+              "filename" -> Json.Str(filename),
+              "archiveDay" -> Json.Str(archiveDay),
+              "stem" -> Json.Str(stem)
+            )
+          ))
       )
-    ))
+    )
 
   private def includeValue(rendered: Seq[String], logical: Seq[String]): Json =
-    Json.Obj(Seq(
-      "rendered" -> Json.Arr(rendered.map(Json.Str.apply)),
-      "logical" -> Json.Arr(logical.map(Json.Str.apply))
-    ))
+    Json.Obj(
+      Seq(
+        "rendered" -> Json.Arr(rendered.map(Json.Str.apply)),
+        "logical" -> Json.Arr(logical.map(Json.Str.apply))
+      )
+    )
 
   private def albumsOf(value: Json): Seq[Json] = field(value, "albums") match
     case Json.Arr(rows) => rows
-    case other => fail(other.toString)
+    case other          => fail(other.toString)
 
   private def idsOf(value: Json): Seq[String] = albumsOf(value).map(idOf)
 
   private def idOf(value: Json): String = field(value, "id") match
     case Json.Str(id) => id
-    case other => fail(other.toString)
+    case other        => fail(other.toString)
 
   private def stemRow(value: Json, stem: String): Json =
     field(value, "stems") match
@@ -910,68 +992,82 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       fail(other.toString)
 
   private def driftValue(
-    kind: String,
-    title: String,
-    path: String,
-    reason: Option[String],
-    id: Option[String]
+      kind: String,
+      title: String,
+      path: String,
+      reason: Option[String],
+      id: Option[String]
   ): Json =
-    Json.Obj(Seq(
-      "actions" -> Json.Arr(Seq(Json.Obj(Seq(
-        "class" -> Json.Str(kind),
-        "title" -> Json.Str(title),
-        "path" -> Json.Str(path),
-        "reason" -> reason.fold(Json.Null)(Json.Str.apply),
-        "id" -> id.fold(Json.Null)(Json.Str.apply)
-      ))))
-    ))
+    Json.Obj(
+      Seq(
+        "actions" -> Json.Arr(
+          Seq(
+            Json.Obj(
+              Seq(
+                "class" -> Json.Str(kind),
+                "title" -> Json.Str(title),
+                "path" -> Json.Str(path),
+                "reason" -> reason.fold(Json.Null)(Json.Str.apply),
+                "id" -> id.fold(Json.Null)(Json.Str.apply)
+              )
+            )
+          )
+        )
+      )
+    )
 
   private def locateValue(
-    day: String,
-    stem: String,
-    directory: Boolean,
-    present: Boolean,
-    matches: Seq[Json]
+      day: String,
+      stem: String,
+      directory: Boolean,
+      present: Boolean,
+      matches: Seq[Json]
   ): Json =
-    Json.Obj(Seq(
-      "day" -> Json.Str(day),
-      "stem" -> Json.Str(stem),
-      "directory" -> Json.Bool(directory),
-      "present" -> Json.Bool(present),
-      "ambiguous" -> Json.Bool(matches.length > 1),
-      "matches" -> Json.Arr(matches)
-    ))
+    Json.Obj(
+      Seq(
+        "day" -> Json.Str(day),
+        "stem" -> Json.Str(stem),
+        "directory" -> Json.Bool(directory),
+        "present" -> Json.Bool(present),
+        "ambiguous" -> Json.Bool(matches.length > 1),
+        "matches" -> Json.Arr(matches)
+      )
+    )
 
   private def locateRow(
-    title: String,
-    date: String,
-    filename: String,
-    uploader: String,
-    id: String,
-    key: String
+      title: String,
+      date: String,
+      filename: String,
+      uploader: String,
+      id: String,
+      key: String
   ): Json =
-    Json.Obj(Seq(
-      "title" -> Json.Str(title),
-      "date" -> Json.Str(date),
-      "filename" -> Json.Str(filename),
-      "uploader" -> Json.Str(uploader),
-      "id" -> Json.Str(id),
-      "key" -> Json.Str(key)
-    ))
+    Json.Obj(
+      Seq(
+        "title" -> Json.Str(title),
+        "date" -> Json.Str(date),
+        "filename" -> Json.Str(filename),
+        "uploader" -> Json.Str(uploader),
+        "id" -> Json.Str(id),
+        "key" -> Json.Str(key)
+      )
+    )
 
   private def missingRow(title: String, date: String, filename: String, uploader: String, key: String): Json =
-    Json.Obj(Seq(
-      "title" -> Json.Str(title),
-      "date" -> Json.Str(date),
-      "filename" -> Json.Str(filename),
-      "uploader" -> Json.Str(uploader),
-      "key" -> Json.Str(key)
-    ))
+    Json.Obj(
+      Seq(
+        "title" -> Json.Str(title),
+        "date" -> Json.Str(date),
+        "filename" -> Json.Str(filename),
+        "uploader" -> Json.Str(uploader),
+        "key" -> Json.Str(key)
+      )
+    )
 
   private def execOk(archive: File, args: String*): (String, Json) =
     exec(Session(rootFor(archive)), args*)._2 match
       case Result.Ok(text, value) => (text, value)
-      case other => fail(other.toString)
+      case other                  => fail(other.toString)
 
   private def unchanged(archive: File)(body: => (String, Json)): (String, Json) =
     val before: Map[String, String] = filesOf(archive)
@@ -981,10 +1077,8 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
 
   private def filesOf(archive: File): Map[String, String] =
     def walk(file: File): Seq[(String, String)] =
-      if file.isDirectory then
-        Option(file.listFiles).getOrElse(Array.empty[File]).toSeq.flatMap(walk)
-      else
-        Seq(archive.toPath.relativize(file.toPath).toString -> JFiles.readString(file.toPath))
+      if file.isDirectory then Option(file.listFiles).getOrElse(Array.empty[File]).toSeq.flatMap(walk)
+      else Seq(archive.toPath.relativize(file.toPath).toString -> JFiles.readString(file.toPath))
     walk(archive).toMap
 
   private def writeRaw(archive: File, path: String, text: String): Unit =

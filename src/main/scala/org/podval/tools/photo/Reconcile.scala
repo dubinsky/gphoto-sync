@@ -25,11 +25,11 @@ object Reconcile:
     case Skipped extends Kind("skipped")
 
   private[photo] final case class Action(
-    kind: Kind,
-    label: String,
-    path: String,
-    reason: String,
-    id: Option[String]
+      kind: Kind,
+      label: String,
+      path: String,
+      reason: String,
+      id: Option[String]
   )
 
   private[photo] enum Touch:
@@ -41,17 +41,17 @@ object Reconcile:
   private[photo] final case class Plan(actions: Seq[Action], links: Seq[AlbumLinks.Row], touches: Seq[Touch])
 
   private final case class Placed(
-    album: Catalog.Album,
-    parsed: Title.Parsed,
-    monthFile: Boolean,
-    dest: File,
-    rel: String
+      album: Catalog.Album,
+      parsed: Title.Parsed,
+      monthFile: Boolean,
+      dest: File,
+      rel: String
   )
 
   private[photo] final case class MatchSet(
-    include: Seq[Include.Entry],
-    claimed: Set[(LocalDate, String)],
-    universe: Map[LocalDate, Set[String]]
+      include: Seq[Include.Entry],
+      claimed: Set[(LocalDate, String)],
+      universe: Map[LocalDate, Set[String]]
   )
 
   private enum Prepared:
@@ -75,21 +75,21 @@ object Reconcile:
       DirectoryIndex.dropAll()
 
   private[photo] def line(action: Action): String = action.kind match
-    case Kind.Pending => s"pending ${action.path}"
+    case Kind.Pending       => s"pending ${action.path}"
     case Kind.PendingRename => s"pending-rename ${action.path}"
-    case Kind.Skipped => s"skipped ${action.label} ${action.reason}"
-    case Kind.Gone => s"gone ${action.label}"
-    case Kind.Create => s"create ${action.label}"
-    case Kind.Update => s"update ${action.label}"
+    case Kind.Skipped       => s"skipped ${action.label} ${action.reason}"
+    case Kind.Gone          => s"gone ${action.label}"
+    case Kind.Create        => s"create ${action.label}"
+    case Kind.Update        => s"update ${action.label}"
 
   // Drift calls this and does not perform the plan.
   private[photo] def classify(
-    start: Session,
-    archive: File,
-    catalog: Seq[Catalog.Album],
-    found: Seq[Album.Loaded],
-    existing: Seq[AlbumLinks.Row],
-    args: Cli.ReconcileArgs
+      start: Session,
+      archive: File,
+      catalog: Seq[Catalog.Album],
+      found: Seq[Album.Loaded],
+      existing: Seq[AlbumLinks.Row],
+      args: Cli.ReconcileArgs
   ): (Session, Plan) =
     val relOf: Album.Loaded => String = row => Album.relative(archive, row.file)
     val byRel: Map[String, Album.Loaded] = found.map(row => relOf(row) -> row).toMap
@@ -97,10 +97,11 @@ object Reconcile:
     val titleCount: Map[String, Int] = catalog.groupBy(_.title).view.mapValues(_.length).toMap
 
     // A pending file is never a link target, even when a stale row names it.
-    val pinned: Map[String, Album.Loaded] = existing.flatMap: link =>
-      if !catalogById.contains(link.id) then None
-      else byRel.get(link.path).filter(row => !pending(row.album)).map(link.id -> _)
-    .toMap
+    val pinned: Map[String, Album.Loaded] = existing
+      .flatMap: link =>
+        if !catalogById.contains(link.id) then None
+        else byRel.get(link.path).filter(row => !pending(row.album)).map(link.id -> _)
+      .toMap
     val pinnedPaths: Set[String] = pinned.values.map(relOf).toSet
 
     val open: Seq[Catalog.Album] = catalog.filter: album =>
@@ -123,12 +124,14 @@ object Reconcile:
 
     val googlePool: Seq[Album.Loaded] =
       pool(found).filter(row => row.album.external && row.album.googleTitle.nonEmpty)
-    val (googleHits, googleCrowded) = pair(open, googlePool, relOf, (album, row) => row.album.googleTitle == album.title)
+    val (googleHits, googleCrowded) =
+      pair(open, googlePool, relOf, (album, row) => row.album.googleTitle == album.title)
     take(googleHits, googleCrowded)
 
     val workingPool: Seq[Album.Loaded] =
       pool(found).filter(row => row.album.external && row.album.googleTitle.isEmpty)
-    val workingOpen: Seq[Catalog.Album] = open.filter(album => !assigned.contains(album.id) && !ambiguous.contains(album.id))
+    val workingOpen: Seq[Catalog.Album] =
+      open.filter(album => !assigned.contains(album.id) && !ambiguous.contains(album.id))
     val (workingHits, workingCrowded) =
       pair(workingOpen, workingPool, relOf, (album, row) => row.album.title == working(album.title))
     take(workingHits, workingCrowded)
@@ -159,25 +162,27 @@ object Reconcile:
 
     // Titles that are not exact duplicates can still place to one path. The extra is not a second link row.
     // An existing path is not given to the first album.
-    placed.toSeq.groupBy(_.rel).foreach: (_, group) =>
-      val chosen: Placed = group.head
-      if group.sizeIs > 1 && (chosen.dest.exists || taken.contains(chosen.rel)) then
-        group.foreach(row => refused(row.album.id) = "ambiguous title")
-      else if group.sizeIs > 1 then
-        creates(chosen.album.id) = (chosen.parsed, chosen.monthFile, chosen.dest, chosen.rel)
-        group.drop(1).foreach(row => refused(row.album.id) = "ambiguous title")
-      else if chosen.dest.exists then
-        byRel.get(chosen.rel) match
-          case Some(row) if pending(row.album) || taken.contains(chosen.rel) =>
-            refused(chosen.album.id) = "path exists"
-          case Some(row) if agrees(chosen.album, row.album) =>
-            assigned(chosen.album.id) = row
-            taken += chosen.rel
-          case Some(_) =>
-            refused(chosen.album.id) = "working title"
-          case None =>
-            refused(chosen.album.id) = "path exists"
-      else creates(chosen.album.id) = (chosen.parsed, chosen.monthFile, chosen.dest, chosen.rel)
+    placed.toSeq
+      .groupBy(_.rel)
+      .foreach: (_, group) =>
+        val chosen: Placed = group.head
+        if group.sizeIs > 1 && (chosen.dest.exists || taken.contains(chosen.rel)) then
+          group.foreach(row => refused(row.album.id) = "ambiguous title")
+        else if group.sizeIs > 1 then
+          creates(chosen.album.id) = (chosen.parsed, chosen.monthFile, chosen.dest, chosen.rel)
+          group.drop(1).foreach(row => refused(row.album.id) = "ambiguous title")
+        else if chosen.dest.exists then
+          byRel.get(chosen.rel) match
+            case Some(row) if pending(row.album) || taken.contains(chosen.rel) =>
+              refused(chosen.album.id) = "path exists"
+            case Some(row) if agrees(chosen.album, row.album) =>
+              assigned(chosen.album.id) = row
+              taken += chosen.rel
+            case Some(_) =>
+              refused(chosen.album.id) = "working title"
+            case None =>
+              refused(chosen.album.id) = "path exists"
+        else creates(chosen.album.id) = (chosen.parsed, chosen.monthFile, chosen.dest, chosen.rel)
 
     var session: Session = start
     val actions: mutable.ListBuffer[Action] = mutable.ListBuffer.empty
@@ -187,8 +192,7 @@ object Reconcile:
     val renamePaths: mutable.Set[String] = mutable.Set.empty
 
     def keep(id: String, rel: String): Unit =
-      if links.exists(row => row.id == id || row.path == rel) then
-        throw IllegalStateException("duplicate album link")
+      if links.exists(row => row.id == id || row.path == rel) then throw IllegalStateException("duplicate album link")
       links += AlbumLinks.Row(id, rel)
       linkedPaths += rel
 
@@ -254,11 +258,16 @@ object Reconcile:
                   val reason: String = refused.getOrElse(album.id, "ambiguous title")
                   actions += skipped(album.title, "", reason, Some(album.id))
 
-    val pendingActions: Seq[Action] = found.filter(row => pending(row.album)).sortBy(relOf).map: row =>
-      Action(Kind.Pending, "", relOf(row), "", None)
+    val pendingActions: Seq[Action] = found
+      .filter(row => pending(row.album))
+      .sortBy(relOf)
+      .map: row =>
+        Action(Kind.Pending, "", relOf(row), "", None)
     // A stale id still names this path. Reporting it gone would delete the file under --delete.
-    existing.filter(link => renamePaths.contains(link.path) && !linkedPaths.contains(link.path)).foreach: link =>
-      keep(link.id, link.path)
+    existing
+      .filter(link => renamePaths.contains(link.path) && !linkedPaths.contains(link.path))
+      .foreach: link =>
+        keep(link.id, link.path)
     val goneLinks: Seq[AlbumLinks.Row] = existing.filter: link =>
       !catalogById.contains(link.id) &&
         byRel.get(link.path).exists(row => !pending(row.album) && !linkedPaths.contains(link.path)) &&
@@ -269,16 +278,16 @@ object Reconcile:
       Action(Kind.Gone, label, relOf(row), "", Some(link.id))
     // Link rows follow --delete even on a dry run. Only the removal and the write wait for a real run.
     if args.delete then
-      if !args.dryRun then
-        goneLinks.foreach(link => touches += Touch.RemoveFile(byRel(link.path).file))
-    else
-      goneLinks.foreach(link => keep(link.id, link.path))
+      if !args.dryRun then goneLinks.foreach(link => touches += Touch.RemoveFile(byRel(link.path).file))
+    else goneLinks.foreach(link => keep(link.id, link.path))
     val gonePaths: Set[String] = goneLinks.map(_.path).toSet
-    val unlinked: Seq[Action] = found.filter: row =>
-      !pending(row.album) && !linkedPaths.contains(relOf(row)) && !gonePaths.contains(relOf(row)) &&
-        !renamePaths.contains(relOf(row))
-    .sortBy(relOf).map: row =>
-      skipped(relOf(row), relOf(row), "unlinked", None)
+    val unlinked: Seq[Action] = found
+      .filter: row =>
+        !pending(row.album) && !linkedPaths.contains(relOf(row)) && !gonePaths.contains(relOf(row)) &&
+          !renamePaths.contains(relOf(row))
+      .sortBy(relOf)
+      .map: row =>
+        skipped(relOf(row), relOf(row), "unlinked", None)
 
     val ordered: Seq[Action] = actions.toSeq ++ pendingActions ++ unlinked ++ goneActions.sortBy(_.path)
     (session, Plan(ordered, links.toSeq, touches.toSeq))
@@ -296,12 +305,11 @@ object Reconcile:
     else
       val googleArg: Option[Option[String]] = google match
         case Some(text) if text != file.googleTitle => Some(Some(text))
-        case None if file.googleTitle.nonEmpty => Some(None)
-        case _ => None
+        case None if file.googleTitle.nonEmpty      => Some(None)
+        case _                                      => None
       val includeArg: Option[Seq[Include.Entry]] = includeChange(row.file, file, matched)
       val title: Option[Touch] =
-        if googleArg.isDefined || published.isDefined then
-          Some(Touch.EditTitles(row.file, googleArg, published))
+        if googleArg.isDefined || published.isDefined then Some(Touch.EditTitles(row.file, googleArg, published))
         else None
       // The touch carries the set edit already computed. perform does not gather again.
       val include: Option[Touch] =
@@ -310,15 +318,16 @@ object Reconcile:
       if fileTouches.isEmpty then Edit.Pure else Edit.Write(fileTouches)
 
   private def fresh(
-    album: Catalog.Album,
-    parsed: Title.Parsed,
-    matched: MatchSet
+      album: Catalog.Album,
+      parsed: Title.Parsed,
+      matched: MatchSet
   ): Either[String, String] =
     val (googleTitle, owner) = album.owner match
       case Some(label) => (album.title, Some(label))
-      case None => ("", None)
-    if owner.isDefined && (googleTitle.isEmpty || owner.exists(name => name.trim.isEmpty || badControl(name)) || badControl(googleTitle)) then
-      Left("owner")
+      case None        => ("", None)
+    if owner.isDefined && (googleTitle.isEmpty || owner
+        .exists(name => name.trim.isEmpty || badControl(name)) || badControl(googleTitle))
+    then Left("owner")
     else if badControl(googleTitle) then Left("title")
     else
       val written: Album = Album.external(
@@ -331,10 +340,10 @@ object Reconcile:
       Right(Album.renderFile(written))
 
   private def prepare(
-    session: Session,
-    album: Catalog.Album,
-    span: Option[Title.Span],
-    monthFlag: Boolean
+      session: Session,
+      album: Catalog.Album,
+      span: Option[Title.Span],
+      monthFlag: Boolean
   ): (Session, Prepared) =
     val (matchedSession, hits, _) = AgentSupport.gather(session, album)
     val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
@@ -367,8 +376,7 @@ object Reconcile:
     try
       val (parsed, _) = AgentAlbumFile.place(album)
       Album.relative(archive, Title.file(archive, parsed)) == rel
-    catch
-      case _: IllegalArgumentException => false
+    catch case _: IllegalArgumentException => false
 
   private def ownerBlocked(album: Catalog.Album, file: Album): Boolean =
     if album.owner.isDefined && (file.googleAlbumId.nonEmpty || !file.external) then true
@@ -434,10 +442,10 @@ object Reconcile:
     wrote.nonEmpty || linksChanged
 
   private def pair(
-    albums: Seq[Catalog.Album],
-    files: Seq[Album.Loaded],
-    relOf: Album.Loaded => String,
-    hit: (Catalog.Album, Album.Loaded) => Boolean
+      albums: Seq[Catalog.Album],
+      files: Seq[Album.Loaded],
+      relOf: Album.Loaded => String,
+      hit: (Catalog.Album, Album.Loaded) => Boolean
   ): (Map[String, Album.Loaded], Set[String]) =
     val hits: Seq[(Catalog.Album, Album.Loaded)] =
       albums.flatMap(album => files.filter(file => hit(album, file)).map(album -> _))
@@ -447,7 +455,7 @@ object Reconcile:
     val unique: Map[String, Album.Loaded] = byAlbum.flatMap: (id, rows) =>
       rows match
         case Seq((_, file)) if !crowded.contains(relOf(file)) => Some(id -> file)
-        case _ => None
+        case _                                                => None
     val ambiguous: Set[String] = byAlbum.keySet.filterNot(unique.contains).toSet
     (unique.toMap, ambiguous)
 
@@ -462,19 +470,18 @@ object Reconcile:
 
   private def pending(album: Album): Boolean = album.role match
     case AlbumRole.Client(_, Publication.Pending(_)) => true
-    case _ => false
+    case _                                           => false
 
   // Empty google-title is not a stored rename. Do not write the catalog title.
   private def pendingRename(album: Catalog.Album, file: Album): Boolean =
     album.owner.isEmpty && (file.role match
       case AlbumRole.External(googleTitle, owner) =>
         owner.isEmpty && googleTitle.isEmpty && file.title != album.title
-      case _ => false
-    )
+      case _ => false)
 
   private def client(album: Album): Boolean = album.role match
     case AlbumRole.Client(_, Publication.Published(_, _)) => true
-    case _ => false
+    case _                                                => false
 
   private def monthFile(album: Album): Boolean =
     album.span.exists: span =>
@@ -491,10 +498,10 @@ object Reconcile:
 
   private def placeReason(message: String): String = message match
     case "leftover starts with a digit" => "digit"
-    case "leftover is not a name" => "leftover"
-    case "curated album has no name" => "no name"
-    case "no such directory" => "no such directory"
-    case other => other
+    case "leftover is not a name"       => "leftover"
+    case "curated album has no name"    => "no name"
+    case "no such directory"            => "no such directory"
+    case other                          => other
 
   private def badControl(text: String): Boolean =
     text.exists(ch => ch == '\t' || ch == '\r' || ch == '\n')
@@ -506,19 +513,29 @@ object Reconcile:
     Json.Obj(Seq("actions" -> Json.Arr(actions.map(actionJson))))
 
   private def jsonOf(plan: Plan): Json =
-    Json.Obj(Seq(
-      "actions" -> Json.Arr(plan.actions.map(actionJson)),
-      "links" -> Json.Arr(plan.links.map(link => Json.Obj(Seq(
-        "id" -> Json.Str(link.id),
-        "path" -> Json.Str(link.path)
-      ))))
-    ))
+    Json.Obj(
+      Seq(
+        "actions" -> Json.Arr(plan.actions.map(actionJson)),
+        "links" -> Json.Arr(
+          plan.links.map(link =>
+            Json.Obj(
+              Seq(
+                "id" -> Json.Str(link.id),
+                "path" -> Json.Str(link.path)
+              )
+            )
+          )
+        )
+      )
+    )
 
   private def actionJson(action: Action): Json =
-    Json.Obj(Seq(
-      "class" -> Json.Str(action.kind.wire),
-      "title" -> Json.Str(action.label),
-      "path" -> Json.Str(action.path),
-      "reason" -> (if action.reason.isEmpty then Json.Null else Json.Str(action.reason)),
-      "id" -> action.id.fold(Json.Null)(Json.Str.apply)
-    ))
+    Json.Obj(
+      Seq(
+        "class" -> Json.Str(action.kind.wire),
+        "title" -> Json.Str(action.label),
+        "path" -> Json.Str(action.path),
+        "reason" -> (if action.reason.isEmpty then Json.Null else Json.Str(action.reason)),
+        "id" -> action.id.fold(Json.Null)(Json.Str.apply)
+      )
+    )

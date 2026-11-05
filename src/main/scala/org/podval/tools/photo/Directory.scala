@@ -15,9 +15,11 @@ trait Directory extends Path:
   def item(name: String): Path
 
   final def item(segments: List[String]): Path = segments match
-    case Nil => this
-    case segment :: segments => item(segment) match
-      case directory: Directory => directory.item(segments)
-      case item => segments match
-        case Nil => item
-        case segments => throw IllegalArgumentException(s"Item does not have sub-items: $item.item($segments)")
+    case Nil                 => this
+    case segment :: segments =>
+      item(segment) match
+        case directory: Directory => directory.item(segments)
+        case item                 =>
+          segments match
+            case Nil      => item
+            case segments => throw IllegalArgumentException(s"Item does not have sub-items: $item.item($segments)")

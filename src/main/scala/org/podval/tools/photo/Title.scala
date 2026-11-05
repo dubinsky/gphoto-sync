@@ -14,11 +14,11 @@ object Title:
 
     def startDir: String = grain match
       case Grain.Month => monthText(YearMonth.from(start))
-      case Grain.Day => dayText(start)
+      case Grain.Day   => dayText(start)
 
   final case class Parsed(span: Option[Span], name: Option[String]):
     def title: String = span match
-      case None => name.getOrElse(throw IllegalArgumentException("curated album has no name"))
+      case None        => name.getOrElse(throw IllegalArgumentException("curated album has no name"))
       case Some(value) =>
         val date: String = renderSpan(value)
         name.fold(date)(text => s"$date/$text")
@@ -34,7 +34,8 @@ object Title:
 
   // Include lines carry a date and no name. The remainder starts the stem.
   def takeDate(text: String): Option[(Span, String)] =
-    takeDay(text, allowName = false).map((parsed, rest) => parsed.span.get -> rest)
+    takeDay(text, allowName = false)
+      .map((parsed, rest) => parsed.span.get -> rest)
       .orElse(takeMonth(text, allowName = false).map((parsed, rest) => parsed.span.get -> rest))
 
   def canonical(text: String): Option[String] = parse(text).map(_.title)
@@ -90,18 +91,24 @@ object Title:
 
   // Longer token first. The token must be consumed. The end must be strictly later.
   private def endMonth(start: YearMonth, token: String): Option[YearMonth] =
-    yearMonthToken(token).filter((end, left) => left.isEmpty && end.isAfter(start)).map(_._1)
+    yearMonthToken(token)
+      .filter((end, left) => left.isEmpty && end.isAfter(start))
+      .map(_._1)
       .orElse:
         takeDigits(token, 2).flatMap: (month, left) =>
           Option.when(left.isEmpty)(()).flatMap(_ => yearMonth(start.getYear, month).filter(_.isAfter(start)))
 
   private def endDay(start: LocalDate, token: String): Option[LocalDate] =
-    fullDayToken(token).filter((end, left) => left.isEmpty && end.isAfter(start)).map(_._1)
+    fullDayToken(token)
+      .filter((end, left) => left.isEmpty && end.isAfter(start))
+      .map(_._1)
       .orElse(monthDayToken(start.getYear, token).filter((end, left) => left.isEmpty && end.isAfter(start)).map(_._1))
       .orElse:
         takeDigits(token, 2).flatMap: (day, left) =>
-          Option.when(left.isEmpty)(()).flatMap: _ =>
-            civil(start.getYear, start.getMonthValue, day).filter(_.isAfter(start))
+          Option
+            .when(left.isEmpty)(())
+            .flatMap: _ =>
+              civil(start.getYear, start.getMonthValue, day).filter(_.isAfter(start))
 
   private def yearMonthToken(text: String): Option[(YearMonth, String)] =
     for
@@ -170,7 +177,8 @@ object Title:
     if rest.isEmpty || rest.startsWith("/") || rest.startsWith(" ") then Some(start -> rest)
     else if rest.startsWith("-") then
       val tail: String = rest.drop(1)
-      fullDate(tail).filter((end, _) => !end.isBefore(start))
+      fullDate(tail)
+        .filter((end, _) => !end.isBefore(start))
         .orElse(monthDay(start.getYear, tail).filter((end, _) => !end.isBefore(start)))
         .orElse(sameMonthDay(start, tail).filter((end, _) => !end.isBefore(start)))
     else None
@@ -179,7 +187,8 @@ object Title:
     if rest.isEmpty || rest.startsWith("/") || rest.startsWith(" ") then Some(start -> rest)
     else if rest.startsWith("-") then
       val tail: String = rest.drop(1)
-      fullMonth(tail).filter((end, _) => end.isAfter(start))
+      fullMonth(tail)
+        .filter((end, _) => end.isAfter(start))
         .orElse(sameYearMonth(start, tail).filter((end, _) => end.isAfter(start)))
     else None
 
@@ -250,7 +259,7 @@ object Title:
       else s"$start-${dayText(span.end)}"
 
   def fileStem(parsed: Parsed): String = parsed.span match
-    case None => parsed.name.get
+    case None       => parsed.name.get
     case Some(span) =>
       val end: String = endToken(span)
       val named: String = parsed.name.fold("")(name => s" $name")

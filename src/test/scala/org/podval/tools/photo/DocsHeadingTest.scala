@@ -15,7 +15,7 @@ class DocsHeadingTest extends AnyFlatSpec, Matchers:
       withClue(s"$path $heading "):
         present should contain(heading)
 
-  "docs/commands.md" should "contain the operator headings" in :
+  "docs/commands.md" should "contain the operator headings" in:
     assertHeadings(
       "docs/commands.md",
       Seq(
@@ -49,10 +49,10 @@ class DocsHeadingTest extends AnyFlatSpec, Matchers:
       )
     )
 
-  "docs/web.md" should "contain the photo web heading" in :
+  "docs/web.md" should "contain the photo web heading" in:
     assertHeadings("docs/web.md", Seq("### photo web"))
 
-  "docs/agent.md" should "contain the agent headings" in :
+  "docs/agent.md" should "contain the agent headings" in:
     assertHeadings(
       "docs/agent.md",
       Seq(

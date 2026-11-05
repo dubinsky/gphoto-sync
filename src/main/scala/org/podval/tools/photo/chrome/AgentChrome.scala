@@ -5,15 +5,26 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles}
 import java.time.{DateTimeException, LocalDate}
 import org.podval.tools.photo.{
-  AgentSupport, Album, Catalog, Files, Json, Operation, Pictures, Publish, Refresh, RefreshPlan, Result, Session, Title
+  AgentSupport,
+  Album,
+  Catalog,
+  Files,
+  Json,
+  Operation,
+  Pictures,
+  Publish,
+  Refresh,
+  RefreshPlan,
+  Result,
+  Session,
+  Title
 }
 
-
 private[photo] final class AgentRename(
-  title: Option[String],
-  current: Option[String],
-  updated: Option[String],
-  id: Option[String]
+    title: Option[String],
+    current: Option[String],
+    updated: Option[String],
+    id: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -33,11 +44,10 @@ private[photo] final class AgentRename(
         )
         AgentChrome.renameAlbum(loaded, album, wantedNew)
 
-
 private[photo] final class AgentSetDescription(
-  item: Option[String],
-  current: Option[String],
-  updated: Option[String]
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -52,11 +62,10 @@ private[photo] final class AgentSetDescription(
         val album: Catalog.Album = AgentChrome.locateItem(albums, key)._1
         AgentChrome.setDescription(loaded, album, key, wantedCurrent, text)
 
-
 private[photo] final class AgentSetDate(
-  item: Option[String],
-  current: Option[String],
-  updated: Option[String]
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -69,12 +78,11 @@ private[photo] final class AgentSetDate(
         val album: Catalog.Album = AgentChrome.locateItem(albums, key)._1
         AgentChrome.setDate(loaded, album, key, wantedCurrent, local)
 
-
 private[photo] final class AgentDownload(
-  title: Option[String],
-  item: Option[String],
-  current: Option[String],
-  id: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -87,14 +95,13 @@ private[photo] final class AgentDownload(
         AgentChrome.acceptRequest(albums, AgentChrome.Action.DownloadItem, album.id, key, wantedCurrent, "")
         AgentChrome.downloadItem(loaded, album, key, wantedCurrent)
 
-
 private[photo] final class AgentAdd(
-  title: Option[String],
-  item: Option[String],
-  current: Option[String],
-  dest: Option[String],
-  id: Option[String],
-  destId: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    dest: Option[String],
+    id: Option[String],
+    destId: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -106,12 +113,11 @@ private[photo] final class AgentAdd(
       AgentSupport.catching(loaded):
         AgentChrome.putInAlbum(loaded, albums, wantedTitle, id, key, wantedCurrent, destTitle, destId)
 
-
 private[photo] final class AgentRemove(
-  title: Option[String],
-  item: Option[String],
-  current: Option[String],
-  id: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -122,14 +128,13 @@ private[photo] final class AgentRemove(
       AgentSupport.catching(loaded):
         AgentChrome.takeOut(loaded, albums, wantedTitle, id, key, wantedCurrent)
 
-
 private[photo] final class AgentMove(
-  title: Option[String],
-  item: Option[String],
-  current: Option[String],
-  dest: Option[String],
-  id: Option[String],
-  destId: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    dest: Option[String],
+    id: Option[String],
+    destId: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -141,12 +146,11 @@ private[photo] final class AgentMove(
       AgentSupport.catching(loaded):
         AgentChrome.moveItem(loaded, albums, wantedTitle, id, key, wantedCurrent, destTitle, destId)
 
-
 private[photo] final class AgentDelete(
-  title: Option[String],
-  item: Option[String],
-  current: Option[String],
-  id: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -157,11 +161,10 @@ private[photo] final class AgentDelete(
       AgentSupport.catching(loaded):
         AgentChrome.deleteItem(loaded, albums, wantedTitle, id, key, wantedCurrent)
 
-
 private[photo] final class AgentUpload(
-  path: Option[String],
-  dest: Option[String],
-  destId: Option[String]
+    path: Option[String],
+    dest: Option[String],
+    destId: Option[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -171,7 +174,6 @@ private[photo] final class AgentUpload(
       AgentSupport.catching(loaded):
         AgentChrome.uploadItem(loaded, albums, wantedPath, destTitle, destId)
 
-
 private[photo] final class AgentCreate(title: Option[String]) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -179,7 +181,6 @@ private[photo] final class AgentCreate(title: Option[String]) extends Operation:
       val (loaded, albums) = session.loadCatalog
       AgentSupport.catching(loaded):
         AgentChrome.createAlbum(loaded, albums, wanted)
-
 
 private[photo] final class AgentDeleteAlbum(title: Option[String], id: Option[String]) extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -208,114 +209,122 @@ private[photo] object AgentChrome:
     AgentSupport.withLock(session, album.title)(heldRename(session, album, updated))
 
   def setDescription(
-    session: Session,
-    album: Catalog.Album,
-    key: String,
-    current: String,
-    text: String
+      session: Session,
+      album: Catalog.Album,
+      key: String,
+      current: String,
+      text: String
   ): (Session, Result) =
     AgentSupport.withLock(session, album.title)(heldDescription(session, key, current, text))
 
   def setDate(
-    session: Session,
-    album: Catalog.Album,
-    key: String,
-    current: String,
-    local: String
+      session: Session,
+      album: Catalog.Album,
+      key: String,
+      current: String,
+      local: String
   ): (Session, Result) =
     AgentSupport.withLock(session, album.title)(heldDate(session, key, current, local))
 
   def downloadItem(
-    session: Session,
-    album: Catalog.Album,
-    key: String,
-    current: String
+      session: Session,
+      album: Catalog.Album,
+      key: String,
+      current: String
   ): (Session, Result) =
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
-    if stagingFile(session, item).exists then
-      itemOk(session, album, item, "download-item", "unchanged")
-    else
-      AgentSupport.withLock(session, album.title)(heldDownload(session, album.id, key, current))
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
+    if stagingFile(session, item).exists then itemOk(session, album, item, "download-item", "unchanged")
+    else AgentSupport.withLock(session, album.title)(heldDownload(session, album.id, key, current))
 
   def putInAlbum(
-    session: Session,
-    albums: Seq[Catalog.Album],
-    title: String,
-    id: Option[String],
-    key: String,
-    current: String,
-    destTitle: String,
-    destId: Option[String]
+      session: Session,
+      albums: Seq[Catalog.Album],
+      title: String,
+      id: Option[String],
+      key: String,
+      current: String,
+      destTitle: String,
+      destId: Option[String]
   ): (Session, Result) =
     val album: Catalog.Album = AgentSupport.select(albums, title, id)
     val destination: Catalog.Album = AgentSupport.select(albums, destTitle, destId)
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     requireCurrent(item.filename, current)
     if album.id == destination.id then throw IllegalArgumentException("destination is the source album")
     acceptPut(session, destination, item)
     AgentSupport.withLock(session, album.title)(heldPut(session, album.id, key, current, destination.id))
 
   def takeOut(
-    session: Session,
-    albums: Seq[Catalog.Album],
-    title: String,
-    id: Option[String],
-    key: String,
-    current: String
+      session: Session,
+      albums: Seq[Catalog.Album],
+      title: String,
+      id: Option[String],
+      key: String,
+      current: String
   ): (Session, Result) =
     val album: Catalog.Album = AgentSupport.select(albums, title, id)
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     requireCurrent(item.filename, current)
     AgentSupport.withLock(session, album.title)(heldTake(session, album.id, key, current))
 
   def moveItem(
-    session: Session,
-    albums: Seq[Catalog.Album],
-    title: String,
-    id: Option[String],
-    key: String,
-    current: String,
-    destTitle: String,
-    destId: Option[String]
+      session: Session,
+      albums: Seq[Catalog.Album],
+      title: String,
+      id: Option[String],
+      key: String,
+      current: String,
+      destTitle: String,
+      destId: Option[String]
   ): (Session, Result) =
     val album: Catalog.Album = AgentSupport.select(albums, title, id)
     val destination: Catalog.Album = AgentSupport.select(albums, destTitle, destId)
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     requireCurrent(item.filename, current)
     if album.id == destination.id then throw IllegalArgumentException("destination is the source album")
     acceptPut(session, destination, item)
     AgentSupport.withLock(session, album.title)(heldMove(session, album.id, key, current, destination.id))
 
   def deleteItem(
-    session: Session,
-    albums: Seq[Catalog.Album],
-    title: String,
-    id: Option[String],
-    key: String,
-    current: String
+      session: Session,
+      albums: Seq[Catalog.Album],
+      title: String,
+      id: Option[String],
+      key: String,
+      current: String
   ): (Session, Result) =
     val album: Catalog.Album = AgentSupport.select(albums, title, id)
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     requireCurrent(item.filename, current)
     acceptDelete(album, item)
     AgentSupport.withLock(session, album.title)(heldDelete(session, album.id, key, current))
 
   def uploadItem(
-    session: Session,
-    albums: Seq[Catalog.Album],
-    pathText: String,
-    destTitle: String,
-    destId: Option[String]
+      session: Session,
+      albums: Seq[Catalog.Album],
+      pathText: String,
+      destTitle: String,
+      destId: Option[String]
   ): (Session, Result) =
     val (_, relative) = uploadFile(session, pathText)
     val (day, stem, _, extension) = uploadName(relative)
@@ -328,19 +337,19 @@ private[photo] object AgentChrome:
     AgentSupport.withLock(session, title)(heldCreate(session, title))
 
   def deleteAlbum(
-    session: Session,
-    albums: Seq[Catalog.Album],
-    title: String,
-    id: Option[String]
+      session: Session,
+      albums: Seq[Catalog.Album],
+      title: String,
+      id: Option[String]
   ): (Session, Result) =
     val album: Catalog.Album = AgentSupport.select(albums, title, id)
     acceptAlbumDelete(album)
     AgentSupport.withLock(session, album.title)(heldDeleteAlbum(session, album.id))
 
   private def heldRename(
-    session: Session,
-    album: Catalog.Album,
-    updated: String
+      session: Session,
+      album: Catalog.Album,
+      updated: String
   ): (Session, Result) =
     val accepted: Either[(Session, Result), Catalog.Album] =
       try Right(reread(session, album, updated))
@@ -348,7 +357,7 @@ private[photo] object AgentChrome:
         case error: (IllegalArgumentException | IllegalStateException) =>
           Left((session, Result.Usage(Operation.messageOf(error))))
     accepted match
-      case Left(done) => done
+      case Left(done)   => done
       case Right(fresh) =>
         var ui: PhotosAct = null
         try
@@ -360,14 +369,14 @@ private[photo] object AgentChrome:
               case error: Exception =>
                 Left(renameFailed(session, fresh, "one-click", Operation.messageOf(error)))
           launched match
-            case Left(done) => done
+            case Left(done)    => done
             case Right(opened) =>
               ui = opened
               try
                 ui.renameAlbum(fresh, updated)
                 publishTitle(session, fresh, updated) match
                   case Left(detail) => renameFailed(session, fresh, "refresh-only", detail)
-                  case Right(next) => renameOk(next, fresh, updated)
+                  case Right(next)  => renameOk(next, fresh, updated)
               catch
                 case miss: Refresh.ActMiss =>
                   val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
@@ -383,9 +392,11 @@ private[photo] object AgentChrome:
   private def reread(session: Session, album: Catalog.Album, updated: String): Catalog.Album =
     val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(file)
-    val fresh: Catalog.Album = albums.find(_.id == album.id).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
+    val fresh: Catalog.Album = albums
+      .find(_.id == album.id)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
     acceptRequest(albums, Action.RenameAlbum, fresh.id, "", album.title, updated)
     fresh
 
@@ -404,34 +415,38 @@ private[photo] object AgentChrome:
           if next.id == album.id then
             blocks.get(album.id) match
               case Some(block) => Right(acc :+ RefreshPlan.retitle(block, updated))
-              case None => Left("missing album block")
+              case None        => Left("missing album block")
           else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
-    groups.flatMap: lines =>
-      try
-        Files.write(RefreshPlan.renderLines(lines), partial)
-        Right(())
-      catch case error: Exception =>
-        Left(Operation.messageOf(error))
-    .flatMap(_ => RefreshPlan.checkRetitle(partial))
-    .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-    .map(_ => session.copy(catalogCache = None))
+    groups
+      .flatMap: lines =>
+        try
+          Files.write(RefreshPlan.renderLines(lines), partial)
+          Right(())
+        catch
+          case error: Exception =>
+            Left(Operation.messageOf(error))
+      .flatMap(_ => RefreshPlan.checkRetitle(partial))
+      .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+      .map(_ => session.copy(catalogCache = None))
 
   private def renameOk(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     val text: String = PlaywrightPhotosUi.redactSecrets(s"rename-album ${Album.quote(updated)}\n", updated)
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("rename-album"),
-      "title" -> Json.Str(updated),
-      "catalog" -> Json.Str("updated"),
-      "albumId" -> Json.Str(album.id),
-      "itemKey" -> Json.Str("")
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("rename-album"),
+        "title" -> Json.Str(updated),
+        "catalog" -> Json.Str("updated"),
+        "albumId" -> Json.Str(album.id),
+        "itemKey" -> Json.Str("")
+      )
+    )
     (session, Result.Ok(text, value))
 
   private def renameFailed(
-    session: Session,
-    album: Catalog.Album,
-    recovery: String,
-    detail: String
+      session: Session,
+      album: Catalog.Album,
+      recovery: String,
+      detail: String
   ): (Session, Result) =
     val shown: String = collapsedText(detail, "rename failed")
     val text: String =
@@ -442,22 +457,24 @@ private[photo] object AgentChrome:
          |catalog unchanged
          |$shown
          |""".stripMargin
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("rename-album"),
-      "title" -> Json.Str(album.title),
-      "step" -> Json.Str(RenameStep),
-      "recovery" -> Json.Str(recovery),
-      "catalog" -> Json.Str("unchanged"),
-      "albumId" -> Json.Str(album.id),
-      "itemKey" -> Json.Str("")
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("rename-album"),
+        "title" -> Json.Str(album.title),
+        "step" -> Json.Str(RenameStep),
+        "recovery" -> Json.Str(recovery),
+        "catalog" -> Json.Str("unchanged"),
+        "albumId" -> Json.Str(album.id),
+        "itemKey" -> Json.Str("")
+      )
+    )
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
   private def heldDescription(
-    session: Session,
-    key: String,
-    current: String,
-    text: String
+      session: Session,
+      key: String,
+      current: String,
+      text: String
   ): (Session, Result) =
     val (album, item) = rereadItem(session, Action.SetDescription, key, current, text)
     var ui: PhotosAct = null
@@ -479,10 +496,10 @@ private[photo] object AgentChrome:
         catch case _: Exception => ()
 
   private def heldDate(
-    session: Session,
-    key: String,
-    current: String,
-    local: String
+      session: Session,
+      key: String,
+      current: String,
+      local: String
   ): (Session, Result) =
     val (album, item) = rereadItem(session, Action.SetDate, key, current, local)
     val day: LocalDate = LocalDate.parse(local.take(10))
@@ -509,10 +526,10 @@ private[photo] object AgentChrome:
         catch case _: Exception => ()
 
   private def heldDownload(
-    session: Session,
-    albumId: String,
-    key: String,
-    current: String
+      session: Session,
+      albumId: String,
+      key: String,
+      current: String
   ): (Session, Result) =
     val (album, item) = rereadDownload(session, albumId, key, current)
     val dest: File = stagingFile(session, item)
@@ -542,20 +559,24 @@ private[photo] object AgentChrome:
           catch case _: Exception => ()
 
   private def rereadDownload(
-    session: Session,
-    albumId: String,
-    key: String,
-    current: String
+      session: Session,
+      albumId: String,
+      key: String,
+      current: String
   ): (Catalog.Album, Catalog.Item) =
     val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(file)
-    val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
+    val album: Catalog.Album = albums
+      .find(_.id == albumId)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
     acceptRequest(albums, Action.DownloadItem, album.id, key, current, "")
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     (album, item)
 
   private[photo] def stagingFile(session: Session, item: Catalog.Item): File =
@@ -564,11 +585,11 @@ private[photo] object AgentChrome:
     File(File(inbox, day), item.filename)
 
   private def rereadItem(
-    session: Session,
-    action: Action,
-    key: String,
-    current: String,
-    updated: String
+      session: Session,
+      action: Action,
+      key: String,
+      current: String,
+      updated: String
   ): (Catalog.Album, Catalog.Item) =
     val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(file)
@@ -577,10 +598,10 @@ private[photo] object AgentChrome:
     found
 
   private def publishDate(
-    session: Session,
-    album: Catalog.Album,
-    item: Catalog.Item,
-    day: LocalDate
+      session: Session,
+      album: Catalog.Album,
+      item: Catalog.Item,
+      day: LocalDate
   ): Either[String, Session] =
     try
       val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
@@ -599,29 +620,30 @@ private[photo] object AgentChrome:
               else if !next.items.exists(_.key == item.key) then Left("no such item")
               else
                 val revised: Catalog.Album = next.copy(items = next.items.map: found =>
-                  if found.key == item.key then found.copy(date = Some(day)) else found
-                )
+                  if found.key == item.key then found.copy(date = Some(day)) else found)
                 Right(acc :+ RefreshPlan.recordLines(revised))
             else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
-      groups.flatMap: lines =>
-        try
-          Files.write(RefreshPlan.renderLines(lines), partial)
-          Right(())
-        catch case error: Exception =>
-          Left(Operation.messageOf(error))
-      .flatMap(_ => RefreshPlan.checkRetitle(partial))
-      .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-      .map(_ => session.copy(catalogCache = None))
+      groups
+        .flatMap: lines =>
+          try
+            Files.write(RefreshPlan.renderLines(lines), partial)
+            Right(())
+          catch
+            case error: Exception =>
+              Left(Operation.messageOf(error))
+        .flatMap(_ => RefreshPlan.checkRetitle(partial))
+        .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+        .map(_ => session.copy(catalogCache = None))
     catch
       case error: Exception =>
         Left(Operation.messageOf(error))
 
   private def heldPut(
-    session: Session,
-    sourceId: String,
-    key: String,
-    current: String,
-    destinationId: String
+      session: Session,
+      sourceId: String,
+      key: String,
+      current: String,
+      destinationId: String
   ): (Session, Result) =
     val (source, item, destination) = rereadAdd(session, sourceId, key, current, destinationId)
     var ui: PhotosAct = null
@@ -649,10 +671,10 @@ private[photo] object AgentChrome:
         catch case _: Exception => ()
 
   private def heldTake(
-    session: Session,
-    albumId: String,
-    key: String,
-    current: String
+      session: Session,
+      albumId: String,
+      key: String,
+      current: String
   ): (Session, Result) =
     val (album, item) = rereadTake(session, albumId, key, current)
     var ui: PhotosAct = null
@@ -677,11 +699,11 @@ private[photo] object AgentChrome:
         catch case _: Exception => ()
 
   private def heldMove(
-    session: Session,
-    sourceId: String,
-    key: String,
-    current: String,
-    destinationId: String
+      session: Session,
+      sourceId: String,
+      key: String,
+      current: String,
+      destinationId: String
   ): (Session, Result) =
     val (source, item, destination) = rereadAdd(session, sourceId, key, current, destinationId)
     var ui: PhotosAct = null
@@ -700,10 +722,13 @@ private[photo] object AgentChrome:
       )
       try
         ui.takeOut(source, item)
-        publishAlbum(session, Seq(
-          destination.id -> (dest => revisedAdd(dest, line)),
-          source.id -> (next => revisedTake(next, item))
-        )) match
+        publishAlbum(
+          session,
+          Seq(
+            destination.id -> (dest => revisedAdd(dest, line)),
+            source.id -> (next => revisedTake(next, item))
+          )
+        ) match
           case Right(next) =>
             moveOk(next, source, destination, current, line.key)
           case Left(message) =>
@@ -728,10 +753,10 @@ private[photo] object AgentChrome:
         catch case _: Exception => ()
 
   private def heldDelete(
-    session: Session,
-    albumId: String,
-    key: String,
-    current: String
+      session: Session,
+      albumId: String,
+      key: String,
+      current: String
   ): (Session, Result) =
     val (album, item) = rereadDelete(session, albumId, key, current)
     var ui: PhotosAct = null
@@ -836,9 +861,12 @@ private[photo] object AgentChrome:
 
   private def rereadAlbumDelete(session: Session, albumId: String): Catalog.Album =
     val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
-    val album: Catalog.Album = Catalog.read(catalog).find(_.id == albumId).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
+    val album: Catalog.Album = Catalog
+      .read(catalog)
+      .find(_.id == albumId)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
     acceptAlbumDelete(album)
     album
 
@@ -866,47 +894,52 @@ private[photo] object AgentChrome:
           val survivors: Seq[Catalog.Album] = stored.filter(_.id != deletedId)
           val groups: Either[String, Seq[Seq[String]]] =
             survivors.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
-              case (Left(message), _) => Left(message)
+              case (Left(message), _)  => Left(message)
               case (Right(acc), album) =>
                 blocks.get(album.id) match
                   case Some(lines) => Right(acc :+ lines)
-                  case None => Left("missing album block")
-          groups.flatMap: lines =>
-            try
-              Files.write(RefreshPlan.renderLines(lines), partial)
-              Right(())
-            catch case error: Exception =>
-              Left(Operation.messageOf(error))
-          .flatMap(_ => omitCheck(partial, deletedId, survivors, blocks))
-          .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-          .map(_ => session.copy(catalogCache = None))
+                  case None        => Left("missing album block")
+          groups
+            .flatMap: lines =>
+              try
+                Files.write(RefreshPlan.renderLines(lines), partial)
+                Right(())
+              catch
+                case error: Exception =>
+                  Left(Operation.messageOf(error))
+            .flatMap(_ => omitCheck(partial, deletedId, survivors, blocks))
+            .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+            .map(_ => session.copy(catalogCache = None))
     catch
       case error: Exception =>
         Left(Operation.messageOf(error))
 
   private def omitCheck(
-    partial: File,
-    deletedId: String,
-    survivors: Seq[Catalog.Album],
-    blocks: Map[String, Seq[String]]
+      partial: File,
+      deletedId: String,
+      survivors: Seq[Catalog.Album],
+      blocks: Map[String, Seq[String]]
   ): Either[String, Unit] =
-    RefreshPlan.checkRetitle(partial).flatMap: _ =>
-      val written: String = JFiles.readString(partial.toPath, StandardCharsets.UTF_8)
-      val again: Map[String, Seq[String]] = RefreshPlan.blocksOf(written)
-      val read: Seq[Catalog.Album] = Catalog.read(partial)
-      if read.exists(_.id == deletedId) then Left("deleted id remains")
-      else if read.map(_.id).toSet != survivors.map(_.id).toSet then Left("album set")
-      else if survivors.exists(album => again.get(album.id) != blocks.get(album.id)) then Left("block differs")
-      else Right(())
+    RefreshPlan
+      .checkRetitle(partial)
+      .flatMap: _ =>
+        val written: String = JFiles.readString(partial.toPath, StandardCharsets.UTF_8)
+        val again: Map[String, Seq[String]] = RefreshPlan.blocksOf(written)
+        val read: Seq[Catalog.Album] = Catalog.read(partial)
+        if read.exists(_.id == deletedId) then Left("deleted id remains")
+        else if read.map(_.id).toSet != survivors.map(_.id).toSet then Left("album set")
+        else if survivors.exists(album => again.get(album.id) != blocks.get(album.id)) then Left("block differs")
+        else Right(())
 
   private def acceptCreate(title: String, albums: Seq[Catalog.Album]): Unit =
     if title.isEmpty then throw IllegalArgumentException("empty title")
     else if title.exists(ch => ch == '\t' || ch == '\n' || ch == '\r') then
       throw IllegalArgumentException("title has a tab or newline")
-    else albums.filter(_.title == title) match
-      case Seq() => ()
-      case Seq(_) => throw IllegalArgumentException(s"album titled ${Album.quote(title)} already exists")
-      case _ => throw IllegalArgumentException(s"more than one album titled ${Album.quote(title)}")
+    else
+      albums.filter(_.title == title) match
+        case Seq()  => ()
+        case Seq(_) => throw IllegalArgumentException(s"album titled ${Album.quote(title)} already exists")
+        case _      => throw IllegalArgumentException(s"more than one album titled ${Album.quote(title)}")
 
   // The reread stays outside the catch. A refusal here is usage, and Chrome stays closed.
   private def heldUpload(session: Session, pathText: String, destinationId: String): (Session, Result) =
@@ -935,11 +968,11 @@ private[photo] object AgentChrome:
   private[photo] final case class Committed(session: Session, key: String)
 
   private[photo] def commitPut(
-    ui: PhotosAct,
-    session: Session,
-    item: Catalog.Item,
-    destination: Catalog.Album,
-    current: String
+      ui: PhotosAct,
+      session: Session,
+      item: Catalog.Item,
+      destination: Catalog.Album,
+      current: String
   ): Either[String, Committed] =
     val read: Catalog.Item = ui.putInAlbum(item, destination, current)
     val line: Catalog.Item = Catalog.Item(
@@ -952,20 +985,20 @@ private[photo] object AgentChrome:
       Committed(next, line.key)
 
   private[photo] def commitTake(
-    ui: PhotosAct,
-    session: Session,
-    album: Catalog.Album,
-    item: Catalog.Item
+      ui: PhotosAct,
+      session: Session,
+      album: Catalog.Album,
+      item: Catalog.Item
   ): Either[String, Session] =
     ui.takeOut(album, item)
     publishAlbum(session, Seq(album.id -> (next => revisedTake(next, item))))
 
   private[photo] def commitUpload(
-    ui: PhotosAct,
-    session: Session,
-    destination: Catalog.Album,
-    file: File,
-    name: String
+      ui: PhotosAct,
+      session: Session,
+      destination: Catalog.Album,
+      file: File,
+      name: String
   ): Either[String, Committed] =
     val read: Catalog.Item = ui.uploadItem(destination, file, name)
     val line: Catalog.Item = Catalog.Item(name, read.date, read.key, read.uploader)
@@ -973,66 +1006,80 @@ private[photo] object AgentChrome:
       Committed(next, line.key)
 
   private[photo] def rereadAdd(
-    session: Session,
-    sourceId: String,
-    key: String,
-    current: String,
-    destinationId: String
+      session: Session,
+      sourceId: String,
+      key: String,
+      current: String,
+      destinationId: String
   ): (Catalog.Album, Catalog.Item, Catalog.Album) =
     val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(file)
-    val source: Catalog.Album = albums.find(_.id == sourceId).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
-    val destination: Catalog.Album = albums.find(_.id == destinationId).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
-    val item: Catalog.Item = source.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val source: Catalog.Album = albums
+      .find(_.id == sourceId)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+    val destination: Catalog.Album = albums
+      .find(_.id == destinationId)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+    val item: Catalog.Item = source.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     requireCurrent(item.filename, current)
     if source.id == destination.id then throw IllegalArgumentException("destination is the source album")
     acceptPut(session, destination, item)
     (source, item, destination)
 
   private[photo] def rereadTake(
-    session: Session,
-    albumId: String,
-    key: String,
-    current: String
+      session: Session,
+      albumId: String,
+      key: String,
+      current: String
   ): (Catalog.Album, Catalog.Item) =
     val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(file)
-    val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val album: Catalog.Album = albums
+      .find(_.id == albumId)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     requireCurrent(item.filename, current)
     (album, item)
 
   private def rereadDelete(
-    session: Session,
-    albumId: String,
-    key: String,
-    current: String
+      session: Session,
+      albumId: String,
+      key: String,
+      current: String
   ): (Catalog.Album, Catalog.Item) =
     val file: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(file)
-    val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
-    val item: Catalog.Item = album.items.find(_.key == key).getOrElse(
-      throw IllegalArgumentException("no such item")
-    )
+    val album: Catalog.Album = albums
+      .find(_.id == albumId)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
+    val item: Catalog.Item = album.items
+      .find(_.key == key)
+      .getOrElse(
+        throw IllegalArgumentException("no such item")
+      )
     requireCurrent(item.filename, current)
     acceptDelete(album, item)
     (album, item)
 
   private def publishAlbum(
-    session: Session,
-    revisions: Seq[(String, Catalog.Album => Catalog.Album)]
+      session: Session,
+      revisions: Seq[(String, Catalog.Album => Catalog.Album)]
   ): Either[String, Session] =
     try
       val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
@@ -1054,15 +1101,17 @@ private[photo] object AgentChrome:
                   else Right(acc :+ RefreshPlan.recordLines(revise(next)))
                 case None =>
                   Right(acc :+ RefreshPlan.copiedLines(next, blocks))
-        groups.flatMap: lines =>
-          try
-            Files.write(RefreshPlan.renderLines(lines), partial)
-            Right(())
-          catch case error: Exception =>
-            Left(Operation.messageOf(error))
-        .flatMap(_ => RefreshPlan.checkRetitle(partial))
-        .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-        .map(_ => session.copy(catalogCache = None))
+        groups
+          .flatMap: lines =>
+            try
+              Files.write(RefreshPlan.renderLines(lines), partial)
+              Right(())
+            catch
+              case error: Exception =>
+                Left(Operation.messageOf(error))
+          .flatMap(_ => RefreshPlan.checkRetitle(partial))
+          .flatMap(_ => RefreshPlan.swap(live, partial, previous))
+          .map(_ => session.copy(catalogCache = None))
     catch
       case error: Exception =>
         Left(Operation.messageOf(error))
@@ -1094,9 +1143,9 @@ private[photo] object AgentChrome:
     acceptDestination(session, destination, knownLocal(session, item))
 
   private def acceptDestination(
-    session: Session,
-    destination: Catalog.Album,
-    known: Option[(LocalDate, String)]
+      session: Session,
+      destination: Catalog.Album,
+      known: Option[(LocalDate, String)]
   ): Unit =
     if destination.owner.isDefined then throw IllegalArgumentException("destination has an owner")
     if destination.autoAdd then throw IllegalArgumentException("destination is auto-add")
@@ -1110,29 +1159,32 @@ private[photo] object AgentChrome:
           throw IllegalArgumentException(s"destination excepts ${Album.quote(stem)}")
 
   private[photo] def rereadUpload(
-    session: Session,
-    pathText: String,
-    destinationId: String
+      session: Session,
+      pathText: String,
+      destinationId: String
   ): (Catalog.Album, File, String) =
     val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(catalog)
-    val destination: Catalog.Album = albums.find(_.id == destinationId).getOrElse(
-      throw IllegalArgumentException("no such album")
-    )
+    val destination: Catalog.Album = albums
+      .find(_.id == destinationId)
+      .getOrElse(
+        throw IllegalArgumentException("no such album")
+      )
     val (file, relative) = uploadFile(session, pathText)
     val (day, stem, name, extension) = uploadName(relative)
     refuseUpload(session, albums, destination, day, stem, extension)
     (destination, file, name)
 
   private def refuseUpload(
-    session: Session,
-    albums: Seq[Catalog.Album],
-    destination: Catalog.Album,
-    day: LocalDate,
-    stem: String,
-    extension: Option[String]
+      session: Session,
+      albums: Seq[Catalog.Album],
+      destination: Catalog.Album,
+      day: LocalDate,
+      stem: String,
+      extension: Option[String]
   ): Session =
-    val (loaded, grouped, sidecars) = AgentSupport.loadGrouped(session, AgentSupport.civilDay(session.root, day), readSidecars = true)
+    val (loaded, grouped, sidecars) =
+      AgentSupport.loadGrouped(session, AgentSupport.civilDay(session.root, day), readSidecars = true)
     val groupedMap: Map[String, Set[String]] = grouped.toMap
     // dropOnePrefix of VID_1000.mp4 is 1000, the still beside it. The grouped stem is 1000v.
     val groupedStem: String = AgentSupport.resolve(groupedMap, stem, extension).getOrElse(stem)
@@ -1143,10 +1195,12 @@ private[photo] object AgentChrome:
           AgentSupport.resolve(groupedMap, itemStem, itemExt).contains(groupedStem)
         }
     if matched then throw IllegalArgumentException("catalog item exists")
-    sidecars.get(groupedStem).foreach: metadata =>
-      val marked: Boolean =
-        metadata.`google-media-item-id`.exists(_.nonEmpty) || metadata.`already-in-google`.contains(true)
-      if marked then throw IllegalArgumentException("already in google")
+    sidecars
+      .get(groupedStem)
+      .foreach: metadata =>
+        val marked: Boolean =
+          metadata.`google-media-item-id`.exists(_.nonEmpty) || metadata.`already-in-google`.contains(true)
+        if marked then throw IllegalArgumentException("already in google")
     acceptDestination(loaded, destination, Some(day -> groupedStem))
     loaded
 
@@ -1165,8 +1219,9 @@ private[photo] object AgentChrome:
   private def uploadName(relative: String): (LocalDate, String, String, Option[String]) =
     val (date, name) =
       try AgentSupport.picturePath(relative)
-      catch case _: IllegalArgumentException =>
-        throw IllegalArgumentException("not a picture path")
+      catch
+        case _: IllegalArgumentException =>
+          throw IllegalArgumentException("not a picture path")
     val (rawStem, extension) = Files.splitOnLast(name, '.')
     val lowered: Option[String] = extension.map(_.toLowerCase(java.util.Locale.ROOT)).filter(_.nonEmpty)
     if rawStem.isEmpty then throw IllegalArgumentException("not a picture path")
@@ -1186,41 +1241,43 @@ private[photo] object AgentChrome:
       AgentSupport.resolve(grouped.toMap, stem, extension).map(local => (date, local))
 
   private[photo] def confirmedAdd(
-    before: Set[String],
-    after: Seq[String],
-    named: Map[String, Catalog.Item],
-    current: String
+      before: Set[String],
+      after: Seq[String],
+      named: Map[String, Catalog.Item],
+      current: String
   ): Option[Catalog.Item] =
     val added: Seq[String] = after.filterNot(before.contains)
     if added.lengthIs != 1 then None
     else named.get(added.head).filter(_.filename == current)
 
   private def addOk(
-    session: Session,
-    destination: Catalog.Album,
-    filename: String,
-    key: String,
-    action: String
+      session: Session,
+      destination: Catalog.Album,
+      filename: String,
+      key: String,
+      action: String
   ): (Session, Result) =
     val text: String = PlaywrightPhotosUi.redactSecrets(
       s"$action ${Album.quote(filename)} ${Album.quote(destination.title)}\n",
       destination.title
     )
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str(action),
-      "title" -> Json.Str(destination.title),
-      "catalog" -> Json.Str("updated"),
-      "albumId" -> Json.Str(destination.id),
-      "itemKey" -> Json.Str(key)
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str(action),
+        "title" -> Json.Str(destination.title),
+        "catalog" -> Json.Str("updated"),
+        "albumId" -> Json.Str(destination.id),
+        "itemKey" -> Json.Str(key)
+      )
+    )
     (session, Result.Ok(text, value))
 
   private def uploadFailed(
-    session: Session,
-    destination: Catalog.Album,
-    filename: String,
-    recovery: String,
-    detail: String
+      session: Session,
+      destination: Catalog.Album,
+      filename: String,
+      recovery: String,
+      detail: String
   ): (Session, Result) =
     itemFailed(
       session,
@@ -1234,20 +1291,22 @@ private[photo] object AgentChrome:
 
   private def createOk(session: Session, title: String, id: String): (Session, Result) =
     val text: String = PlaywrightPhotosUi.redactSecrets(s"create-album ${Album.quote(title)}\n", title)
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("create-album"),
-      "title" -> Json.Str(title),
-      "catalog" -> Json.Str("updated"),
-      "albumId" -> Json.Str(id),
-      "itemKey" -> Json.Str("")
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("create-album"),
+        "title" -> Json.Str(title),
+        "catalog" -> Json.Str("updated"),
+        "albumId" -> Json.Str(id),
+        "itemKey" -> Json.Str("")
+      )
+    )
     (session, Result.Ok(text, value))
 
   private def createFailed(
-    session: Session,
-    title: String,
-    recovery: String,
-    detail: String
+      session: Session,
+      title: String,
+      recovery: String,
+      detail: String
   ): (Session, Result) =
     val shown: String = collapsedText(detail, "create-album failed")
     val text: String =
@@ -1258,33 +1317,37 @@ private[photo] object AgentChrome:
          |catalog unchanged
          |$shown
          |""".stripMargin
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("create-album"),
-      "title" -> Json.Str(title),
-      "step" -> Json.Str(CreateStep),
-      "recovery" -> Json.Str(recovery),
-      "catalog" -> Json.Str("unchanged"),
-      "albumId" -> Json.Str(""),
-      "itemKey" -> Json.Str("")
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("create-album"),
+        "title" -> Json.Str(title),
+        "step" -> Json.Str(CreateStep),
+        "recovery" -> Json.Str(recovery),
+        "catalog" -> Json.Str("unchanged"),
+        "albumId" -> Json.Str(""),
+        "itemKey" -> Json.Str("")
+      )
+    )
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, title), value, Refresh.MutationFailed))
 
   private def deleteAlbumOk(session: Session, album: Catalog.Album): (Session, Result) =
     val text: String = PlaywrightPhotosUi.redactSecrets(s"delete-album ${Album.quote(album.title)}\n", album.title)
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("delete-album"),
-      "title" -> Json.Str(album.title),
-      "catalog" -> Json.Str("updated"),
-      "albumId" -> Json.Str(album.id),
-      "itemKey" -> Json.Str("")
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("delete-album"),
+        "title" -> Json.Str(album.title),
+        "catalog" -> Json.Str("updated"),
+        "albumId" -> Json.Str(album.id),
+        "itemKey" -> Json.Str("")
+      )
+    )
     (session, Result.Ok(text, value))
 
   private def deleteAlbumFailed(
-    session: Session,
-    album: Catalog.Album,
-    recovery: String,
-    detail: String
+      session: Session,
+      album: Catalog.Album,
+      recovery: String,
+      detail: String
   ): (Session, Result) =
     val shown: String = collapsedText(detail, "delete-album failed")
     val text: String =
@@ -1295,47 +1358,51 @@ private[photo] object AgentChrome:
          |catalog unchanged
          |$shown
          |""".stripMargin
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("delete-album"),
-      "title" -> Json.Str(album.title),
-      "step" -> Json.Str(DeleteAlbumStep),
-      "recovery" -> Json.Str(recovery),
-      "catalog" -> Json.Str("unchanged"),
-      "albumId" -> Json.Str(""),
-      "itemKey" -> Json.Str("")
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("delete-album"),
+        "title" -> Json.Str(album.title),
+        "step" -> Json.Str(DeleteAlbumStep),
+        "recovery" -> Json.Str(recovery),
+        "catalog" -> Json.Str("unchanged"),
+        "albumId" -> Json.Str(""),
+        "itemKey" -> Json.Str("")
+      )
+    )
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
   private def moveOk(
-    session: Session,
-    source: Catalog.Album,
-    destination: Catalog.Album,
-    filename: String,
-    key: String
+      session: Session,
+      source: Catalog.Album,
+      destination: Catalog.Album,
+      filename: String,
+      key: String
   ): (Session, Result) =
     val text: String = PlaywrightPhotosUi.redactSecrets(
       s"move-item ${Album.quote(filename)} ${Album.quote(source.title)} ${Album.quote(destination.title)}\n",
       source.title
     )
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("move-item"),
-      "title" -> Json.Str(source.title),
-      "destination" -> Json.Str(destination.title),
-      "catalog" -> Json.Str("updated"),
-      "albumId" -> Json.Str(source.id),
-      "destinationId" -> Json.Str(destination.id),
-      "itemKey" -> Json.Str(key)
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("move-item"),
+        "title" -> Json.Str(source.title),
+        "destination" -> Json.Str(destination.title),
+        "catalog" -> Json.Str("updated"),
+        "albumId" -> Json.Str(source.id),
+        "destinationId" -> Json.Str(destination.id),
+        "itemKey" -> Json.Str(key)
+      )
+    )
     (session, Result.Ok(text, value))
 
   private def moveFailed(
-    session: Session,
-    source: Catalog.Album,
-    destination: Catalog.Album,
-    item: Catalog.Item,
-    step: String,
-    recovery: String,
-    detail: String
+      session: Session,
+      source: Catalog.Album,
+      destination: Catalog.Album,
+      item: Catalog.Item,
+      step: String,
+      recovery: String,
+      detail: String
   ): (Session, Result) =
     val shown: String = collapsedText(detail, "move-item failed")
     val text: String =
@@ -1348,44 +1415,48 @@ private[photo] object AgentChrome:
          |catalog unchanged
          |$shown
          |""".stripMargin
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str("move-item"),
-      "title" -> Json.Str(source.title),
-      "destination" -> Json.Str(destination.title),
-      "step" -> Json.Str(step),
-      "recovery" -> Json.Str(recovery),
-      "catalog" -> Json.Str("unchanged"),
-      "albumId" -> Json.Str(source.id),
-      "destinationId" -> Json.Str(destination.id),
-      "itemKey" -> Json.Str(item.key)
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("move-item"),
+        "title" -> Json.Str(source.title),
+        "destination" -> Json.Str(destination.title),
+        "step" -> Json.Str(step),
+        "recovery" -> Json.Str(recovery),
+        "catalog" -> Json.Str("unchanged"),
+        "albumId" -> Json.Str(source.id),
+        "destinationId" -> Json.Str(destination.id),
+        "itemKey" -> Json.Str(item.key)
+      )
+    )
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, source.title), value, Refresh.MutationFailed))
 
   private def itemOk(
-    session: Session,
-    album: Catalog.Album,
-    item: Catalog.Item,
-    action: String,
-    catalog: String
+      session: Session,
+      album: Catalog.Album,
+      item: Catalog.Item,
+      action: String,
+      catalog: String
   ): (Session, Result) =
     val text: String = PlaywrightPhotosUi.redactSecrets(s"$action ${Album.quote(item.filename)}\n", album.title)
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str(action),
-      "title" -> Json.Str(album.title),
-      "catalog" -> Json.Str(catalog),
-      "albumId" -> Json.Str(album.id),
-      "itemKey" -> Json.Str(item.key)
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str(action),
+        "title" -> Json.Str(album.title),
+        "catalog" -> Json.Str(catalog),
+        "albumId" -> Json.Str(album.id),
+        "itemKey" -> Json.Str(item.key)
+      )
+    )
     (session, Result.Ok(text, value))
 
   private def itemFailed(
-    session: Session,
-    album: Catalog.Album,
-    item: Catalog.Item,
-    action: String,
-    step: String,
-    recovery: String,
-    detail: String
+      session: Session,
+      album: Catalog.Album,
+      item: Catalog.Item,
+      action: String,
+      step: String,
+      recovery: String,
+      detail: String
   ): (Session, Result) =
     val shown: String = collapsedText(detail, s"$action failed")
     val text: String =
@@ -1396,15 +1467,17 @@ private[photo] object AgentChrome:
          |catalog unchanged
          |$shown
          |""".stripMargin
-    val value: Json = Json.Obj(Seq(
-      "action" -> Json.Str(action),
-      "title" -> Json.Str(album.title),
-      "step" -> Json.Str(step),
-      "recovery" -> Json.Str(recovery),
-      "catalog" -> Json.Str("unchanged"),
-      "albumId" -> Json.Str(album.id),
-      "itemKey" -> Json.Str(item.key)
-    ))
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str(action),
+        "title" -> Json.Str(album.title),
+        "step" -> Json.Str(step),
+        "recovery" -> Json.Str(recovery),
+        "catalog" -> Json.Str("unchanged"),
+        "albumId" -> Json.Str(album.id),
+        "itemKey" -> Json.Str(item.key)
+      )
+    )
     (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
   private[photo] def collapsedText(detail: String, fallback: String): String =
@@ -1412,17 +1485,19 @@ private[photo] object AgentChrome:
     if message.isEmpty then fallback else message
 
   def acceptRequest(
-    albums: Seq[Catalog.Album],
-    action: Action,
-    albumId: String,
-    itemKey: String,
-    current: String,
-    updated: String
+      albums: Seq[Catalog.Album],
+      action: Action,
+      albumId: String,
+      itemKey: String,
+      current: String,
+      updated: String
   ): Unit = action match
     case Action.RenameAlbum =>
-      val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
-        throw IllegalArgumentException("no such album")
-      )
+      val album: Catalog.Album = albums
+        .find(_.id == albumId)
+        .getOrElse(
+          throw IllegalArgumentException("no such album")
+        )
       if album.owner.isDefined then throw IllegalArgumentException("album has an owner")
       requireCurrent(album.title, current)
       if updated.isEmpty then throw IllegalArgumentException("new title is empty")
@@ -1435,22 +1510,30 @@ private[photo] object AgentChrome:
       requireCurrent(item.filename, current)
       requireDate(updated)
     case Action.DownloadItem =>
-      val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
-        throw IllegalArgumentException("no such album")
-      )
-      val item: Catalog.Item = album.items.find(_.key == itemKey).getOrElse(
-        throw IllegalArgumentException("no such item")
-      )
+      val album: Catalog.Album = albums
+        .find(_.id == albumId)
+        .getOrElse(
+          throw IllegalArgumentException("no such album")
+        )
+      val item: Catalog.Item = album.items
+        .find(_.key == itemKey)
+        .getOrElse(
+          throw IllegalArgumentException("no such item")
+        )
       requireCurrent(item.filename, current)
       if updated.nonEmpty then throw IllegalArgumentException("new is not empty")
       requireFilename(item.filename)
     case Action.DeleteItem =>
-      val album: Catalog.Album = albums.find(_.id == albumId).getOrElse(
-        throw IllegalArgumentException("no such album")
-      )
-      val item: Catalog.Item = album.items.find(_.key == itemKey).getOrElse(
-        throw IllegalArgumentException("no such item")
-      )
+      val album: Catalog.Album = albums
+        .find(_.id == albumId)
+        .getOrElse(
+          throw IllegalArgumentException("no such album")
+        )
+      val item: Catalog.Item = album.items
+        .find(_.key == itemKey)
+        .getOrElse(
+          throw IllegalArgumentException("no such item")
+        )
       requireCurrent(item.filename, current)
       if updated.nonEmpty then throw IllegalArgumentException("new is not empty")
       if album.owner.isDefined then throw IllegalArgumentException("album has an owner")
@@ -1459,8 +1542,8 @@ private[photo] object AgentChrome:
   private[photo] def locateItem(albums: Seq[Catalog.Album], key: String): (Catalog.Album, Catalog.Item) =
     albums.flatMap(album => album.items.filter(_.key == key).map(album -> _)) match
       case Seq(found) => found
-      case Seq() => throw IllegalArgumentException("no such item")
-      case _ => throw IllegalArgumentException("item key is not unique")
+      case Seq()      => throw IllegalArgumentException("no such item")
+      case _          => throw IllegalArgumentException("item key is not unique")
 
   private def uniqueItem(albums: Seq[Catalog.Album], key: String): Catalog.Item =
     locateItem(albums, key)._2
@@ -1488,5 +1571,4 @@ private[photo] object AgentChrome:
   private val datePattern = """(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})""".r
 
   private def requireFilename(name: String): Unit =
-    if name == "." || name == ".." || name.contains('/') then
-      throw IllegalArgumentException("filename is not valid")
+    if name == "." || name == ".." || name.contains('/') then throw IllegalArgumentException("filename is not valid")

@@ -43,32 +43,32 @@ object Refresh:
     else kinds.length < 2
 
   private[photo] def run(
-    session: Session,
-    args: Cli.RefreshArgs,
-    open: (Notice => Unit) => PhotosUi,
-    places: Places,
-    pause: () => Unit = () => Thread.sleep(500)
+      session: Session,
+      args: Cli.RefreshArgs,
+      open: (Notice => Unit) => PhotosUi,
+      places: Places,
+      pause: () => Unit = () => Thread.sleep(500)
   ): (Session, Result) =
     try
       claim(places.lock) match
         case Claim.Busy =>
           busy(session, places)
         case Claim.Owned(channel, lock) =>
-          try
-            work(session, args, open, places, pause)
-          catch case error: Exception =>
-            (session, Result.Usage(oneLine(error)))
-          finally
-            release(channel, lock)
-    catch case error: Exception =>
-      (session, Result.Usage(oneLine(error)))
+          try work(session, args, open, places, pause)
+          catch
+            case error: Exception =>
+              (session, Result.Usage(oneLine(error)))
+          finally release(channel, lock)
+    catch
+      case error: Exception =>
+        (session, Result.Usage(oneLine(error)))
 
   private def work(
-    session: Session,
-    args: Cli.RefreshArgs,
-    open: (Notice => Unit) => PhotosUi,
-    places: Places,
-    pause: () => Unit
+      session: Session,
+      args: Cli.RefreshArgs,
+      open: (Notice => Unit) => PhotosUi,
+      places: Places,
+      pause: () => Unit
   ): (Session, Result) =
     if lockInside(places) then throw IllegalStateException("refresh lock is inside the work directory")
     val (stored, source) = loadCatalog(session)
@@ -105,19 +105,18 @@ object Refresh:
           val winners: Map[String, Catalog.Album] = readItems(places.directory, opened, found, cards, state, pause)
           val owners: Map[String, Catalog.Album] = readOwners(opened, found, cards, pause)
           publish(session, places, state, found, lines, stored, source, resumed || args.allowShrink, winners ++ owners)
-    finally
-      ui.foreach(closeQuiet)
+    finally ui.foreach(closeQuiet)
 
   private def publish(
-    session: Session,
-    places: Places,
-    state: RunState,
-    found: RefreshPlan.Diff,
-    lines: Seq[String],
-    stored: Seq[Catalog.Album],
-    source: String,
-    allowShrink: Boolean,
-    reads: Map[String, Catalog.Album]
+      session: Session,
+      places: Places,
+      state: RunState,
+      found: RefreshPlan.Diff,
+      lines: Seq[String],
+      stored: Seq[Catalog.Album],
+      source: String,
+      allowShrink: Boolean,
+      reads: Map[String, Catalog.Album]
   ): (Session, Result) =
     val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
     if !directory.isDirectory then directory.mkdirs()
@@ -139,23 +138,27 @@ object Refresh:
             )
 
   private def readItems(
-    directory: File,
-    ui: PhotosUi,
-    found: RefreshPlan.Diff,
-    cards: Map[String, AlbumCard],
-    state: RunState,
-    pause: () => Unit
+      directory: File,
+      ui: PhotosUi,
+      found: RefreshPlan.Diff,
+      cards: Map[String, AlbumCard],
+      state: RunState,
+      pause: () => Unit
   ): Map[String, Catalog.Album] =
     val planById: Map[String, RefreshPlan.Card] = found.cards.map(card => card.id -> card).toMap
     val order: Seq[String] = found.itemReads.toSeq.sortBy(id => planById.get(id).fold(0)(_.count))
     def loop(pass: Int, memory: Map[String, Seq[Catalog.Album]]): Unit =
       if pass <= 4 then
-        state.mark(directory, "items", Seq(
-          "pass" -> pass.toString,
-          "need" -> order.count(id => !hasWinner(directory, id)).toString,
-          "done" -> order.count(id => hasWinner(directory, id)).toString,
-          "total" -> order.length.toString
-        ))
+        state.mark(
+          directory,
+          "items",
+          Seq(
+            "pass" -> pass.toString,
+            "need" -> order.count(id => !hasWinner(directory, id)).toString,
+            "done" -> order.count(id => hasWinner(directory, id)).toString,
+            "total" -> order.length.toString
+          )
+        )
         val (next, wrote) = order.foldLeft((memory, false)):
           case ((acc, wrote), id) =>
             val soFar: Seq[Catalog.Album] = acc.getOrElse(id, Seq.empty)
@@ -174,16 +177,17 @@ object Refresh:
 
   // The three shortfall reads stay in memory. One winner file is written after they settle.
   private def pull(
-    ui: PhotosUi,
-    card: AlbumCard,
-    plan: RefreshPlan.Card,
-    acc: Seq[Catalog.Album]
+      ui: PhotosUi,
+      card: AlbumCard,
+      plan: RefreshPlan.Card,
+      acc: Seq[Catalog.Album]
   ): (Seq[Catalog.Album], Option[String]) =
     if !needsAnother(acc.map(kindOf)) then (acc, None)
     else
       try pull(ui, card, plan, acc :+ normalize(ui.readAlbum(card), plan))
-      catch case error: Exception =>
-        (acc, Some(oneLine(error)))
+      catch
+        case error: Exception =>
+          (acc, Some(oneLine(error)))
 
   private def settle(directory: File, id: String, reads: Seq[Catalog.Album], failed: Option[String]): Boolean =
     val settled: Boolean = reads.nonEmpty && !needsAnother(reads.map(kindOf))
@@ -213,9 +217,9 @@ object Refresh:
       else best
 
   private def kindOf(album: Catalog.Album): ReadKind = album.error match
-    case Some(error) if error.nameFailures == 0 && error.got < error.of => ReadKind.Short
+    case Some(error) if error.nameFailures == 0 && error.got < error.of    => ReadKind.Short
     case None if album.unsets.isEmpty && album.items.length == album.count => ReadKind.Ok
-    case _ => ReadKind.Other
+    case _                                                                 => ReadKind.Other
 
   private def normalize(read: Catalog.Album, plan: RefreshPlan.Card): Catalog.Album =
     val error: Option[Catalog.Error] = read.error.map: err =>
@@ -223,26 +227,29 @@ object Refresh:
     read.copy(id = plan.id, count = plan.count, title = plan.title, autoAdd = false, error = error)
 
   private def readOwners(
-    ui: PhotosUi,
-    found: RefreshPlan.Diff,
-    cards: Map[String, AlbumCard],
-    pause: () => Unit
+      ui: PhotosUi,
+      found: RefreshPlan.Diff,
+      cards: Map[String, AlbumCard],
+      pause: () => Unit
   ): Map[String, Catalog.Album] =
     val storedById: Map[String, Catalog.Album] = found.stored.map(album => album.id -> album).toMap
     val listed: Set[String] = found.cards.map(_.id).toSet
-    val ids: Seq[String] = storedById.collect:
-      case (id, album) if album.autoAdd && listed.contains(id) => id
-    .toSeq
+    val ids: Seq[String] = storedById
+      .collect:
+        case (id, album) if album.autoAdd && listed.contains(id) => id
+      .toSeq
     val wanted: Seq[String] = found.mode match
       case RefreshPlan.Mode.Album(_) => ids.filter(found.named.contains)
-      case _ => ids
+      case _                         => ids
     val planById: Map[String, RefreshPlan.Card] = found.cards.map(card => card.id -> card).toMap
-    wanted.sortBy(id => planById.get(id).fold(0)(_.count)).foldLeft(Map.empty[String, Catalog.Album]): (acc, id) =>
-      val card: AlbumCard = cards.getOrElse(id, throw IllegalArgumentException("bad album key"))
-      val plan: RefreshPlan.Card = planById.getOrElse(id, throw IllegalArgumentException("bad album key"))
-      val owner: Option[String] = retryOwner(ui, card)
-      pause()
-      acc.updated(id, stub(plan, owner))
+    wanted
+      .sortBy(id => planById.get(id).fold(0)(_.count))
+      .foldLeft(Map.empty[String, Catalog.Album]): (acc, id) =>
+        val card: AlbumCard = cards.getOrElse(id, throw IllegalArgumentException("bad album key"))
+        val plan: RefreshPlan.Card = planById.getOrElse(id, throw IllegalArgumentException("bad album key"))
+        val owner: Option[String] = retryOwner(ui, card)
+        pause()
+        acc.updated(id, stub(plan, owner))
 
   private def retryOwner(ui: PhotosUi, card: AlbumCard): Option[String] =
     def once(left: Int): Option[String] =
@@ -297,12 +304,12 @@ object Refresh:
   private def forPart(album: Catalog.Album): Catalog.Album =
     val hide: Catalog.Item => Boolean = item => badName(item.filename) || item.filename.contains('\u0001')
     if !album.items.exists(hide) then album
-    else album.copy(
-      items = album.items.map: item =>
-        if hide(item) then item.copy(filename = escapeName(item.filename, restore = false)) else item
-      ,
-      error = album.error.map(_.copy(nameFailures = album.unsets.length))
-    )
+    else
+      album.copy(
+        items = album.items.map: item =>
+          if hide(item) then item.copy(filename = escapeName(item.filename, restore = false)) else item,
+        error = album.error.map(_.copy(nameFailures = album.unsets.length))
+      )
 
   private def badName(filename: String): Boolean =
     filename.exists(ch => ch == '\t' || ch == '\n' || ch == '\r')
@@ -320,8 +327,7 @@ object Refresh:
       val albums: Seq[Catalog.Album] = Catalog.read(tmp.toFile)
       if albums.isEmpty then throw IllegalArgumentException("missing album")
       else albums.head
-    finally
-      NFiles.deleteIfExists(tmp)
+    finally NFiles.deleteIfExists(tmp)
 
   private def decodeNames(album: Catalog.Album): Catalog.Album =
     if !album.items.exists(_.filename.contains('\u0001')) then album
@@ -341,10 +347,10 @@ object Refresh:
     if !restore then
       text.flatMap:
         case '\u0001' => "\u0001\u0001"
-        case '\t' => "\u0001t"
-        case '\n' => "\u0001n"
-        case '\r' => "\u0001r"
-        case ch => String.valueOf(ch)
+        case '\t'     => "\u0001t"
+        case '\n'     => "\u0001n"
+        case '\r'     => "\u0001r"
+        case ch       => String.valueOf(ch)
     else
       @tailrec
       def rec(rest: String, acc: String): String =
@@ -371,28 +377,29 @@ object Refresh:
   private def keptCount(found: RefreshPlan.Diff, listing: Boolean): Int =
     found.actions.count:
       case action: RefreshPlan.Action.Keep => extraLines(action, listing, found.mode).isEmpty
-      case _ => false
+      case _                               => false
 
   private def actionLines(action: RefreshPlan.Action, listing: Boolean, mode: RefreshPlan.Mode): Seq[String] =
     baseLines(action) ++ extraLines(action, listing, mode)
 
   private def baseLines(action: RefreshPlan.Action): Seq[String] = action match
-    case RefreshPlan.Action.Add(card) => Seq(s"new ${card.title} ${card.count}")
+    case RefreshPlan.Action.Add(card)                 => Seq(s"new ${card.title} ${card.count}")
     case RefreshPlan.Action.CountChange(stored, card) => Seq(s"reread ${card.title} ${stored.count} ${card.count}")
-    case RefreshPlan.Action.Retitle(_, card) => Seq(s"retitle ${card.title}")
-    case RefreshPlan.Action.Keep(_, _) => Seq.empty
-    case RefreshPlan.Action.Drop(stored) => Seq(s"gone ${stored.title}")
+    case RefreshPlan.Action.Retitle(_, card)          => Seq(s"retitle ${card.title}")
+    case RefreshPlan.Action.Keep(_, _)                => Seq.empty
+    case RefreshPlan.Action.Drop(stored)              => Seq(s"gone ${stored.title}")
 
   private def extraLines(action: RefreshPlan.Action, listing: Boolean, mode: RefreshPlan.Mode): Seq[String] =
     if !listing then Seq.empty
-    else mode match
-      case RefreshPlan.Mode.Incremental => Seq.empty
-      case RefreshPlan.Mode.Full => listedExtra(action, owner = false)
-      case RefreshPlan.Mode.Album(_) => listedExtra(action, owner = true)
+    else
+      mode match
+        case RefreshPlan.Mode.Incremental => Seq.empty
+        case RefreshPlan.Mode.Full        => listedExtra(action, owner = false)
+        case RefreshPlan.Mode.Album(_)    => listedExtra(action, owner = true)
 
   private def listedExtra(action: RefreshPlan.Action, owner: Boolean): Seq[String] = action match
     case RefreshPlan.Action.Drop(_) => Seq.empty
-    case other if isAuto(other) =>
+    case other if isAuto(other)     =>
       val card: RefreshPlan.Card = planCard(other).get
       val verb: String = if owner then "owner-only" else "auto-add"
       Seq(s"$verb ${card.title} ${card.count}")
@@ -400,38 +407,42 @@ object Refresh:
       planCard(other).toSeq.map(card => s"would-read ${card.title} ${card.count}")
 
   private def isAuto(action: RefreshPlan.Action): Boolean = action match
-    case RefreshPlan.Action.Add(_) => false
+    case RefreshPlan.Action.Add(_)                => false
     case RefreshPlan.Action.CountChange(album, _) => album.autoAdd
-    case RefreshPlan.Action.Retitle(album, _) => album.autoAdd
-    case RefreshPlan.Action.Keep(album, _) => album.autoAdd
-    case RefreshPlan.Action.Drop(album) => album.autoAdd
+    case RefreshPlan.Action.Retitle(album, _)     => album.autoAdd
+    case RefreshPlan.Action.Keep(album, _)        => album.autoAdd
+    case RefreshPlan.Action.Drop(album)           => album.autoAdd
 
   private def planCard(action: RefreshPlan.Action): Option[RefreshPlan.Card] = action match
-    case RefreshPlan.Action.Add(card) => Some(card)
+    case RefreshPlan.Action.Add(card)            => Some(card)
     case RefreshPlan.Action.CountChange(_, card) => Some(card)
-    case RefreshPlan.Action.Retitle(_, card) => Some(card)
-    case RefreshPlan.Action.Keep(_, card) => Some(card)
-    case RefreshPlan.Action.Drop(_) => None
+    case RefreshPlan.Action.Retitle(_, card)     => Some(card)
+    case RefreshPlan.Action.Keep(_, card)        => Some(card)
+    case RefreshPlan.Action.Drop(_)              => None
 
   private def valueOf(found: RefreshPlan.Diff, listing: Boolean): Json =
-    Json.Obj(Seq(
-      "kept" -> Json.Long(keptCount(found, listing)),
-      "rows" -> Json.Arr(found.actions.map(actionValue))
-    ))
+    Json.Obj(
+      Seq(
+        "kept" -> Json.Long(keptCount(found, listing)),
+        "rows" -> Json.Arr(found.actions.map(actionValue))
+      )
+    )
 
   private def actionValue(action: RefreshPlan.Action): Json =
     val (verb, id, title, count) = action match
-      case RefreshPlan.Action.Add(card) => ("new", card.id, card.title, card.count)
+      case RefreshPlan.Action.Add(card)            => ("new", card.id, card.title, card.count)
       case RefreshPlan.Action.CountChange(_, card) => ("reread", card.id, card.title, card.count)
-      case RefreshPlan.Action.Retitle(_, card) => ("retitle", card.id, card.title, card.count)
-      case RefreshPlan.Action.Keep(_, card) => ("keep", card.id, card.title, card.count)
-      case RefreshPlan.Action.Drop(album) => ("gone", album.id, album.title, album.count)
-    Json.Obj(Seq(
-      "verb" -> Json.Str(verb),
-      "id" -> Json.Str(id),
-      "title" -> Json.Str(title),
-      "count" -> Json.Long(count)
-    ))
+      case RefreshPlan.Action.Retitle(_, card)     => ("retitle", card.id, card.title, card.count)
+      case RefreshPlan.Action.Keep(_, card)        => ("keep", card.id, card.title, card.count)
+      case RefreshPlan.Action.Drop(album)          => ("gone", album.id, album.title, album.count)
+    Json.Obj(
+      Seq(
+        "verb" -> Json.Str(verb),
+        "id" -> Json.Str(id),
+        "title" -> Json.Str(title),
+        "count" -> Json.Long(count)
+      )
+    )
 
   private[photo] def lineOf(card: AlbumCard): String =
     Seq(card.title, card.countText, card.id, card.auth, card.leaves).mkString("\t")
@@ -456,10 +467,15 @@ object Refresh:
   private def readStatus(file: File): Map[String, String] =
     if !file.isFile then Map.empty
     else
-      NFiles.readString(file.toPath, StandardCharsets.UTF_8).split("\n", -1).toSeq.filter(_.nonEmpty).flatMap: line =>
-        val (key, rest) = line.span(_ != '=')
-        if key.nonEmpty && rest.startsWith("=") then Some(key -> rest.drop(1)) else None
-      .toMap
+      NFiles
+        .readString(file.toPath, StandardCharsets.UTF_8)
+        .split("\n", -1)
+        .toSeq
+        .filter(_.nonEmpty)
+        .flatMap: line =>
+          val (key, rest) = line.span(_ != '=')
+          if key.nonEmpty && rest.startsWith("=") then Some(key -> rest.drop(1)) else None
+        .toMap
 
   private[photo] def busy(session: Session, places: Places): (Session, Result) =
     val status: String =
@@ -486,9 +502,10 @@ object Refresh:
     try
       NFiles.writeString(tmp, text, StandardCharsets.UTF_8)
       NFiles.move(tmp, file.toPath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-    catch case error: Exception =>
-      NFiles.deleteIfExists(tmp)
-      throw error
+    catch
+      case error: Exception =>
+        NFiles.deleteIfExists(tmp)
+        throw error
 
   private def deleteQuiet(directory: File): Unit =
     try deleteTree(directory)
@@ -551,9 +568,10 @@ object Refresh:
           ownerChannel = channel
           ownerPath = lockFile.getAbsolutePath
           Claim.Owned(channel, lock)
-      catch case _: OverlappingFileLockException =>
-        pinned = channel :: pinned
-        Claim.Busy
+      catch
+        case _: OverlappingFileLockException =>
+          pinned = channel :: pinned
+          Claim.Busy
   }
 
   private def held(lockFile: File): Boolean =

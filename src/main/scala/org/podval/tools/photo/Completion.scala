@@ -51,22 +51,23 @@ object Completion:
       None
 
   private def argumentCandidates(
-    session: Session,
-    command: Cli.Command,
-    args: List[String],
-    current: String
+      session: Session,
+      command: Cli.Command,
+      args: List[String],
+      current: String
   ): List[String] =
     val (set, count, eating) = consume(command, args)
     if current.startsWith("-") then flagCandidates(command, set, current)
     else if eating then Nil
-    else positionalAt(command.positionals, count) match
-      case Some(positional) => positionalCandidates(session, positional, current)
-      case None => Nil
+    else
+      positionalAt(command.positionals, count) match
+        case Some(positional) => positionalCandidates(session, positional, current)
+        case None             => Nil
 
   private def flagCandidates(command: Cli.Command, set: Set[String], prefix: String): List[String] =
     val names: List[String] = command.flags.flatMap: flag =>
       val repeatable: Boolean = flag.kind match
-        case Cli.RepeatKind => true
+        case Cli.RepeatKind                 => true
         case Cli.BooleanKind | Cli.TextKind => false
       if set.contains(flag.name) && !repeatable then Nil
       else
@@ -90,19 +91,20 @@ object Completion:
                 case Some(flag) =>
                   val takesNext: Boolean = flag.kind match
                     case Cli.TextKind | Cli.RepeatKind => attached.isEmpty
-                    case Cli.BooleanKind => false
+                    case Cli.BooleanKind               => false
                   if !takesNext then loop(more, set + flag.name, count)
-                  else more match
-                    case Nil =>
-                      (set + flag.name, count, true)
-                    // "--" introduces the value, as readValue does. It is not the value.
-                    // Nothing after it means the word being typed is still that value.
-                    case "--" :: Nil =>
-                      (set + flag.name, count, true)
-                    case "--" :: _ :: tail =>
-                      loop(tail, set + flag.name, count)
-                    case _ :: tail =>
-                      loop(tail, set + flag.name, count)
+                  else
+                    more match
+                      case Nil =>
+                        (set + flag.name, count, true)
+                      // "--" introduces the value, as readValue does. It is not the value.
+                      // Nothing after it means the word being typed is still that value.
+                      case "--" :: Nil =>
+                        (set + flag.name, count, true)
+                      case "--" :: _ :: tail =>
+                        loop(tail, set + flag.name, count)
+                      case _ :: tail =>
+                        loop(tail, set + flag.name, count)
                 case None =>
                   loop(more, set, count)
             case None =>
@@ -128,12 +130,12 @@ object Completion:
 
   private def isProperty(positional: Cli.Positional): Boolean = positional match
     case Cli.Required("property", _) => true
-    case _ => false
+    case _                           => false
 
   private def isTitle(positional: Cli.Positional): Boolean = positional match
     case Cli.Required(name, _) => titleName(name)
     case Cli.Optional(name, _) => titleName(name)
-    case _ => false
+    case _                     => false
 
   private def titleName(name: String): Boolean =
     name == "title" || name == "old" || name == "new" || name == "first" || name == "second"
@@ -161,8 +163,8 @@ object Completion:
     if title.exists(ch => ch.isWhitespace || ch == '"' || ch == '\\') then
       val body: String = title.flatMap:
         case '\\' => "\\\\"
-        case '"' => "\\\""
-        case ch => ch.toString
+        case '"'  => "\\\""
+        case ch   => ch.toString
       s"\"$body\""
     else title
 

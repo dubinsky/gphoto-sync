@@ -23,7 +23,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "file" should "parse --dry-run once" in :
+  "file" should "parse --dry-run once" in:
     Cli.parse(List("file")) shouldBe Cli.Run(Cli.FileArgs(dryRun = false))
     Cli.parse(List("file", "--dry-run")) shouldBe Cli.Run(Cli.FileArgs(dryRun = true))
     Cli.parse(List("file", "--dry-run=false")) shouldBe Cli.Run(Cli.FileArgs(dryRun = false))
@@ -43,7 +43,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       case other =>
         fail(other.toString)
 
-  it should "file a dated download, suffix a video, and leave undated, collisions, and a non-digit stem" in :
+  it should "file a dated download, suffix a video, and leave undated, collisions, and a non-digit stem" in:
     withArchive: archive =>
       write(archive, "2010/07/19/123.jpg", "original")
       write(archive, "2010/08/01/20191220_141955.jpg", "still")
@@ -109,7 +109,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
         "2010/08/02/50.jpg"
       )
 
-  it should "write nothing on a dry run and leave a warm index" in :
+  it should "write nothing on a dry run and leave a warm index" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/06/01")
       jpeg(day, "1000.jpg")
@@ -135,7 +135,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       read(archive, "2010/09/01/5555.jpg") shouldBe "dry"
       File(inbox, "2010/09/01/IMG_5555.JPG").exists shouldBe false
 
-  it should "run in this process and be rejected on the socket" in :
+  it should "run in this process and be rejected on the socket" in:
     withArchive: archive =>
       val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
       write(inbox, "2010/09/02/IMG_1.JPG", "local")
@@ -152,7 +152,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       try
         val parsed: Cli.Parsed = Cli.parse(List("file")) match
           case Cli.Run(value) => value
-          case other => fail(other.toString)
+          case other          => fail(other.toString)
         val result: Result = Cli.executeOneShot(
           session,
           List("file"),
@@ -186,7 +186,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
           (session, Result.Ok("ran\n", Json.Null))
       )
       ran shouldBe false
-      line should include ("file runs in the calling process")
+      line should include("file runs in the calling process")
 
       val sent = scala.collection.mutable.ListBuffer.empty[List[String]]
       write(inbox, "2010/09/03/IMG_2.JPG", "shell")
@@ -206,7 +206,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       read(inbox, "2010/09/03/IMG_2.JPG") shouldBe "shell"
       File(archive, "2010/09/03").exists shouldBe false
 
-  it should "ignore a dotfile partial in Pictures.plan" in :
+  it should "ignore a dotfile partial in Pictures.plan" in:
     val dir: File = JFiles.createTempDirectory("plan-partial").toFile
     try
       val picture: File = File(dir, "IMG_4.JPG")
@@ -217,7 +217,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       Pictures.plan(Seq(partial)).map(_.finalName) shouldBe Seq.empty[String]
     finally deleteTree(dir)
 
-  it should "delete a leftover partial on a real run and leave it on a dry run" in :
+  it should "delete a leftover partial on a real run and leave it on a dry run" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/10/02")
       day.mkdirs()
@@ -238,37 +238,37 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       partial.exists shouldBe false
       namesUnder(archive).filter(name => name.startsWith(".") || name.contains("partial")) shouldBe Set.empty[String]
 
-  it should "keep a staged non-picture and still file another day" in :
+  it should "keep a staged non-picture and still file another day" in:
     withArchive: archive =>
       val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
       write(inbox, "2010/12/03/notes.txt", "nope")
       write(inbox, "2010/12/04/IMG_3.JPG", "yes")
       val text: String = okText(FileDownloads(dryRun = false).execute(sessionFor(archive))._2)
-      text should include ("keep 2010/12/03/notes.txt ")
-      text should include ("illegal extension txt")
-      text should include ("file 2010/12/04 IMG_3.JPG 3.jpg")
-      text should include ("wrote 2010/12/04/3.jpg")
+      text should include("keep 2010/12/03/notes.txt ")
+      text should include("illegal extension txt")
+      text should include("file 2010/12/04 IMG_3.JPG 3.jpg")
+      text should include("wrote 2010/12/04/3.jpg")
       read(inbox, "2010/12/03/notes.txt") shouldBe "nope"
       read(archive, "2010/12/04/3.jpg") shouldBe "yes"
       File(archive, "2010/12/03").exists shouldBe false
 
-  it should "keep a day's downloads when a stray day file makes plan throw, and file other days" in :
+  it should "keep a day's downloads when a stray day file makes plan throw, and file other days" in:
     withArchive: archive =>
       write(archive, "2010/12/01/notes.txt", "stray")
       val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
       write(inbox, "2010/12/01/IMG_5.JPG", "blocked")
       write(inbox, "2010/12/02/IMG_6.JPG", "other")
       val text: String = okText(FileDownloads(dryRun = false).execute(sessionFor(archive))._2)
-      text should include ("keep 2010/12/01/IMG_5.JPG ")
-      text should include ("illegal extension txt")
-      text should include ("file 2010/12/02 IMG_6.JPG 6.jpg")
-      text should include ("wrote 2010/12/02/6.jpg")
+      text should include("keep 2010/12/01/IMG_5.JPG ")
+      text should include("illegal extension txt")
+      text should include("file 2010/12/02 IMG_6.JPG 6.jpg")
+      text should include("wrote 2010/12/02/6.jpg")
       read(inbox, "2010/12/01/IMG_5.JPG") shouldBe "blocked"
       read(archive, "2010/12/01/notes.txt") shouldBe "stray"
       read(archive, "2010/12/02/6.jpg") shouldBe "other"
       File(archive, "2010/12/01/5.jpg").exists shouldBe false
 
-  it should "suffix a video staged with its still into an empty day" in :
+  it should "suffix a video staged with its still into an empty day" in:
     withArchive: archive =>
       val inbox: File = File(File(archive, ".gphoto-sync"), ".download")
       write(inbox, "2010/10/01/IMG_100.jpg", "still")
@@ -294,7 +294,7 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       File(inbox, "2010/10/01/IMG_100.jpg").exists shouldBe false
       File(inbox, "2010/10/01/VID_100.mp4").exists shouldBe false
 
-  it should "not file a stem that exists only on an adjacent day" in :
+  it should "not file a stem that exists only on an adjacent day" in:
     withArchive: archive =>
       write(archive, "2010/07/18/2412.jpg", "previous")
       write(archive, "2010/07/20/9.jpg", "earlier")
@@ -325,32 +325,32 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       read(archive, "2010/07/20/9.jpg") shouldBe "earlier"
       read(archive, "2010/07/22/9.jpg") shouldBe "later"
 
-  it should "not replace an existing destination via createLink" in :
+  it should "not replace an existing destination via createLink" in:
     val dir: File = JFiles.createTempDirectory("file-link").toFile
     try
       val destination: File = File(dir, "7.jpg")
       val partial: File = File(dir, ".file-test.partial")
       JFiles.writeString(destination.toPath, "OLD")
       JFiles.writeString(partial.toPath, "NEW")
-      an [FileAlreadyExistsException] should be thrownBy FileDownloads.linkPartial(partial, destination)
+      an[FileAlreadyExistsException] should be thrownBy FileDownloads.linkPartial(partial, destination)
       JFiles.readString(destination.toPath) shouldBe "OLD"
       JFiles.readString(partial.toPath) shouldBe "NEW"
     finally deleteTree(dir)
 
   private def okText(result: Result): String = result match
     case Result.Ok(text, _) => text
-    case other => fail(other.toString)
+    case other              => fail(other.toString)
 
   private def run(session: Session, args: String*): (Session, Result) =
     Cli.parse(args.toList) match
       case Cli.Run(parsed) => Cli.toOperation(parsed).execute(session)
-      case other => fail(other.toString)
+      case other           => fail(other.toString)
 
   private def shell(
-    session: Session,
-    lines: Seq[String],
-    executeCommand: (Session, Cli.Parsed) => (Session, Result),
-    exchange: Option[(Session, List[String]) => Result]
+      session: Session,
+      lines: Seq[String],
+      executeCommand: (Session, Cli.Parsed) => (Session, Result),
+      exchange: Option[(Session, List[String]) => Result]
   ): (Int, String, String) =
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream

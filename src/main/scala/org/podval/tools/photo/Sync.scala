@@ -31,11 +31,11 @@ object Sync:
   private[photo] def openLibrary(): Library = ClientLibrary(Google.newClient())
 
   private[photo] def run(
-    originals: File,
-    prefix: Option[String],
-    recursive: Boolean,
-    dryRun: Boolean,
-    google: () => Library
+      originals: File,
+      prefix: Option[String],
+      recursive: Boolean,
+      dryRun: Boolean,
+      google: () => Library
   ): Unit =
     val selectedPrefix: Option[String] = prefix.map(_.stripPrefix("/")).filter(_.nonEmpty)
     if Album.needsRecursive(selectedPrefix) && !recursive then
@@ -57,15 +57,15 @@ object Sync:
   // Membership is remote, so a dry run still lists and batchGets in order to print the same lines.
   // It does not write album files and does not call batchRemove.
   private def syncAlbums(
-    originals: File,
-    universe: Map[LocalDate, Set[String]],
-    facts: Map[String, Archive.Picture],
-    selected: Seq[Claims.Resolved],
-    byTitle: Map[String, LoadedAlbum],
-    albums: Seq[LoadedAlbum],
-    inScope: Seq[LoadedAlbum],
-    dryRun: Boolean,
-    google: () => Library
+      originals: File,
+      universe: Map[LocalDate, Set[String]],
+      facts: Map[String, Archive.Picture],
+      selected: Seq[Claims.Resolved],
+      byTitle: Map[String, LoadedAlbum],
+      albums: Seq[LoadedAlbum],
+      inScope: Seq[LoadedAlbum],
+      dryRun: Boolean,
+      google: () => Library
   ): Unit =
     val library: Library = google()
     try
@@ -75,19 +75,19 @@ object Sync:
       val plan: Plan = planFor(filed, byTitle, albums, mediaByTitle, present)
       printPlan(plan)
       if !dryRun then applyPlan(originals, universe, library, plan)
-    finally
-      library.close()
+    finally library.close()
 
   private def listAll(
-    library: Library,
-    albums: Seq[LoadedAlbum],
-    selected: Seq[Claims.Resolved]
+      library: Library,
+      albums: Seq[LoadedAlbum],
+      selected: Seq[Claims.Resolved]
   ): Map[String, Set[String]] =
     albums.foldLeft(Map.empty[String, Set[String]]): (acc, loaded) =>
       val ids: Set[String] =
         try library.listAlbum(loaded.album.googleAlbumId)
-        catch case error: Exception =>
-          fail(albumFailure(loaded, selected, error))
+        catch
+          case error: Exception =>
+            fail(albumFailure(loaded, selected, error))
       acc.updated(loaded.album.title, ids)
 
   private def albumFailure(loaded: LoadedAlbum, selected: Seq[Claims.Resolved], error: Exception): Seq[String] =
@@ -97,27 +97,32 @@ object Sync:
     if lines.nonEmpty then lines else Seq(s"- ${loaded.album.title}: $message")
 
   private def lookup(
-    library: Library,
-    filed: Seq[(Claims.Resolved, String)],
-    byTitle: Map[String, LoadedAlbum],
-    albums: Seq[LoadedAlbum]
+      library: Library,
+      filed: Seq[(Claims.Resolved, String)],
+      byTitle: Map[String, LoadedAlbum],
+      albums: Seq[LoadedAlbum]
   ): Set[String] =
     val ids: Seq[String] = filed.map(_._2).distinct
-    ids.grouped(batchSize).foldLeft(Set.empty[String]): (acc, batch) =>
-      val found: Set[String] =
-        try library.libraryIds(batch)
-        catch case error: Exception =>
-          val message: String = Album.messageOf(error)
-          val lines: Seq[String] = filed.filter(pair => batch.contains(pair._2)).flatMap: (picture, _) =>
-            failureLines(picture, byTitle, albums, message)
-          fail(if lines.nonEmpty then lines else Seq(s"- -: $message"))
-      acc ++ found
+    ids
+      .grouped(batchSize)
+      .foldLeft(Set.empty[String]): (acc, batch) =>
+        val found: Set[String] =
+          try library.libraryIds(batch)
+          catch
+            case error: Exception =>
+              val message: String = Album.messageOf(error)
+              val lines: Seq[String] = filed
+                .filter(pair => batch.contains(pair._2))
+                .flatMap: (picture, _) =>
+                  failureLines(picture, byTitle, albums, message)
+              fail(if lines.nonEmpty then lines else Seq(s"- -: $message"))
+        acc ++ found
 
   private def failureLines(
-    picture: Claims.Resolved,
-    byTitle: Map[String, LoadedAlbum],
-    albums: Seq[LoadedAlbum],
-    message: String
+      picture: Claims.Resolved,
+      byTitle: Map[String, LoadedAlbum],
+      albums: Seq[LoadedAlbum],
+      message: String
   ): Seq[String] =
     val titles: Seq[String] = (clientClaims(picture, byTitle) ++ excludedAlbums(picture, albums))
       .map(_.album.title)
@@ -130,23 +135,26 @@ object Sync:
     throw IllegalArgumentException(lines.mkString("\n"))
 
   private def filedPictures(
-    facts: Map[String, Archive.Picture],
-    selected: Seq[Claims.Resolved],
-    byTitle: Map[String, LoadedAlbum],
-    albums: Seq[LoadedAlbum]
+      facts: Map[String, Archive.Picture],
+      selected: Seq[Claims.Resolved],
+      byTitle: Map[String, LoadedAlbum],
+      albums: Seq[LoadedAlbum]
   ): Seq[(Claims.Resolved, String)] =
     selected.flatMap: picture =>
-      facts.get(picture.path).flatMap(_.metadata.`google-media-item-id`.filter(_.nonEmpty)).flatMap: id =>
-        val relevant: Boolean =
-          clientClaims(picture, byTitle).nonEmpty || excludedAlbums(picture, albums).nonEmpty
-        Option.when(relevant)(picture -> id)
+      facts
+        .get(picture.path)
+        .flatMap(_.metadata.`google-media-item-id`.filter(_.nonEmpty))
+        .flatMap: id =>
+          val relevant: Boolean =
+            clientClaims(picture, byTitle).nonEmpty || excludedAlbums(picture, albums).nonEmpty
+          Option.when(relevant)(picture -> id)
 
   private def planFor(
-    filed: Seq[(Claims.Resolved, String)],
-    byTitle: Map[String, LoadedAlbum],
-    albums: Seq[LoadedAlbum],
-    mediaByTitle: Map[String, Set[String]],
-    present: Set[String]
+      filed: Seq[(Claims.Resolved, String)],
+      byTitle: Map[String, LoadedAlbum],
+      albums: Seq[LoadedAlbum],
+      mediaByTitle: Map[String, Set[String]],
+      present: Set[String]
   ): Plan =
     filed.foldLeft(Plan(Seq.empty, Seq.empty)): (plan, pair) =>
       val (picture, id) = pair
@@ -169,10 +177,10 @@ object Sync:
     albums.map(loaded => ExceptChange(loaded.file, loaded.album.title, day, name))
 
   private def removesFor(
-    albums: Seq[LoadedAlbum],
-    picture: Claims.Resolved,
-    name: String,
-    id: String
+      albums: Seq[LoadedAlbum],
+      picture: Claims.Resolved,
+      name: String,
+      id: String
   ): Seq[RemoveChange] =
     albums.map: loaded =>
       RemoveChange(loaded.album.googleAlbumId, loaded.album.title, name, picture.path, id)
@@ -182,32 +190,44 @@ object Sync:
     plan.removes.foreach(change => Transcript.println(s"remove ${change.title} ${Album.quote(change.stem)}"))
 
   private def applyPlan(
-    originals: File,
-    universe: Map[LocalDate, Set[String]],
-    library: Library,
-    plan: Plan
+      originals: File,
+      universe: Map[LocalDate, Set[String]],
+      library: Library,
+      plan: Plan
   ): Unit =
-    plan.excepts.groupBy(_.file).foreach: (file, changes) =>
-      Album.storeRemovals(file, originals, changes.map(change => change.day -> change.stem), universe)
-    plan.removes.groupBy(_.albumId).foreach: (albumId, changes) =>
-      changes.map(_.mediaId).distinct.grouped(batchSize).foreach: batch =>
-        try library.removeFromAlbum(albumId, batch)
-        catch case error: Exception =>
-          val message: String = Album.messageOf(error)
-          val lines: Seq[String] = changes.filter(change => batch.contains(change.mediaId)).map: change =>
-            s"${change.path} ${change.title}: $message"
-          fail(if lines.nonEmpty then lines else Seq(s"- $albumId: $message"))
+    plan.excepts
+      .groupBy(_.file)
+      .foreach: (file, changes) =>
+        Album.storeRemovals(file, originals, changes.map(change => change.day -> change.stem), universe)
+    plan.removes
+      .groupBy(_.albumId)
+      .foreach: (albumId, changes) =>
+        changes
+          .map(_.mediaId)
+          .distinct
+          .grouped(batchSize)
+          .foreach: batch =>
+            try library.removeFromAlbum(albumId, batch)
+            catch
+              case error: Exception =>
+                val message: String = Album.messageOf(error)
+                val lines: Seq[String] = changes
+                  .filter(change => batch.contains(change.mediaId))
+                  .map: change =>
+                    s"${change.path} ${change.title}: $message"
+                fail(if lines.nonEmpty then lines else Seq(s"- $albumId: $message"))
 
   private def picturesFor(loaded: LoadedAlbum, selected: Seq[Claims.Resolved]): Seq[Claims.Resolved] =
     selected.filter: picture =>
       picture.albums.contains(loaded.album.title) || excepts(loaded.album, picture)
 
   private def scope(
-    selected: Seq[Claims.Resolved],
-    byTitle: Map[String, LoadedAlbum],
-    albums: Seq[LoadedAlbum]
+      selected: Seq[Claims.Resolved],
+      byTitle: Map[String, LoadedAlbum],
+      albums: Seq[LoadedAlbum]
   ): Seq[LoadedAlbum] =
-    selected.flatMap(picture => clientClaims(picture, byTitle) ++ excludedAlbums(picture, albums))
+    selected
+      .flatMap(picture => clientClaims(picture, byTitle) ++ excludedAlbums(picture, albums))
       .distinctBy(_.album.title)
       .sortBy(_.album.title)
 
@@ -242,14 +262,18 @@ object Sync:
 
     // batchGet rejects an empty list and more than 50 ids.
     override def libraryIds(ids: Seq[String]): Set[String] =
-      ids.distinct.grouped(batchSize).foldLeft(Set.empty[String]): (found, batch) =>
-        val results = client.batchGetMediaItems(batch.asJava).getMediaItemResultsList.asScala.toSeq
-        found ++ results.flatMap: result =>
-          if result.hasMediaItem then
-            val id: String = result.getMediaItem.getId
-            Option.when(id.nonEmpty)(id)
-          else None
+      ids.distinct
+        .grouped(batchSize)
+        .foldLeft(Set.empty[String]): (found, batch) =>
+          val results = client.batchGetMediaItems(batch.asJava).getMediaItemResultsList.asScala.toSeq
+          found ++ results.flatMap: result =>
+            if result.hasMediaItem then
+              val id: String = result.getMediaItem.getId
+              Option.when(id.nonEmpty)(id)
+            else None
 
     override def removeFromAlbum(albumId: String, ids: Seq[String]): Unit =
-      ids.distinct.grouped(batchSize).foreach: batch =>
-        client.batchRemoveMediaItemsFromAlbum(albumId, batch.asJava)
+      ids.distinct
+        .grouped(batchSize)
+        .foreach: batch =>
+          client.batchRemoveMediaItemsFromAlbum(albumId, batch.asJava)

@@ -9,16 +9,7 @@ import java.io.{File, IOException}
 import java.nio.file.Files
 import java.nio.file.attribute.FileTime
 import java.time.format.{DateTimeFormatter, DateTimeParseException}
-import java.time.{
-  DateTimeException,
-  Instant,
-  LocalDate,
-  LocalDateTime,
-  LocalTime,
-  OffsetDateTime,
-  ZoneId,
-  ZoneOffset
-}
+import java.time.{DateTimeException, Instant, LocalDate, LocalDateTime, LocalTime, OffsetDateTime, ZoneId, ZoneOffset}
 import java.time.temporal.ChronoUnit
 
 // metadata-extractor *code* suggests that old Canon raw format CRW *is* supported:
@@ -77,10 +68,15 @@ object Dates:
       val format: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val prefix: String = "TAG:creation_time="
       val found: Option[Clock] = probeStdout(file).flatMap: stdout =>
-        stdout.split('\n').toSeq.map(_.trim).find(_.startsWith(prefix)).flatMap: line =>
-          val text: String = line.drop(prefix.length)
-          try Some(Clock(LocalDateTime.parse(text, format), None, Source.VideoAvi))
-          catch case _: DateTimeParseException => None
+        stdout
+          .split('\n')
+          .toSeq
+          .map(_.trim)
+          .find(_.startsWith(prefix))
+          .flatMap: line =>
+            val text: String = line.drop(prefix.length)
+            try Some(Clock(LocalDateTime.parse(text, format), None, Source.VideoAvi))
+            catch case _: DateTimeParseException => None
       usable(found)
 
   // One trailing v, then one trailing _1. The stored stem is not changed. Callers choose the date a short name may use.
@@ -100,14 +96,15 @@ object Dates:
       .orElse(shortDate.flatMap: date =>
         val parsed: Option[(Clock, String)] =
           try
-            Some(Clock(
-              date.atTime(LocalTime.parse(text, DateTimeFormatter.ofPattern("HHmmss"))),
-              None,
-              Source.FilenameShort
-            ) -> "short")
+            Some(
+              Clock(
+                date.atTime(LocalTime.parse(text, DateTimeFormatter.ofPattern("HHmmss"))),
+                None,
+                Source.FilenameShort
+              ) -> "short"
+            )
           catch case _: DateTimeParseException => None
-        parsed
-      )
+        parsed)
 
   val varyMinutes: Long = 60
 
@@ -128,24 +125,24 @@ object Dates:
     case FolderDay
 
   final case class Clock(
-    civil: LocalDateTime,
-    offset: Option[ZoneOffset],
-    source: Source
+      civil: LocalDateTime,
+      offset: Option[ZoneOffset],
+      source: Source
   ) derives CanEqual:
     def day: LocalDate = civil.toLocalDate
 
   final case class Observed(
-    extension: String,
-    votes: Boolean,
-    clock: Option[Clock]
+      extension: String,
+      votes: Boolean,
+      clock: Option[Clock]
   ) derives CanEqual
 
   final case class Assessment(
-    clock: Option[Clock],
-    timestampsVary: Boolean,
-    timestampWrong: Boolean,
-    dayShouldBe: Option[Day],
-    disagreement: Option[Ranked.Disagree]
+      clock: Option[Clock],
+      timestampsVary: Boolean,
+      timestampWrong: Boolean,
+      dayShouldBe: Option[Day],
+      disagreement: Option[Ranked.Disagree]
   ) derives CanEqual:
     // Folder midnight is not a capture time, and a disagreement has no winner to stamp.
     def writesMtime: Option[Clock] =
@@ -163,11 +160,11 @@ object Dates:
     Math.abs(ChronoUnit.MINUTES.between(left, right))
 
   final case class RankInput(
-    timestamp: Option[LocalDateTime],
-    date: Option[LocalDate],
-    embedded: Option[Clock],
-    filename: Option[Clock],
-    folder: Option[Clock]
+      timestamp: Option[LocalDateTime],
+      date: Option[LocalDate],
+      embedded: Option[Clock],
+      filename: Option[Clock],
+      folder: Option[Clock]
   ) derives CanEqual
 
   enum Ranked derives CanEqual:
@@ -184,20 +181,21 @@ object Dates:
         Ranked.Chosen(Clock(timestamp, None, Source.SidecarTimestamp))
       case (None, Some(date)) =>
         val timeOfDay: LocalTime =
-          input.embedded.orElse(input.filename)
+          input.embedded
+            .orElse(input.filename)
             .map(_.civil.toLocalTime)
             .getOrElse(LocalTime.MIDNIGHT)
         Ranked.Chosen(Clock(date.atTime(timeOfDay), None, Source.SidecarDate))
       case (None, None) =>
         input.embedded.orElse(input.filename).orElse(input.folder) match
           case Some(clock) => Ranked.Chosen(clock)
-          case None => Ranked.Undated
+          case None        => Ranked.Undated
 
   def dayShouldBe(picture: Picture, ranked: Ranked): Option[Day] =
     ranked match
       case Ranked.Disagree(_, _) => None
-      case Ranked.Undated => None
-      case Ranked.Chosen(clock) =>
+      case Ranked.Undated        => None
+      case Ranked.Chosen(clock)  =>
         val date: LocalDate = clock.day
         val already: Boolean = picture.parent.day.exists(_.date.isEqual(date))
         Option.when(!already)(
@@ -206,10 +204,10 @@ object Dates:
 
   // Disagree and Undated store no clock and do not stamp, even when a caller passes raw mtimes.
   def assessment(
-    picture: Picture,
-    ranked: Ranked,
-    timestampsVary: Boolean,
-    currents: Iterable[Instant]
+      picture: Picture,
+      ranked: Ranked,
+      timestampsVary: Boolean,
+      currents: Iterable[Instant]
   ): Assessment =
     val moveTo: Option[Day] = dayShouldBe(picture, ranked)
     ranked match
@@ -258,10 +256,10 @@ object Dates:
   private val exifDateTime: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
 
   def parseExifClock(
-    text: String,
-    sub: Option[String],
-    offsetText: Option[String],
-    source: Source
+      text: String,
+      sub: Option[String],
+      offsetText: Option[String],
+      source: Source
   ): Option[Clock] =
     val trimmed: String = text.trim
     if trimmed.isEmpty || trimmed == "0000:00:00 00:00:00" then None
@@ -317,9 +315,9 @@ object Dates:
     else text
 
   def chooseZ(
-    digits: LocalDateTime,
-    filename: Option[Clock],
-    zone: ZoneId
+      digits: LocalDateTime,
+      filename: Option[Clock],
+      zone: ZoneId
   ): Clock =
     val instant: Instant = digits.toInstant(ZoneOffset.UTC)
     val shifted: LocalDateTime = instant.atZone(zone).toLocalDateTime
@@ -338,16 +336,21 @@ object Dates:
     val applePrefix: String = "TAG:com.apple.quicktime.creationdate="
     val timePrefix: String = "TAG:creation_time="
     val apple: Option[Clock] =
-      lines.find(_.startsWith(applePrefix)).map(_.drop(applePrefix.length)).flatMap: text =>
-        parseCreationDate(text).map: parsed =>
-          Clock(parsed.toLocalDateTime, Some(parsed.getOffset), Source.VideoCreationDate)
+      lines
+        .find(_.startsWith(applePrefix))
+        .map(_.drop(applePrefix.length))
+        .flatMap: text =>
+          parseCreationDate(text).map: parsed =>
+            Clock(parsed.toLocalDateTime, Some(parsed.getOffset), Source.VideoCreationDate)
     val fromCreation: Option[Clock] =
-      lines.find(line => line.startsWith(timePrefix) && line.endsWith("Z")).flatMap: line =>
-        val digits: String = line.drop(timePrefix.length).dropRight(1)
-        val parsed: Option[LocalDateTime] =
-          try Some(LocalDateTime.parse(digits))
-          catch case _: DateTimeParseException => None
-        parsed.map(value => chooseZ(value, filename, zone))
+      lines
+        .find(line => line.startsWith(timePrefix) && line.endsWith("Z"))
+        .flatMap: line =>
+          val digits: String = line.drop(timePrefix.length).dropRight(1)
+          val parsed: Option[LocalDateTime] =
+            try Some(LocalDateTime.parse(digits))
+            catch case _: DateTimeParseException => None
+          parsed.map(value => chooseZ(value, filename, zone))
     usable(apple).orElse(usable(fromCreation))
 
   private def readMovLibrary(file: File): Option[Clock] =
@@ -360,7 +363,7 @@ object Dates:
           Clock(parsed.toLocalDateTime, Some(parsed.getOffset), Source.VideoCreationDate)
     catch
       case _: ImageProcessingException => None
-      case _: IOException => None
+      case _: IOException              => None
 
   private def probeStdout(file: File): Option[String] =
     try Some(Process(s"ffprobe -v quiet $file -show_entries $ffprobeShowEntries").!!)
@@ -370,15 +373,21 @@ object Dates:
     val format: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss yyyy")
     val prefix: String = "Timestamp:"
     try
-      Process(s"dcraw -i -v $file").#||(Process("true")).!!.split('\n').find(_.startsWith(prefix)).map: line =>
-        val text: String = line.drop(prefix.length).trim
-        val (head, tail) = text.splitAt(8)
-        val padded: String = if tail.startsWith(" ") then head + "0" + tail.drop(1) else text
-        Clock(LocalDateTime.parse(padded, format), None, Source.CrwDcraw)
-    catch
-      case _: RuntimeException => None
+      Process(s"dcraw -i -v $file")
+        .#||(Process("true"))
+        .!!
+        .split('\n')
+        .find(_.startsWith(prefix))
+        .map: line =>
+          val text: String = line.drop(prefix.length).trim
+          val (head, tail) = text.splitAt(8)
+          val padded: String = if tail.startsWith(" ") then head + "0" + tail.drop(1) else text
+          Clock(LocalDateTime.parse(padded, format), None, Source.CrwDcraw)
+    catch case _: RuntimeException => None
 
   def sameSecond(civil: LocalDateTime, stored: Instant, zone: ZoneId): Boolean =
-    civil.truncatedTo(ChronoUnit.SECONDS).isEqual(
-      stored.atZone(zone).toLocalDateTime.truncatedTo(ChronoUnit.SECONDS)
-    )
+    civil
+      .truncatedTo(ChronoUnit.SECONDS)
+      .isEqual(
+        stored.atZone(zone).toLocalDateTime.truncatedTo(ChronoUnit.SECONDS)
+      )

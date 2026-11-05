@@ -16,12 +16,13 @@ private[photo] object AgentSupport:
   // Day's own require accepts 1..31. The civil date rejects February 31 and a non-leap February 29.
   // A bad segment is NumberFormatException or a failed year, month, or day require. Both are not a day.
   def parseDay(session: Session, text: String): Day =
-    try session.parse(text) match
-      case day: Day =>
-        day.date
-        day
-      case _ =>
-        throw IllegalArgumentException("not a day")
+    try
+      session.parse(text) match
+        case day: Day =>
+          day.date
+          day
+        case _ =>
+          throw IllegalArgumentException("not a day")
     catch
       case _: (NoSuchElementException | DateTimeException | IllegalArgumentException) =>
         throw IllegalArgumentException("not a day")
@@ -31,12 +32,12 @@ private[photo] object AgentSupport:
       case Some(wanted) =>
         albums.find(_.id == wanted) match
           case Some(album) if album.title == title => album
-          case _ => throw IllegalArgumentException("catalog title does not match")
+          case _                                   => throw IllegalArgumentException("catalog title does not match")
       case None =>
         albums.filter(_.title == title) match
           case Seq(album) => album
-          case Seq() => throw IllegalArgumentException(s"no album titled ${Album.quote(title)}")
-          case _ => throw IllegalArgumentException(s"more than one album titled ${Album.quote(title)}")
+          case Seq()      => throw IllegalArgumentException(s"no album titled ${Album.quote(title)}")
+          case _          => throw IllegalArgumentException(s"more than one album titled ${Album.quote(title)}")
 
   def catalogLine(album: Catalog.Album, ambiguous: Boolean): String =
     val flags: Seq[String] = Seq(
@@ -49,30 +50,34 @@ private[photo] object AgentSupport:
     s"${Album.quote(album.title)} count=${album.count} items=${album.items.length} ${flags.mkString(" ")}"
 
   def albumValue(album: Catalog.Album, ambiguous: Boolean): Json =
-    Json.Obj(Seq(
-      "id" -> Json.Str(album.id),
-      "title" -> Json.Str(album.title),
-      "count" -> Json.Long(album.count),
-      "owned" -> Json.Bool(album.owner.isEmpty),
-      "owner" -> album.owner.fold(Json.Null)(Json.Str.apply),
-      "autoAdd" -> Json.Bool(album.autoAdd),
-      "error" -> album.error.fold(Json.Null)(errorValue),
-      "unset" -> Json.Long(album.unsets.length),
-      "items" -> Json.Long(album.items.length),
-      "ambiguous" -> Json.Bool(ambiguous)
-    ))
+    Json.Obj(
+      Seq(
+        "id" -> Json.Str(album.id),
+        "title" -> Json.Str(album.title),
+        "count" -> Json.Long(album.count),
+        "owned" -> Json.Bool(album.owner.isEmpty),
+        "owner" -> album.owner.fold(Json.Null)(Json.Str.apply),
+        "autoAdd" -> Json.Bool(album.autoAdd),
+        "error" -> album.error.fold(Json.Null)(errorValue),
+        "unset" -> Json.Long(album.unsets.length),
+        "items" -> Json.Long(album.items.length),
+        "ambiguous" -> Json.Bool(ambiguous)
+      )
+    )
 
   def itemLines(album: Catalog.Album): Seq[String] =
     album.items.map(item => s"${item.filename} ${catalogDate(item.date)} ${showUploader(item.uploader)}") ++
       album.unsets.map(unset => s"unset ${catalogDate(unset.date)} ${showUploader(unset.uploader)}")
 
   def itemsValue(album: Catalog.Album): Json =
-    Json.Obj(Seq(
-      "id" -> Json.Str(album.id),
-      "error" -> album.error.fold(Json.Null)(errorValue),
-      "items" -> Json.Arr(album.items.map(itemValue)),
-      "unsets" -> Json.Arr(album.unsets.map(unsetValue))
-    ))
+    Json.Obj(
+      Seq(
+        "id" -> Json.Str(album.id),
+        "error" -> album.error.fold(Json.Null)(errorValue),
+        "items" -> Json.Arr(album.items.map(itemValue)),
+        "unsets" -> Json.Arr(album.unsets.map(unsetValue))
+      )
+    )
 
   // Skip is a result. Do not read a day, and do not treat unread names as unmatched files.
   def skipped(session: Session, album: Catalog.Album, reason: String): (Session, Result) =
@@ -84,8 +89,8 @@ private[photo] object AgentSupport:
     case Mismatch(catalogDay: LocalDate, filename: String, archiveDay: LocalDate, stem: String)
 
   def gather(
-    session: Session,
-    album: Catalog.Album
+      session: Session,
+      album: Catalog.Album
   ): (Session, Seq[(LocalDate, String, String)], Seq[NonHit]) =
     album.items.foldLeft(
       (session, Seq.empty[(LocalDate, String, String)], Seq.empty[NonHit])
@@ -110,8 +115,7 @@ private[photo] object AgentSupport:
                   loadGrouped(daySession, civilDay(daySession.root, neighbor))
                 val hitStem: Option[String] = resolve(neighborGrouped.toMap, stem, extension)
                 (loaded, hitStem.fold(soFar)(local => soFar :+ (neighbor, local)))
-              if found.isEmpty then
-                (after, matched, nonHits :+ NonHit.Miss(Some(date), item.filename, item.key))
+              if found.isEmpty then (after, matched, nonHits :+ NonHit.Miss(Some(date), item.filename, item.key))
               else
                 val mismatches: Seq[NonHit] = found.map: (archiveDay, local) =>
                   NonHit.Mismatch(date, item.filename, archiveDay, local)
@@ -120,12 +124,13 @@ private[photo] object AgentSupport:
   def parseSpan(text: String): Title.Span =
     Title.parse(text) match
       case Some(Title.Parsed(Some(span), None)) => span
-      case _ => throw IllegalArgumentException("not a span")
+      case _                                    => throw IllegalArgumentException("not a span")
 
   def picturePath(path: String): (LocalDate, String) =
     try Album.splitPath(path)
-    catch case _: DateTimeException =>
-      throw IllegalArgumentException(s"not a picture path: $path")
+    catch
+      case _: DateTimeException =>
+        throw IllegalArgumentException(s"not a picture path: $path")
 
   def eachDay(span: Title.Span): List[LocalDate] =
     Iterator.iterate(span.start)(_.plusDays(1)).takeWhile(day => !day.isAfter(span.end)).toList
@@ -144,23 +149,25 @@ private[photo] object AgentSupport:
         if file.isFile then Metadata.read(file) else Metadata.default
 
   def metadataValue(metadata: Metadata): Json =
-    Json.Obj(Seq(
-      metadata.source.map(value => "source" -> Json.Str(value)),
-      metadata.timestamp.map(value => "timestamp" -> Json.Str(value)),
-      metadata.date.map(date => "date" -> Json.Str(date.toString)),
-      metadata.`bad-raw`.map(value => "bad-raw" -> Json.Bool(value)),
-      metadata.orientation.map(value => "orientation" -> Json.Str(value)),
-      metadata.`google-media-item-id`.map(value => "google-media-item-id" -> Json.Str(value)),
-      metadata.`already-in-google`.map(value => "already-in-google" -> Json.Bool(value)),
-      metadata.uploader.map(value => "uploader" -> Json.Str(value))
-    ).flatten)
+    Json.Obj(
+      Seq(
+        metadata.source.map(value => "source" -> Json.Str(value)),
+        metadata.timestamp.map(value => "timestamp" -> Json.Str(value)),
+        metadata.date.map(date => "date" -> Json.Str(date.toString)),
+        metadata.`bad-raw`.map(value => "bad-raw" -> Json.Bool(value)),
+        metadata.orientation.map(value => "orientation" -> Json.Str(value)),
+        metadata.`google-media-item-id`.map(value => "google-media-item-id" -> Json.Str(value)),
+        metadata.`already-in-google`.map(value => "already-in-google" -> Json.Bool(value)),
+        metadata.uploader.map(value => "uploader" -> Json.Str(value))
+      ).flatten
+    )
 
   // readSidecars parses TOML on a miss and on a grouped hit that never stored it.
   // A hit that already has the map does not list the day again.
   def loadGrouped(
-    session: Session,
-    day: Day,
-    readSidecars: Boolean = false
+      session: Session,
+      day: Day,
+      readSidecars: Boolean = false
   ): (Session, Seq[(String, Set[String])], Map[String, Metadata]) =
     if !day.directory.isDirectory then (session, Seq.empty, Map.empty)
     else
@@ -187,31 +194,33 @@ private[photo] object AgentSupport:
           (next, grouped, known.getOrElse(Map.empty))
 
   private def sidecarMap(
-    directory: File,
-    grouped: Seq[(String, Set[String])],
-    planned: Seq[Pictures.Planned]
+      directory: File,
+      grouped: Seq[(String, Set[String])],
+      planned: Seq[Pictures.Planned]
   ): Map[String, Metadata] =
     grouped.map(row => row._1 -> sidecar(planned, directory, row._1)).toMap
 
   private[photo] def resolve(
-    grouped: Map[String, Set[String]],
-    stem: String,
-    extension: Option[String]
+      grouped: Map[String, Set[String]],
+      stem: String,
+      extension: Option[String]
   ): Option[String] =
     hit(grouped, stem, extension).orElse:
       val stripped: String = Pictures.dropOnePrefix(stem)
       if stripped == stem then None else hit(grouped, stripped, extension)
 
   private def hit(
-    grouped: Map[String, Set[String]],
-    stem: String,
-    extension: Option[String]
+      grouped: Map[String, Set[String]],
+      stem: String,
+      extension: Option[String]
   ): Option[String] =
-    grouped.get(stem).map: extensions =>
-      val v: String = stem + "v"
-      val useV: Boolean =
-        extension.exists(isVideo) && !extensions.exists(isVideo) && grouped.get(v).exists(_.exists(isVideo))
-      if useV then v else stem
+    grouped
+      .get(stem)
+      .map: extensions =>
+        val v: String = stem + "v"
+        val useV: Boolean =
+          extension.exists(isVideo) && !extensions.exists(isVideo) && grouped.get(v).exists(_.exists(isVideo))
+        if useV then v else stem
 
   private def isVideo(extension: String): Boolean =
     Extension.video.exists(_.name == extension.toLowerCase(java.util.Locale.ROOT))
@@ -224,51 +233,61 @@ private[photo] object AgentSupport:
   private[photo] def showUploader(uploader: Option[String]): String = uploader.getOrElse("-")
 
   private def errorValue(error: Catalog.Error): Json =
-    Json.Obj(Seq(
-      "got" -> Json.Long(error.got),
-      "of" -> Json.Long(error.of),
-      "nameFailures" -> Json.Long(error.nameFailures)
-    ))
+    Json.Obj(
+      Seq(
+        "got" -> Json.Long(error.got),
+        "of" -> Json.Long(error.of),
+        "nameFailures" -> Json.Long(error.nameFailures)
+      )
+    )
 
   private def itemValue(item: Catalog.Item): Json =
-    Json.Obj(Seq(
-      "filename" -> Json.Str(item.filename),
-      "date" -> item.date.fold(Json.Null)(date => Json.Str(date.toString)),
-      "key" -> Json.Str(item.key),
-      "uploader" -> item.uploader.fold(Json.Null)(Json.Str.apply)
-    ))
+    Json.Obj(
+      Seq(
+        "filename" -> Json.Str(item.filename),
+        "date" -> item.date.fold(Json.Null)(date => Json.Str(date.toString)),
+        "key" -> Json.Str(item.key),
+        "uploader" -> item.uploader.fold(Json.Null)(Json.Str.apply)
+      )
+    )
 
   private def unsetValue(unset: Catalog.Unset): Json =
-    Json.Obj(Seq(
-      "date" -> unset.date.fold(Json.Null)(date => Json.Str(date.toString)),
-      "key" -> Json.Str(unset.key),
-      "uploader" -> unset.uploader.fold(Json.Null)(Json.Str.apply)
-    ))
+    Json.Obj(
+      Seq(
+        "date" -> unset.date.fold(Json.Null)(date => Json.Str(date.toString)),
+        "key" -> Json.Str(unset.key),
+        "uploader" -> unset.uploader.fold(Json.Null)(Json.Str.apply)
+      )
+    )
 
   private[photo] def matchValue(
-    album: Catalog.Album,
-    hits: Seq[(LocalDate, String)],
-    misses: Seq[String],
-    mismatches: Seq[NonHit.Mismatch]
+      album: Catalog.Album,
+      hits: Seq[(LocalDate, String)],
+      misses: Seq[String],
+      mismatches: Seq[NonHit.Mismatch]
   ): Json =
-    Json.Obj(Seq(
-      "id" -> Json.Str(album.id),
-      "matched" -> Json.Arr(hits.map: (day, stem) =>
-        Json.Obj(Seq(
-          "day" -> Json.Str(Title.dayText(day)),
-          "stem" -> Json.Str(stem)
-        ))
-      ),
-      "unmatched" -> Json.Arr(misses.map(Json.Str.apply)),
-      "dateMismatches" -> Json.Arr(mismatches.map: mismatch =>
-        Json.Obj(Seq(
-          "catalogDay" -> Json.Str(Title.dayText(mismatch.catalogDay)),
-          "filename" -> Json.Str(mismatch.filename),
-          "archiveDay" -> Json.Str(Title.dayText(mismatch.archiveDay)),
-          "stem" -> Json.Str(mismatch.stem)
-        ))
+    Json.Obj(
+      Seq(
+        "id" -> Json.Str(album.id),
+        "matched" -> Json.Arr(hits.map: (day, stem) =>
+          Json.Obj(
+            Seq(
+              "day" -> Json.Str(Title.dayText(day)),
+              "stem" -> Json.Str(stem)
+            )
+          )),
+        "unmatched" -> Json.Arr(misses.map(Json.Str.apply)),
+        "dateMismatches" -> Json.Arr(mismatches.map: mismatch =>
+          Json.Obj(
+            Seq(
+              "catalogDay" -> Json.Str(Title.dayText(mismatch.catalogDay)),
+              "filename" -> Json.Str(mismatch.filename),
+              "archiveDay" -> Json.Str(Title.dayText(mismatch.archiveDay)),
+              "stem" -> Json.Str(mismatch.stem)
+            )
+          ))
       )
-    ))
+    )
 
   private[photo] def withLock(session: Session, title: String)(body: => (Session, Result)): (Session, Result) =
     val places: Refresh.Places = Refresh.placesOf()
@@ -285,8 +304,8 @@ private[photo] object AgentSupport:
         finally Refresh.release(channel, lock)
 
   private[photo] def scanDays(
-    session: Session,
-    days: Seq[LocalDate]
+      session: Session,
+      days: Seq[LocalDate]
   ): (Session, Map[LocalDate, Set[String]]) =
     days.foldLeft((session, Map.empty[LocalDate, Set[String]])): (acc, date) =>
       val (current, soFar) = acc

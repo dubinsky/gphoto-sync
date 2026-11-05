@@ -19,8 +19,8 @@ trait Pictures extends Directory:
     Pictures.group(Files.listFiles(directory), names)
 
   private def mkPicture(
-    name: String,
-    extensions: Set[String]
+      name: String,
+      extensions: Set[String]
   ): Picture =
     val nameFull: String = s"$this/$name"
 
@@ -38,11 +38,11 @@ trait Pictures extends Directory:
       this,
       name,
       hasMetadata = extensions.contains(Metadata.extension),
-      normal      = noMoreThanOne(Extension.normal   , "normal"   ),
-      raw         = noMoreThanOne(Extension.raw      , "raw"      ),
-      image       = noMoreThanOne(Extension.image    , "image"    ),
-      thumbnail   = noMoreThanOne(Extension.thumbnail, "thumbnail"),
-      aux         = noMoreThanOne(Extension.aux      , "aux"      )
+      normal = noMoreThanOne(Extension.normal, "normal"),
+      raw = noMoreThanOne(Extension.raw, "raw"),
+      image = noMoreThanOne(Extension.image, "image"),
+      thumbnail = noMoreThanOne(Extension.thumbnail, "thumbnail"),
+      aux = noMoreThanOne(Extension.aux, "aux")
     )
 
 enum NameMode:
@@ -51,12 +51,12 @@ enum NameMode:
 object Pictures:
   // One planned rename. Publish reads the same rows group enacts.
   private[photo] final case class Planned(
-    file: File,
-    stem: String,
-    extension: String,
-    omitted: Boolean,
-    renameRefused: Boolean,
-    notRenamed: Option[String]
+      file: File,
+      stem: String,
+      extension: String,
+      omitted: Boolean,
+      renameRefused: Boolean,
+      notRenamed: Option[String]
   ):
     def finalName: String = s"$stem.$extension"
 
@@ -140,10 +140,13 @@ object Pictures:
       if stillAndVideo && videoExtensions.contains(row.extension) then row.copy(stem = row.stem + "v") else row
 
   private def decide(rows: Seq[Planned]): Seq[Planned] =
-    rows.groupBy(_.stem).toSeq.flatMap: (stem, stemRows) =>
-      // A non-digit stem is returned and not renamed. lsd still rejects it.
-      if stem.isEmpty || !stem.head.isDigit then stemRows.map(_.copy(renameRefused = true))
-      else digitStem(stem, stemRows)
+    rows
+      .groupBy(_.stem)
+      .toSeq
+      .flatMap: (stem, stemRows) =>
+        // A non-digit stem is returned and not renamed. lsd still rejects it.
+        if stem.isEmpty || !stem.head.isDigit then stemRows.map(_.copy(renameRefused = true))
+        else digitStem(stem, stemRows)
 
   private def digitStem(stem: String, rows: Seq[Planned]): Seq[Planned] =
     markNoPicture(stem, markFreeze(stem, markSecondNormal(stem, markCollisions(rows))))
@@ -154,13 +157,14 @@ object Pictures:
       val same: Seq[Planned] = byExtension(row.extension)
       val decided: Planned =
         if same.size < 2 then row
-        else same.find(_.literal) match
-          case Some(kept) if kept.file eq row.file => row
-          case Some(_) =>
-            row.copy(omitted = true, notRenamed = Some(s"${row.finalName} already exists"))
-          case None =>
-            val others: String = same.filterNot(_.file eq row.file).map(_.file.getName).sorted.mkString(", ")
-            row.copy(omitted = true, notRenamed = Some(s"${row.finalName} collides with $others"))
+        else
+          same.find(_.literal) match
+            case Some(kept) if kept.file eq row.file => row
+            case Some(_)                             =>
+              row.copy(omitted = true, notRenamed = Some(s"${row.finalName} already exists"))
+            case None =>
+              val others: String = same.filterNot(_.file eq row.file).map(_.file.getName).sorted.mkString(", ")
+              row.copy(omitted = true, notRenamed = Some(s"${row.finalName} collides with $others"))
       // The name can belong to a row that is leaving. Do not move onto it.
       val destination: File = File(decided.file.getParentFile, decided.finalName)
       if decided.omitted || decided.literal || destination.getPath == decided.file.getPath || !destination.exists
@@ -186,9 +190,10 @@ object Pictures:
     val normals: Seq[Planned] = rows.filter(row => normalExtensions.contains(row.extension))
     val blocked: Boolean = normals.exists(_.omitted) || normals.count(row => !row.omitted) >= 2
     if !blocked then rows
-    else rows.map: row =>
-      if row.omitted || row.literal then row
-      else row.copy(omitted = true, notRenamed = Some(s"$stem is not one normal picture"))
+    else
+      rows.map: row =>
+        if row.omitted || row.literal then row
+        else row.copy(omitted = true, notRenamed = Some(s"$stem is not one normal picture"))
 
   private def markNoPicture(stem: String, rows: Seq[Planned]): Seq[Planned] =
     val returned: Seq[Planned] = rows.filterNot(_.omitted)
@@ -197,9 +202,10 @@ object Pictures:
         rawExtensions.contains(row.extension) ||
         imageExtensions.contains(row.extension)
     if pictured then rows
-    else rows.map: row =>
-      if row.omitted || !orphanExtensions.contains(row.extension) then row
-      else row.copy(omitted = true, notRenamed = Some(s"$stem has no picture file"))
+    else
+      rows.map: row =>
+        if row.omitted || !orphanExtensions.contains(row.extension) then row
+        else row.copy(omitted = true, notRenamed = Some(s"$stem has no picture file"))
 
   // Source-filename order keeps a dry-run stable. One refusal does not stop the rest of the day.
   private def enact(rows: Seq[Planned], names: NameMode): Unit =

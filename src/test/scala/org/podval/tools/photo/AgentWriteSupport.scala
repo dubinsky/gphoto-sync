@@ -18,7 +18,6 @@ private[photo] trait AgentWriteSupport extends Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-
   private[photo] def writeFixture(archive: File): Unit =
     writeCatalog(
       archive,
@@ -46,19 +45,16 @@ private[photo] trait AgentWriteSupport extends Matchers:
       "unset\talbUnset\t2010-07-09\tkeyUnset\t-"
     )
 
-
   private[photo] def usage(session: Session, args: String*): String =
     exec(session, args*)._2 match
       case Result.Usage(message) => message
-      case other => fail(other.toString)
-
+      case other                 => fail(other.toString)
 
   private[photo] def field(value: Json, name: String): Json = value match
     case Json.Obj(fields) =>
       fields.find(_._1 == name).map(_._2).getOrElse(fail(s"missing $name in $value"))
     case other =>
       fail(other.toString)
-
 
   private[photo] def exec(session: Session, args: String*): (Session, Result) =
     Cli.parse(args.toList) match
@@ -67,15 +63,12 @@ private[photo] trait AgentWriteSupport extends Matchers:
       case other =>
         fail(other.toString)
 
-
   private[photo] def sessionFor(archive: File): Session = Session(rootFor(archive))
-
 
   private def rootFor(archive: File): Root =
     val home: File = File(System.getProperty("user.home"))
     val rootPath: String = home.toPath.relativize(archive.toPath).toString
     Root(Configuration(rootPath, zone))
-
 
   private[photo] def writeCatalog(archive: File, lines: String*): File =
     val directory: File = File(archive, ".gphoto-sync")
@@ -84,14 +77,11 @@ private[photo] trait AgentWriteSupport extends Matchers:
     JFiles.writeString(file.toPath, (Seq("# gphoto-catalog 2") ++ lines).mkString("", "\n", "\n"))
     file
 
-
   private[photo] def touch(directory: File, name: String): Unit =
     directory.mkdirs()
     JFiles.write(File(directory, name).toPath, Array.emptyByteArray)
 
-
   private[photo] def requests(archive: File): File = File(archive, ".gphoto-sync/requests.tsv")
-
 
   private[photo] def tomls(file: File): Seq[String] =
     if !file.exists then Seq.empty
@@ -99,12 +89,10 @@ private[photo] trait AgentWriteSupport extends Matchers:
     else if file.getName.endsWith(".toml") then Seq(file.getPath)
     else Seq.empty
 
-
   private[photo] def withArchive(body: File => Unit): Unit =
     val archive: File = JFiles.createTempDirectory("agent-write").toFile
     try body(archive)
     finally deleteTree(archive)
-
 
   private[photo] def deleteTree(file: File): Unit =
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))

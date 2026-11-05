@@ -18,7 +18,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "item set date" should "store ISO, move every extension, and prune" in :
+  "item set date" should "store ISO, move every extension, and prune" in:
     withOriginals: archive =>
       val bytes: Array[Byte] = jpegBytes
       val day: File = File(archive, "2010/07/04")
@@ -32,10 +32,10 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       text.linesIterator.count(_ == "moving /2010/07/04/2412 to /2010/08/01") shouldBe 1
       text should not include ("WRONG NAME")
       text should not include ("NOT RENAMED")
-      text should include (s"moving ${File(root, "2010/07/04/2412.jpg")} to ")
-      text should include (s"moving ${File(root, "2010/07/04/2412.cr2")} to ")
-      text should include ("/2010/08/01/2412: writing metadata file")
-      text should include ("date = 2010-08-01")
+      text should include(s"moving ${File(root, "2010/07/04/2412.jpg")} to ")
+      text should include(s"moving ${File(root, "2010/07/04/2412.cr2")} to ")
+      text should include("/2010/08/01/2412: writing metadata file")
+      text should include("date = 2010-08-01")
       jpg.exists shouldBe false
       raw.exists shouldBe false
       day.exists shouldBe false
@@ -47,7 +47,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         Metadata(date = Some(LocalDate.parse("2010-08-01")))
       value shouldBe setValue(false, "2010/08/01/2412", "date", Json.Str("2010-08-01"), Json.Str("2010/08/01/2412"))
 
-  it should "accept an ISO day and keep the other sidecar keys" in :
+  it should "accept an ISO day and keep the other sidecar keys" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       Files.write(
@@ -63,7 +63,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       Files.read(sidecar) shouldBe Metadata.encode(metadata)
       value shouldBe setValue(false, "2010/08/01/2412", "date", Json.Str("2010-08-01"), Json.Str("2010/08/01/2412"))
 
-  it should "stop the empty climb at the archive root" in :
+  it should "stop the empty climb at the archive root" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       ok(archive, "item", "set", "date=2011/01/02", "2010/07/04/2412")
@@ -72,7 +72,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       archive.isDirectory shouldBe true
       archive.getParentFile.isDirectory shouldBe true
 
-  it should "keep a directory that still holds an album file" in :
+  it should "keep a directory that still holds an album file" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       write(archive, "2010/07/album.toml", "include = []\n")
@@ -81,7 +81,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/album.toml").isFile shouldBe true
       File(archive, "2010").isDirectory shouldBe true
 
-  it should "fail closed when a claiming dated album does not contain the new day" in :
+  it should "fail closed when a claiming dated album does not contain the new day" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       picture(File(archive, "2011/02/03"), "IMG_9.JPG", jpegBytes)
@@ -97,7 +97,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       snapshot(archive) shouldBe before
       File(archive, "2010/08").exists shouldBe false
 
-  it should "rewrite a stem-specific include inside the span" in :
+  it should "rewrite a stem-specific include inside the span" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val file: File = write(archive, "2010/07/album.toml", "include = [\n  '2010/07/04 2412',\n]\n")
@@ -105,9 +105,9 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       val album: Album = Album.read(archive, file)
       album.claims(LocalDate.of(2010, 7, 5), "2412") shouldBe true
       album.claims(LocalDate.of(2010, 7, 4), "2412") shouldBe false
-      Files.read(file) should include ("2010/07/05 2412")
+      Files.read(file) should include("2010/07/05 2412")
 
-  it should "keep day lines for a month of five stems" in :
+  it should "keep day lines for a month of five stems" in:
     withOriginals: archive =>
       val day: File = File(archive, "2010/07/04")
       val bytes: Array[Byte] = jpegBytes
@@ -123,7 +123,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/05/2412.jpg").isFile shouldBe true
       File(archive, "2010/07/04/2410.jpg").isFile shouldBe true
 
-  it should "leave an all-only file unchanged" in :
+  it should "leave an all-only file unchanged" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val file: File = write(archive, "2010/07/album.toml", "include = [\n  'all',\n]\n")
@@ -133,7 +133,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/05/2412.jpg").isFile shouldBe true
       Album.read(archive, file).claims(LocalDate.of(2010, 7, 5), "2412") shouldBe true
 
-  it should "keep an all line byte-for-byte beside a rewritten stem" in :
+  it should "keep an all line byte-for-byte beside a rewritten stem" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val file: File = write(
@@ -143,12 +143,12 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       )
       ok(archive, "item", "set", "date=2010/07/05", "2010/07/04/2412")
       val text: String = Files.read(file)
-      text should startWith ("# keep\n")
-      text should include ("  'all',\n")
+      text should startWith("# keep\n")
+      text should include("  'all',\n")
       text should not include ("2010/07/04 2412")
-      text should include ("2010/07/05 2412")
+      text should include("2010/07/05 2412")
 
-  it should "keep a whole-day line byte-for-byte beside a rewritten stem" in :
+  it should "keep a whole-day line byte-for-byte beside a rewritten stem" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val file: File = write(
@@ -158,22 +158,22 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       )
       ok(archive, "item", "set", "date=2010/07/05", "2010/07/04/2412")
       val text: String = Files.read(file)
-      text should include ("  '2010/07/04',\n")
+      text should include("  '2010/07/04',\n")
       text should not include ("2010/07/04 2412")
-      text should include ("2010/07/05 2412")
+      text should include("2010/07/05 2412")
 
-  it should "rewrite a curated include" in :
+  it should "rewrite a curated include" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val file: File = write(archive, "Best.toml", "# keep\ninclude = [\n  '2010/07/04 2412',\n]\n")
       ok(archive, "item", "set", "date=2010/08/01", "2010/07/04/2412")
       val text: String = Files.read(file)
-      text should startWith ("# keep\n")
-      text should include ("2010/08/01 2412")
+      text should startWith("# keep\n")
+      text should include("2010/08/01 2412")
       text should not include ("2010/07/04 2412")
       Album.read(archive, file).claims(LocalDate.of(2010, 8, 1), "2412") shouldBe true
 
-  "item set" should "leave the files where they are for every key but a new date" in :
+  "item set" should "leave the files where they are for every key but a new date" in:
     withOriginals: archive =>
       val jpg: File = picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val (sameText, sameValue) = ok(archive, "item", "set", "date=2010-07-04", "2010/07/04/2412")
@@ -181,7 +181,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       jpg.isFile shouldBe true
       sameValue shouldBe setValue(false, "2010/07/04/2412", "date", Json.Str("2010-07-04"), Json.Null)
       val (cleared, clearValue) = ok(archive, "item", "set", "date=", "2010/07/04/2412")
-      cleared should include ("deleting metadata file")
+      cleared should include("deleting metadata file")
       cleared should not include ("moving ")
       jpg.isFile shouldBe true
       File(archive, "2010/07/04/2412.toml").exists shouldBe false
@@ -189,7 +189,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       val (sourceText, sourceValue) = ok(archive, "item", "set", "source=scan", "2010/07/04/2412")
       jpg.isFile shouldBe true
       File(archive, "2010/08").exists shouldBe false
-      sourceText should include ("writing metadata file")
+      sourceText should include("writing metadata file")
       sourceText should not include ("moving ")
       Files.read(File(archive, "2010/07/04/2412.toml")) shouldBe Metadata.encode(Metadata(source = Some("scan")))
       sourceValue shouldBe setValue(false, "2010/07/04/2412", "source", Json.Str("scan"), Json.Null)
@@ -198,13 +198,13 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       jpg.isFile shouldBe true
       Metadata.read(File(archive, "2010/07/04/2412.toml")).timestamp shouldBe Some("2011-06-29T09:45:00")
 
-  it should "write nothing on --dry-run" in :
+  it should "write nothing on --dry-run" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
       val (drySource, sourceValue) = ok(archive, "item", "set", "--dry-run", "source=scan", "2010/07/04/2412")
-      drySource should include ("writing metadata file")
-      drySource should include ("source = \"scan\"")
+      drySource should include("writing metadata file")
+      drySource should include("source = \"scan\"")
       snapshot(archive) shouldBe before
       sourceValue shouldBe setValue(true, "2010/07/04/2412", "source", Json.Str("scan"), Json.Null)
       Files.write(
@@ -213,11 +213,11 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       )
       val withSidecar: Map[String, (Seq[Byte], Long)] = snapshot(archive)
       val (dryClear, clearValue) = ok(archive, "item", "set", "--dry-run", "date=", "2010/07/04/2412")
-      dryClear should include ("deleting metadata file")
+      dryClear should include("deleting metadata file")
       snapshot(archive) shouldBe withSidecar
       clearValue shouldBe setValue(true, "2010/07/04/2412", "date", Json.Null, Json.Null)
       val (drySame, sameValue) = ok(archive, "item", "set", "--dry-run", "date=2010-07-04", "2010/07/04/2412")
-      drySame should include ("writing metadata file")
+      drySame should include("writing metadata file")
       drySame should not include ("moving ")
       snapshot(archive) shouldBe withSidecar
       sameValue shouldBe setValue(true, "2010/07/04/2412", "date", Json.Str("2010-07-04"), Json.Null)
@@ -227,7 +227,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/08").exists shouldBe false
       moveValue shouldBe setValue(true, "2010/07/04/2412", "date", Json.Str("2010-08-01"), Json.Null)
 
-  it should "return the success object on the serve envelope" in :
+  it should "return the success object on the serve envelope" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val session: Session = sessionFor(archive)
@@ -243,18 +243,18 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         case Left(problem) =>
           fail(problem.message)
 
-  it should "reject a bad date, an unknown property, a taken destination, and a non-date path" in :
+  it should "reject a bad date, an unknown property, a taken destination, and a non-date path" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       Cli.parse(List("item", "set", "date=2010/13/01", "2010/07/04/2412")) match
         case Cli.Run(_) => ()
-        case other => fail(other.toString)
+        case other      => fail(other.toString)
       usage(archive, "item", "set", "date=2010/13/01", "2010/07/04/2412") shouldBe "invalid date '2010/13/01'"
       usage(archive, "item", "set", "date=2010/7/4", "2010/07/04/2412") shouldBe "invalid date '2010/7/4'"
       usage(archive, "item", "set", "nope", "2010/07/04/2412") shouldBe "unknown property 'nope'"
       val notPicture: String = usage(archive, "item", "set", "nope", "2010")
       notPicture should not be "unknown property 'nope'"
-      notPicture should include ("not a picture")
+      notPicture should include("not a picture")
       picture(File(archive, "2010/08/01"), "2412.jpg", jpegBytes)
       usage(archive, "item", "set", "date=2010/08/01", "2010/07/04/2412") shouldBe "destination exists: 2010/08/01/2412"
       File(archive, "2010/07/04/2412.jpg").isFile shouldBe true
@@ -264,7 +264,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       upload.isDirectory shouldBe true
       File(upload, "2412.jpg").isFile shouldBe true
 
-  "item show" should "print the sidecar, the civil clock, and the claiming titles" in :
+  "item show" should "print the sidecar, the civil clock, and the claiming titles" in:
     withOriginals: archive =>
       val bytes: Array[Byte] = jpegBytes
       val day: File = File(archive, "2010/07/04")
@@ -279,72 +279,83 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       val (text, value) = ok(archive, "item", "show", "2010/07/04/2412")
       val lines: Seq[String] = text.linesIterator.toSeq
       lines.head shouldBe "/2010/07/04/2412"
-      lines should contain ("extensions: cr2+jpg")
-      lines should contain ("sidecar: source=scan, date=2010-07-04")
-      lines should contain ("folder-day: 2010-07-04")
+      lines should contain("extensions: cr2+jpg")
+      lines should contain("sidecar: source=scan, date=2010-07-04")
+      lines should contain("folder-day: 2010-07-04")
       lines.exists(_.startsWith("assessed: 2010-07-04")) shouldBe true
       lines.exists(_.contains("source=SidecarDate")) shouldBe true
       lines.exists(_.contains("SidecarTimestamp")) shouldBe false
-      lines should contain ("albums: 2010/07,Best")
-      value shouldBe Json.Obj(Seq(
-        "path" -> Json.Str("2010/07/04/2412"),
-        "extensions" -> Json.Arr(Seq(Json.Str("cr2"), Json.Str("jpg"))),
-        "sidecar" -> Json.Obj(Seq(
-          "source" -> Json.Str("scan"),
-          "date" -> Json.Str("2010-07-04")
-        )),
-        "folderDay" -> Json.Str("2010-07-04"),
-        "assessed" -> lines.find(_.startsWith("assessed: ")).get.stripPrefix("assessed: ").takeWhile(_ != ' ').pipe(Json.Str(_)),
-        "albums" -> Json.Arr(Seq(Json.Str("2010/07"), Json.Str("Best")))
-      ))
+      lines should contain("albums: 2010/07,Best")
+      value shouldBe Json.Obj(
+        Seq(
+          "path" -> Json.Str("2010/07/04/2412"),
+          "extensions" -> Json.Arr(Seq(Json.Str("cr2"), Json.Str("jpg"))),
+          "sidecar" -> Json.Obj(
+            Seq(
+              "source" -> Json.Str("scan"),
+              "date" -> Json.Str("2010-07-04")
+            )
+          ),
+          "folderDay" -> Json.Str("2010-07-04"),
+          "assessed" -> lines
+            .find(_.startsWith("assessed: "))
+            .get
+            .stripPrefix("assessed: ")
+            .takeWhile(_ != ' ')
+            .pipe(Json.Str(_)),
+          "albums" -> Json.Arr(Seq(Json.Str("2010/07"), Json.Str("Best")))
+        )
+      )
 
-  it should "use SidecarTimestamp when timestamp and date agree" in :
+  it should "use SidecarTimestamp when timestamp and date agree" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       Files.write(
-        Metadata.encode(Metadata(
-          timestamp = Some("2010-07-04T15:30:00"),
-          date = Some(LocalDate.parse("2010-07-04"))
-        )),
+        Metadata.encode(
+          Metadata(
+            timestamp = Some("2010-07-04T15:30:00"),
+            date = Some(LocalDate.parse("2010-07-04"))
+          )
+        ),
         File(archive, "2010/07/04/2412.toml")
       )
       val (text, _) = ok(archive, "item", "show", "2010/07/04/2412")
-      text should include ("source=SidecarTimestamp")
+      text should include("source=SidecarTimestamp")
       text should not include ("SidecarDate")
-      text should include ("2010-07-04")
+      text should include("2010-07-04")
 
-  it should "print a dash when the picture has no sidecar and no assessed time" in :
+  it should "print a dash when the picture has no sidecar and no assessed time" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val (text, value) = ok(archive, "item", "show", "2010/07/04/2412")
-      text should include ("sidecar: -")
-      text should include ("assessed: -")
-      text should include ("albums: -")
+      text should include("sidecar: -")
+      text should include("assessed: -")
+      text should include("albums: -")
       value match
         case Json.Obj(fields) =>
-          fields should contain ("sidecar" -> Json.Obj(Seq.empty))
-          fields should contain ("assessed" -> Json.Null)
-          fields should contain ("albums" -> Json.Arr(Seq.empty))
-          fields should contain ("folderDay" -> Json.Str("2010-07-04"))
+          fields should contain("sidecar" -> Json.Obj(Seq.empty))
+          fields should contain("assessed" -> Json.Null)
+          fields should contain("albums" -> Json.Arr(Seq.empty))
+          fields should contain("folderDay" -> Json.Str("2010-07-04"))
         case other =>
           fail(other.toString)
 
-  it should "show an upload picture without a folder day" in :
+  it should "show an upload picture without a folder day" in:
     withOriginals: archive =>
       picture(File(archive, ".upload"), "2412.jpg", jpegBytes)
       val (text, value) = ok(archive, "item", "show", ".upload/2412")
       text.linesIterator.next() shouldBe "/.upload/2412"
-      text should include ("folder-day: -")
-      text should include ("albums: -")
+      text should include("folder-day: -")
+      text should include("albums: -")
       value match
         case Json.Obj(fields) =>
-          fields should contain ("path" -> Json.Str(".upload/2412"))
-          fields should contain ("folderDay" -> Json.Null)
-          fields should contain ("albums" -> Json.Arr(Seq.empty))
+          fields should contain("path" -> Json.Str(".upload/2412"))
+          fields should contain("folderDay" -> Json.Null)
+          fields should contain("albums" -> Json.Arr(Seq.empty))
         case other =>
           fail(other.toString)
 
-  "item month" should "create YYYY/MM with a per-day line and leave a curated album" in :
+  "item month" should "create YYYY/MM with a per-day line and leave a curated album" in:
     withOriginals: archive =>
       val bytes: Array[Byte] = jpegBytes
       picture(File(archive, "2010/07/04"), "2412.jpg", bytes)
@@ -387,7 +398,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       Files.read(bestFile) shouldBe bestBody
       noRequests(archive)
 
-  it should "print the earlier month before the later one" in :
+  it should "print the earlier month before the later one" in:
     withOriginals: archive =>
       val bytes: Array[Byte] = jpegBytes
       picture(File(archive, "2010/08/02"), "1000.jpg", bytes)
@@ -411,7 +422,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         Seq("2010/08/02 1000")
       noRequests(archive)
 
-  it should "splice an existing external month to all when the picture completes it" in :
+  it should "splice an existing external month to all when the picture completes it" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val file: File = write(archive, "2010/07/album.toml", "external = true\ninclude = []\n")
@@ -424,7 +435,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       album.include.map(Include.logical) shouldBe Seq("all")
       noRequests(archive)
 
-  it should "leave an already claimed picture with an empty transcript" in :
+  it should "leave an already claimed picture with an empty transcript" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val body: String = "include = [\n  'all',\n]\n"
@@ -436,7 +447,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       snapshot(archive) shouldBe before
       Files.read(file) shouldBe body
 
-  it should "write nothing when a picture or an album file cannot be applied" in :
+  it should "write nothing when a picture or an album file cannot be applied" in:
     withClue("repeated"):
       withOriginals: archive =>
         picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
@@ -451,7 +462,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
         val body: String = "include = [\n  'all', ]\n"
         val file: File = write(archive, "2010/07/04/album.toml", body)
-        usage(archive, "item", "month", "2010/07/04/2412") should include (
+        usage(archive, "item", "month", "2010/07/04/2412") should include(
           "include array does not end on its own line"
         )
         Files.read(file) shouldBe body
@@ -461,11 +472,11 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
         val body: String = "nope = true\n"
         val file: File = write(archive, "2010/07/04/album.toml", body)
-        usage(archive, "item", "month", "2010/07/04/2412") should include ("unknown key 'nope'")
+        usage(archive, "item", "month", "2010/07/04/2412") should include("unknown key 'nope'")
         Files.read(file) shouldBe body
         File(archive, "2010/07/album.toml").exists shouldBe false
 
-  "item into" should "add to a curated album and leave the span album" in :
+  "item into" should "add to a curated album and leave the span album" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val monthBody: String = "include = [\n  'all',\n]\n"
@@ -483,7 +494,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       Album.read(archive, best).include.map(Include.logical) shouldBe Seq("2010/07/04 2412")
       noRequests(archive)
 
-  it should "drop other span albums in title order and keep argv order" in :
+  it should "drop other span albums in title order and keep argv order" in:
     withOriginals: archive =>
       val bytes: Array[Byte] = jpegBytes
       picture(File(archive, "2010/07/05"), "1000.jpg", bytes)
@@ -511,7 +522,13 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
           |""".stripMargin
       val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
       val (dryText, dryValue) = ok(
-        archive, "item", "into", "--dry-run", "2010/07", "2010/07/05/1000", "2010/07/04/2412"
+        archive,
+        "item",
+        "into",
+        "--dry-run",
+        "2010/07",
+        "2010/07/05/1000",
+        "2010/07/04/2412"
       )
       dryText shouldBe expected
       dryValue shouldBe placeValue(true, Seq.empty, excluded, included)
@@ -529,7 +546,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       Files.read(best) shouldBe bestBody
       noRequests(archive)
 
-  it should "refuse a picture outside the span and write nothing" in :
+  it should "refuse a picture outside the span and write nothing" in:
     withOriginals: archive =>
       picture(File(archive, "2010/08/01"), "2412.jpg", jpegBytes)
       val body: String = "include = [\n  'all',\n]\n"
@@ -537,7 +554,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       usage(archive, "item", "into", "2010/07", "2010/08/01/2412") shouldBe "2010/08/01/2412 is outside 2010/07"
       Files.read(file) shouldBe body
 
-  it should "refuse a repeated picture and write nothing" in :
+  it should "refuse a repeated picture and write nothing" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val body: String = "include = []\n"
@@ -546,7 +563,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         "repeated picture 2010/07/04/2412"
       Files.read(file) shouldBe body
 
-  it should "print nothing when the album already claims the picture" in :
+  it should "print nothing when the album already claims the picture" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val body: String = "include = [\n  'all',\n]\n"
@@ -559,49 +576,52 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       Files.read(file) shouldBe body
 
   private def placeValue(
-    dryRun: Boolean,
-    created: Seq[String],
-    excluded: Seq[(String, String)],
-    included: Seq[(String, String)]
+      dryRun: Boolean,
+      created: Seq[String],
+      excluded: Seq[(String, String)],
+      included: Seq[(String, String)]
   ): Json =
     def pairs(values: Seq[(String, String)]): Json = Json.Arr(values.map: (title, path) =>
-      Json.Obj(Seq("title" -> Json.Str(title), "path" -> Json.Str(path)))
+      Json.Obj(Seq("title" -> Json.Str(title), "path" -> Json.Str(path))))
+    Json.Obj(
+      Seq(
+        "dryRun" -> Json.Bool(dryRun),
+        "created" -> Json.Arr(created.map(Json.Str(_))),
+        "excluded" -> pairs(excluded),
+        "included" -> pairs(included)
+      )
     )
-    Json.Obj(Seq(
-      "dryRun" -> Json.Bool(dryRun),
-      "created" -> Json.Arr(created.map(Json.Str(_))),
-      "excluded" -> pairs(excluded),
-      "included" -> pairs(included)
-    ))
 
   private def noRequests(archive: File): Unit =
     File(archive, "requests.tsv").exists shouldBe false
     File(archive, ".gphoto-sync/requests.tsv").exists shouldBe false
 
   private def setValue(dryRun: Boolean, path: String, property: String, stored: Json, movedTo: Json): Json =
-    Json.Obj(Seq(
-      "dryRun" -> Json.Bool(dryRun),
-      "path" -> Json.Str(path),
-      "property" -> Json.Str(property),
-      "value" -> stored,
-      "movedTo" -> movedTo
-    ))
+    Json.Obj(
+      Seq(
+        "dryRun" -> Json.Bool(dryRun),
+        "path" -> Json.Str(path),
+        "property" -> Json.Str(property),
+        "value" -> stored,
+        "movedTo" -> movedTo
+      )
+    )
 
   private def ok(archive: File, args: String*): (String, Json) =
     run(archive, args*) match
-      case Result.Ok(text, value) => (text, value)
+      case Result.Ok(text, value)          => (text, value)
       case Result.Failed(text, _, message) => fail(s"$message\n$text")
-      case Result.Usage(message) => fail(message)
+      case Result.Usage(message)           => fail(message)
 
   private def usage(archive: File, args: String*): String =
     run(archive, args*) match
       case Result.Usage(message) => message
-      case other => fail(other.toString)
+      case other                 => fail(other.toString)
 
   private def run(archive: File, args: String*): Result =
     Cli.parse(args.toList) match
       case Cli.Run(parsed) => Cli.toOperation(parsed).execute(sessionFor(archive))._2
-      case other => fail(other.toString)
+      case other           => fail(other.toString)
 
   private def sessionFor(archive: File): Session =
     val home: File = File(System.getProperty("user.home"))
@@ -645,5 +665,4 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
     if file.isDirectory then Option(file.listFiles).foreach(_.foreach(deleteTree))
     file.delete()
 
-  extension (text: String)
-    private def pipe[A](f: String => A): A = f(text)
+  extension (text: String) private def pipe[A](f: String => A): A = f(text)

@@ -17,14 +17,18 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
   private val zone: ZoneId = ZoneId.of("America/New_York")
   private val allFile: String = "include = [\n  'all',\n]\n"
 
-  "album new" should "write all for a span and skip the later days" in :
+  "album new" should "write all for a span and skip the later days" in:
     withOriginals: archive =>
       val (text, value) = ok(archive, "album", "new", "--span", "2010/07/04-18")
       text shouldBe
         """create 2010/07/04-18
           |2010/07/04/to-18.toml
           |""".stripMargin
-      value shouldBe json("dryRun" -> Json.Bool(false), "title" -> Json.Str("2010/07/04-18"), "path" -> Json.Str("2010/07/04/to-18.toml"))
+      value shouldBe json(
+        "dryRun" -> Json.Bool(false),
+        "title" -> Json.Str("2010/07/04-18"),
+        "path" -> Json.Str("2010/07/04/to-18.toml")
+      )
       Files.read(File(archive, "2010/07/04/to-18.toml")) shouldBe "external = false\n" + allFile
       File(archive, "2010/07/05").exists shouldBe false
       File(archive, "2010/07/18").exists shouldBe false
@@ -33,10 +37,14 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
         """create 2010/08
           |2010/08/album.toml
           |""".stripMargin
-      dryValue shouldBe json("dryRun" -> Json.Bool(true), "title" -> Json.Str("2010/08"), "path" -> Json.Str("2010/08/album.toml"))
+      dryValue shouldBe json(
+        "dryRun" -> Json.Bool(true),
+        "title" -> Json.Str("2010/08"),
+        "path" -> Json.Str("2010/08/album.toml")
+      )
       File(archive, "2010/08").exists shouldBe false
 
-  it should "write an empty curated file" in :
+  it should "write an empty curated file" in:
     withOriginals: archive =>
       val (text, value) = ok(archive, "album", "new", "--name", "Best")
       text shouldBe
@@ -70,7 +78,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
         include = Seq.empty
       )
 
-  it should "write both a span and a name, and show an unnamed month" in :
+  it should "write both a span and a name, and show an unnamed month" in:
     withOriginals: archive =>
       ok(archive, "album", "new", "--span", "2010/07", "--name", "Cape Cod")
       Files.read(File(archive, "2010/07/Cape Cod.toml")) shouldBe "external = false\n" + allFile
@@ -79,7 +87,11 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
         """create 2010/08
           |2010/08/album.toml
           |""".stripMargin
-      monthValue shouldBe json("dryRun" -> Json.Bool(false), "title" -> Json.Str("2010/08"), "path" -> Json.Str("2010/08/album.toml"))
+      monthValue shouldBe json(
+        "dryRun" -> Json.Bool(false),
+        "title" -> Json.Str("2010/08"),
+        "path" -> Json.Str("2010/08/album.toml")
+      )
       val (shown, showValue) = ok(archive, "album", "show", "2010/08")
       shown shouldBe
         """path: 2010/08/album.toml
@@ -104,10 +116,10 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       )
       ok(archive, "album", "new", "--span", "2010/07/19")
       val (canonical, _) = ok(archive, "album", "show", "2010/07/19-19")
-      canonical should include ("title: 2010/07/19\n")
-      canonical should include ("path: 2010/07/19/album.toml\n")
+      canonical should include("title: 2010/07/19\n")
+      canonical should include("path: 2010/07/19/album.toml\n")
 
-  it should "leave an existing file unchanged" in :
+  it should "leave an existing file unchanged" in:
     withOriginals: archive =>
       val external: String = "external = true\n"
       val file: File = write(archive, "2010/07/album.toml", external)
@@ -120,7 +132,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       usage(archive, "album", "new", "--span", "Best") shouldBe "not a span: Best"
       usage(archive, "album", "new", "--span", "2010/07/Cape Cod") shouldBe "not a span: 2010/07/Cape Cod"
 
-  "album show" should "print a curated google title and owner" in :
+  "album show" should "print a curated google title and owner" in:
     withOriginals: archive =>
       write(
         archive,
@@ -141,20 +153,22 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
           |include:
           |  2009/03/10 2412
           |""".stripMargin
-      value shouldBe Json.Obj(Seq(
-        "path" -> Json.Str("Best.toml"),
-        "title" -> Json.Str("Best"),
-        "span" -> Json.Null,
-        "name" -> Json.Str("Best"),
-        "external" -> Json.Bool(true),
-        "googleAlbumId" -> Json.Str(""),
-        "publishedTitle" -> Json.Str(""),
-        "googleTitle" -> Json.Str("Best Of"),
-        "owner" -> Json.Str("Ada"),
-        "include" -> Json.Arr(Seq(Json.Str("2009/03/10 2412")))
-      ))
+      value shouldBe Json.Obj(
+        Seq(
+          "path" -> Json.Str("Best.toml"),
+          "title" -> Json.Str("Best"),
+          "span" -> Json.Null,
+          "name" -> Json.Str("Best"),
+          "external" -> Json.Bool(true),
+          "googleAlbumId" -> Json.Str(""),
+          "publishedTitle" -> Json.Str(""),
+          "googleTitle" -> Json.Str("Best Of"),
+          "owner" -> Json.Str("Ada"),
+          "include" -> Json.Arr(Seq(Json.Str("2009/03/10 2412")))
+        )
+      )
 
-  "album ls" should "list matching titles and no paths" in :
+  "album ls" should "list matching titles and no paths" in:
     withOriginals: archive =>
       write(archive, "2010/07/album.toml", allFile)
       write(archive, "Best.toml", "")
@@ -167,7 +181,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       month shouldBe "2010/07\n"
       monthValue shouldBe json("albums" -> Json.Arr(Seq(Json.Str("2010/07"))))
 
-  "album rm" should "refuse an external album and leave the file" in :
+  "album rm" should "refuse an external album and leave the file" in:
     withOriginals: archive =>
       val body: String = "external = true\n"
       val file: File = write(archive, "2010/07/album.toml", body)
@@ -175,7 +189,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       Files.read(file) shouldBe body
       file.isFile shouldBe true
 
-  it should "delete a local album, leave the picture, and prune the empty day" in :
+  it should "delete a local album, leave the picture, and prune the empty day" in:
     withOriginals: archive =>
       val album: File = write(archive, "2010/07/04/album.toml", "external = false\n" + allFile)
       val picture: File = write(archive, "2010/07/05/2412.jpg", "")
@@ -200,7 +214,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       usage(archive, "album", "rm", "Missing") shouldBe "no such album: Missing"
       usage(archive, "album", "rm", "2010/07-07") shouldBe "not an album title: 2010/07-07"
 
-  it should "not remove the archive root" in :
+  it should "not remove the archive root" in:
     withOriginals: archive =>
       write(archive, "Best.toml", "external = false\n")
       val (text, value) = ok(archive, "album", "rm", "Best")
@@ -213,7 +227,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       archive.isDirectory shouldBe true
       File(archive, "Best.toml").exists shouldBe false
 
-  "album mv" should "refuse an external album and an include line outside the new span" in :
+  "album mv" should "refuse an external album and an include line outside the new span" in:
     withOriginals: archive =>
       val external: String = "external = true\n"
       val externalFile: File = write(archive, "Hawaii.toml", external)
@@ -231,7 +245,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       Files.read(all) shouldBe kept
       File(archive, "Best.toml").exists shouldBe false
 
-  it should "move the bytes and keep a comment and google-title" in :
+  it should "move the bytes and keep a comment and google-title" in:
     withOriginals: archive =>
       val body: String = "# keep\nexternal = false\ngoogle-title = \"Kept\"\ninclude = [\n  'all',\n]\n"
       val source: File = write(archive, "2010/07/Cape Cod.toml", body)
@@ -264,7 +278,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       Files.read(File(archive, "2010/08/Cape Cod.toml")) shouldBe body
       archive.isDirectory shouldBe true
 
-  "album include" should "recompress one album and leave the other" in :
+  "album include" should "recompress one album and leave the other" in:
     withOriginals: archive =>
       write(archive, "2010/07/04/2412.jpg", "")
       val month: File = write(archive, "2010/07/album.toml", "include = []\n")
@@ -282,7 +296,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       Files.read(other) shouldBe otherBody
       File(archive, "2010/07/04/2412.jpg").isFile shouldBe true
 
-  it should "refuse a picture outside the span and write nothing" in :
+  it should "refuse a picture outside the span and write nothing" in:
     withOriginals: archive =>
       write(archive, "2010/08/01/2412.jpg", "")
       val body: String = allFile
@@ -290,7 +304,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       usage(archive, "album", "include", "2010/07", "2010/08/01/2412") shouldBe "2010/08/01/2412 is outside 2010/07"
       Files.read(file) shouldBe body
 
-  it should "succeed with an empty transcript when the claim does not change" in :
+  it should "succeed with an empty transcript when the claim does not change" in:
     withOriginals: archive =>
       write(archive, "2010/07/04/1000.jpg", "")
       write(archive, "2010/07/04/2412.jpg", "")
@@ -308,7 +322,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
         "repeated picture 2010/07/04/2412"
       Files.read(file) shouldBe body
 
-  it should "edit a curated album without a day check" in :
+  it should "edit a curated album without a day check" in:
     withOriginals: archive =>
       write(archive, "2010/08/01/2412.jpg", "")
       val file: File = write(archive, "Best.toml", "")
@@ -317,7 +331,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       value shouldBe editValue(false, "Best", Seq("2010/08/01 2412"), Seq("2010/08/01/2412"))
       Album.read(archive, file).include.map(Include.logical) shouldBe Seq("2010/08/01 2412")
 
-  it should "keep the other day when an excepted stem is included back" in :
+  it should "keep the other day when an excepted stem is included back" in:
     withOriginals: archive =>
       write(archive, "2010/07/04/1000.jpg", "")
       write(archive, "2010/07/04/1001.jpg", "")
@@ -331,7 +345,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       album.claims(LocalDate.of(2010, 7, 4), "1001") shouldBe true
       album.claims(LocalDate.of(2010, 7, 5), "1000") shouldBe true
 
-  it should "keep the other day of a multi-day line" in :
+  it should "keep the other day of a multi-day line" in:
     withOriginals: archive =>
       write(archive, "2010/07/04/1000.jpg", "")
       write(archive, "2010/07/04/2412.jpg", "")
@@ -345,7 +359,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       album.claims(LocalDate.of(2010, 7, 5), "1000") shouldBe true
       value shouldBe editValue(false, "2010/07", album.include.map(Include.logical), Seq("2010/07/04/2412"))
 
-  it should "not turn a touched subset into all while another line remains" in :
+  it should "not turn a touched subset into all while another line remains" in:
     withOriginals: archive =>
       write(archive, "2010/07/04/1000.jpg", "")
       write(archive, "2010/07/04/2412.jpg", "")
@@ -357,31 +371,31 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       val album: Album = Album.read(archive, file)
       val logical: Seq[String] = album.include.map(Include.logical)
       logical.exists(_.startsWith("all")) shouldBe false
-      logical should contain ("2010/07/06 2000")
+      logical should contain("2010/07/06 2000")
       album.claims(LocalDate.of(2010, 7, 4), "2412") shouldBe true
       album.claims(LocalDate.of(2010, 7, 5), "1000") shouldBe true
       album.claims(LocalDate.of(2010, 7, 6), "2000") shouldBe true
 
-  it should "report usage and leave a one-line include array" in :
+  it should "report usage and leave a one-line include array" in:
     withOriginals: archive =>
       write(archive, "2009/03/10/2412.jpg", "")
       write(archive, "2009/03/10/1000.jpg", "")
       val body: String = "include = [\"2009/03/10 2412\", # every picture]\n]\n"
       val file: File = write(archive, "2009/03/album.toml", body)
-      usage(archive, "album", "exclude", "--dry-run", "2009/03", "2009/03/10/2412") should include (
+      usage(archive, "album", "exclude", "--dry-run", "2009/03", "2009/03/10/2412") should include(
         "include array does not end on its own line"
       )
       Files.read(file) shouldBe body
-      usage(archive, "album", "exclude", "2009/03", "2009/03/10/2412") should include (
+      usage(archive, "album", "exclude", "2009/03", "2009/03/10/2412") should include(
         "include array does not end on its own line"
       )
       Files.read(file) shouldBe body
-      usage(archive, "album", "include", "2009/03", "2009/03/10/1000") should include (
+      usage(archive, "album", "include", "2009/03", "2009/03/10/1000") should include(
         "include array does not end on its own line"
       )
       Files.read(file) shouldBe body
 
-  "album claims" should "match today's list text and the claims object" in :
+  "album claims" should "match today's list text and the claims object" in:
     withOriginals: archive =>
       write(archive, "2009/03/10/2412.jpg", "")
       write(archive, "2009/03/11/1000.jpg", "")
@@ -400,27 +414,41 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       listed shouldBe text
       listed shouldBe listText(archive, None)
       ok(archive, "album", "claims", "2009/03/10")._1 shouldBe listText(archive, Some("2009/03/10"))
-      value shouldBe Json.Obj(Seq(
-        "annotations" -> Json.Arr(Seq(Json.Obj(Seq(
-          "title" -> Json.Str("Best"),
-          "googleTitle" -> Json.Str("Best Of"),
-          "owner" -> Json.Null
-        )))),
-        "pictures" -> Json.Arr(Seq(
-          Json.Obj(Seq(
-            "path" -> Json.Str("2009/03/10/2412"),
-            "albums" -> Json.Arr(Seq(Json.Str("Best"))),
-            "excludedOnly" -> Json.Bool(false)
-          )),
-          Json.Obj(Seq(
-            "path" -> Json.Str("2009/03/11/1000"),
-            "albums" -> Json.Arr(Seq.empty),
-            "excludedOnly" -> Json.Bool(true)
-          ))
-        ))
-      ))
+      value shouldBe Json.Obj(
+        Seq(
+          "annotations" -> Json.Arr(
+            Seq(
+              Json.Obj(
+                Seq(
+                  "title" -> Json.Str("Best"),
+                  "googleTitle" -> Json.Str("Best Of"),
+                  "owner" -> Json.Null
+                )
+              )
+            )
+          ),
+          "pictures" -> Json.Arr(
+            Seq(
+              Json.Obj(
+                Seq(
+                  "path" -> Json.Str("2009/03/10/2412"),
+                  "albums" -> Json.Arr(Seq(Json.Str("Best"))),
+                  "excludedOnly" -> Json.Bool(false)
+                )
+              ),
+              Json.Obj(
+                Seq(
+                  "path" -> Json.Str("2009/03/11/1000"),
+                  "albums" -> Json.Arr(Seq.empty),
+                  "excludedOnly" -> Json.Bool(true)
+                )
+              )
+            )
+          )
+        )
+      )
 
-  "album merge" should "keep the earlier file across a year boundary" in :
+  "album merge" should "keep the earlier file across a year boundary" in:
     withOriginals: archive =>
       val body: String =
         """# keep
@@ -462,9 +490,9 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       File(archive, "2010").isDirectory shouldBe true
       val result: File = File(archive, "2010/12/to-2011-01.toml")
       val kept: String = Files.read(result)
-      kept should include ("# keep")
-      kept should include ("google-album-id = \"abc\"")
-      kept should include ("published-title = \"Kept\"")
+      kept should include("# keep")
+      kept should include("google-album-id = \"abc\"")
+      kept should include("published-title = \"Kept\"")
       val album: Album = Album.read(archive, result)
       album.title shouldBe "2010/12-2011/01"
       album.googleAlbumId shouldBe "abc"
@@ -473,7 +501,7 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
       File(archive, "requests.tsv").exists shouldBe false
       File(archive, ".gphoto-sync/requests.tsv").exists shouldBe false
 
-  it should "reject the first failing check and leave both albums" in :
+  it should "reject the first failing check and leave both albums" in:
     val external: String = "external = true\n" + allFile
     val google: String = "external = false\ngoogle-album-id = \"abc\"\n" + allFile
     val client: String = "external = false\n" + allFile
@@ -602,24 +630,26 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
     Option(root.listFiles).toSeq.flatten.flatMap(walk).toMap
 
   private def showJson(
-    path: String,
-    title: String,
-    span: Json,
-    name: Json,
-    external: Boolean,
-    include: Seq[String]
-  ): Json = Json.Obj(Seq(
-    "path" -> Json.Str(path),
-    "title" -> Json.Str(title),
-    "span" -> span,
-    "name" -> name,
-    "external" -> Json.Bool(external),
-    "googleAlbumId" -> Json.Str(""),
-    "publishedTitle" -> Json.Str(""),
-    "googleTitle" -> Json.Str(""),
-    "owner" -> Json.Null,
-    "include" -> Json.Arr(include.map(Json.Str(_)))
-  ))
+      path: String,
+      title: String,
+      span: Json,
+      name: Json,
+      external: Boolean,
+      include: Seq[String]
+  ): Json = Json.Obj(
+    Seq(
+      "path" -> Json.Str(path),
+      "title" -> Json.Str(title),
+      "span" -> span,
+      "name" -> name,
+      "external" -> Json.Bool(external),
+      "googleAlbumId" -> Json.Str(""),
+      "publishedTitle" -> Json.Str(""),
+      "googleTitle" -> Json.Str(""),
+      "owner" -> Json.Null,
+      "include" -> Json.Arr(include.map(Json.Str(_)))
+    )
+  )
 
   private def editValue(dryRun: Boolean, title: String, include: Seq[String], pictures: Seq[String]): Json =
     json(
@@ -641,23 +671,23 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
   private def listText(archive: File, path: Option[String]): String =
     ListAlbums(path).execute(sessionFor(archive))._2 match
       case Result.Ok(text, _) => text
-      case other => fail(other.toString)
+      case other              => fail(other.toString)
 
   private def ok(archive: File, args: String*): (String, Json) =
     run(archive, args*) match
-      case Result.Ok(text, value) => (text, value)
+      case Result.Ok(text, value)          => (text, value)
       case Result.Failed(text, _, message) => fail(s"$message\n$text")
-      case Result.Usage(message) => fail(message)
+      case Result.Usage(message)           => fail(message)
 
   private def usage(archive: File, args: String*): String =
     run(archive, args*) match
       case Result.Usage(message) => message
-      case other => fail(other.toString)
+      case other                 => fail(other.toString)
 
   private def run(archive: File, args: String*): Result =
     Cli.parse(args.toList) match
       case Cli.Run(parsed) => Cli.toOperation(parsed).execute(sessionFor(archive))._2
-      case other => fail(other.toString)
+      case other           => fail(other.toString)
 
   private def sessionFor(archive: File): Session =
     val home: File = File(System.getProperty("user.home"))

@@ -21,11 +21,11 @@ private[photo] object Serve:
   private[photo] final case class Request(id: Option[String], argv: List[String])
   private[photo] final case class Problem(id: Option[String], message: String)
   private[photo] final case class Response(
-    id: Option[String],
-    ok: Boolean,
-    text: Option[String],
-    error: Option[String],
-    archive: String
+      id: Option[String],
+      ok: Boolean,
+      text: Option[String],
+      error: Option[String],
+      archive: String
   )
 
   private[photo] final case class Called(response: Response, value: Json)
@@ -55,24 +55,26 @@ private[photo] object Serve:
     else
       val left: String = skip(line)
       if !left.startsWith("{") then Left(Problem(None, malformed))
-      else fields(left.drop(1), Seen(), Take.Request, allowEmpty = true) match
-        case Walk.Failed(seen) =>
-          Left(Problem(echoed(seen), malformed))
-        case Walk.Done(seen, rest) =>
-          if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
-          else request(seen)
+      else
+        fields(left.drop(1), Seen(), Take.Request, allowEmpty = true) match
+          case Walk.Failed(seen) =>
+            Left(Problem(echoed(seen), malformed))
+          case Walk.Done(seen, rest) =>
+            if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
+            else request(seen)
 
   private[photo] def readResponse(line: String): Either[Problem, Response] =
     if line.forall(_.isWhitespace) then Left(Problem(None, malformed))
     else
       val left: String = skip(line)
       if !left.startsWith("{") then Left(Problem(None, malformed))
-      else fields(left.drop(1), Seen(), Take.Response, allowEmpty = true) match
-        case Walk.Failed(seen) =>
-          Left(Problem(echoed(seen), malformed))
-        case Walk.Done(seen, rest) =>
-          if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
-          else responseOf(seen)
+      else
+        fields(left.drop(1), Seen(), Take.Response, allowEmpty = true) match
+          case Walk.Failed(seen) =>
+            Left(Problem(echoed(seen), malformed))
+          case Walk.Done(seen, rest) =>
+            if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
+            else responseOf(seen)
 
   // Same envelope as readResponse. value is readJson, so nested keys are not envelope keys.
   private[photo] def readValued(line: String): Either[Problem, Called] =
@@ -80,20 +82,21 @@ private[photo] object Serve:
     else
       val left: String = skip(line)
       if !left.startsWith("{") then Left(Problem(None, malformed))
-      else fields(left.drop(1), Seen(), Take.Response, allowEmpty = true, retain = true) match
-        case Walk.Failed(seen) =>
-          Left(Problem(echoed(seen), malformed))
-        case Walk.Done(seen, rest) =>
-          if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
-          else responseOf(seen).map(response => Called(response, seen.json.getOrElse(Json.Null)))
+      else
+        fields(left.drop(1), Seen(), Take.Response, allowEmpty = true, retain = true) match
+          case Walk.Failed(seen) =>
+            Left(Problem(echoed(seen), malformed))
+          case Walk.Done(seen, rest) =>
+            if skip(rest).nonEmpty then Left(Problem(echoed(seen), malformed))
+            else responseOf(seen).map(response => Called(response, seen.json.getOrElse(Json.Null)))
 
   private[photo] def render(
-    id: Option[String],
-    ok: Boolean,
-    text: Option[String],
-    error: Option[String],
-    value: Option[Json],
-    archive: String
+      id: Option[String],
+      ok: Boolean,
+      text: Option[String],
+      error: Option[String],
+      value: Option[Json],
+      archive: String
   ): String =
     val fields: Seq[(String, Json)] =
       id.toSeq.map(text => "id" -> Json.Str(text)) ++
@@ -110,10 +113,10 @@ private[photo] object Serve:
     write(Json.Obj(fields))
 
   private[photo] def write(json: Json): String = json match
-    case Json.Null => "null"
+    case Json.Null        => "null"
     case Json.Bool(value) => value.toString
     case Json.Long(value) => value.toString
-    case Json.Str(value) => quote(value)
+    case Json.Str(value)  => quote(value)
     case Json.Arr(values) => values.map(write).mkString("[", ",", "]")
     case Json.Obj(fields) =>
       fields.map((key, item) => quote(key) + ":" + write(item)).mkString("{", ",", "}")
@@ -121,13 +124,13 @@ private[photo] object Serve:
   private def quote(value: String): String =
     val body: StringBuilder = value.foldLeft(new StringBuilder): (acc, ch) =>
       ch match
-        case '\\' => acc.append("\\\\")
-        case '"' => acc.append("\\\"")
-        case '\b' => acc.append("\\b")
-        case '\f' => acc.append("\\f")
-        case '\n' => acc.append("\\n")
-        case '\r' => acc.append("\\r")
-        case '\t' => acc.append("\\t")
+        case '\\'                 => acc.append("\\\\")
+        case '"'                  => acc.append("\\\"")
+        case '\b'                 => acc.append("\\b")
+        case '\f'                 => acc.append("\\f")
+        case '\n'                 => acc.append("\\n")
+        case '\r'                 => acc.append("\\r")
+        case '\t'                 => acc.append("\\t")
         case other if other < ' ' =>
           acc.append("\\u00")
           acc.append(hexDigit(other.toInt / 16))
@@ -141,21 +144,21 @@ private[photo] object Serve:
 
   // Only a string id and a string argv are kept. Every other JSON value is skipped or rejected.
   private final case class Seen(
-    id: Option[String] = None,
-    ids: Int = 0,
-    argv: Option[List[String]] = None,
-    argvs: Int = 0,
-    ok: Option[Boolean] = None,
-    oks: Int = 0,
-    archive: Option[String] = None,
-    archives: Int = 0,
-    text: Option[String] = None,
-    texts: Int = 0,
-    error: Option[String] = None,
-    errors: Int = 0,
-    values: Int = 0,
-    json: Option[Json] = None,
-    other: Boolean = false
+      id: Option[String] = None,
+      ids: Int = 0,
+      argv: Option[List[String]] = None,
+      argvs: Int = 0,
+      ok: Option[Boolean] = None,
+      oks: Int = 0,
+      archive: Option[String] = None,
+      archives: Int = 0,
+      text: Option[String] = None,
+      texts: Int = 0,
+      error: Option[String] = None,
+      errors: Int = 0,
+      values: Int = 0,
+      json: Option[Json] = None,
+      other: Boolean = false
   )
 
   private enum Take:
@@ -177,9 +180,10 @@ private[photo] object Serve:
     val id: Option[String] = echoed(seen)
     val idOk: Boolean = seen.ids == 0 || id.isDefined
     if seen.other || !idOk || seen.argvs != 1 then Left(Problem(id, malformed))
-    else seen.argv match
-      case Some(argv) => Right(Request(id, argv))
-      case None => Left(Problem(id, malformed))
+    else
+      seen.argv match
+        case Some(argv) => Right(Request(id, argv))
+        case None       => Left(Problem(id, malformed))
 
   private def responseOf(seen: Seen): Either[Problem, Response] =
     val id: Option[String] = echoed(seen)
@@ -188,61 +192,64 @@ private[photo] object Serve:
     val errorOk: Boolean = seen.errors == 0 || seen.error.isDefined
     if seen.other || !idOk || !textOk || !errorOk || seen.oks != 1 || seen.archives != 1 || seen.values > 1 then
       Left(Problem(id, malformed))
-    else (seen.ok, seen.archive) match
-      case (Some(ok), Some(archive)) =>
-        Right(Response(id, ok, seen.text, seen.error, archive))
-      case _ =>
-        Left(Problem(id, malformed))
+    else
+      (seen.ok, seen.archive) match
+        case (Some(ok), Some(archive)) =>
+          Right(Response(id, ok, seen.text, seen.error, archive))
+        case _ =>
+          Left(Problem(id, malformed))
 
   // allowEmpty is true only before the first field, so a trailing comma is not an empty object.
   @tailrec
   private def fields(
-    rest: String,
-    seen: Seen,
-    take: Take,
-    allowEmpty: Boolean,
-    retain: Boolean = false
+      rest: String,
+      seen: Seen,
+      take: Take,
+      allowEmpty: Boolean,
+      retain: Boolean = false
   ): Walk =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("}") then Walk.Done(seen, left.drop(1))
-    else parseKey(left) match
-      case None =>
-        Walk.Failed(seen)
-      case Some((key, afterKey)) =>
-        val afterColon: String = skip(afterKey)
-        if !afterColon.startsWith(":") then Walk.Failed(seen)
-        else accept(key, afterColon.drop(1), seen, take, retain) match
-          case None =>
-            Walk.Failed(seen)
-          case Some((next, afterValue)) =>
-            val more: String = skip(afterValue)
-            if more.startsWith("}") then Walk.Done(next, more.drop(1))
-            else if more.startsWith(",") then fields(more.drop(1), next, take, allowEmpty = false, retain)
-            else Walk.Failed(next)
+    else
+      parseKey(left) match
+        case None =>
+          Walk.Failed(seen)
+        case Some((key, afterKey)) =>
+          val afterColon: String = skip(afterKey)
+          if !afterColon.startsWith(":") then Walk.Failed(seen)
+          else
+            accept(key, afterColon.drop(1), seen, take, retain) match
+              case None =>
+                Walk.Failed(seen)
+              case Some((next, afterValue)) =>
+                val more: String = skip(afterValue)
+                if more.startsWith("}") then Walk.Done(next, more.drop(1))
+                else if more.startsWith(",") then fields(more.drop(1), next, take, allowEmpty = false, retain)
+                else Walk.Failed(next)
 
   private def accept(
-    key: String,
-    rest: String,
-    seen: Seen,
-    take: Take,
-    retain: Boolean
+      key: String,
+      rest: String,
+      seen: Seen,
+      take: Take,
+      retain: Boolean
   ): Option[(Seen, String)] =
     take match
       case Take.Skip =>
         skipValue(rest).map(more => (seen, more))
       case Take.Request =>
         key match
-          case "id" => takeId(rest, seen)
+          case "id"   => takeId(rest, seen)
           case "argv" => takeArgv(rest, seen)
-          case _ => skipValue(rest).map(more => (seen.copy(other = true), more))
+          case _      => skipValue(rest).map(more => (seen.copy(other = true), more))
       case Take.Response =>
         key match
-          case "id" => takeId(rest, seen)
-          case "ok" => takeOk(rest, seen)
+          case "id"      => takeId(rest, seen)
+          case "ok"      => takeOk(rest, seen)
           case "archive" => takeArchive(rest, seen)
-          case "text" => takeOptionalString(rest, seen, error = false)
-          case "error" => takeOptionalString(rest, seen, error = true)
-          case "value" =>
+          case "text"    => takeOptionalString(rest, seen, error = false)
+          case "error"   => takeOptionalString(rest, seen, error = true)
+          case "value"   =>
             if retain then takeJson(rest, seen)
             else skipValue(rest).map(more => (seen.copy(values = seen.values + 1), more))
           case _ => skipValue(rest).map(more => (seen.copy(other = true), more))
@@ -257,7 +264,7 @@ private[photo] object Serve:
     val left: String = skip(rest)
     if left.startsWith("\"") then
       parseString(left.drop(1), "") match
-        case Left(_) => None
+        case Left(_)             => None
         case Right((text, more)) =>
           Some((seen.copy(archive = Some(text), archives = seen.archives + 1), more))
     else skipValue(left).map(more => (seen.copy(archives = seen.archives + 1), more))
@@ -266,7 +273,7 @@ private[photo] object Serve:
     val left: String = skip(rest)
     if left.startsWith("\"") then
       parseString(left.drop(1), "") match
-        case Left(_) => None
+        case Left(_)             => None
         case Right((text, more)) =>
           val next: Seen =
             if error then seen.copy(error = Some(text), errors = seen.errors + 1)
@@ -281,19 +288,20 @@ private[photo] object Serve:
     val left: String = skip(rest)
     if left.startsWith("\"") then
       parseString(left.drop(1), "") match
-        case Left(_) => None
+        case Left(_)             => None
         case Right((text, more)) => Some((seen.copy(id = Some(text), ids = seen.ids + 1), more))
     else skipValue(left).map(more => (seen.copy(ids = seen.ids + 1), more))
 
   private def takeArgv(rest: String, seen: Seen): Option[(Seen, String)] =
     val left: String = skip(rest)
     if !left.startsWith("[") then skipValue(left).map(more => (seen.copy(argvs = seen.argvs + 1), more))
-    else elements(left.drop(1), Nil, mixed = false, allowEmpty = true) match
-      case ArrayRead.Bad => None
-      case ArrayRead.Strings(values, more) =>
-        Some((seen.copy(argv = Some(values), argvs = seen.argvs + 1), more))
-      case ArrayRead.Mixed(more) =>
-        Some((seen.copy(argvs = seen.argvs + 1), more))
+    else
+      elements(left.drop(1), Nil, mixed = false, allowEmpty = true) match
+        case ArrayRead.Bad                   => None
+        case ArrayRead.Strings(values, more) =>
+          Some((seen.copy(argv = Some(values), argvs = seen.argvs + 1), more))
+        case ArrayRead.Mixed(more) =>
+          Some((seen.copy(argvs = seen.argvs + 1), more))
 
   private def takeJson(rest: String, seen: Seen): Option[(Seen, String)] =
     readJson(rest) match
@@ -308,16 +316,16 @@ private[photo] object Serve:
     else if left.startsWith("{") then
       fields(left.drop(1), Seen(), Take.Skip, allowEmpty = true) match
         case Walk.Done(_, more) => Some(more)
-        case Walk.Failed(_) => None
+        case Walk.Failed(_)     => None
     else if left.startsWith("[") then
       elements(left.drop(1), Nil, mixed = false, allowEmpty = true) match
-        case ArrayRead.Bad => None
+        case ArrayRead.Bad              => None
         case ArrayRead.Strings(_, more) => Some(more)
-        case ArrayRead.Mixed(more) => Some(more)
+        case ArrayRead.Mixed(more)      => Some(more)
     else if left.startsWith("\"") then
       parseString(left.drop(1), "") match
         case Right((_, more)) => Some(more)
-        case Left(_) => None
+        case Left(_)          => None
     else if left.startsWith("true") then Some(left.drop(4))
     else if left.startsWith("false") then Some(left.drop(5))
     else if left.startsWith("null") then Some(left.drop(4))
@@ -326,42 +334,44 @@ private[photo] object Serve:
 
   @tailrec
   private def elements(
-    rest: String,
-    acc: List[String],
-    mixed: Boolean,
-    allowEmpty: Boolean
+      rest: String,
+      acc: List[String],
+      mixed: Boolean,
+      allowEmpty: Boolean
   ): ArrayRead =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("]") then
       if mixed then ArrayRead.Mixed(left.drop(1)) else ArrayRead.Strings(acc.reverse, left.drop(1))
-    else element(left) match
-      case None =>
-        ArrayRead.Bad
-      case Some((text, after)) =>
-        val nextMixed: Boolean = mixed || text.isEmpty
-        val next: List[String] = text match
-          case Some(value) if !nextMixed => value :: acc
-          case _ => Nil
-        val more: String = skip(after)
-        if more.startsWith("]") then
-          if nextMixed then ArrayRead.Mixed(more.drop(1)) else ArrayRead.Strings(next.reverse, more.drop(1))
-        else if more.startsWith(",") then elements(more.drop(1), next, nextMixed, allowEmpty = false)
-        else ArrayRead.Bad
+    else
+      element(left) match
+        case None =>
+          ArrayRead.Bad
+        case Some((text, after)) =>
+          val nextMixed: Boolean = mixed || text.isEmpty
+          val next: List[String] = text match
+            case Some(value) if !nextMixed => value :: acc
+            case _                         => Nil
+          val more: String = skip(after)
+          if more.startsWith("]") then
+            if nextMixed then ArrayRead.Mixed(more.drop(1)) else ArrayRead.Strings(next.reverse, more.drop(1))
+          else if more.startsWith(",") then elements(more.drop(1), next, nextMixed, allowEmpty = false)
+          else ArrayRead.Bad
 
   private def element(rest: String): Option[(Option[String], String)] =
     val left: String = skip(rest)
     if left.startsWith("\"") then
       parseString(left.drop(1), "") match
         case Right((text, more)) => Some((Some(text), more))
-        case Left(_) => None
+        case Left(_)             => None
     else skipValue(left).map(more => (None, more))
 
   private def parseKey(rest: String): Option[(String, String)] =
     val left: String = skip(rest)
     if !left.startsWith("\"") then None
-    else parseString(left.drop(1), "") match
-      case Right((text, more)) => Some((text, more))
-      case Left(_) => None
+    else
+      parseString(left.drop(1), "") match
+        case Right((text, more)) => Some((text, more))
+        case Left(_)             => None
 
   private def parseNumber(rest: String): Option[String] =
     val body: String = if rest.startsWith("-") then rest.drop(1) else rest
@@ -401,27 +411,27 @@ private[photo] object Serve:
       else
         val escaped: String = more.drop(1)
         escape(escaped) match
-          case None => Left(malformed)
+          case None                    => Left(malformed)
           case Some((decoded, restOf)) => parseString(restOf, acc + bare + decoded)
 
   // quote emits \f and \u00XX. A response the shell reads has to accept those.
   private def escape(rest: String): Option[(String, String)] =
     if rest.isEmpty then None
-    else rest.head match
-      case '\\' => Some(("\\", rest.drop(1)))
-      case '"' => Some(("\"", rest.drop(1)))
-      case '/' => Some(("/", rest.drop(1)))
-      case 'n' => Some(("\n", rest.drop(1)))
-      case 't' => Some(("\t", rest.drop(1)))
-      case 'r' => Some(("\r", rest.drop(1)))
-      case 'b' => Some(("\b", rest.drop(1)))
-      case 'f' => Some(("\f", rest.drop(1)))
-      case 'u' =>
-        val hex: String = rest.drop(1).take(4)
-        if hex.length == 4 && hex.forall(isHex) then
-          Some((Integer.parseInt(hex, 16).toChar.toString, rest.drop(5)))
-        else None
-      case _ => None
+    else
+      rest.head match
+        case '\\' => Some(("\\", rest.drop(1)))
+        case '"'  => Some(("\"", rest.drop(1)))
+        case '/'  => Some(("/", rest.drop(1)))
+        case 'n'  => Some(("\n", rest.drop(1)))
+        case 't'  => Some(("\t", rest.drop(1)))
+        case 'r'  => Some(("\r", rest.drop(1)))
+        case 'b'  => Some(("\b", rest.drop(1)))
+        case 'f'  => Some(("\f", rest.drop(1)))
+        case 'u'  =>
+          val hex: String = rest.drop(1).take(4)
+          if hex.length == 4 && hex.forall(isHex) then Some((Integer.parseInt(hex, 16).toChar.toString, rest.drop(5)))
+          else None
+        case _ => None
 
   private def isHex(ch: Char): Boolean =
     ch.isDigit || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
@@ -438,7 +448,7 @@ private[photo] object Serve:
     else if left.startsWith("false") then Right((Json.Bool(false), left.drop(5)))
     else if left.startsWith("\"") then
       parseString(left.drop(1), "") match
-        case Left(message) => Left(message)
+        case Left(message)        => Left(message)
         case Right((value, more)) => Right((Json.Str(value), more))
     else if left.startsWith("{") then readObject(left.drop(1), Nil, allowEmpty = true)
     else if left.startsWith("[") then readArray(left.drop(1), Nil, allowEmpty = true)
@@ -447,45 +457,48 @@ private[photo] object Serve:
 
   @tailrec
   private def readObject(
-    rest: String,
-    acc: List[(String, Json)],
-    allowEmpty: Boolean
+      rest: String,
+      acc: List[(String, Json)],
+      allowEmpty: Boolean
   ): Either[String, (Json, String)] =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("}") then Right((Json.Obj(acc.reverse), left.drop(1)))
-    else parseKey(left) match
-      case None =>
-        Left(malformed)
-      case Some((key, afterKey)) =>
-        val afterColon: String = skip(afterKey)
-        if !afterColon.startsWith(":") then Left(malformed)
-        else readJson(afterColon.drop(1)) match
-          case Left(message) =>
-            Left(message)
-          case Right((value, afterValue)) =>
-            val more: String = skip(afterValue)
-            val next: List[(String, Json)] = (key, value) :: acc
-            if more.startsWith("}") then Right((Json.Obj(next.reverse), more.drop(1)))
-            else if more.startsWith(",") then readObject(more.drop(1), next, allowEmpty = false)
-            else Left(malformed)
+    else
+      parseKey(left) match
+        case None =>
+          Left(malformed)
+        case Some((key, afterKey)) =>
+          val afterColon: String = skip(afterKey)
+          if !afterColon.startsWith(":") then Left(malformed)
+          else
+            readJson(afterColon.drop(1)) match
+              case Left(message) =>
+                Left(message)
+              case Right((value, afterValue)) =>
+                val more: String = skip(afterValue)
+                val next: List[(String, Json)] = (key, value) :: acc
+                if more.startsWith("}") then Right((Json.Obj(next.reverse), more.drop(1)))
+                else if more.startsWith(",") then readObject(more.drop(1), next, allowEmpty = false)
+                else Left(malformed)
 
   @tailrec
   private def readArray(
-    rest: String,
-    acc: List[Json],
-    allowEmpty: Boolean
+      rest: String,
+      acc: List[Json],
+      allowEmpty: Boolean
   ): Either[String, (Json, String)] =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("]") then Right((Json.Arr(acc.reverse), left.drop(1)))
-    else readJson(left) match
-      case Left(message) =>
-        Left(message)
-      case Right((value, afterValue)) =>
-        val more: String = skip(afterValue)
-        val next: List[Json] = value :: acc
-        if more.startsWith("]") then Right((Json.Arr(next.reverse), more.drop(1)))
-        else if more.startsWith(",") then readArray(more.drop(1), next, allowEmpty = false)
-        else Left(malformed)
+    else
+      readJson(left) match
+        case Left(message) =>
+          Left(message)
+        case Right((value, afterValue)) =>
+          val more: String = skip(afterValue)
+          val next: List[Json] = value :: acc
+          if more.startsWith("]") then Right((Json.Arr(next.reverse), more.drop(1)))
+          else if more.startsWith(",") then readArray(more.drop(1), next, allowEmpty = false)
+          else Left(malformed)
 
   private def readLong(rest: String): Either[String, (Json, String)] =
     val (negative, body) = if rest.startsWith("-") then (true, rest.drop(1)) else (false, rest)
@@ -507,22 +520,23 @@ private[photo] object Serve:
   private[photo] def toResult(response: Response): Result =
     def plain(error: String): String = error.stripPrefix("Photo Archive Tool: ")
     if response.ok then Result.Ok(response.text.getOrElse(""), Json.Null)
-    else response.text match
-      case Some(text) =>
-        Result.Failed(text, Json.Null, plain(response.error.getOrElse("failed")))
-      case None =>
-        Result.Usage(plain(response.error.getOrElse("failed")))
+    else
+      response.text match
+        case Some(text) =>
+          Result.Failed(text, Json.Null, plain(response.error.getOrElse("failed")))
+        case None =>
+          Result.Usage(plain(response.error.getOrElse("failed")))
 
   private[photo] def runtimeDirectory(): Either[String, File] =
     Option(System.getenv("XDG_RUNTIME_DIR")).map(_.trim).filter(_.nonEmpty) match
-      case None => Left("XDG_RUNTIME_DIR is unset")
+      case None      => Left("XDG_RUNTIME_DIR is unset")
       case Some(dir) => Right(File(File(dir), "org.podval.tools.photo"))
 
   // Tests pass a temp directory. Production passes $XDG_RUNTIME_DIR/org.podval.tools.photo.
   private[photo] def listen(
-    session: Session,
-    runtime: File,
-    onBound: ServerSocketChannel => Unit = _ => ()
+      session: Session,
+      runtime: File,
+      onBound: ServerSocketChannel => Unit = _ => ()
   ): Int =
     prepare(runtime)
     val lockFile: File = File(runtime, lockName)
@@ -558,9 +572,10 @@ private[photo] object Serve:
                 socketFile.toPath,
                 PosixFilePermissions.fromString(fileMode)
               )
-            catch case error: IOException =>
-              Console.err.println(Option(error.getMessage).getOrElse("bind failed"))
-              return 1
+            catch
+              case error: IOException =>
+                Console.err.println(Option(error.getMessage).getOrElse("bind failed"))
+                return 1
             Console.err.println(s"bound ${socketFile.getAbsolutePath}")
             onBound(server)
             acceptLoop(server, parked(session), socketFile)
@@ -574,24 +589,25 @@ private[photo] object Serve:
     ensure(directory, () => spawnServe(directory), acceptWaitMs)
 
   private[photo] def ensure(
-    directory: File,
-    spawn: () => Either[String, Unit],
-    waitMs: Long
+      directory: File,
+      spawn: () => Either[String, Unit],
+      waitMs: Long
   ): Either[String, Unit] =
     if canConnect(directory) then Right(())
     else if lockHeld(directory) then
       if waitUntilConnect(directory, waitMs) then Right(()) else Left(busyMessage(directory))
-    else spawn() match
-      case Left(message) => Left(message)
-      case Right(_) =>
-        if waitUntilConnect(directory, waitMs) then Right(()) else Left("serve did not start")
+    else
+      spawn() match
+        case Left(message) => Left(message)
+        case Right(_)      =>
+          if waitUntilConnect(directory, waitMs) then Right(()) else Left("serve did not start")
 
   private[photo] def client(
-    runtime: File,
-    argv: List[String],
-    archive: String,
-    stop: Boolean = false,
-    waitMs: Long = acceptWaitMs
+      runtime: File,
+      argv: List[String],
+      archive: String,
+      stop: Boolean = false,
+      waitMs: Long = acceptWaitMs
   ): Attempt =
     exchangeOrWait(runtime, argv, archive, stop, waitMs, dropValue) match
       case Reply.Absent if stop =>
@@ -604,11 +620,11 @@ private[photo] object Serve:
         Attempt.Done(called.response)
 
   private[photo] def call(
-    runtime: File,
-    argv: List[String],
-    archive: String,
-    waitMs: Long = acceptWaitMs,
-    id: Option[String] = None
+      runtime: File,
+      argv: List[String],
+      archive: String,
+      waitMs: Long = acceptWaitMs,
+      id: Option[String] = None
   ): Either[String, Called] =
     exchangeOrWait(runtime, argv, archive, stop = false, waitMs, readValued, id) match
       case Reply.Absent =>
@@ -673,13 +689,13 @@ private[photo] object Serve:
         Cli.Step.Continue(session)
 
   private def exchangeOrWait(
-    runtime: File,
-    argv: List[String],
-    archive: String,
-    stop: Boolean,
-    waitMs: Long,
-    readBody: String => Either[Problem, Called],
-    id: Option[String] = None
+      runtime: File,
+      argv: List[String],
+      archive: String,
+      stop: Boolean,
+      waitMs: Long,
+      readBody: String => Either[Problem, Called],
+      id: Option[String] = None
   ): Reply =
     def once(): Reply = exchange(runtime, argv, archive, stop, waitMs, readBody, id)
     once() match
@@ -687,20 +703,20 @@ private[photo] object Serve:
         if waitUntilConnect(runtime, waitMs) then
           once() match
             case Reply.Absent => Reply.Failed(busyMessage(runtime))
-            case other => other
+            case other        => other
         else Reply.Failed(busyMessage(runtime))
       case other =>
         other
 
   private def exchange(
-    runtime: File,
-    argv: List[String],
-    archive: String,
-    stop: Boolean,
-    waitMs: Long,
-    readBody: String => Either[Problem, Called],
-    id: Option[String] = None,
-    noSend: Boolean = false
+      runtime: File,
+      argv: List[String],
+      archive: String,
+      stop: Boolean,
+      waitMs: Long,
+      readBody: String => Either[Problem, Called],
+      id: Option[String] = None,
+      noSend: Boolean = false
   ): Reply =
     openChannel(File(runtime, socketName)) match
       case None =>
@@ -711,15 +727,15 @@ private[photo] object Serve:
         finally channel.close()
 
   private def talk(
-    channel: SocketChannel,
-    runtime: File,
-    argv: List[String],
-    archive: String,
-    stop: Boolean,
-    waitMs: Long,
-    readBody: String => Either[Problem, Called],
-    id: Option[String] = None,
-    noSend: Boolean = false
+      channel: SocketChannel,
+      runtime: File,
+      argv: List[String],
+      archive: String,
+      stop: Boolean,
+      waitMs: Long,
+      readBody: String => Either[Problem, Called],
+      id: Option[String] = None,
+      noSend: Boolean = false
   ): Reply =
     readLine(channel, Some(waitMs)) match
       case Line.TimedOut | Line.Eof =>
@@ -738,7 +754,7 @@ private[photo] object Serve:
             readLine(channel, None) match
               case Line.Got(body) =>
                 readBody(body) match
-                  case Left(_) => Reply.Failed(malformed)
+                  case Left(_)       => Reply.Failed(malformed)
                   case Right(called) => Reply.Done(called)
               case Line.Eof =>
                 Reply.Failed("serve closed the connection")
@@ -752,18 +768,20 @@ private[photo] object Serve:
     try
       channel.connect(UnixDomainSocketAddress.of(socket.toPath))
       Some(channel)
-    catch case _: IOException =>
-      channel.close()
-      None
+    catch
+      case _: IOException =>
+        channel.close()
+        None
 
   private def canConnect(runtime: File): Boolean =
     val socket: File = File(runtime, socketName)
     if !socket.exists then false
-    else openChannel(socket) match
-      case None => false
-      case Some(channel) =>
-        channel.close()
-        true
+    else
+      openChannel(socket) match
+        case None          => false
+        case Some(channel) =>
+          channel.close()
+          true
 
   private def waitUntilConnect(runtime: File, waitMs: Long): Boolean =
     val deadline: Long = System.nanoTime() + waitMs * 1000000L
@@ -788,16 +806,16 @@ private[photo] object Serve:
       try
         val lock: FileLock =
           try channel.tryLock(0L, Long.MaxValue, true)
-          catch case _: OverlappingFileLockException =>
-            closeChannel = false
-            pin(channel)
-            return true
+          catch
+            case _: OverlappingFileLockException =>
+              closeChannel = false
+              pin(channel)
+              return true
         if lock == null then true
         else
           lock.release()
           false
-      finally
-        if closeChannel then channel.close()
+      finally if closeChannel then channel.close()
 
   // Closing any descriptor for this file drops every fcntl lock this process holds.
   // A null tryLock is another process, so that channel is safe to close. Overlap is this JVM.
@@ -878,8 +896,9 @@ private[photo] object Serve:
         try
           process.start()
           Right(())
-        catch case error: IOException =>
-          Left(Option(error.getMessage).getOrElse("setsid is missing"))
+        catch
+          case error: IOException =>
+            Left(Option(error.getMessage).getOrElse("setsid is missing"))
 
   private def setsidOnPath: Boolean =
     val path: String = Option(System.getenv("PATH")).getOrElse("")
@@ -888,7 +907,7 @@ private[photo] object Serve:
   private def serveLog(): File =
     val base: File = Option(System.getenv("XDG_STATE_HOME")).map(_.trim).filter(_.nonEmpty) match
       case Some(dir) => File(dir)
-      case None => File(File(System.getProperty("user.home"), ".local"), "state")
+      case None      => File(File(System.getProperty("user.home"), ".local"), "state")
     val dir: File = File(base, "org.podval.tools.photo")
     java.nio.file.Files.createDirectories(dir.toPath)
     java.nio.file.Files.setPosixFilePermissions(dir.toPath, PosixFilePermissions.fromString(directoryMode))
@@ -905,7 +924,7 @@ private[photo] object Serve:
 
   private def readLine(channel: SocketChannel, timeoutMs: Option[Long]): Line =
     timeoutMs match
-      case None => readBlocking(channel)
+      case None     => readBlocking(channel)
       case Some(ms) => readTimed(channel, ms)
 
   private def readBlocking(channel: SocketChannel): Line =

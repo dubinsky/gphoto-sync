@@ -8,13 +8,12 @@ import java.nio.file.{Files as JFiles, StandardCopyOption, StandardOpenOption}
 import java.time.{LocalDate, YearMonth}
 import java.util.UUID
 
-
 private[photo] final class AgentAlbumFile(
-  id: Option[String],
-  dryRun: Boolean,
-  replace: Boolean,
-  googleTitle: Option[String],
-  title: String
+    id: Option[String],
+    dryRun: Boolean,
+    replace: Boolean,
+    googleTitle: Option[String],
+    title: String
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -29,11 +28,11 @@ private[photo] final class AgentAlbumFile(
 private[photo] object AgentAlbumFile:
 
   def writeAlbum(
-    session: Session,
-    album: Catalog.Album,
-    dryRun: Boolean,
-    replace: Boolean,
-    googleFlag: Option[String]
+      session: Session,
+      album: Catalog.Album,
+      dryRun: Boolean,
+      replace: Boolean,
+      googleFlag: Option[String]
   ): (Session, Result) =
     album.owner.foreach: _ =>
       googleFlag.foreach: flag =>
@@ -52,8 +51,7 @@ private[photo] object AgentAlbumFile:
       if replace && dest.isFile then
         val old: Album = Album.read(archive, dest)
         if album.owner.isDefined then ("", "") else (old.googleAlbumId, old.publishedTitle)
-      else
-        ("", "")
+      else ("", "")
     val (matched, hits, _) = AgentSupport.gather(session, album)
     val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
     // Album.read rejects an include day outside the span. Fail before any partial.
@@ -62,7 +60,7 @@ private[photo] object AgentAlbumFile:
         throw IllegalArgumentException("matched day outside the span")
     val days: Seq[LocalDate] = parsed.span match
       case Some(span) => AgentSupport.eachDay(span)
-      case None => album.items.flatMap(_.date).distinct.sorted
+      case None       => album.items.flatMap(_.date).distinct.sorted
     val (scanned, universe) = AgentSupport.scanDays(matched, days)
     val monthPassed: Boolean =
       monthFile && monthAllowsAll(parsed.span.get, claimed, universe)
@@ -86,8 +84,7 @@ private[photo] object AgentAlbumFile:
       else Album.published(pathTitle, parsed.span, include, keptId, keptPublished, stored)
     val renameWord: String = if willRename then "yes" else "no"
     val value: Json = albumValueOf(album.id, relative, pathTitle, album.title, willRename, None)
-    if dryRun then
-      (scanned, Result.Ok(Album.renderFile(written) + s"rename $renameWord\n", value))
+    if dryRun then (scanned, Result.Ok(Album.renderFile(written) + s"rename $renameWord\n", value))
     else
       commitFile(archive, dest, Album.renderFile(written))
       val dropped: Session = scanned.drop(dest.getParentFile)
@@ -101,11 +98,11 @@ private[photo] object AgentAlbumFile:
 
   // Called before the partial is created. A bad include throws and nothing is written.
   def requireInclude(
-    monthPassed: Boolean,
-    span: Option[Title.Span],
-    include: Seq[Include.Entry],
-    claimed: Set[(LocalDate, String)],
-    universe: Map[LocalDate, Set[String]]
+      monthPassed: Boolean,
+      span: Option[Title.Span],
+      include: Seq[Include.Entry],
+      claimed: Set[(LocalDate, String)],
+      universe: Map[LocalDate, Set[String]]
   ): Unit =
     val got: Set[(LocalDate, String)] =
       include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
@@ -114,26 +111,27 @@ private[photo] object AgentAlbumFile:
       if monthPassed then
         val local: Set[(LocalDate, String)] = Include.pairsIn(span.get, universe)
         got.equals(local) && monthAllowsAll(span.get, claimed, universe)
-      else
-        got.equals(claimed)
+      else got.equals(claimed)
     if !ok then throw IllegalArgumentException("include does not match")
 
   private def albumValueOf(
-    albumId: String,
-    path: String,
-    pathTitle: String,
-    catalogTitle: String,
-    rename: Boolean,
-    requestId: Option[String]
+      albumId: String,
+      path: String,
+      pathTitle: String,
+      catalogTitle: String,
+      rename: Boolean,
+      requestId: Option[String]
   ): Json =
-    Json.Obj(Seq(
-      "albumId" -> Json.Str(albumId),
-      "path" -> Json.Str(path),
-      "pathTitle" -> Json.Str(pathTitle),
-      "catalogTitle" -> Json.Str(catalogTitle),
-      "rename" -> Json.Bool(rename),
-      "requestId" -> requestId.fold(Json.Null)(Json.Str.apply)
-    ))
+    Json.Obj(
+      Seq(
+        "albumId" -> Json.Str(albumId),
+        "path" -> Json.Str(path),
+        "pathTitle" -> Json.Str(pathTitle),
+        "catalogTitle" -> Json.Str(catalogTitle),
+        "rename" -> Json.Bool(rename),
+        "requestId" -> requestId.fold(Json.Null)(Json.Str.apply)
+      )
+    )
 
   private def commitFile(archive: File, dest: File, text: String): Unit =
     val dot: File = File(archive, ".gphoto-sync")
@@ -149,8 +147,7 @@ private[photo] object AgentAlbumFile:
         StandardCopyOption.REPLACE_EXISTING
       )
       renamed = true
-    finally
-      if !renamed then JFiles.deleteIfExists(partial.toPath)
+    finally if !renamed then JFiles.deleteIfExists(partial.toPath)
 
   private def writeForced(file: File, text: String): Unit =
     val channel: FileChannel = FileChannel.open(
@@ -162,8 +159,7 @@ private[photo] object AgentAlbumFile:
       val bytes: ByteBuffer = ByteBuffer.wrap(text.getBytes(StandardCharsets.UTF_8))
       while bytes.hasRemaining do channel.write(bytes)
       channel.force(true)
-    finally
-      channel.close()
+    finally channel.close()
 
   private[photo] def place(album: Catalog.Album): (Title.Parsed, Boolean) =
     val working: String = album.title.split(' ').filter(_.nonEmpty).mkString(" ")
@@ -198,7 +194,7 @@ private[photo] object AgentAlbumFile:
       val oneMonth: Boolean = YearMonth.from(span.start).equals(YearMonth.from(span.end))
       span.grain match
         case Title.Grain.Month => oneMonth
-        case Title.Grain.Day => false
+        case Title.Grain.Day   => false
 
   // Item days when the catalog has them. Otherwise keep the span Title.parse already accepted.
   private def parsedDays(album: Catalog.Album, parsed: Title.Parsed): Title.Parsed =
@@ -247,18 +243,39 @@ private[photo] object AgentAlbumFile:
     token.nonEmpty && token.length < 4 && token.forall(_.isDigit) && days.contains(token.toInt)
 
   private val monthWords: Set[String] = Set(
-    "january", "february", "march", "april", "may", "june", "july", "august",
-    "september", "october", "november", "december",
-    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec"
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec"
   )
 
   private def isMonth(token: String): Boolean =
     monthWords.contains(token.toLowerCase(java.util.Locale.ROOT))
 
   private[photo] def monthAllowsAll(
-    span: Title.Span,
-    claimed: Set[(LocalDate, String)],
-    universe: Map[LocalDate, Set[String]]
+      span: Title.Span,
+      claimed: Set[(LocalDate, String)],
+      universe: Map[LocalDate, Set[String]]
   ): Boolean =
     val local: Set[(LocalDate, String)] = Include.pairsIn(span, universe)
     val missing: Int = local.count(pair => !claimed.contains(pair))

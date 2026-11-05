@@ -20,7 +20,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "fromFileName" should "label each filename clock" in :
+  "fromFileName" should "label each filename clock" in:
     labeled("2010-09-14-19-49-2", "2010-09-14T19:49:02") shouldBe "full"
     labeled("20120812_013216", "2012-08-12T01:32:16") shouldBe "compact"
     val millis: (Dates.Clock, String) = Dates.fromFileName("1300000000000", zone, None).getOrElse(fail("no clock"))
@@ -28,10 +28,10 @@ class DatesTest extends AnyFlatSpec, Matchers:
     millis._2 shouldBe "millis"
     labeled("013216", "2012-08-12T01:32:16", Some(LocalDate.of(2012, 8, 12))) shouldBe "short"
 
-  it should "strip one trailing _1" in :
+  it should "strip one trailing _1" in:
     labeled("20120812_013216_1", "2012-08-12T01:32:16") shouldBe "compact"
 
-  it should "drop one trailing v before _1 without rewriting the stem" in :
+  it should "drop one trailing v before _1 without rewriting the stem" in:
     val plain: Dates.Clock = clock("20191220_141955")
     val burst: Dates.Clock = clock("20191220_141955_1")
     clock("20191220_141955v") shouldBe plain
@@ -41,17 +41,17 @@ class DatesTest extends AnyFlatSpec, Matchers:
     Dates.fromFileName("20191220_141955_2", zone, None) shouldBe None
     Dates.fromFileName("20191220_141955_2v", zone, None) shouldBe None
 
-  it should "skip a short name when no date is supplied" in :
+  it should "skip a short name when no date is supplied" in:
     Dates.fromFileName("013216", zone, None).isEmpty shouldBe true
 
-  it should "convert a 13-digit name with the archive zone" in :
+  it should "convert a 13-digit name with the archive zone" in:
     val clock: Dates.Clock = Dates.millisClock(1236304777311L, zone)
     sameCivil(clock.civil, "2009-03-05T20:59:37.311")
     sameOffset(clock.offset, Some("-05:00"))
     clock.source shouldBe Dates.Source.FilenameMillis
     clock.day.isEqual(LocalDate.of(2009, 3, 5)) shouldBe true
 
-  it should "keep an evening DateTimeOriginal with no offset on that civil day" in :
+  it should "keep an evening DateTimeOriginal with no offset on that civil day" in:
     val previous: TimeZone = TimeZone.getDefault
     try
       TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
@@ -60,17 +60,16 @@ class DatesTest extends AnyFlatSpec, Matchers:
       found.offset shouldBe None
       found.source shouldBe Dates.Source.DateTimeOriginal
       found.day.isEqual(LocalDate.of(2009, 6, 11)) shouldBe true
-    finally
-      TimeZone.setDefault(previous)
+    finally TimeZone.setDefault(previous)
 
-  it should "keep that clock when OffsetTimeOriginal is -05:00" in :
+  it should "keep that clock when OffsetTimeOriginal is -05:00" in:
     val found: Dates.Clock = readStill("/dates/evening-offset.jpg")
     sameCivil(found.civil, "2009-06-11T23:41:10.050")
     sameOffset(found.offset, Some("-05:00"))
     found.source shouldBe Dates.Source.DateTimeOriginal
     found.day.isEqual(LocalDate.of(2009, 6, 11)) shouldBe true
 
-  it should "prefer DateTimeOriginal over a compact filename" in :
+  it should "prefer DateTimeOriginal over a compact filename" in:
     val embedded: Dates.Clock = Dates.Clock(
       LocalDateTime.parse("2009-06-11T23:41:10.050"),
       None,
@@ -88,7 +87,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
         chosen shouldBe embedded
       case other => fail(s"$other")
 
-  it should "let a sidecar timestamp replace the embedded clock" in :
+  it should "let a sidecar timestamp replace the embedded clock" in:
     val timestamp: LocalDateTime = LocalDateTime.parse("2011-06-29T09:45:00")
     val embedded: Dates.Clock = Dates.Clock(
       LocalDateTime.parse("2009-06-11T23:41:10.050"),
@@ -98,7 +97,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
     Dates.rank(Dates.RankInput(Some(timestamp), None, Some(embedded), None, None)) shouldBe
       Dates.Ranked.Chosen(Dates.Clock(timestamp, None, Dates.Source.SidecarTimestamp))
 
-  it should "let a sidecar date replace the day and keep the embedded time" in :
+  it should "let a sidecar date replace the day and keep the embedded time" in:
     val embedded: Dates.Clock = Dates.Clock(
       LocalDateTime.parse("2009-06-11T23:41:10.050"),
       Some(ZoneOffset.of("-04:00")),
@@ -106,13 +105,15 @@ class DatesTest extends AnyFlatSpec, Matchers:
     )
     val date: LocalDate = LocalDate.of(2012, 4, 4)
     Dates.rank(Dates.RankInput(None, Some(date), Some(embedded), None, None)) shouldBe
-      Dates.Ranked.Chosen(Dates.Clock(
-        LocalDateTime.parse("2012-04-04T23:41:10.050"),
-        None,
-        Dates.Source.SidecarDate
-      ))
+      Dates.Ranked.Chosen(
+        Dates.Clock(
+          LocalDateTime.parse("2012-04-04T23:41:10.050"),
+          None,
+          Dates.Source.SidecarDate
+        )
+      )
 
-  it should "report a sidecar date that disagrees with the timestamp" in :
+  it should "report a sidecar date that disagrees with the timestamp" in:
     val timestamp: LocalDateTime = LocalDateTime.parse("2011-06-29T09:45:00")
     val date: LocalDate = LocalDate.of(2011, 6, 30)
     val embedded: Dates.Clock = Dates.Clock(
@@ -140,7 +141,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
     disagreement.timestamp.isEqual(timestamp) shouldBe true
     disagreement.date.isEqual(date) shouldBe true
 
-  it should "skip January 1 of 1980 and of 2000 and use the filename" in :
+  it should "skip January 1 of 1980 and of 2000 and use the filename" in:
     val filename: Dates.Clock = Dates.Clock(
       LocalDateTime.parse("2009-06-11T12:00:00"),
       None,
@@ -152,20 +153,22 @@ class DatesTest extends AnyFlatSpec, Matchers:
         None,
         Dates.Source.DateTimeOriginal
       )
-      Dates.rank(Dates.RankInput(
-        None,
-        None,
-        Dates.usable(Some(embedded)),
-        Dates.usable(Some(filename)),
-        Some(Dates.Clock(LocalDate.of(2009, 6, 11).atStartOfDay, None, Dates.Source.FolderDay))
-      ))
+      Dates.rank(
+        Dates.RankInput(
+          None,
+          None,
+          Dates.usable(Some(embedded)),
+          Dates.usable(Some(filename)),
+          Some(Dates.Clock(LocalDate.of(2009, 6, 11).atStartOfDay, None, Dates.Source.FolderDay))
+        )
+      )
     ranked(1980) shouldBe Dates.Ranked.Chosen(filename)
     ranked(2000) shouldBe Dates.Ranked.Chosen(filename)
     val honored: LocalDateTime = LocalDateTime.parse("1980-01-01T00:00:00")
     Dates.rank(Dates.RankInput(Some(honored), None, Dates.usable(Some(filename)), None, None)) shouldBe
       Dates.Ranked.Chosen(Dates.Clock(honored, None, Dates.Source.SidecarTimestamp))
 
-  it should "ignore a thumbnail when choosing the embedded clock" in :
+  it should "ignore a thumbnail when choosing the embedded clock" in:
     withOriginals: originals =>
       val day: File = File(originals, "2009/06/11")
       day.mkdirs()
@@ -180,7 +183,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
       read shouldBe None
       Dates.readStill(picture.file("thm")).isDefined shouldBe true
 
-  it should "treat a shifted creation_time as real Z when the filename is nine seconds off" in :
+  it should "treat a shifted creation_time as real Z when the filename is nine seconds off" in:
     val digits: LocalDateTime = LocalDateTime.parse("2010-09-14T14:05:45")
     val filename: Dates.Clock = Dates.Clock(
       LocalDateTime.parse("2010-09-14T10:05:36"),
@@ -193,7 +196,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
     clock.source shouldBe Dates.Source.VideoRealZ
     clock.day.isEqual(LocalDate.of(2010, 9, 14)) shouldBe true
 
-  it should "treat an unshifted creation_time as a local clock when the filename matches it" in :
+  it should "treat an unshifted creation_time as a local clock when the filename matches it" in:
     val digits: LocalDateTime = LocalDateTime.parse("2010-09-14T10:05:36")
     val filename: Dates.Clock = Dates.Clock(digits, None, Dates.Source.FilenameCompact)
     val clock: Dates.Clock = Dates.chooseZ(digits, Some(filename), zone)
@@ -201,13 +204,13 @@ class DatesTest extends AnyFlatSpec, Matchers:
     clock.offset shouldBe None
     clock.source shouldBe Dates.Source.VideoLocalZ
 
-  it should "assume a real Z when no filename clock is present" in :
+  it should "assume a real Z when no filename clock is present" in:
     val clock: Dates.Clock = Dates.chooseZ(LocalDateTime.parse("2010-09-14T14:05:45"), None, zone)
     sameCivil(clock.civil, "2010-09-14T10:05:45")
     sameOffset(clock.offset, Some("-04:00"))
     clock.source shouldBe Dates.Source.VideoRealZ
 
-  it should "compare mtime to the second" in :
+  it should "compare mtime to the second" in:
     val civil: LocalDateTime = LocalDateTime.parse("2009-06-11T23:41:10.050")
     val fraction: Instant = civil.atZone(zone).toInstant
     val onSecond: Instant = LocalDateTime.parse("2009-06-11T23:41:10").atZone(zone).toInstant
@@ -216,7 +219,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
     Dates.sameSecond(civil, onSecond.plusSeconds(1), zone) shouldBe false
     civil.truncatedTo(ChronoUnit.SECONDS).atZone(zone).toInstant.toEpochMilli shouldBe onSecond.toEpochMilli
 
-  it should "leave a picture with no clock and no folder day undated" in :
+  it should "leave a picture with no clock and no folder day undated" in:
     val picture: Picture = uploadPicture()
     val ranked: Dates.Ranked = Dates.rank(Dates.RankInput(None, None, None, None, None))
     ranked shouldBe Dates.Ranked.Undated
@@ -235,15 +238,15 @@ class DatesTest extends AnyFlatSpec, Matchers:
     val move: Day = Dates.dayShouldBe(picture, chosen).getOrElse(fail("upload capture should still name a day"))
     move.date.isEqual(LocalDate.of(2009, 6, 11)) shouldBe true
 
-  it should "prefer an mp4 keys-atom offset over creation_time" in :
+  it should "prefer an mp4 keys-atom offset over creation_time" in:
     val text: String = Files.read(resource("/dates/mp4-keys-creationdate.txt"))
     val clock: Dates.Clock = Dates.parseVideoTags(text, None, zone).getOrElse(fail("no clock"))
     sameCivil(clock.civil, "2010-09-14T10:05:36")
     sameOffset(clock.offset, Some("-04:00"))
     clock.source shouldBe Dates.Source.VideoCreationDate
-    Dates.ffprobeShowEntries should include ("com.apple.quicktime.creationdate")
+    Dates.ffprobeShowEntries should include("com.apple.quicktime.creationdate")
 
-  it should "accept a creation date with a colon offset, with Z, and not throw on a bad one" in :
+  it should "accept a creation date with a colon offset, with Z, and not throw on a bad one" in:
     val colon: OffsetDateTime = Dates.parseCreationDate("2010-09-14T10:05:36-04:00").getOrElse(fail("colon"))
     colon.toLocalDateTime.isEqual(LocalDateTime.parse("2010-09-14T10:05:36")) shouldBe true
     colon.getOffset.getId shouldBe "-04:00"
@@ -262,17 +265,19 @@ class DatesTest extends AnyFlatSpec, Matchers:
     zulu.getOffset.getTotalSeconds shouldBe 0
     Dates.parseCreationDate("not-a-date") shouldBe None
 
-  it should "reject an EXIF date that is not yyyy:MM:dd HH:mm:ss" in :
+  it should "reject an EXIF date that is not yyyy:MM:dd HH:mm:ss" in:
     Dates.parseExifClock("2009-06-11 23:41:10", None, None, Dates.Source.DateTimeOriginal) shouldBe None
     Dates.parseExifClock("2009:06:11 23:41", None, None, Dates.Source.DateTimeOriginal) shouldBe None
     Dates.parseExifClock("0000:00:00 00:00:00", None, None, Dates.Source.DateTimeOriginal) shouldBe None
     Dates.parseExifClock("   ", None, None, Dates.Source.DateTimeOriginal) shouldBe None
-    val kept: Dates.Clock = Dates.parseExifClock(
-      "2009:06:11 23:41:10",
-      Some("050"),
-      Some("bogus"),
-      Dates.Source.DateTimeOriginal
-    ).getOrElse(fail("digits should survive a bad offset"))
+    val kept: Dates.Clock = Dates
+      .parseExifClock(
+        "2009:06:11 23:41:10",
+        Some("050"),
+        Some("bogus"),
+        Dates.Source.DateTimeOriginal
+      )
+      .getOrElse(fail("digits should survive a bad offset"))
     sameCivil(kept.civil, "2009-06-11T23:41:10.050")
     kept.offset shouldBe None
 
@@ -290,10 +295,10 @@ class DatesTest extends AnyFlatSpec, Matchers:
     found._1.civil.isEqual(LocalDateTime.parse(text)) shouldBe true
     found._1.offset shouldBe None
     val expected: Dates.Source = found._2 match
-      case "full" => Dates.Source.FilenameFull
+      case "full"    => Dates.Source.FilenameFull
       case "compact" => Dates.Source.FilenameCompact
-      case "short" => Dates.Source.FilenameShort
-      case other => fail(other)
+      case "short"   => Dates.Source.FilenameShort
+      case other     => fail(other)
     (found._1.source eq expected) shouldBe true
     found._2
 
@@ -321,7 +326,7 @@ class DatesTest extends AnyFlatSpec, Matchers:
     val rootPath: String = home.toPath.relativize(originals.toPath).toString
     Root(Configuration(rootPath, zone)).parse(path) match
       case picture: Picture => picture
-      case other => fail(s"not a picture: $other")
+      case other            => fail(s"not a picture: $other")
 
   private def withOriginals(body: File => Unit): Unit =
     val originals: File = JFiles.createTempDirectory("dates").toFile

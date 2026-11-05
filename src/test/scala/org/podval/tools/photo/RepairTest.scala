@@ -11,7 +11,7 @@ import javax.imageio.ImageIO
 class RepairTest extends AnyFlatSpec, Matchers:
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "repair --names" should "rename IMG_ and .JPG" in :
+  "repair --names" should "rename IMG_ and .JPG" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/03/10/IMG_2412.JPG")
@@ -21,7 +21,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.exists shouldBe false
       File(originals, "2009/03/10/2412.jpg").isFile shouldBe true
 
-  it should "rename a camera prefix and lowercase a known extension" in :
+  it should "rename a camera prefix and lowercase a known extension" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val renames: Seq[(String, String)] = Seq(
@@ -44,7 +44,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       renames.foreach: (_, to) =>
         File(originals, to).isFile shouldBe true
 
-  it should "not rename JPEG" in :
+  it should "not rename JPEG" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/03/10/1000.JPEG")
@@ -57,7 +57,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, "2009/03/10/1000.jpg").exists shouldBe false
       File(originals, "2009/03/10/1000.JPEG").exists shouldBe false
 
-  it should "not rename on a dry run" in :
+  it should "not rename on a dry run" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/03/10/IMG_2412.JPG")
@@ -66,9 +66,9 @@ class RepairTest extends AnyFlatSpec, Matchers:
       val out: String = capture(run(root, "2009/03/10", names = true, dryRun = true))
       picture.exists shouldBe true
       File(originals, "2009/03/10/2412.jpg").exists shouldBe false
-      out should include ("moving")
+      out should include("moving")
 
-  it should "print the video move and write nothing on a dry run" in :
+  it should "print the video move and write nothing on a dry run" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val still: File = File(originals, "2009/03/10/20191220_141955.jpg")
@@ -81,12 +81,12 @@ class RepairTest extends AnyFlatSpec, Matchers:
       still.exists shouldBe true
       video.exists shouldBe true
       destination.exists shouldBe false
-      out should include ("moving")
-      out should include (video.getName)
-      out should include ("20191220_141955v.mp4")
+      out should include("moving")
+      out should include(video.getName)
+      out should include("20191220_141955v.mp4")
       out should not include (still.getName)
 
-  "ls" should "not rename" in :
+  "ls" should "not rename" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/03/10/IMG_2412.JPG")
@@ -110,13 +110,13 @@ class RepairTest extends AnyFlatSpec, Matchers:
         wrong = false
       ).execute(Session(root))
       result match
-        case Result.Ok(_, _) => ()
+        case Result.Ok(_, _)                 => ()
         case Result.Failed(text, _, message) => fail(s"$message\n$text")
-        case Result.Usage(message) => fail(message)
+        case Result.Usage(message)           => fail(message)
       picture.exists shouldBe true
       File(originals, "2009/03/10/2412.jpg").exists shouldBe false
 
-  "repair --raw" should "not generate from an image-only picture" in :
+  "repair --raw" should "not generate from an image-only picture" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val heic: File = File(originals, "2009/03/10/1006.heic")
@@ -128,16 +128,20 @@ class RepairTest extends AnyFlatSpec, Matchers:
       heic.exists shouldBe true
       File(originals, "2009/03/10/1006.jpg").exists shouldBe false
 
-  it should "still generate from raw when no normal image exists" in :
+  it should "still generate from raw when no normal image exists" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val nef: File = File(originals, "2009/03/10/1007.nef")
       nef.getParentFile.mkdirs()
       nef.createNewFile()
       var generated: Boolean = false
-      run(root, "2009/03/10", raw = true, generate = picture =>
-        picture.raw.map(_.name) shouldBe Some("nef")
-        generated = true
+      run(
+        root,
+        "2009/03/10",
+        raw = true,
+        generate = picture =>
+          picture.raw.map(_.name) shouldBe Some("nef")
+          generated = true
       )
       generated shouldBe true
 
@@ -149,16 +153,20 @@ class RepairTest extends AnyFlatSpec, Matchers:
       heic.createNewFile()
       nef.createNewFile()
       var generated: Boolean = false
-      run(root, "2009/03/10", raw = true, generate = picture =>
-        picture.raw.map(_.name) shouldBe Some("nef")
-        picture.image.map(_.name) shouldBe Some("heic")
-        picture.normal shouldBe None
-        generated = true
+      run(
+        root,
+        "2009/03/10",
+        raw = true,
+        generate = picture =>
+          picture.raw.map(_.name) shouldBe Some("nef")
+          picture.image.map(_.name) shouldBe Some("heic")
+          picture.normal shouldBe None
+          generated = true
       )
       generated shouldBe true
       File(originals, "2009/03/10/1008.jpg").exists shouldBe false
 
-  "repair --raw --dry-run" should "not call the generator" in :
+  "repair --raw --dry-run" should "not call the generator" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val raw: File = File(originals, "2009/03/10/2412.cr2")
@@ -169,7 +177,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       generated shouldBe false
       raw.exists shouldBe true
 
-  "repair --timestamps --dry-run" should "not call the setter" in :
+  "repair --timestamps --dry-run" should "not call the setter" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/03/10/20090310_120000.jpg")
@@ -185,7 +193,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       )
       set shouldBe false
 
-  "repair --days" should "not move an evening jpeg with no offset" in :
+  "repair --days" should "not move an evening jpeg with no offset" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/11/3404.jpg")
@@ -195,7 +203,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, "2009/06/12/3404.jpg").exists shouldBe false
       out should not include ("moving")
 
-  it should "move an evening jpeg back from the next UTC day" in :
+  it should "move an evening jpeg back from the next UTC day" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/12/3404.jpg")
@@ -204,9 +212,9 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.exists shouldBe false
       File(originals, "2009/06/11/3404.jpg").isFile shouldBe true
       File(originals, "2009/06/12").exists shouldBe false
-      out should include ("/2009/06/11")
+      out should include("/2009/06/11")
 
-  it should "not let a compact filename override DateTimeOriginal" in :
+  it should "not let a compact filename override DateTimeOriginal" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/10/20090610_120000.jpg")
@@ -215,7 +223,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.exists shouldBe false
       File(originals, "2009/06/11/20090610_120000.jpg").isFile shouldBe true
 
-  it should "move a counter-named file to the sidecar date and keep the embedded time" in :
+  it should "move a counter-named file to the sidecar date and keep the embedded time" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/11/3404.jpg")
@@ -231,7 +239,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, "2012/04/04/3404.jpg").isFile shouldBe true
       File(originals, "2012/04/04/3404.toml").isFile shouldBe true
 
-  it should "keep a directory that still holds an album file" in :
+  it should "keep a directory that still holds an album file" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/12/3404.jpg")
@@ -252,7 +260,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       originals.list.toSet shouldBe Set("2009", "2012")
       out should not include ("skipping")
 
-  it should "delete emptied parents and keep the archive root" in :
+  it should "delete emptied parents and keep the archive root" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/12/3404.jpg")
@@ -267,7 +275,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       originals.list.toSet shouldBe Set("2012")
       out should not include ("skipping")
 
-  it should "not move or stamp when the sidecar date disagrees with the timestamp" in :
+  it should "not move or stamp when the sidecar date disagrees with the timestamp" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/11/3404.jpg")
@@ -277,35 +285,39 @@ class RepairTest extends AnyFlatSpec, Matchers:
         "timestamp = \"2011-06-29T09:45:00\"\ndate = 2011-06-30\n"
       )
       var set: Boolean = false
-      val out: String = capture(run(
-        root,
-        "2009/06/11",
-        timestamps = true,
-        days = true,
-        setTimestamp = (_, _, _) => set = true
-      ))
+      val out: String = capture(
+        run(
+          root,
+          "2009/06/11",
+          timestamps = true,
+          days = true,
+          setTimestamp = (_, _, _) => set = true
+        )
+      )
       set shouldBe false
       picture.isFile shouldBe true
       File(originals, "2011/06/29/3404.jpg").exists shouldBe false
       File(originals, "2011/06/30/3404.jpg").exists shouldBe false
-      out should include (
+      out should include(
         "DATE DISAGREES WITH TIMESTAMP /2009/06/11/3404 timestamp=2011-06-29T09:45 date=2011-06-30"
       )
 
-  it should "not move or stamp an upload with no clock" in :
+  it should "not move or stamp an upload with no clock" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, ".upload/1000.jpg")
       picture.getParentFile.mkdirs()
       ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "jpg", picture)
       var set: Boolean = false
-      val repairOut: String = capture(run(
-        root,
-        ".upload",
-        timestamps = true,
-        days = true,
-        setTimestamp = (_, _, _) => set = true
-      ))
+      val repairOut: String = capture(
+        run(
+          root,
+          ".upload",
+          timestamps = true,
+          days = true,
+          setTimestamp = (_, _, _) => set = true
+        )
+      )
       set shouldBe false
       picture.isFile shouldBe true
       repairOut should not include ("moving")
@@ -328,9 +340,9 @@ class RepairTest extends AnyFlatSpec, Matchers:
       ).execute(Session(root))
       result match
         case Result.Usage(message) => message shouldBe "not a date-tree path"
-        case other => fail(other.toString)
+        case other                 => fail(other.toString)
 
-  it should "file an inbox jpeg on the civil day and leave the curated include" in :
+  it should "file an inbox jpeg on the civil day and leave the curated include" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val best: String = "include = [\"2009/03/10 2412\"]\n"
@@ -343,12 +355,12 @@ class RepairTest extends AnyFlatSpec, Matchers:
       destination.isFile shouldBe true
       File(originals, ".upload").isDirectory shouldBe true
       JFiles.readString(File(originals, "Best.toml").toPath) shouldBe best
-      out should include ("moving /.upload/3404 to /2009/06/11")
-      out should include (".upload/3404.jpg to ")
-      out should include ("/2009/06/11/3404.jpg")
+      out should include("moving /.upload/3404 to /2009/06/11")
+      out should include(".upload/3404.jpg to ")
+      out should include("/2009/06/11/3404.jpg")
       out should not include ("keep")
 
-  it should "print the inbox move and write nothing on a dry run" in :
+  it should "print the inbox move and write nothing on a dry run" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, ".upload/3404.jpg")
@@ -359,7 +371,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       out.linesIterator.map(_.trim).filter(_.nonEmpty).toSeq shouldBe
         Seq("moving /.upload/3404 to /2009/06/11")
 
-  it should "keep an inbox picture when any destination file already exists" in :
+  it should "keep an inbox picture when any destination file already exists" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, ".upload/3404.jpg")
@@ -379,12 +391,12 @@ class RepairTest extends AnyFlatSpec, Matchers:
         out
       val dry: String = kept(true)
       val real: String = kept(false)
-      dry should include ("keep /.upload/3404 /2009/06/11 already exists")
-      real should include ("keep /.upload/3404 /2009/06/11 already exists")
+      dry should include("keep /.upload/3404 /2009/06/11 already exists")
+      real should include("keep /.upload/3404 /2009/06/11 already exists")
       dry should not include ("moving")
       real should not include ("moving")
 
-  it should "put every extension back when the inbox link loses the name" in :
+  it should "put every extension back when the inbox link loses the name" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val first: File = File(originals, ".upload/3404.jpg")
@@ -395,15 +407,17 @@ class RepairTest extends AnyFlatSpec, Matchers:
       copyFixture("/dates/evening-no-offset.jpg", second)
       val firstLength: Long = first.length
       var calls: Int = 0
-      val out: String = capture(run(
-        root,
-        ".upload",
-        days = true,
-        link = (partial, destination) =>
-          calls += 1
-          if calls == 2 then throw FileAlreadyExistsException(destination.getPath)
-          else FileDownloads.linkPartial(partial, destination)
-      ))
+      val out: String = capture(
+        run(
+          root,
+          ".upload",
+          days = true,
+          link = (partial, destination) =>
+            calls += 1
+            if calls == 2 then throw FileAlreadyExistsException(destination.getPath)
+            else FileDownloads.linkPartial(partial, destination)
+        )
+      )
       calls shouldBe 3
       first.isFile shouldBe true
       first.length shouldBe firstLength
@@ -415,14 +429,14 @@ class RepairTest extends AnyFlatSpec, Matchers:
       val dayNames: Seq[String] =
         Option(File(originals, "2009/06/11").list).map(_.toSeq).getOrElse(Seq.empty)
       dayNames.exists(_.startsWith(".inbox-")) shouldBe false
-      out should include ("keep /.upload/3404 /2009/06/11 already exists")
-      out should include ("moving /.upload/3405 to /2009/06/11")
-      out should include (".upload/3405.jpg to ")
+      out should include("keep /.upload/3404 /2009/06/11 already exists")
+      out should include("moving /.upload/3405 to /2009/06/11")
+      out should include(".upload/3405.jpg to ")
       out should not include ("moving /.upload/3404")
       out should not include (".upload/3404.jpg to ")
       out should not include (".upload/3404.toml to ")
 
-  it should "put every extension back and stop when the inbox link fails another way" in :
+  it should "put every extension back and stop when the inbox link fails another way" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, ".upload/3404.jpg")
@@ -430,15 +444,17 @@ class RepairTest extends AnyFlatSpec, Matchers:
       copyFixture("/dates/evening-no-offset.jpg", picture)
       JFiles.writeString(sidecar.toPath, "\n")
       var calls: Int = 0
-      val (out, thrown) = Transcript.collect(run(
-        root,
-        ".upload",
-        days = true,
-        link = (partial, destination) =>
-          calls += 1
-          if calls == 2 then throw RuntimeException("boom")
-          else FileDownloads.linkPartial(partial, destination)
-      ))
+      val (out, thrown) = Transcript.collect(
+        run(
+          root,
+          ".upload",
+          days = true,
+          link = (partial, destination) =>
+            calls += 1
+            if calls == 2 then throw RuntimeException("boom")
+            else FileDownloads.linkPartial(partial, destination)
+        )
+      )
       calls shouldBe 2
       thrown.get.getMessage shouldBe "boom"
       picture.isFile shouldBe true
@@ -448,7 +464,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       out should not include ("keep")
       out should not include ("moving")
 
-  it should "print the disagreement line for an inbox sidecar and not move" in :
+  it should "print the disagreement line for an inbox sidecar and not move" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, ".upload/3404.jpg")
@@ -461,13 +477,13 @@ class RepairTest extends AnyFlatSpec, Matchers:
       picture.isFile shouldBe true
       File(originals, "2011/06/29/3404.jpg").exists shouldBe false
       File(originals, "2011/06/30/3404.jpg").exists shouldBe false
-      out should include (
+      out should include(
         "DATE DISAGREES WITH TIMESTAMP /.upload/3404 timestamp=2011-06-29T09:45 date=2011-06-30"
       )
       out should not include ("moving")
       out should not include ("keep")
 
-  it should "leave an orphan THM in .upload" in :
+  it should "leave an orphan THM in .upload" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val thm: File = File(originals, ".upload/1003.THM")
@@ -475,10 +491,10 @@ class RepairTest extends AnyFlatSpec, Matchers:
       thm.createNewFile()
       val out: String = capture(run(root, ".upload", names = true, days = true))
       thm.isFile shouldBe true
-      out should include (s"$thm: NOT RENAMED; 1003 has no picture file")
+      out should include(s"$thm: NOT RENAMED; 1003 has no picture file")
       out should not include ("moving")
 
-  it should "move an inbox partial back and then file it" in :
+  it should "move an inbox partial back and then file it" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val partial: File = File(originals, "2010/01/02/.inbox-2412.jpg.partial")
@@ -489,9 +505,9 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, ".upload/2412.jpg").exists shouldBe false
       File(originals, "2009/06/11/2412.jpg").isFile shouldBe true
       File(originals, ".upload").isDirectory shouldBe true
-      out should include ("moving /.upload/2412 to /2009/06/11")
+      out should include("moving /.upload/2412 to /2009/06/11")
 
-  it should "leave an inbox partial in place on a dry run" in :
+  it should "leave an inbox partial in place on a dry run" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val partial: File = File(originals, "2010/01/02/.inbox-2412.jpg.partial")
@@ -503,7 +519,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, "2009/06/11/2412.jpg").exists shouldBe false
       out should not include ("moving")
 
-  it should "delete an inbox partial that is already the day file" in :
+  it should "delete an inbox partial that is already the day file" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val dayFile: File = File(originals, "2009/06/11/2412.jpg")
@@ -517,7 +533,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, ".upload/2412.jpg").exists shouldBe false
       out should not include ("moving")
 
-  it should "refuse a leftover inbox partial that is not the day file" in :
+  it should "refuse a leftover inbox partial that is not the day file" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val dayFile: File = File(originals, "2009/06/11/2412.jpg")
@@ -525,14 +541,14 @@ class RepairTest extends AnyFlatSpec, Matchers:
       val partial: File = File(dayFile.getParentFile, ".inbox-2412.jpg.partial")
       JFiles.writeString(partial.toPath, "other")
       File(originals, ".upload").mkdirs()
-      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+      val caught: IllegalArgumentException = the[IllegalArgumentException] thrownBy
         run(root, ".upload", days = true)
       caught.getMessage shouldBe "leftover inbox partial: .inbox-2412.jpg.partial"
       partial.isFile shouldBe true
       dayFile.isFile shouldBe true
       File(originals, ".upload/2412.jpg").exists shouldBe false
 
-  it should "refuse a leftover inbox partial when .upload already has the file" in :
+  it should "refuse a leftover inbox partial when .upload already has the file" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val uploadFile: File = File(originals, ".upload/2412.jpg")
@@ -540,14 +556,14 @@ class RepairTest extends AnyFlatSpec, Matchers:
       val partial: File = File(originals, "2010/01/02/.inbox-2412.jpg.partial")
       partial.getParentFile.mkdirs()
       JFiles.writeString(partial.toPath, "other")
-      val caught: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+      val caught: IllegalArgumentException = the[IllegalArgumentException] thrownBy
         run(root, ".upload", days = true)
       caught.getMessage shouldBe "leftover inbox partial: .inbox-2412.jpg.partial"
       partial.isFile shouldBe true
       uploadFile.isFile shouldBe true
       File(originals, "2009/06/11/2412.jpg").exists shouldBe false
 
-  it should "not restore an inbox partial when the path is a year" in :
+  it should "not restore an inbox partial when the path is a year" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val partial: File = File(originals, "2009/06/12/.inbox-2412.jpg.partial")
@@ -558,7 +574,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
       File(originals, ".upload/2412.jpg").exists shouldBe false
       out should not include ("moving")
 
-  it should "throw when a day-folder destination exists and not print keep" in :
+  it should "throw when a day-folder destination exists and not print keep" in:
     withOriginals: originals =>
       val root: Root = rootFor(originals)
       val picture: File = File(originals, "2009/06/12/3404.jpg")
@@ -567,12 +583,12 @@ class RepairTest extends AnyFlatSpec, Matchers:
       destination.getParentFile.mkdirs()
       destination.createNewFile()
       val (out, thrown) = Transcript.collect(run(root, "2009/06/12", days = true))
-      thrown.get shouldBe a [FileAlreadyExistsException]
+      thrown.get shouldBe a[FileAlreadyExistsException]
       picture.isFile shouldBe true
       destination.isFile shouldBe true
       out should not include ("keep")
 
-  "deleteEmptyDirectories" should "stop at the archive root when that root is empty" in :
+  "deleteEmptyDirectories" should "stop at the archive root when that root is empty" in:
     withOriginals: originals =>
       originals.isDirectory shouldBe true
       Files.deleteEmptyDirectories(originals, originals)
@@ -589,16 +605,16 @@ class RepairTest extends AnyFlatSpec, Matchers:
       originals.list.length shouldBe 0
 
   private def run(
-    root: Root,
-    path: String,
-    names: Boolean = false,
-    raw: Boolean = false,
-    timestamps: Boolean = false,
-    days: Boolean = false,
-    dryRun: Boolean = false,
-    generate: Picture => Unit = _ => (),
-    setTimestamp: (Picture, String, java.time.Instant) => Unit = (_, _, _) => (),
-    link: (File, File) => Unit = FileDownloads.linkPartial
+      root: Root,
+      path: String,
+      names: Boolean = false,
+      raw: Boolean = false,
+      timestamps: Boolean = false,
+      days: Boolean = false,
+      dryRun: Boolean = false,
+      generate: Picture => Unit = _ => (),
+      setTimestamp: (Picture, String, java.time.Instant) => Unit = (_, _, _) => (),
+      link: (File, File) => Unit = FileDownloads.linkPartial
   ): Unit =
     Repair.run(
       root.parse(path),
@@ -616,7 +632,7 @@ class RepairTest extends AnyFlatSpec, Matchers:
     val (out, thrown) = Transcript.collect(body)
     thrown match
       case Some(error) => throw error
-      case None => out
+      case None        => out
 
   private def rootFor(originals: File): Root =
     val home: File = File(System.getProperty("user.home"))

@@ -7,7 +7,7 @@ import java.time.LocalDate
 import org.podval.tools.photo.chrome.AgentChrome
 
 class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
-  "agent album-file" should "place leftover names from the catalog title" in :
+  "agent album-file" should "place leftover names from the catalog title" in:
     withArchive: archive =>
       mkdir(archive, "2010/02/28")
       mkdir(archive, "2019/02/03")
@@ -65,7 +65,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "keep a day number that is not an item day and write no file" in :
+  it should "keep a day number that is not an item day and write no file" in:
     withArchive: archive =>
       writeCatalog(
         archive,
@@ -87,7 +87,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       partials(archive) shouldBe Seq.empty[String]
       requests(archive).exists shouldBe false
 
-  it should "keep a parsed slash date as a day file and a parsed name" in :
+  it should "keep a parsed slash date as a day file and a parsed name" in:
     withArchive: archive =>
       mkdir(archive, "2010/07/19")
       mkdir(archive, "2010/07")
@@ -116,7 +116,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "strip a slash-date leftover and reject a name Album.read would misread" in :
+  it should "strip a slash-date leftover and reject a name Album.read would misread" in:
     withArchive: archive =>
       mkdir(archive, "2010/07/19")
       writeCatalog(
@@ -168,7 +168,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       picnicParsed.name shouldBe Some("Picnic")
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "use all for a month inside the cap and per-day lines when a pictured day has no match" in :
+  it should "use all for a month inside the cap and per-day lines when a pictured day has no match" in:
     withArchive: archive =>
       touch(File(archive, "2010/07/01"), "2412.jpg")
       touch(File(archive, "2010/07/01"), "9999.jpg")
@@ -192,13 +192,13 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
         case other =>
           fail(other.toString)
       val july: String = JFiles.readString(File(archive, "2010/07/album.toml").toPath)
-      july should include ("'all'")
+      july should include("'all'")
       july should not include ("9999")
       Album.read(archive, File(archive, "2010/07/album.toml")).span.map(Title.renderSpan) shouldBe Some("2010/07")
       val (_, failed) = exec(session, "agent", "album-file", "2010/08")
       failed match
         case Result.Ok(text, _) => noIds(text, "albAug", "keyAugDay")
-        case other => fail(other.toString)
+        case other              => fail(other.toString)
       val august: Album = Album.read(archive, File(archive, "2010/08/album.toml"))
       august.title shouldBe "2010/08"
       august.span.map(Title.renderSpan) shouldBe Some("2010/08")
@@ -206,7 +206,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       august.include.map(Include.render).foreach(line => line.startsWith("all") shouldBe false)
       requests(archive).exists shouldBe false
 
-  it should "refuse a matched day outside a month title" in :
+  it should "refuse a matched day outside a month title" in:
     withArchive: archive =>
       mkdir(archive, "2010/07")
       touch(File(archive, "2010/08/02"), "2412.jpg")
@@ -223,7 +223,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "reject an include that does not expand to the matched set" in :
+  it should "reject an include that does not expand to the matched set" in:
     val day: LocalDate = LocalDate.of(2010, 7, 1)
     val span: Title.Span = Title.Span(day, day, Title.Grain.Day)
     val caught: IllegalArgumentException = intercept[IllegalArgumentException]:
@@ -236,7 +236,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       )
     caught.getMessage shouldBe "include does not match"
 
-  it should "skip auto-add and unread names without a file or a request" in :
+  it should "skip auto-add and unread names without a file or a request" in:
     withArchive: archive =>
       val day: File = File(archive, "2010/07/19")
       touch(day, "2412.jpg")
@@ -254,15 +254,30 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       mkdir(archive, "2010/09")
       val session: Session = sessionFor(archive)
       val (skippedAdd, add) = exec(session, "agent", "album-file", "Gamma")
-      add shouldBe Result.Ok("skipped auto-add\n", AgentSupport.skipped(session, Catalog.Album(
-        "albAdd", 0, "Gamma", None, true, None, Seq.empty, Seq.empty
-      ), "auto-add")._2 match
-        case Result.Ok(_, value) => value
-        case other => fail(other.toString)
+      add shouldBe Result.Ok(
+        "skipped auto-add\n",
+        AgentSupport
+          .skipped(
+            session,
+            Catalog.Album(
+              "albAdd",
+              0,
+              "Gamma",
+              None,
+              true,
+              None,
+              Seq.empty,
+              Seq.empty
+            ),
+            "auto-add"
+          )
+          ._2 match
+          case Result.Ok(_, value) => value
+          case other               => fail(other.toString)
       )
       add match
         case Result.Ok(text, _) => noIds(text, "albAdd")
-        case other => fail(other.toString)
+        case other              => fail(other.toString)
       skippedAdd.cached(day).isEmpty shouldBe true
       val (skippedNames, unread) = exec(skippedAdd, "agent", "album-file", "Epsilon")
       unread match
@@ -286,7 +301,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "refuse an existing file unless replace, and a missing start directory" in :
+  it should "refuse an existing file unless replace, and a missing start directory" in:
     withArchive: archive =>
       JFiles.writeString(File(archive, "Best Of.toml").toPath, "keep-root\n")
       mkdir(archive, "2010/07")
@@ -321,7 +336,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       partials(archive) shouldBe Seq.empty[String]
       requests(archive).exists shouldBe false
 
-  it should "replace an album file and keep the Google id and published title" in :
+  it should "replace an album file and keep the Google id and published title" in:
     withArchive: archive =>
       mkdir(archive, "2010/07")
       val dest: File = File(archive, "2010/07/album.toml")
@@ -341,7 +356,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       result match
         case Result.Ok(text, value) =>
           noIds(text, "albRep")
-          text should include ("rename no")
+          text should include("rename no")
           text should not include ("appended")
           field(value, "albumId") shouldBe Json.Str("albRep")
           field(value, "requestId") shouldBe Json.Null
@@ -358,7 +373,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       text shouldBe Album.renderFile(read)
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "replace an owner album without a google album id" in :
+  it should "replace an owner album without a google album id" in:
     withArchive: archive =>
       val dest: File = File(archive, "Friends.toml")
       JFiles.writeString(
@@ -377,7 +392,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       val (_, result) = exec(sessionFor(archive), "agent", "album-file", "--replace", "Friends ")
       result match
         case Result.Ok(text, _) =>
-          text should include ("rename no")
+          text should include("rename no")
           noIds(text, "albOwn")
         case other =>
           fail(other.toString)
@@ -391,7 +406,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       text should not include ("gid-own")
       text shouldBe Album.renderFile(read)
 
-  it should "leave a file Album.read rejects in place" in :
+  it should "leave a file Album.read rejects in place" in:
     withArchive: archive =>
       mkdir(archive, "2010/07")
       val dest: File = File(archive, "2010/07/album.toml")
@@ -406,7 +421,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       JFiles.readString(dest.toPath) shouldBe body
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "store an owner and an exact google-title without a rename row" in :
+  it should "store an owner and an exact google-title without a rename row" in:
     withArchive: archive =>
       writeCatalog(
         archive,
@@ -448,15 +463,15 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       val (_, plain) = exec(sessionFor(archive), "agent", "album-file", "Friends ")
       plain match
         case Result.Ok(text, _) =>
-          text should include ("rename no")
+          text should include("rename no")
           text should not include ("appended")
           noIds(text, "albOwn")
         case other =>
           fail(other.toString)
-      JFiles.readString(File(archive, "Friends.toml").toPath) should include ("google-title = \"Friends \"")
+      JFiles.readString(File(archive, "Friends.toml").toPath) should include("google-title = \"Friends \"")
       requests(archive).exists shouldBe false
 
-  it should "print rename yes when the catalog title differs and append nothing" in :
+  it should "print rename yes when the catalog title differs and append nothing" in:
     withArchive: archive =>
       mkdir(archive, "2010/07")
       writeCatalog(archive, "album\talb07\t0\t2010/07 ")
@@ -514,15 +529,15 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       requests(archive).exists shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "collapse working-title spaces only on the path title" in :
+  it should "collapse working-title spaces only on the path title" in:
     withArchive: archive =>
       writeCatalog(archive, "album\talbBest\t0\tBest  Of")
       val (_, result) = exec(sessionFor(archive), "agent", "album-file", "Best  Of")
       result match
         case Result.Ok(text, _) =>
-          text should include ("path-title Best Of")
-          text should include ("catalog-title \"Best  Of\"")
-          text should include ("rename yes")
+          text should include("path-title Best Of")
+          text should include("catalog-title \"Best  Of\"")
+          text should include("rename yes")
           text should not include ("appended")
           noIds(text, "albBest")
         case other =>
@@ -530,7 +545,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       Album.read(archive, File(archive, "Best Of.toml")).title shouldBe "Best Of"
       requests(archive).exists shouldBe false
 
-  it should "keep a legacy requests file when the album file is written" in :
+  it should "keep a legacy requests file when the album file is written" in:
     withArchive: archive =>
       mkdir(archive, "2010/07")
       writeCatalog(archive, "album\talb07\t0\t2010/07 ")
@@ -541,8 +556,8 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       val (returned, result) = exec(primed, "agent", "album-file", "2010/07 ")
       result match
         case Result.Ok(text, value) =>
-          text should include ("wrote 2010/07/album.toml")
-          text should include ("rename yes")
+          text should include("wrote 2010/07/album.toml")
+          text should include("rename yes")
           text should not include ("append failed")
           text should not include ("appended")
           noIds(text, "alb07")
@@ -554,7 +569,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       JFiles.readString(requests(archive).toPath) shouldBe bad
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "not create a partial when the catalog check fails" in :
+  it should "not create a partial when the catalog check fails" in:
     withArchive: archive =>
       val message: String = usage(sessionFor(archive), "agent", "album-file", "2010/07")
       message shouldBe "catalog is absent"
@@ -566,7 +581,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       bad shouldBe "catalog is not version 2"
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "reject a request that does not match the catalog" in :
+  it should "reject a request that does not match the catalog" in:
     withArchive: archive =>
       writeFixture(archive)
       val session: Session = sessionFor(archive)
@@ -584,77 +599,258 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       try
         reject(
           "no album titled \"Missing\"",
-          "agent", "rename-album", "--title", "Missing", "--current", "Missing", "--new", "July"
+          "agent",
+          "rename-album",
+          "--title",
+          "Missing",
+          "--current",
+          "Missing",
+          "--new",
+          "July"
         )
         reject(
           "catalog title does not match",
-          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July", "--id", "goneId"
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07 ",
+          "--new",
+          "July",
+          "--id",
+          "goneId"
         )
         reject(
           "album has an owner",
-          "agent", "rename-album", "--title", "Owned Name", "--current", "Owned Name", "--new", "Next"
+          "agent",
+          "rename-album",
+          "--title",
+          "Owned Name",
+          "--current",
+          "Owned Name",
+          "--new",
+          "Next"
         )
         reject(
           "current does not match \"2010/07 \" \"2010/07\"",
-          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07", "--new", "July"
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07",
+          "--new",
+          "July"
         )
         reject(
           "new title is empty",
-          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", ""
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07 ",
+          "--new",
+          ""
         )
         reject(
           "new title is unchanged",
-          "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "2010/07 "
+          "agent",
+          "rename-album",
+          "--title",
+          "2010/07 ",
+          "--current",
+          "2010/07 ",
+          "--new",
+          "2010/07 "
         )
-        reject("filename is not valid", "agent", "download-item", "--title", "Bad Names", "--item", "keyDot", "--current", ".")
-        reject("filename is not valid", "agent", "download-item", "--title", "Bad Names", "--item", "keyDots", "--current", "..")
         reject(
           "filename is not valid",
-          "agent", "download-item", "--title", "Bad Names", "--item", "keySlash", "--current", "a/b.jpg"
+          "agent",
+          "download-item",
+          "--title",
+          "Bad Names",
+          "--item",
+          "keyDot",
+          "--current",
+          "."
+        )
+        reject(
+          "filename is not valid",
+          "agent",
+          "download-item",
+          "--title",
+          "Bad Names",
+          "--item",
+          "keyDots",
+          "--current",
+          ".."
+        )
+        reject(
+          "filename is not valid",
+          "agent",
+          "download-item",
+          "--title",
+          "Bad Names",
+          "--item",
+          "keySlash",
+          "--current",
+          "a/b.jpg"
         )
         opened shouldBe false
-      finally
-        Refresh.openAct = previousAct
+      finally Refresh.openAct = previousAct
       requests(archive).exists shouldBe false
       reject(
         "no such item",
-        "agent", "set-description", "--item", "goneId", "--current", "pic.jpg", "--new", "Hello"
+        "agent",
+        "set-description",
+        "--item",
+        "goneId",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "Hello"
       )
       reject(
         "no such item",
-        "agent", "set-description", "--item", "goneId", "--current", "pic.jpg", "--new", "a\tb"
+        "agent",
+        "set-description",
+        "--item",
+        "goneId",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "a\tb"
       )
       reject(
         "no such item",
-        "agent", "set-description", "--item", "keyUnset", "--current", "pic.jpg", "--new", "Hello"
+        "agent",
+        "set-description",
+        "--item",
+        "keyUnset",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "Hello"
       )
       reject(
         "item key is not unique",
-        "agent", "set-description", "--item", "keyShare", "--current", "pic.jpg", "--new", "Hello"
+        "agent",
+        "set-description",
+        "--item",
+        "keyShare",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "Hello"
       )
       reject(
         "current does not match \"pic.jpg\" \"other.jpg\"",
-        "agent", "set-description", "--item", "keyOnly", "--current", "other.jpg", "--new", "Hello"
+        "agent",
+        "set-description",
+        "--item",
+        "keyOnly",
+        "--current",
+        "other.jpg",
+        "--new",
+        "Hello"
       )
       reject(
         "new contains a tab or a newline",
-        "agent", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "a\tb"
+        "agent",
+        "set-description",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "a\tb"
       )
       reject(
         "new contains a tab or a newline",
-        "agent", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "a\nb"
+        "agent",
+        "set-description",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "a\nb"
       )
       reject(
         "new contains a tab or a newline",
-        "agent", "set-description", "--item", "keyOnly", "--current", "pic.jpg", "--new", "a\rb"
+        "agent",
+        "set-description",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "a\rb"
       )
-      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 24:00")
-      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19")
-      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-07-19 00:60")
-      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-02-31 09:05")
-      reject("date is not valid", "agent", "set-date", "--item", "keyOnly", "--current", "pic.jpg", "--new", "2010-13-01 09:05")
+      reject(
+        "date is not valid",
+        "agent",
+        "set-date",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "2010-07-19 24:00"
+      )
+      reject(
+        "date is not valid",
+        "agent",
+        "set-date",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "2010-07-19"
+      )
+      reject(
+        "date is not valid",
+        "agent",
+        "set-date",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "2010-07-19 00:60"
+      )
+      reject(
+        "date is not valid",
+        "agent",
+        "set-date",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "2010-02-31 09:05"
+      )
+      reject(
+        "date is not valid",
+        "agent",
+        "set-date",
+        "--item",
+        "keyOnly",
+        "--current",
+        "pic.jpg",
+        "--new",
+        "2010-13-01 09:05"
+      )
       val download: Catalog.Album = Catalog.Album(
-        "alb1", 1, "Title", None, false, None,
+        "alb1",
+        1,
+        "Title",
+        None,
+        false,
+        None,
         Seq(Catalog.Item("pic.jpg", Some(LocalDate.of(2010, 7, 1)), "key1", None)),
         Seq.empty
       )
@@ -668,7 +864,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
         AgentChrome.acceptRequest(Seq(download), AgentChrome.Action.RenameAlbum, "gone", "", "Title", "Next")
       .getMessage shouldBe "no such album"
 
-  it should "report a missing request flag before it reads the catalog" in :
+  it should "report a missing request flag before it reads the catalog" in:
     withArchive: archive =>
       val session: Session = sessionFor(archive)
       usage(session, "agent", "rename-album") shouldBe "missing title"
@@ -683,27 +879,71 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       usage(session, "agent", "add-to-album") shouldBe "missing title"
       usage(session, "agent", "add-to-album", "--title", "Source Title") shouldBe "missing item"
       usage(session, "agent", "add-to-album", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
-      usage(session, "agent", "add-to-album", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg") shouldBe
+      usage(
+        session,
+        "agent",
+        "add-to-album",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic",
+        "--current",
+        "pic.jpg"
+      ) shouldBe
         "missing dest"
       usage(session, "agent", "remove-from-album") shouldBe "missing title"
       usage(session, "agent", "remove-from-album", "--title", "Source Title") shouldBe "missing item"
-      usage(session, "agent", "remove-from-album", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
+      usage(
+        session,
+        "agent",
+        "remove-from-album",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic"
+      ) shouldBe "missing current"
       usage(session, "agent", "move-item") shouldBe "missing title"
       usage(session, "agent", "move-item", "--title", "Source Title") shouldBe "missing item"
       usage(session, "agent", "move-item", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
-      usage(session, "agent", "move-item", "--title", "Source Title", "--item", "keyPic", "--current", "pic.jpg") shouldBe
+      usage(
+        session,
+        "agent",
+        "move-item",
+        "--title",
+        "Source Title",
+        "--item",
+        "keyPic",
+        "--current",
+        "pic.jpg"
+      ) shouldBe
         "missing dest"
       usage(session, "agent", "delete-item") shouldBe "missing title"
       usage(session, "agent", "delete-item", "--title", "Source Title") shouldBe "missing item"
       usage(session, "agent", "delete-item", "--title", "Source Title", "--item", "keyPic") shouldBe "missing current"
       File(archive, ".gphoto-sync").exists shouldBe false
 
-
   private val fixtureIds: Seq[String] = Seq(
-    "albTrail", "albOwn", "albSrc", "albDst", "albUp", "albShareA", "albShareB", "albOnly", "albBad", "albUnset",
-    "keyOwn", "keyPic", "keyUp", "keyShare", "keyOnly", "keyDot", "keyDots", "keySlash", "keyUnset", "goneId"
+    "albTrail",
+    "albOwn",
+    "albSrc",
+    "albDst",
+    "albUp",
+    "albShareA",
+    "albShareB",
+    "albOnly",
+    "albBad",
+    "albUnset",
+    "keyOwn",
+    "keyPic",
+    "keyUp",
+    "keyShare",
+    "keyOnly",
+    "keyDot",
+    "keyDots",
+    "keySlash",
+    "keyUnset",
+    "goneId"
   )
-
 
   private def place(session: Session, title: String, path: String, pathTitle: String): Unit =
     val (_, result) = exec(session, "agent", "album-file", title)
@@ -711,7 +951,7 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
       case Result.Ok(text, value) =>
         field(value, "path") shouldBe Json.Str(path)
         field(value, "pathTitle") shouldBe Json.Str(pathTitle)
-        text should include (s"wrote $path")
+        text should include(s"wrote $path")
       case other =>
         fail(other.toString)
     val file: File = File(session.root.configuration.archive, path)
@@ -719,17 +959,14 @@ class AgentAlbumFileTest extends AnyFlatSpec, AgentWriteSupport:
     read.title shouldBe pathTitle
     read.external shouldBe true
 
-
   // skipped's value is what match returns. Build the same album the catalog would.
   private def noIds(text: String, ids: String*): Unit =
     ids.foreach: id =>
       withClue(id):
         text should not include id
 
-
   private def mkdir(archive: File, path: String): Unit =
     File(archive, path).mkdirs()
-
 
   private def partials(archive: File): Seq[String] =
     val dot: File = File(archive, ".gphoto-sync")

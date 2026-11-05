@@ -16,7 +16,7 @@ class CliTest extends AnyFlatSpec, Matchers:
   @targetName("resultCanEqual")
   private given [A <: Result, B <: Result] => CanEqual[A, B] = CanEqual.derived
 
-  "card" should "parse discover and copy without joining the registry" in :
+  "card" should "parse discover and copy without joining the registry" in:
     Cli.parse(List("card")) shouldBe Cli.Run(Cli.CardDiscover(dryRun = false))
     Cli.parse(List("card", "--dry-run")) shouldBe Cli.Run(Cli.CardDiscover(dryRun = true))
     Cli.parse(List("card", "--dry-run=false")) shouldBe Cli.Run(Cli.CardDiscover(dryRun = false))
@@ -33,7 +33,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.inProcessWrite(Cli.CardDiscover(dryRun = false)) shouldBe false
     Cli.inProcessWrite(Cli.CardCopy(dryRun = true, path = None)) shouldBe false
 
-  "parse" should "accept every subcommand" in :
+  "parse" should "accept every subcommand" in:
     Cli.parse(List("ls")) shouldBe ls()
     Cli.parse(List("ls", "2009")) shouldBe ls(Some("2009"))
     Cli.parse(List("ls", "-R", "2009")) shouldBe ls(Some("2009"), recursive = true)
@@ -41,24 +41,30 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("ls", "--recursive=false", "2009")) shouldBe ls(Some("2009"))
     Cli.parse(List("ls", "--long", "false")) shouldBe ls(path = Some("false"), long = true)
     Cli.parse(List("ls", "--long=false", "2009")) shouldBe ls(Some("2009"), long = false)
-    Cli.parse(List(
-      "ls",
-      "--long",
-      "--name-contains", "mid",
-      "--has-extension", "jpg",
-      "--property", "bad-raw",
-      "--timestamp-from-name-format", "yyyy",
-      "--timestamp-from-name",
-      "--timestamp-from-name-only",
-      "--timestamps-vary",
-      "--has-metadata",
-      "--no-normal",
-      "--no-timestamp",
-      "--wrong-timestamp",
-      "--wrong-day",
-      "--wrong",
-      "2009/03"
-    )) shouldBe ls(
+    Cli.parse(
+      List(
+        "ls",
+        "--long",
+        "--name-contains",
+        "mid",
+        "--has-extension",
+        "jpg",
+        "--property",
+        "bad-raw",
+        "--timestamp-from-name-format",
+        "yyyy",
+        "--timestamp-from-name",
+        "--timestamp-from-name-only",
+        "--timestamps-vary",
+        "--has-metadata",
+        "--no-normal",
+        "--no-timestamp",
+        "--wrong-timestamp",
+        "--wrong-day",
+        "--wrong",
+        "2009/03"
+      )
+    ) shouldBe ls(
       path = Some("2009/03"),
       long = true,
       nameContains = Some("mid"),
@@ -184,48 +190,158 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("agent", "match", "2010/07")) shouldBe Cli.Run(Cli.AgentMatchArgs(None, "2010/07"))
     Cli.parse(List("agent", "locate", "2010/07/19", "2412")) shouldBe
       Cli.Run(Cli.AgentLocateArgs("2010/07/19", "2412"))
-    Cli.parse(List(
-      "agent", "include", "--span", "2010/07", "2010/07/19/2412", "2010/07/20/2413"
-    )) shouldBe Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
+    Cli.parse(
+      List(
+        "agent",
+        "include",
+        "--span",
+        "2010/07",
+        "2010/07/19/2412",
+        "2010/07/20/2413"
+      )
+    ) shouldBe Cli.Run(Cli.AgentIncludeArgs(Some("2010/07"), Seq("2010/07/19/2412", "2010/07/20/2413")))
     Cli.parse(List("agent", "include", "2010/07/19/2412")) shouldBe
       Cli.Run(Cli.AgentIncludeArgs(None, Seq("2010/07/19/2412")))
-    Cli.parse(List(
-      "agent", "album-file", "--id", "a1", "--dry-run", "--replace",
-      "--google-title", "Exact", "2010/07"
-    )) shouldBe Cli.Run(Cli.AgentAlbumFileArgs(
-      Some("a1"), dryRun = true, replace = true, Some("Exact"), "2010/07"
-    ))
-    Cli.parse(List(
-      "agent", "rename-album", "--title", "2010/07 ", "--current", "2010/07 ", "--new", "July", "--id", "a1"
-    )) shouldBe Cli.Run(Cli.RenameAlbumArgs(Some("2010/07 "), Some("2010/07 "), Some("July"), Some("a1")))
-    Cli.parse(List(
-      "agent", "request", "rename-album", "--album", "a1", "--current", "Old", "--new", "New", "--id", "r1"
-    )) shouldBe Cli.Usage("unknown command 'request'")
+    Cli.parse(
+      List(
+        "agent",
+        "album-file",
+        "--id",
+        "a1",
+        "--dry-run",
+        "--replace",
+        "--google-title",
+        "Exact",
+        "2010/07"
+      )
+    ) shouldBe Cli.Run(
+      Cli.AgentAlbumFileArgs(
+        Some("a1"),
+        dryRun = true,
+        replace = true,
+        Some("Exact"),
+        "2010/07"
+      )
+    )
+    Cli.parse(
+      List(
+        "agent",
+        "rename-album",
+        "--title",
+        "2010/07 ",
+        "--current",
+        "2010/07 ",
+        "--new",
+        "July",
+        "--id",
+        "a1"
+      )
+    ) shouldBe Cli.Run(Cli.RenameAlbumArgs(Some("2010/07 "), Some("2010/07 "), Some("July"), Some("a1")))
+    Cli.parse(
+      List(
+        "agent",
+        "request",
+        "rename-album",
+        "--album",
+        "a1",
+        "--current",
+        "Old",
+        "--new",
+        "New",
+        "--id",
+        "r1"
+      )
+    ) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "rename-album", "--help")) shouldBe
       Cli.Usage("unknown command 'request'")
-    Cli.parse(List(
-      "agent", "move-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg",
-      "--dest", "Other", "--id", "a1", "--dest-id", "a2"
-    )) shouldBe Cli.Run(Cli.MoveItemArgs(
-      Some("Trip"), Some("k1"), Some("a.jpg"), Some("Other"), Some("a1"), Some("a2")
-    ))
-    Cli.parse(List(
-      "agent", "request", "move-item", "--album", "a1", "--item", "k1",
-      "--current", "a.jpg", "--new", "a2", "--id", "r1"
-    )) shouldBe Cli.Usage("unknown command 'request'")
+    Cli.parse(
+      List(
+        "agent",
+        "move-item",
+        "--title",
+        "Trip",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--dest",
+        "Other",
+        "--id",
+        "a1",
+        "--dest-id",
+        "a2"
+      )
+    ) shouldBe Cli.Run(
+      Cli.MoveItemArgs(
+        Some("Trip"),
+        Some("k1"),
+        Some("a.jpg"),
+        Some("Other"),
+        Some("a1"),
+        Some("a2")
+      )
+    )
+    Cli.parse(
+      List(
+        "agent",
+        "request",
+        "move-item",
+        "--album",
+        "a1",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--new",
+        "a2",
+        "--id",
+        "r1"
+      )
+    ) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "move-item", "--help")) shouldBe
       Cli.Usage("unknown command 'request'")
-    Cli.parse(List(
-      "agent", "delete-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
-    )) shouldBe Cli.Run(Cli.DeleteItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
-    Cli.parse(List(
-      "agent", "request", "delete-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
-    )) shouldBe Cli.Usage("unknown command 'request'")
+    Cli.parse(
+      List(
+        "agent",
+        "delete-item",
+        "--title",
+        "Trip",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--id",
+        "a1"
+      )
+    ) shouldBe Cli.Run(Cli.DeleteItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
+    Cli.parse(
+      List(
+        "agent",
+        "request",
+        "delete-item",
+        "--album",
+        "a1",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--id",
+        "r1"
+      )
+    ) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "delete-item", "--help")) shouldBe
       Cli.Usage("unknown command 'request'")
-    Cli.parse(List(
-      "agent", "upload-item", "--dest", "Trip", "--dest-id", "a2", "2010/07/01/a.jpg"
-    )) shouldBe Cli.Run(Cli.UploadItemArgs(Some("2010/07/01/a.jpg"), Some("Trip"), Some("a2")))
+    Cli.parse(
+      List(
+        "agent",
+        "upload-item",
+        "--dest",
+        "Trip",
+        "--dest-id",
+        "a2",
+        "2010/07/01/a.jpg"
+      )
+    ) shouldBe Cli.Run(Cli.UploadItemArgs(Some("2010/07/01/a.jpg"), Some("Trip"), Some("a2")))
     Cli.parse(List("agent", "request", "upload-item", "2010/07/01/a.jpg")) shouldBe
       Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "upload-item", "--help")) shouldBe
@@ -234,43 +350,148 @@ class CliTest extends AnyFlatSpec, Matchers:
       Cli.Run(Cli.CreateAlbumArgs(Some("Probe")))
     Cli.parse(List("agent", "delete-album", "--title", "Probe", "--id", "a1")) shouldBe
       Cli.Run(Cli.DeleteAlbumArgs(Some("Probe"), Some("a1")))
-    Cli.parse(List(
-      "agent", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello"
-    )) shouldBe Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("Hello")))
-    Cli.parse(List(
-      "agent", "set-description", "--item", "k1", "--current", "a.jpg", "--new", ""
-    )) shouldBe Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("")))
-    Cli.parse(List(
-      "agent", "set-date", "--item", "k1", "--current", "a.jpg", "--new", "2010-07-19 00:00"
-    )) shouldBe Cli.Run(Cli.SetDateArgs(Some("k1"), Some("a.jpg"), Some("2010-07-19 00:00")))
-    Cli.parse(List(
-      "agent", "request", "set-description", "--item", "k1", "--current", "a.jpg", "--new", "Hello", "--id", "r1"
-    )) shouldBe Cli.Usage("unknown command 'request'")
+    Cli.parse(
+      List(
+        "agent",
+        "set-description",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--new",
+        "Hello"
+      )
+    ) shouldBe Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("Hello")))
+    Cli.parse(
+      List(
+        "agent",
+        "set-description",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--new",
+        ""
+      )
+    ) shouldBe Cli.Run(Cli.SetDescriptionArgs(Some("k1"), Some("a.jpg"), Some("")))
+    Cli.parse(
+      List(
+        "agent",
+        "set-date",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--new",
+        "2010-07-19 00:00"
+      )
+    ) shouldBe Cli.Run(Cli.SetDateArgs(Some("k1"), Some("a.jpg"), Some("2010-07-19 00:00")))
+    Cli.parse(
+      List(
+        "agent",
+        "request",
+        "set-description",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--new",
+        "Hello",
+        "--id",
+        "r1"
+      )
+    ) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "set-description", "--help")) shouldBe
       Cli.Usage("unknown command 'request'")
-    Cli.parse(List(
-      "agent", "request", "set-date", "--item", "k1", "--current", "a.jpg",
-      "--new", "2010-07-19 00:00", "--id", "r1"
-    )) shouldBe Cli.Usage("unknown command 'request'")
+    Cli.parse(
+      List(
+        "agent",
+        "request",
+        "set-date",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--new",
+        "2010-07-19 00:00",
+        "--id",
+        "r1"
+      )
+    ) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "set-date", "--help")) shouldBe
       Cli.Usage("unknown command 'request'")
-    Cli.parse(List(
-      "agent", "download-item", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
-    )) shouldBe Cli.Run(Cli.DownloadItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
-    Cli.parse(List(
-      "agent", "request", "download-item", "--album", "a1", "--item", "k1", "--current", "a.jpg", "--id", "r1"
-    )) shouldBe Cli.Usage("unknown command 'request'")
+    Cli.parse(
+      List(
+        "agent",
+        "download-item",
+        "--title",
+        "Trip",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--id",
+        "a1"
+      )
+    ) shouldBe Cli.Run(Cli.DownloadItemArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
+    Cli.parse(
+      List(
+        "agent",
+        "request",
+        "download-item",
+        "--album",
+        "a1",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--id",
+        "r1"
+      )
+    ) shouldBe Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "download-item", "--help")) shouldBe
       Cli.Usage("unknown command 'request'")
-    Cli.parse(List(
-      "agent", "add-to-album", "--title", "Trip", "--item", "k1", "--current", "a.jpg",
-      "--dest", "Other", "--id", "a1", "--dest-id", "a2"
-    )) shouldBe Cli.Run(Cli.AddToAlbumArgs(
-      Some("Trip"), Some("k1"), Some("a.jpg"), Some("Other"), Some("a1"), Some("a2")
-    ))
-    Cli.parse(List(
-      "agent", "remove-from-album", "--title", "Trip", "--item", "k1", "--current", "a.jpg", "--id", "a1"
-    )) shouldBe Cli.Run(Cli.RemoveFromAlbumArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
+    Cli.parse(
+      List(
+        "agent",
+        "add-to-album",
+        "--title",
+        "Trip",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--dest",
+        "Other",
+        "--id",
+        "a1",
+        "--dest-id",
+        "a2"
+      )
+    ) shouldBe Cli.Run(
+      Cli.AddToAlbumArgs(
+        Some("Trip"),
+        Some("k1"),
+        Some("a.jpg"),
+        Some("Other"),
+        Some("a1"),
+        Some("a2")
+      )
+    )
+    Cli.parse(
+      List(
+        "agent",
+        "remove-from-album",
+        "--title",
+        "Trip",
+        "--item",
+        "k1",
+        "--current",
+        "a.jpg",
+        "--id",
+        "a1"
+      )
+    ) shouldBe Cli.Run(Cli.RemoveFromAlbumArgs(Some("Trip"), Some("k1"), Some("a.jpg"), Some("a1")))
     Cli.parse(List("agent", "request", "add-to-album")) shouldBe
       Cli.Usage("unknown command 'request'")
     Cli.parse(List("agent", "request", "remove-from-album")) shouldBe
@@ -281,7 +502,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("agent", "drift")) shouldBe Cli.Run(Cli.AgentDriftArgs)
     Cli.parse(List("agent", "missing")) shouldBe Cli.Run(Cli.AgentMissingArgs)
 
-  it should "print help and not an operation" in :
+  it should "print help and not an operation" in:
     val top: String = helpOf("--help")
     top shouldBe
       """Photo Archive Tool 0.0.1
@@ -529,9 +750,9 @@ class CliTest extends AnyFlatSpec, Matchers:
         |Flags:
         |none""".stripMargin
     val where: String = "only available in the shell"
-    helpOf("cd", "--help") should include (where)
-    helpOf("pwd", "--help") should include (where)
-    helpOf("exit", "--help") should include (where)
+    helpOf("cd", "--help") should include(where)
+    helpOf("pwd", "--help") should include(where)
+    helpOf("exit", "--help") should include(where)
     helpOf("cd", "--help") shouldBe
       """cd  change the cursor; only available in the shell
         |
@@ -578,17 +799,17 @@ class CliTest extends AnyFlatSpec, Matchers:
         |missing  list catalog items absent from the day folder""".stripMargin
     helpOf("agent", "-h") shouldBe agent
     helpOf("help", "agent") shouldBe agent
-    agent should include ("rename-album  rename an album")
-    agent should include ("set-description  set an item description")
-    agent should include ("set-date  set an item date")
-    agent should include ("download-item  download an item")
-    agent should include ("add-to-album  add an item to an album")
-    agent should include ("remove-from-album  remove an item from an album")
-    agent should include ("move-item  move an item to another album")
-    agent should include ("delete-item  delete an item")
-    agent should include ("upload-item  upload one archive file into an album")
-    agent should include ("create-album  create an album")
-    agent should include ("delete-album  delete an album")
+    agent should include("rename-album  rename an album")
+    agent should include("set-description  set an item description")
+    agent should include("set-date  set an item date")
+    agent should include("download-item  download an item")
+    agent should include("add-to-album  add an item to an album")
+    agent should include("remove-from-album  remove an item from an album")
+    agent should include("move-item  move an item to another album")
+    agent should include("delete-item  delete an item")
+    agent should include("upload-item  upload one archive file into an album")
+    agent should include("create-album  create an album")
+    agent should include("delete-album  delete an album")
     helpOf("agent", "rename-album", "--help") shouldBe
       """rename-album  rename an album
         |
@@ -705,7 +926,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |Flags:
         |--title  text  album title
         |--id  text  catalog album id""".stripMargin
-    helpOf("agent", "album-file", "--help") should include ("--id  text  catalog album id")
+    helpOf("agent", "album-file", "--help") should include("--id  text  catalog album id")
     helpOf("agent", "album-file", "--help") should not include ("--no-request")
     helpOf("agent", "include", "--help") shouldBe
       """include  compress include lines
@@ -733,7 +954,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |Flags:
         |none""".stripMargin
 
-  it should "reject usage errors" in :
+  it should "reject usage errors" in:
     val errors: List[(List[String], String)] = List(
       List() -> "missing command",
       List("photo") -> "unknown command 'photo'",
@@ -863,7 +1084,7 @@ class CliTest extends AnyFlatSpec, Matchers:
       withClue(args):
         Cli.parse(args) shouldBe Cli.Usage(message)
 
-  "one-shot" should "refuse cd, pwd, and exit" in :
+  "one-shot" should "refuse cd, pwd, and exit" in:
     val root: Root = Root(Configuration("Pictures/originals", ZoneId.of("America/New_York")))
     val session: Session = Session(root)
     def run(args: String*): Result = Cli.parse(args.toList) match
@@ -901,11 +1122,11 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parse(List("mcp"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
     Cli.parse(List("mcp", "--help"), Cli.Front.Serve) shouldBe Cli.Usage("already running")
 
-  "usageLine" should "prefix the program name" in :
+  "usageLine" should "prefix the program name" in:
     Cli.usageLine("missing command") shouldBe "Photo Archive Tool: missing command"
     Cli.usageLine("unknown option '--bogus'") shouldBe "Photo Archive Tool: unknown option '--bogus'"
 
-  "toOperation" should "build the operations that do not read the archive" in :
+  "toOperation" should "build the operations that do not read the archive" in:
     Cli.toOperation(Cli.LoginArgs) shouldBe Login
     Cli.toOperation(Cli.StatusArgs) shouldBe Status
     Cli.toOperation(Cli.LogoutArgs) shouldBe Logout
@@ -932,7 +1153,7 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.toOperation(Cli.SyncArgs(None, recursive = false, dryRun = true)) shouldBe
       Sync(None, recursive = false, dryRun = true)
 
-  "parsePropertyAndValue" should "split on the last equals and use a real property name" in :
+  "parsePropertyAndValue" should "split on the last equals and use a real property name" in:
     Files.splitOnLast("bad-raw", '=') shouldBe ("bad-raw", None)
     Files.splitOnLast("bad-raw=true", '=') shouldBe ("bad-raw", Some("true"))
     Files.splitOnLast("a=b=c", '=') shouldBe ("a=b", Some("c"))
@@ -953,63 +1174,65 @@ class CliTest extends AnyFlatSpec, Matchers:
     Cli.parsePropertyAndValue("uploader=Ada").set(Metadata()) shouldBe Metadata(uploader = Some("Ada"))
     Cli.parsePropertyAndValue("uploader= Ada ").set(Metadata()) shouldBe Metadata(uploader = Some(" Ada "))
     Cli.parsePropertyAndValue("uploader").set(Metadata(uploader = Some("Ada"))) shouldBe Metadata()
-    val blank: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+    val blank: IllegalArgumentException = the[IllegalArgumentException] thrownBy
       Cli.parsePropertyAndValue("uploader=   ").set(Metadata())
     blank.getMessage shouldBe "key 'uploader' must be a non-empty display name"
-    val tab: IllegalArgumentException = the [IllegalArgumentException] thrownBy
+    val tab: IllegalArgumentException = the[IllegalArgumentException] thrownBy
       Cli.parsePropertyAndValue("uploader=Ada\t").set(Metadata())
     tab.getMessage shouldBe "key 'uploader' must not contain a tab, CR, or LF"
 
-    an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("nope")
-    an [IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("source=a=b")
+    an[IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("nope")
+    an[IllegalArgumentException] should be thrownBy Cli.parsePropertyAndValue("source=a=b")
 
   private def helpOf(args: String*): String = Cli.parse(args.toList) match
     case Cli.Help(text) => text
-    case other => fail(s"expected help for ${args.toList}, got $other")
+    case other          => fail(s"expected help for ${args.toList}, got $other")
 
   private def ls(
-    path: Option[String] = None,
-    long: Boolean = false,
-    recursive: Boolean = false,
-    nameContains: Option[String] = None,
-    hasExtension: Option[String] = None,
-    property: Option[String] = None,
-    timestampFromNameFormat: Option[String] = None,
-    timestampFromName: Boolean = false,
-    timestampFromNameOnly: Boolean = false,
-    timestampsVary: Boolean = false,
-    hasMetadata: Boolean = false,
-    noNormal: Boolean = false,
-    noTimestamp: Boolean = false,
-    wrongTimestamp: Boolean = false,
-    wrongDay: Boolean = false,
-    wrong: Boolean = false
-  ): Cli.Outcome = Cli.Run(Cli.Ls(
-    path,
-    long,
-    recursive,
-    nameContains,
-    hasExtension,
-    property,
-    timestampFromNameFormat,
-    timestampFromName,
-    timestampFromNameOnly,
-    timestampsVary,
-    hasMetadata,
-    noNormal,
-    noTimestamp,
-    wrongTimestamp,
-    wrongDay,
-    wrong
-  ))
+      path: Option[String] = None,
+      long: Boolean = false,
+      recursive: Boolean = false,
+      nameContains: Option[String] = None,
+      hasExtension: Option[String] = None,
+      property: Option[String] = None,
+      timestampFromNameFormat: Option[String] = None,
+      timestampFromName: Boolean = false,
+      timestampFromNameOnly: Boolean = false,
+      timestampsVary: Boolean = false,
+      hasMetadata: Boolean = false,
+      noNormal: Boolean = false,
+      noTimestamp: Boolean = false,
+      wrongTimestamp: Boolean = false,
+      wrongDay: Boolean = false,
+      wrong: Boolean = false
+  ): Cli.Outcome = Cli.Run(
+    Cli.Ls(
+      path,
+      long,
+      recursive,
+      nameContains,
+      hasExtension,
+      property,
+      timestampFromNameFormat,
+      timestampFromName,
+      timestampFromNameOnly,
+      timestampsVary,
+      hasMetadata,
+      noNormal,
+      noTimestamp,
+      wrongTimestamp,
+      wrongDay,
+      wrong
+    )
+  )
 
   private def repair(
-    path: String,
-    names: Boolean = false,
-    raw: Boolean = false,
-    timestamps: Boolean = false,
-    days: Boolean = false,
-    dryRun: Boolean = false
+      path: String,
+      names: Boolean = false,
+      raw: Boolean = false,
+      timestamps: Boolean = false,
+      days: Boolean = false,
+      dryRun: Boolean = false
   ): Cli.Outcome = Cli.Run(Cli.RepairArgs(path, names, raw, timestamps, days, dryRun))
 
   private def publish(path: Option[String], recursive: Boolean, dryRun: Boolean): Cli.Outcome =
@@ -1024,7 +1247,7 @@ private[photo] def outputMismatch(schema: Json, value: Json): Option[String] =
     case Json.Obj(fields) =>
       typeNames(fields) match
         case Left(message) => Some(s"$path $message")
-        case Right(names) =>
+        case Right(names)  =>
           names.find(name => accepts(name, sample)) match
             case None =>
               Some(s"$path is not ${names.mkString(" or ")}: $sample")
@@ -1039,48 +1262,49 @@ private[photo] def outputMismatch(schema: Json, value: Json): Option[String] =
 
   def typeNames(fields: Seq[(String, Json)]): Either[String, Seq[String]] =
     fields.collectFirst { case ("type", typed) => typed } match
-      case Some(Json.Str(name)) => Right(Seq(name))
+      case Some(Json.Str(name))                   => Right(Seq(name))
       case Some(Json.Arr(items)) if items.isEmpty => Left("type union is empty")
-      case Some(Json.Arr(items)) =>
+      case Some(Json.Arr(items))                  =>
         items.foldLeft[Either[String, Seq[String]]](Right(Seq.empty)):
-          case (Left(message), _) => Left(message)
+          case (Left(message), _)           => Left(message)
           case (Right(acc), Json.Str(name)) => Right(acc :+ name)
-          case (Right(_), _) => Left("type union is not strings")
+          case (Right(_), _)                => Left("type union is not strings")
       case Some(_) => Left("type is not a string or array")
-      case None => Left("has no type")
+      case None    => Left("has no type")
 
   def accepts(name: String, sample: Json): Boolean = (name, sample) match
-    case ("string", Json.Str(_)) => true
+    case ("string", Json.Str(_))   => true
     case ("integer", Json.Long(_)) => true
     case ("boolean", Json.Bool(_)) => true
-    case ("array", Json.Arr(_)) => true
-    case ("object", Json.Obj(_)) => true
-    case ("null", Json.Null) => true
-    case _ => false
+    case ("array", Json.Arr(_))    => true
+    case ("object", Json.Obj(_))   => true
+    case ("null", Json.Null)       => true
+    case _                         => false
 
   def objectMismatch(fields: Seq[(String, Json)], sample: Json, path: String): Option[String] =
     sample match
       case Json.Obj(props) =>
         propertiesOf(fields, path) match
-          case Left(message) => Some(message)
+          case Left(message)     => Some(message)
           case Right(properties) =>
             closedOf(fields, path) match
               case Left(message) => Some(message)
               case Right(closed) =>
                 requiredOf(fields, path) match
-                  case Left(message) => Some(message)
+                  case Left(message)   => Some(message)
                   case Right(required) =>
                     val unknown: Option[String] =
                       if !closed then None
-                      else props.collectFirst:
-                        case (key, _) if !properties.exists(_._1 == key) => s"$path.$key is not allowed"
+                      else
+                        props.collectFirst:
+                          case (key, _) if !properties.exists(_._1 == key) => s"$path.$key is not allowed"
                     val missing: Option[String] = required.collectFirst:
                       case name if !props.exists(_._1 == name) => s"$path.$name is required"
                     val nested: Option[String] = props.foldLeft[Option[String]](None):
-                      case (Some(message), _) => Some(message)
+                      case (Some(message), _)   => Some(message)
                       case (None, (key, child)) =>
                         properties.find(_._1 == key) match
-                          case None => None
+                          case None                   => None
                           case Some((_, childSchema)) => mismatch(childSchema, child, s"$path.$key")
                     unknown.orElse(missing).orElse(nested)
       case _ =>
@@ -1089,23 +1313,23 @@ private[photo] def outputMismatch(schema: Json, value: Json): Option[String] =
   def propertiesOf(fields: Seq[(String, Json)], path: String): Either[String, Seq[(String, Json)]] =
     fields.collectFirst { case ("properties", value) => value } match
       case Some(Json.Obj(nested)) => Right(nested)
-      case Some(_) => Left(s"$path properties is not an object")
-      case None => Left(s"$path has no properties")
+      case Some(_)                => Left(s"$path properties is not an object")
+      case None                   => Left(s"$path has no properties")
 
   def closedOf(fields: Seq[(String, Json)], path: String): Either[String, Boolean] =
     fields.collectFirst { case ("additionalProperties", value) => value } match
-      case None => Right(false)
+      case None                     => Right(false)
       case Some(Json.Bool(allowed)) => Right(!allowed)
-      case Some(_) => Left(s"$path additionalProperties is not a boolean")
+      case Some(_)                  => Left(s"$path additionalProperties is not a boolean")
 
   def requiredOf(fields: Seq[(String, Json)], path: String): Either[String, Seq[String]] =
     fields.collectFirst { case ("required", value) => value } match
-      case None => Right(Seq.empty)
+      case None                  => Right(Seq.empty)
       case Some(Json.Arr(items)) =>
         items.foldLeft[Either[String, Seq[String]]](Right(Seq.empty)):
-          case (Left(message), _) => Left(message)
+          case (Left(message), _)           => Left(message)
           case (Right(acc), Json.Str(name)) => Right(acc :+ name)
-          case (Right(_), _) => Left(s"$path required entry is not a string")
+          case (Right(_), _)                => Left(s"$path required entry is not a string")
       case Some(_) =>
         Left(s"$path required is not an array")
 
@@ -1113,10 +1337,10 @@ private[photo] def outputMismatch(schema: Json, value: Json): Option[String] =
     sample match
       case Json.Arr(items) =>
         fields.collectFirst { case ("items", itemSchema) => itemSchema } match
-          case None => Some(s"$path has no items")
+          case None             => Some(s"$path has no items")
           case Some(itemSchema) =>
             items.zipWithIndex.foldLeft[Option[String]](None):
-              case (Some(message), _) => Some(message)
+              case (Some(message), _)    => Some(message)
               case (None, (item, index)) => mismatch(itemSchema, item, s"$path[$index]")
       case _ =>
         Some(s"$path is not an array")

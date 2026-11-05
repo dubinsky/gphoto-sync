@@ -21,8 +21,7 @@ object Operation:
           else (edited, Result.Failed(text, value, message))
         case Some(error) =>
           throw error
-    finally
-      DirectoryIndex.end(previous)
+    finally DirectoryIndex.end(previous)
 
   def messageOf(error: Throwable): String =
     Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)

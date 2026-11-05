@@ -61,12 +61,13 @@ object Web:
 
   private[photo] def start(runtime: File, port: Int): Either[String, Unit] =
     if port < 1 || port > 65535 then Left("port must be 1 to 65535")
-    else acquire(runtime) match
-      case Left(message) =>
-        Left(message)
-      case Right(held) =>
-        try serve(held, port)
-        finally release(held)
+    else
+      acquire(runtime) match
+        case Left(message) =>
+          Left(message)
+        case Right(held) =>
+          try serve(held, port)
+          finally release(held)
 
   private[photo] def stop(): Unit =
     val running: HttpServer = serverRef.get
@@ -95,15 +96,15 @@ object Web:
         else
           owner.set(channel)
           Right(Held(runtime, channel, lock))
-      catch case _: OverlappingFileLockException =>
-        // Closing any descriptor for this file drops every fcntl lock this JVM holds on it.
-        pinned = channel :: pinned
-        Left(alreadyRunning)
+      catch
+        case _: OverlappingFileLockException =>
+          // Closing any descriptor for this file drops every fcntl lock this JVM holds on it.
+          pinned = channel :: pinned
+          Left(alreadyRunning)
   }
 
   private def release(held: Held): Unit = synchronized {
-    try
-      if held.lock.isValid then held.lock.release()
+    try if held.lock.isValid then held.lock.release()
     finally
       if owner.get eq held.channel then owner.set(null)
       held.channel.close()
@@ -127,10 +128,11 @@ object Web:
       installSignals()
       latch.await()
       Right(())
-    catch case caught: BindException =>
-      val detail: String = Option(caught.getMessage).getOrElse("")
-      if detail.contains("Address already in use") then Left(s"address already in use: $loopback:$port")
-      else Left(detail)
+    catch
+      case caught: BindException =>
+        val detail: String = Option(caught.getMessage).getOrElse("")
+        if detail.contains("Address already in use") then Left(s"address already in use: $loopback:$port")
+        else Left(detail)
     finally
       if server != null && serverRef.compareAndSet(server, null) then runtimeRef.set(None)
       if server != null then server.stop(0)
@@ -140,10 +142,12 @@ object Web:
 
   private def daemons(): ExecutorService =
     val ids = new AtomicInteger
-    Executors.newFixedThreadPool(8, (task: Runnable) =>
-      val thread = new Thread(task, s"photo-web-${ids.incrementAndGet()}")
-      thread.setDaemon(true)
-      thread
+    Executors.newFixedThreadPool(
+      8,
+      (task: Runnable) =>
+        val thread = new Thread(task, s"photo-web-${ids.incrementAndGet()}")
+        thread.setDaemon(true)
+        thread
     )
 
   private def installSignals(): Unit =

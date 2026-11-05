@@ -6,7 +6,7 @@ import scala.annotation.tailrec
 
 object Files:
   def read(file: File): String = new String(NFiles.readAllBytes(file.toPath))
-  
+
   def write(string: String, file: File): Unit = NFiles.writeString(file.toPath, string)
 
   def delete(file: File): Unit =
@@ -28,7 +28,7 @@ object Files:
 
   def move(file: File, toFile: File): Unit =
     NFiles.move(file.toPath, toFile.toPath)
-  
+
   def mkDirs(file: File): Unit = file.mkdirs()
 
   // Not stray: album .toml files, the exact name AGENTS.md, and dotfiles.
@@ -59,4 +59,3 @@ object Files:
     else (name.substring(0, index), Some(name.substring(index + 1)))
 
   def nameAndExtension(file: File): (String, Option[String]) = splitOnLast(file.getName, '.')
-

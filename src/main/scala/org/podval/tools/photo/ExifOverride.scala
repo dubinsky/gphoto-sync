@@ -15,21 +15,22 @@ object ExifOverride:
   )
 
   def apply(
-    source: File,
-    extension: String,
-    metadata: Metadata,
-    tempDirectory: File = File(System.getProperty("java.io.tmpdir"))
+      source: File,
+      extension: String,
+      metadata: Metadata,
+      tempDirectory: File = File(System.getProperty("java.io.tmpdir"))
   ): Either[String, (File, Option[Seq[String]])] =
     val hasOverride: Boolean = metadata.timestamp.isDefined || metadata.orientation.isDefined
     if !hasOverride then Right((source, None))
-    else extension match
-      case Extension.JPG.name | Extension.JPEG.name =>
-        val copy: File = tempJpeg(tempDirectory)
-        Right((copy, Some(argv(source, copy, metadata))))
-      case name if videos.contains(name) =>
-        video(source, name, metadata, tempDirectory)
-      case name =>
-        Left(s"metadata override is not supported for $name")
+    else
+      extension match
+        case Extension.JPG.name | Extension.JPEG.name =>
+          val copy: File = tempJpeg(tempDirectory)
+          Right((copy, Some(argv(source, copy, metadata))))
+        case name if videos.contains(name) =>
+          video(source, name, metadata, tempDirectory)
+        case name =>
+          Left(s"metadata override is not supported for $name")
 
   private def tempJpeg(directory: File): File =
     File(directory, s"${UUID.randomUUID}.jpg")
@@ -40,13 +41,12 @@ object ExifOverride:
   // later and did not finish processing. Rotation=90 never produced width or height, and the API
   // returns no orientation. A video orientation override stays a failure.
   private def video(
-    source: File,
-    extension: String,
-    metadata: Metadata,
-    tempDirectory: File
+      source: File,
+      extension: String,
+      metadata: Metadata,
+      tempDirectory: File
   ): Either[String, (File, Option[Seq[String]])] =
-    if metadata.orientation.isDefined then
-      Left(s"orientation override is not supported for video $extension")
+    if metadata.orientation.isDefined then Left(s"orientation override is not supported for video $extension")
     else
       val copy: File = File(tempDirectory, s"${UUID.randomUUID}.$extension")
       Right((copy, Some(videoArgv(source, copy, metadata))))

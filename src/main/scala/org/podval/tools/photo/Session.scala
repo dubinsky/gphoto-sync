@@ -9,17 +9,17 @@ enum PathStyle:
 // The bot replaces catalog.txt as a whole file, so size and mtime are the generation.
 // A failed parse is not stored.
 private[photo] final case class CatalogCache(
-  size: Long,
-  mtimeMillis: Long,
-  albums: Seq[Catalog.Album]
+    size: Long,
+    mtimeMillis: Long,
+    albums: Seq[Catalog.Album]
 )
 
 final case class Session(
-  root: Root,
-  style: PathStyle,
-  cursor: Directory,
-  private[photo] val index: DirectoryIndex = DirectoryIndex.empty,
-  private[photo] val catalogCache: Option[CatalogCache] = None
+    root: Root,
+    style: PathStyle,
+    cursor: Directory,
+    private[photo] val index: DirectoryIndex = DirectoryIndex.empty,
+    private[photo] val catalogCache: Option[CatalogCache] = None
 ):
   def prompt: String =
     val shown: String = Session.display(cursor)
@@ -40,7 +40,7 @@ final case class Session(
 
   def parsePicture(path: String): Picture = parse(path) match
     case picture: Picture => picture
-    case path => throw IllegalArgumentException(s"'$path' is not a picture")
+    case path             => throw IllegalArgumentException(s"'$path' is not a picture")
 
   @tailrec
   private def walk(current: Path, segments: List[String]): Path = segments match

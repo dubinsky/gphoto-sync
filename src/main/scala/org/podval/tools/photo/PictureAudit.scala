@@ -19,11 +19,11 @@ object PictureAudit:
 
   // observed is already read, so a misnamed file can supply the bytes without the corrected path.
   private[photo] def assessed(
-    picture: Picture,
-    observed: Seq[Dates.Observed],
-    currents: Iterable[Instant],
-    filename: Option[Dates.Clock],
-    metadata: Metadata
+      picture: Picture,
+      observed: Seq[Dates.Observed],
+      currents: Iterable[Instant],
+      filename: Option[Dates.Clock],
+      metadata: Metadata
   ): Dates.Assessment =
     // A timestamp that does not parse still throws, as it does today.
     val timestamp: Option[LocalDateTime] = metadata.timestamp.map(LocalDateTime.parse)
@@ -33,16 +33,18 @@ object PictureAudit:
       observed.find(_.extension == name).flatMap(row => Dates.usable(row.clock))
     val folder: Option[Dates.Clock] = picture.parent.day.map: day =>
       Dates.Clock(day.date.atStartOfDay, None, Dates.Source.FolderDay)
-    val ranked: Dates.Ranked = Dates.rank(Dates.RankInput(
-      timestamp,
-      metadata.date,
-      embedded,
-      usableName,
-      folder
-    ))
+    val ranked: Dates.Ranked = Dates.rank(
+      Dates.RankInput(
+        timestamp,
+        metadata.date,
+        embedded,
+        usableName,
+        folder
+      )
+    )
     val winner: Set[LocalDateTime] = ranked match
       case Dates.Ranked.Chosen(clock) if clock.source != Dates.Source.FolderDay => Set(clock.civil)
-      case _ => Set.empty
+      case _                                                                    => Set.empty
     val voting: Set[LocalDateTime] = observed.iterator
       .filter(_.votes)
       .flatMap(row => Dates.usable(row.clock))

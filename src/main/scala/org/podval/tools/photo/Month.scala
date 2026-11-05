@@ -1,6 +1,6 @@
 package org.podval.tools.photo
 
-final class Month private(override val parent: Year, val number: Int) extends ItemDirectory:
+final class Month private (override val parent: Year, val number: Int) extends ItemDirectory:
   require(number >= 1 && number <= 12)
 
   override def name: String = Month.toString(number)
@@ -15,5 +15,5 @@ object Month extends NumberedMaker[Year, Month]:
   override def kind: String = "month"
 
   override def apply(year: Year, number: Int): Month = new Month(year, number)
-  
+
   override def toString(number: Int) = f"$number%02d"

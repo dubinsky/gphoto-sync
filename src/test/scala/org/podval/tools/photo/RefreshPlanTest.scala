@@ -10,7 +10,7 @@ import java.time.LocalDate
 class RefreshPlanTest extends AnyFlatSpec, Matchers:
   private val Day: Option[LocalDate] = Some(LocalDate.parse("2010-06-01"))
 
-  "RefreshPlan" should "carry auto-add by id and not item-read it" in :
+  "RefreshPlan" should "carry auto-add by id and not item-read it" in:
     val stored: Catalog.Album = album("aa", 10, "Auto", autoAdd = true, owner = Some("Ada: Owner"))
     val fresh: Catalog.Album = album("nu", 1, "New", autoAdd = true, items = Seq(item("one.jpg", "k-new")))
     val reads: Map[String, Catalog.Album] = Map(
@@ -42,7 +42,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     added.count shouldBe 1
     roundTrip(prepared)
 
-  it should "copy an error line through and not re-read a same-count album" in :
+  it should "copy an error line through and not re-read a same-count album" in:
     // Shortfall order is album, then the item, then the error. A keep must not rebuild that block.
     val keepBlock: Seq[String] = Seq(
       "album\ter\t4\tJune ",
@@ -79,13 +79,15 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     prepared.albums.map(_.id) shouldBe Seq("er", "rt")
     prepared.albums.head shouldBe kept
     prepared.albums(1) shouldBe renamed.copy(title = "New")
-    prepared.text shouldBe catalog(keepBlock ++ Seq(
-      "item\trt\tstay.jpg\t2010-06-01\tk-stay\t-",
-      "album\trt\t1\tNew"
-    ))
+    prepared.text shouldBe catalog(
+      keepBlock ++ Seq(
+        "item\trt\tstay.jpg\t2010-06-01\tk-stay\t-",
+        "album\trt\t1\tNew"
+      )
+    )
     roundTrip(prepared)
 
-  it should "keep survivor order and append new albums in card order" in :
+  it should "keep survivor order and append new albums in card order" in:
     val stored: Seq[Catalog.Album] = Seq(album("b", 0, "B"), album("gone", 0, "G"), album("a", 0, "A"))
     val prepared: RefreshPlan.Prepared = accepted(
       Seq(line("a", "0", "A"), line("z", "0", "Z"), line("b", "0", "B"), line("m", "0", "M")),
@@ -95,7 +97,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     )
     prepared.albums.map(_.id) shouldBe Seq("b", "a", "z", "m")
 
-  it should "replace only named albums" in :
+  it should "replace only named albums" in:
     val stayBlock: Seq[String] = Seq(
       "album\ta\t4\tA",
       "item\ta\ta.jpg\t2010-06-01\tk-a\t-",
@@ -106,10 +108,12 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       "item\tz\tz.jpg\t2010-06-01\tk-z\t-",
       "error\tz\t1\t2\t0"
     )
-    val source: String = catalog(stayBlock ++ Seq(
-      "album\tb\t1\tB",
-      "item\tb\tb.jpg\t2010-06-01\tk-b\t-"
-    ) ++ absentBlock)
+    val source: String = catalog(
+      stayBlock ++ Seq(
+        "album\tb\t1\tB",
+        "item\tb\tb.jpg\t2010-06-01\tk-b\t-"
+      ) ++ absentBlock
+    )
     val stored: Seq[Catalog.Album] = readBack(source)
     val prepared: RefreshPlan.Prepared = accepted(
       Seq(line("b", "0", "B2"), line("c", "0", "C"), line("e", "0", "E")),
@@ -130,7 +134,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     prepared.albums(3) shouldBe album("c", 0, "C")
     prepared.text shouldBe catalog(stayBlock ++ Seq("album\tb\t0\tB2") ++ absentBlock ++ Seq("album\tc\t0\tC"))
 
-  it should "re-read a non-auto-add album when the card count changes" in :
+  it should "re-read a non-auto-add album when the card count changes" in:
     val stored: Catalog.Album = album("a", 1, "A", items = Seq(item("old.jpg", "k-old")))
     val read: Catalog.Album = album(
       "a",
@@ -151,7 +155,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     prepared.albums shouldBe Seq(read.copy(count = 2, title = "A"))
     roundTrip(prepared)
 
-  it should "item-read every non-auto-add album on a full pass" in :
+  it should "item-read every non-auto-add album on a full pass" in:
     val kept: Catalog.Album = album("k", 1, "K", items = Seq(item("old.jpg", "k-old")))
     val auto: Catalog.Album = album("aa", 3, "Auto", autoAdd = true, owner = Some("Ada"))
     val read: Catalog.Album = album("k", 1, "K", items = Seq(item("new.jpg", "k-new")))
@@ -172,7 +176,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     prepared.albums(1).items shouldBe Seq.empty[Catalog.Item]
     prepared.albums(1).owner shouldBe Some("Bea")
 
-  it should "turn a tab or newline in an owner or uploader into one space" in :
+  it should "turn a tab or newline in an owner or uploader into one space" in:
     val stored: Catalog.Album = album(
       "a",
       1,
@@ -191,7 +195,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     back.items.head.uploader shouldBe Some("Ann Bob")
     back.items.head.filename shouldBe "a.jpg"
 
-  it should "refuse an empty count, a bad row, a short list, and a duplicate id" in :
+  it should "refuse an empty count, a bad row, a short list, and a duplicate id" in:
     withTemp: dir =>
       write(dir, "catalog.txt", "sentinel\n")
       refused(dir, Seq("only-two\tfields"), "bad row")
@@ -202,7 +206,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       NFiles.readString(File(dir, "catalog.txt").toPath) shouldBe "sentinel\n"
       File(dir, "catalog.txt.partial").exists shouldBe false
 
-  it should "let --allow-shrink skip only the row floor" in :
+  it should "let --allow-shrink skip only the row floor" in:
     val stored: Seq[Catalog.Album] = Seq.tabulate(20)(i => album(s"old$i", 0, s"Old$i"))
     val short: Seq[String] = Seq.tabulate(249)(i => line(s"n$i", "0", s"T$i"))
     RefreshPlan.diff(short, stored, RefreshPlan.Mode.Incremental, allowShrink = false) shouldBe
@@ -221,8 +225,9 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     val enough: Seq[String] = Seq.tabulate(250)(i => line(s"n$i", "0", s"T$i"))
     RefreshPlan.diff(enough, stored, RefreshPlan.Mode.Incremental, allowShrink = false).isRight shouldBe true
 
-  it should "not use the row floor for --album" in :
-    RefreshPlan.diff(Seq(line("a", "0", "A")), Seq.empty, RefreshPlan.Mode.Album(Seq("A")), allowShrink = false)
+  it should "not use the row floor for --album" in:
+    RefreshPlan
+      .diff(Seq(line("a", "0", "A")), Seq.empty, RefreshPlan.Mode.Album(Seq("A")), allowShrink = false)
       .isRight shouldBe true
     RefreshPlan.diff(Seq(line("a", "", "A")), Seq.empty, RefreshPlan.Mode.Album(Seq("A")), allowShrink = false) shouldBe
       Left("empty count")
@@ -247,7 +252,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       allowShrink = false
     ) shouldBe Left("ambiguous title")
 
-  it should "publish by rename and leave the live file when a check fails" in :
+  it should "publish by rename and leave the live file when a check fails" in:
     withTemp: dir =>
       val live: File = write(dir, "catalog.txt", "sentinel\n")
       write(dir, "catalog.txt.previous", "old-previous\n")
@@ -276,7 +281,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       File(dir, "catalog.txt.partial").exists shouldBe true
       File(dir, "catalog.txt.previous").exists shouldBe false
 
-  it should "put the previous file back when the second rename fails" in :
+  it should "put the previous file back when the second rename fails" in:
     withTemp: dir =>
       val live: File = write(dir, "catalog.txt", "sentinel\n")
       val prepared: RefreshPlan.Prepared = accepted(
@@ -297,7 +302,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       File(dir, "catalog.txt.previous").exists shouldBe false
       NFiles.readString(File(dir, "catalog.txt.partial").toPath) shouldBe prepared.text
 
-  it should "report a missing catalog when the restore move fails" in :
+  it should "report a missing catalog when the restore move fails" in:
     withTemp: dir =>
       val live: File = write(dir, "catalog.txt", "sentinel\n")
       val prepared: RefreshPlan.Prepared = accepted(
@@ -319,7 +324,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       NFiles.readString(File(dir, "catalog.txt.previous").toPath) shouldBe "sentinel\n"
       File(dir, "catalog.txt.partial").exists shouldBe true
 
-  it should "reject a mark, a CR, and a short line before rename" in :
+  it should "reject a mark, a CR, and a short line before rename" in:
     withTemp: dir =>
       val prepared: RefreshPlan.Prepared = accepted(
         Seq(line("a", "0", "A")),
@@ -348,7 +353,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       RefreshPlan.publish(dir, bad) shouldBe Left("wrong column count")
       NFiles.readString(File(dir, "catalog.txt").toPath) shouldBe "sentinel\n"
 
-  it should "treat a count of 0 with no items as complete" in :
+  it should "treat a count of 0 with no items as complete" in:
     val prepared: RefreshPlan.Prepared = accepted(
       Seq(line("a", "0", "A")),
       Seq.empty,
@@ -358,7 +363,7 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     prepared.albums shouldBe Seq(album("a", 0, "A"))
     roundTrip(prepared)
 
-  it should "require the card id set on a full pass and only the named ids on --album" in :
+  it should "require the card id set on a full pass and only the named ids on --album" in:
     withTemp: dir =>
       val wide: RefreshPlan.Prepared = accepted(
         Seq(line("a", "0", "A"), line("b", "0", "B")),
@@ -377,12 +382,12 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       RefreshPlan.check(onlyA, named) shouldBe Right(())
 
   private def accepted(
-    lines: Seq[String],
-    stored: Seq[Catalog.Album],
-    mode: RefreshPlan.Mode,
-    allowShrink: Boolean,
-    reads: Map[String, Catalog.Album] = Map.empty,
-    source: String = ""
+      lines: Seq[String],
+      stored: Seq[Catalog.Album],
+      mode: RefreshPlan.Mode,
+      allowShrink: Boolean,
+      reads: Map[String, Catalog.Album] = Map.empty,
+      source: String = ""
   ): RefreshPlan.Prepared =
     RefreshPlan.plan(lines, stored, mode, allowShrink, reads, source).fold(message => fail(message), identity)
 
@@ -408,14 +413,14 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     Catalog.Item(filename, Day, key, None)
 
   private def album(
-    id: String,
-    count: Int,
-    title: String,
-    owner: Option[String] = None,
-    autoAdd: Boolean = false,
-    error: Option[Catalog.Error] = None,
-    items: Seq[Catalog.Item] = Seq.empty,
-    unsets: Seq[Catalog.Unset] = Seq.empty
+      id: String,
+      count: Int,
+      title: String,
+      owner: Option[String] = None,
+      autoAdd: Boolean = false,
+      error: Option[Catalog.Error] = None,
+      items: Seq[Catalog.Item] = Seq.empty,
+      unsets: Seq[Catalog.Unset] = Seq.empty
   ): Catalog.Album =
     Catalog.Album(id, count, title, owner, autoAdd, error, items, unsets)
 

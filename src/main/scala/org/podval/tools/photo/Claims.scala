@@ -4,9 +4,9 @@ import java.io.File
 
 object Claims:
   final case class Resolved(
-    path: String,
-    albums: Seq[String],
-    excludedOnly: Boolean
+      path: String,
+      albums: Seq[String],
+      excludedOnly: Boolean
   ):
     def line: String =
       val text: String = if albums.isEmpty then "-" else albums.mkString(",")
@@ -36,18 +36,32 @@ final case class ListAlbums(path: Option[String]) extends Operation:
         pictures.filter(picture => Album.pictureMatches(picture.path, prefix))
       notes.foreach(album => Transcript.println(annotation(album)))
       shown.foreach(picture => Transcript.println(picture.line))
-      produced = Json.Obj(Seq(
-        "annotations" -> Json.Arr(notes.map(note => Json.Obj(Seq(
-          "title" -> Json.Str(note.title),
-          "googleTitle" -> Json.Str(note.googleTitle),
-          "owner" -> note.owner.fold(Json.Null)(Json.Str(_))
-        )))),
-        "pictures" -> Json.Arr(shown.map(picture => Json.Obj(Seq(
-          "path" -> Json.Str(picture.path),
-          "albums" -> Json.Arr(picture.albums.map(Json.Str(_))),
-          "excludedOnly" -> Json.Bool(picture.excludedOnly)
-        ))))
-      ))
+      produced = Json.Obj(
+        Seq(
+          "annotations" -> Json.Arr(
+            notes.map(note =>
+              Json.Obj(
+                Seq(
+                  "title" -> Json.Str(note.title),
+                  "googleTitle" -> Json.Str(note.googleTitle),
+                  "owner" -> note.owner.fold(Json.Null)(Json.Str(_))
+                )
+              )
+            )
+          ),
+          "pictures" -> Json.Arr(
+            shown.map(picture =>
+              Json.Obj(
+                Seq(
+                  "path" -> Json.Str(picture.path),
+                  "albums" -> Json.Arr(picture.albums.map(Json.Str(_))),
+                  "excludedOnly" -> Json.Bool(picture.excludedOnly)
+                )
+              )
+            )
+          )
+        )
+      )
 
   private def annotations(albums: Seq[Album.Loaded], prefix: Option[String]): Seq[Album] =
     albums

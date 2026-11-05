@@ -25,7 +25,7 @@ class PushTest extends AnyFlatSpec, Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "push" should "parse dry-run, stay out of MCP, and run in the caller" in :
+  "push" should "parse dry-run, stay out of MCP, and run in the caller" in:
     Cli.parse(List("push")) shouldBe Cli.Run(Cli.PushArgs(dryRun = false))
     Cli.parse(List("push", "--dry-run")) shouldBe Cli.Run(Cli.PushArgs(dryRun = true))
     Cli.parse(List("push", "--dry-run=false")) shouldBe Cli.Run(Cli.PushArgs(dryRun = false))
@@ -39,9 +39,9 @@ class PushTest extends AnyFlatSpec, Matchers:
         """{"argv":["push","--dry-run"]}""",
         (_, _) => fail("push was forwarded")
       )
-      served should include ("push runs in the calling process")
+      served should include("push runs in the calling process")
 
-  it should "print remove, then add, then upload, and skip albums it must not edit" in :
+  it should "print remove, then add, then upload, and skip albums it must not edit" in:
     withArchive: archive =>
       writeLibrary(archive)
       val before: String = read(archive, ".gphoto-sync/catalog.txt")
@@ -67,7 +67,7 @@ class PushTest extends AnyFlatSpec, Matchers:
         File(archive, ".gphoto-sync/status.txt").exists shouldBe false
         File(archive, ".gphoto-sync/albums.tsv").exists shouldBe false
 
-  it should "add one shared key from the first album and upload a prefixed file" in :
+  it should "add one shared key from the first album and upload a prefixed file" in:
     withArchive: archive =>
       write(archive, "2010/07/album.toml", external("2010/07/01 2412"))
       write(archive, "2010/07/01/2412.jpg", "pic")
@@ -94,7 +94,7 @@ class PushTest extends AnyFlatSpec, Matchers:
             |""".stripMargin
         opens() shouldBe 0
 
-  it should "leave a desired pair that is already in the album" in :
+  it should "leave a desired pair that is already in the album" in:
     withArchive: archive =>
       write(archive, "2010/07/album.toml", external("2010/07/01 2412"))
       write(archive, "2010/07/01/2412.jpg", "pic")
@@ -110,7 +110,7 @@ class PushTest extends AnyFlatSpec, Matchers:
         ok(run(session, "push", "--dry-run")) shouldBe ""
         opens() shouldBe 0
 
-  it should "publish remove, then add, then upload through one browser" in :
+  it should "publish remove, then add, then upload through one browser" in:
     withArchive: archive =>
       writeRun(archive)
       val toml: String = read(archive, "2010/07/album.toml")
@@ -137,7 +137,7 @@ class PushTest extends AnyFlatSpec, Matchers:
         File(archive, ".gphoto-sync/albums.tsv").exists shouldBe false
         File(archive, ".gphoto-sync/parts").exists shouldBe false
 
-  it should "stop after a one-click miss and leave that action unpublished" in :
+  it should "stop after a one-click miss and leave that action unpublished" in:
     withArchive: archive =>
       writeRun(archive)
       val calls: ListBuffer[String] = ListBuffer.empty
@@ -164,7 +164,7 @@ class PushTest extends AnyFlatSpec, Matchers:
         albums.find(_.id == "albBest").get.count shouldBe 0
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
 
-  it should "leave the catalog byte-identical when the first confirm already ran" in :
+  it should "leave the catalog byte-identical when the first confirm already ran" in:
     withArchive: archive =>
       writeRun(archive)
       val before: String = read(archive, ".gphoto-sync/catalog.txt")
@@ -182,7 +182,7 @@ class PushTest extends AnyFlatSpec, Matchers:
         calls.toSeq shouldBe Seq("take 9999.jpg")
         read(archive, ".gphoto-sync/catalog.txt") shouldBe before
 
-  it should "not open a second upload after the file is already a catalog item" in :
+  it should "not open a second upload after the file is already a catalog item" in:
     withArchive: archive =>
       write(archive, "2010/07/album.toml", external("2010/07/03 3000"))
       write(archive, "Best.toml", external("2010/07/03 3000"))
@@ -196,19 +196,19 @@ class PushTest extends AnyFlatSpec, Matchers:
       val calls: ListBuffer[String] = ListBuffer.empty
       withPlaces(archive, act(calls, uploadDate = "2010-07-03")): (session, _, opens) =>
         val text: String = failure(run(session, "push"))
-        text should include ("""upload "July Trip" "2010/07/03/3000.jpg"""")
-        text should include ("failed push")
-        text should include ("""upload "Best" "2010/07/03/3000.jpg"""")
-        text should include ("recovery one-click")
-        text should include ("catalog updated")
-        text should include ("catalog item exists")
+        text should include("""upload "July Trip" "2010/07/03/3000.jpg"""")
+        text should include("failed push")
+        text should include("""upload "Best" "2010/07/03/3000.jpg"""")
+        text should include("recovery one-click")
+        text should include("catalog updated")
+        text should include("catalog item exists")
         opens() shouldBe 1
         calls.toSeq shouldBe Seq("upload 3000.jpg")
         val albums: Seq[Catalog.Album] = Catalog.read(File(archive, ".gphoto-sync/catalog.txt"))
         albums.find(_.id == "albJuly").get.items.map(_.filename) shouldBe Seq("3000.jpg")
         albums.find(_.id == "albBest").get.items shouldBe Seq.empty[Catalog.Item]
 
-  it should "report already running and not open Chrome" in :
+  it should "report already running and not open Chrome" in:
     withArchive: archive =>
       writeRun(archive)
       val before: String = read(archive, ".gphoto-sync/catalog.txt")
@@ -219,7 +219,7 @@ class PushTest extends AnyFlatSpec, Matchers:
               run(session, "push") match
                 case Result.Failed(text, _, message) =>
                   message shouldBe Refresh.AlreadyRunning
-                  text should include ("already running")
+                  text should include("already running")
                 case other =>
                   fail(other.toString)
             finally Refresh.release(channel, lock)
@@ -228,13 +228,13 @@ class PushTest extends AnyFlatSpec, Matchers:
           case Refresh.Claim.Busy =>
             fail("lock busy")
 
-  it should "refuse a missing catalog before Chrome opens" in :
+  it should "refuse a missing catalog before Chrome opens" in:
     withArchive: archive =>
       withPlaces(archive): (session, _, opens) =>
         run(session, "push") shouldBe Result.Usage("catalog is absent")
         opens() shouldBe 0
 
-  it should "upload a video beside its still without using the still's catalog row" in :
+  it should "upload a video beside its still without using the still's catalog row" in:
     withArchive: archive =>
       write(archive, "Best.toml", external("2010/07/02 1000v"))
       write(archive, "2010/07/02/1000.jpg", "pic")
@@ -274,7 +274,11 @@ class PushTest extends AnyFlatSpec, Matchers:
     write(archive, "Best.toml", external("2010/07/02 1000"))
     write(archive, "2010/06/album.toml", external("2010/06/01 4141"))
     write(archive, "2010/06/01/4141.jpg", "pic")
-    write(archive, "2010/08/album.toml", "external = true\ngoogle-title = \"Owned\"\nowner = \"Ada\"\ninclude = ['2010/08/01 4242']\n")
+    write(
+      archive,
+      "2010/08/album.toml",
+      "external = true\ngoogle-title = \"Owned\"\nowner = \"Ada\"\ninclude = ['2010/08/01 4242']\n"
+    )
     write(archive, "2010/08/01/4242.jpg", "pic")
     write(archive, "2010/09/album.toml", "external = false\ninclude = ['2010/09/01 4343']\n")
     write(archive, "2010/09/01/4343.jpg", "pic")
@@ -332,35 +336,36 @@ class PushTest extends AnyFlatSpec, Matchers:
     )
 
   private def act(
-    calls: ListBuffer[String],
-    onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
-    onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (item, _, _) => item,
-    uploadDate: String = "2010-07-02"
-  ): () => PhotosAct = () => new PhotosAct:
-    def albumCards(): Seq[AlbumCard] = Seq.empty
-    def readOwner(card: AlbumCard): Option[String] = None
-    def readAlbum(card: AlbumCard): Catalog.Album = fail("read")
-    def close(): Unit = ()
-    def renameAlbum(album: Catalog.Album, updated: String): Unit = fail("rename")
-    def setDescription(item: Catalog.Item, text: String): Unit = fail("description")
-    def setDate(item: Catalog.Item, local: String): Unit = fail("date")
-    def downloadItem(item: Catalog.Item, destination: File): Unit = fail("download")
-    def putInAlbum(item: Catalog.Item, destination: Catalog.Album, current: String): Catalog.Item =
-      calls += s"add $current"
-      onPut(item, destination, current)
-    def takeOut(album: Catalog.Album, item: Catalog.Item): Unit =
-      calls += s"take ${item.filename}"
-      onTake(album, item)
-    def trash(album: Catalog.Album, item: Catalog.Item): Unit = fail("trash")
-    def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item =
-      calls += s"upload $current"
-      Catalog.Item(current, Some(LocalDate.parse(uploadDate)), "keyUp", None)
-    def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) = fail("create")
-    def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] = fail("delete-album")
+      calls: ListBuffer[String],
+      onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+      onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (item, _, _) => item,
+      uploadDate: String = "2010-07-02"
+  ): () => PhotosAct = () =>
+    new PhotosAct:
+      def albumCards(): Seq[AlbumCard] = Seq.empty
+      def readOwner(card: AlbumCard): Option[String] = None
+      def readAlbum(card: AlbumCard): Catalog.Album = fail("read")
+      def close(): Unit = ()
+      def renameAlbum(album: Catalog.Album, updated: String): Unit = fail("rename")
+      def setDescription(item: Catalog.Item, text: String): Unit = fail("description")
+      def setDate(item: Catalog.Item, local: String): Unit = fail("date")
+      def downloadItem(item: Catalog.Item, destination: File): Unit = fail("download")
+      def putInAlbum(item: Catalog.Item, destination: Catalog.Album, current: String): Catalog.Item =
+        calls += s"add $current"
+        onPut(item, destination, current)
+      def takeOut(album: Catalog.Album, item: Catalog.Item): Unit =
+        calls += s"take ${item.filename}"
+        onTake(album, item)
+      def trash(album: Catalog.Album, item: Catalog.Item): Unit = fail("trash")
+      def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item =
+        calls += s"upload $current"
+        Catalog.Item(current, Some(LocalDate.parse(uploadDate)), "keyUp", None)
+      def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) = fail("create")
+      def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] = fail("delete-album")
 
   private def withPlaces(
-    archive: File,
-    act: () => PhotosAct = () => fail("opened")
+      archive: File,
+      act: () => PhotosAct = () => fail("opened")
   )(body: (Session, Refresh.Places, () => Int) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("push-lock").toFile
     val places: Refresh.Places = Refresh.Places(File(parent, "work"), File(parent, "lock"))
@@ -395,7 +400,7 @@ class PushTest extends AnyFlatSpec, Matchers:
   private def run(session: Session, args: String*): Result =
     Cli.parse(args.toList) match
       case Cli.Run(parsed) => Cli.toOperation(parsed).execute(session)._2
-      case other => fail(other.toString)
+      case other           => fail(other.toString)
 
   private def sessionFor(archive: File): Session = Session(rootFor(archive))
 

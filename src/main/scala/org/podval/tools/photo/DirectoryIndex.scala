@@ -6,32 +6,32 @@ import java.time.Instant
 private[photo] final case class FileStamp(name: String, size: Long, mtimeMillis: Long) derives CanEqual
 
 private[photo] final case class ListedExtension(
-  name: String,
-  read: Option[Dates.Clock],
-  current: Instant
+    name: String,
+    read: Option[Dates.Clock],
+    current: Instant
 )
 
 // One complete ls fact row. A missing field is a listing miss, even when grouped is filled.
 private[photo] final case class ListedPicture(
-  stem: String,
-  textPath: String,
-  hasMetadata: Boolean,
-  hasNormal: Boolean,
-  extensionNames: Vector[String],
-  metadata: Metadata,
-  timestampFromName: Option[(Dates.Clock, String)],
-  audit: Dates.Assessment,
-  extensions: Vector[ListedExtension]
+    stem: String,
+    textPath: String,
+    hasMetadata: Boolean,
+    hasNormal: Boolean,
+    extensionNames: Vector[String],
+    metadata: Metadata,
+    timestampFromName: Option[(Dates.Clock, String)],
+    audit: Dates.Assessment,
+    extensions: Vector[ListedExtension]
 )
 
 private[photo] final case class DirEntry(
-  fingerprint: Vector[FileStamp],
-  grouped: Seq[(String, Set[String])],
-  albums: Seq[Album.Loaded],
-  listing: Option[Seq[ListedPicture]],
-  // None means this fill did not parse sidecars. agent stems stores Some so a warm hit
-  // does not list the day again. Listing stays separate so EXIF is not the sidecar path.
-  sidecars: Option[Map[String, Metadata]] = None
+    fingerprint: Vector[FileStamp],
+    grouped: Seq[(String, Set[String])],
+    albums: Seq[Album.Loaded],
+    listing: Option[Seq[ListedPicture]],
+    // None means this fill did not parse sidecars. agent stems stores Some so a warm hit
+    // does not list the day again. Listing stays separate so EXIF is not the sidecar path.
+    sidecars: Option[Map[String, Metadata]] = None
 )
 
 // In-memory for the life of the session. One-shot never reads or fills it.
@@ -74,16 +74,17 @@ private[photo] object DirectoryIndex:
     previous
 
   def end(previous: Option[Frame]): Unit = previous match
-    case None => active.remove()
+    case None        => active.remove()
     case Some(frame) => active.set(frame)
 
   def cursor: Option[Session] =
     val frame: Frame = active.get
     if frame == null then None
-    else frame.session.style match
-      // One-shot stays cold. Serve fills the index. This frame is not the shell cursor.
-      case PathStyle.OneShot => None
-      case PathStyle.Cursor | PathStyle.Serve => Some(frame.session)
+    else
+      frame.session.style match
+        // One-shot stays cold. Serve fills the index. This frame is not the shell cursor.
+        case PathStyle.OneShot                  => None
+        case PathStyle.Cursor | PathStyle.Serve => Some(frame.session)
 
   def now: Session = active.get.session
 

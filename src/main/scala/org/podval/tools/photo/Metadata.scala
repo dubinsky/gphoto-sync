@@ -9,14 +9,14 @@ import java.io.File
 import java.time.LocalDate
 
 final case class Metadata(
-  source: Option[String] = None,
-  timestamp: Option[String] = None, // TODO turn into LocalDateTime - a coercion seems to be missing though?
-  date: Option[LocalDate] = None,
-  `bad-raw`: Option[Boolean] = None,
-  orientation: Option[String] = None,
-  `google-media-item-id`: Option[String] = None,
-  `already-in-google`: Option[Boolean] = None,
-  uploader: Option[String] = None
+    source: Option[String] = None,
+    timestamp: Option[String] = None, // TODO turn into LocalDateTime - a coercion seems to be missing though?
+    date: Option[LocalDate] = None,
+    `bad-raw`: Option[Boolean] = None,
+    orientation: Option[String] = None,
+    `google-media-item-id`: Option[String] = None,
+    `already-in-google`: Option[Boolean] = None,
+    uploader: Option[String] = None
 ) derives CanEqual:
   override def toString: String = Property.all
     .flatMap(property => property.get(this).map(value => s"${property.name}=$value"))
@@ -29,8 +29,9 @@ object Metadata:
 
   def read(file: File): Metadata =
     try decode(Files.read(file))
-    catch case error: (IllegalArgumentException | TomlException) =>
-      throw IllegalArgumentException(s"Error parsing TOML file '$file': ${error.getMessage}", error)
+    catch
+      case error: (IllegalArgumentException | TomlException) =>
+        throw IllegalArgumentException(s"Error parsing TOML file '$file': ${error.getMessage}", error)
 
   private[photo] def decode(text: String): Metadata =
     val table: TomlTable =
@@ -63,8 +64,7 @@ object Metadata:
   private[photo] def parseUploader(value: String): String =
     if value.exists(ch => ch == '\t' || ch == '\r' || ch == '\n') then
       reject("uploader", "must not contain a tab, CR, or LF")
-    else if value.trim.isEmpty then
-      reject("uploader", "must be a non-empty display name")
+    else if value.trim.isEmpty then reject("uploader", "must be a non-empty display name")
     else value
 
   private def optionalString(table: TomlTable, key: String): Option[String] =

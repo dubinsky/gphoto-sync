@@ -13,7 +13,7 @@ class ResultTest extends AnyFlatSpec, Matchers:
   private def session: Session =
     Session(Root(Configuration("Pictures/originals", ZoneId.of("America/New_York"))))
 
-  "a command" should "return stdout with the failure when it already wrote" in :
+  "a command" should "return stdout with the failure when it already wrote" in:
     val current: Session = session
     val (kept, result) = Operation.run(current):
       Transcript.println("uploaded=0 failed=1")
@@ -25,14 +25,14 @@ class ResultTest extends AnyFlatSpec, Matchers:
         message shouldBe "publish failed"
       case other => fail(other.toString)
 
-  it should "return usage when nothing was written" in :
+  it should "return usage when nothing was written" in:
     val current: Session = session
     val (kept, result) = Operation.run(current):
       throw IllegalArgumentException("year or root requires --recursive")
     kept should be theSameInstanceAs current
     result shouldBe Result.Usage("year or root requires --recursive")
 
-  it should "use the class name when the message is missing" in :
+  it should "use the class name when the message is missing" in:
     val (_, blank) = Operation.run(session)(throw IllegalArgumentException(""))
     blank shouldBe Result.Usage("IllegalArgumentException")
     val (_, numbered) = Operation.run(session)(throw NumberFormatException())
@@ -40,20 +40,20 @@ class ResultTest extends AnyFlatSpec, Matchers:
     val (_, stated) = Operation.run(session)(throw IllegalStateException("cannot bind the loopback listener"))
     stated shouldBe Result.Usage("cannot bind the loopback listener")
 
-  it should "keep a NumberFormatException message" in :
+  it should "keep a NumberFormatException message" in:
     val (_, result) = Operation.run(session):
       val _: Int = "Upload".toInt
     result match
       case Result.Usage(message) =>
-        message should include ("Upload")
+        message should include("Upload")
         message should not be "NumberFormatException"
       case other => fail(other.toString)
 
-  it should "store a JSON long" in :
+  it should "store a JSON long" in:
     Json.Long(1L).value shouldBe 1L
 
-  it should "let any other exception abort and not keep its lines" in :
-    an [RuntimeException] should be thrownBy Operation.run(session):
+  it should "let any other exception abort and not keep its lines" in:
+    an[RuntimeException] should be thrownBy Operation.run(session):
       Transcript.println("partial")
       throw RuntimeException("boom")
     val (_, after) = Operation.run(session)(())

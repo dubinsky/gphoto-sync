@@ -14,8 +14,7 @@ private[photo] object TextLines:
 
   def fromBytes(bytes: Array[Byte], header: String, versionError: String): String =
     val first: Array[Byte] = bytes.takeWhile(_ != '\n'.toByte)
-    if !first.sameElements(header.getBytes(StandardCharsets.UTF_8)) then
-      throw IllegalArgumentException(versionError)
+    if !first.sameElements(header.getBytes(StandardCharsets.UTF_8)) then throw IllegalArgumentException(versionError)
     val text: String = decoded(bytes)
     if !text.endsWith("\n") then throw IllegalArgumentException("trailing partial line")
     text
@@ -39,36 +38,38 @@ private[photo] object TextLines:
 
   private def decode(bytes: Array[Byte]): String =
     try
-      StandardCharsets.UTF_8.newDecoder()
+      StandardCharsets.UTF_8
+        .newDecoder()
         .onMalformedInput(CodingErrorAction.REPORT)
         .onUnmappableCharacter(CodingErrorAction.REPORT)
         .decode(ByteBuffer.wrap(bytes))
         .toString
-    catch case _: CharacterCodingException =>
-      throw IllegalArgumentException("not utf-8")
+    catch
+      case _: CharacterCodingException =>
+        throw IllegalArgumentException("not utf-8")
 
 object Catalog:
   final case class Error(got: Int, of: Int, nameFailures: Int) derives CanEqual
   final case class Item(
-    filename: String,
-    date: Option[LocalDate],
-    key: String,
-    uploader: Option[String]
+      filename: String,
+      date: Option[LocalDate],
+      key: String,
+      uploader: Option[String]
   ) derives CanEqual
   final case class Unset(
-    date: Option[LocalDate],
-    key: String,
-    uploader: Option[String]
+      date: Option[LocalDate],
+      key: String,
+      uploader: Option[String]
   ) derives CanEqual
   final case class Album(
-    id: String,
-    count: Int,
-    title: String,
-    owner: Option[String],
-    autoAdd: Boolean,
-    error: Option[Error],
-    items: Seq[Item],
-    unsets: Seq[Unset]
+      id: String,
+      count: Int,
+      title: String,
+      owner: Option[String],
+      autoAdd: Boolean,
+      error: Option[Error],
+      items: Seq[Item],
+      unsets: Seq[Unset]
   ) derives CanEqual
 
   private val Header: String = "# gphoto-catalog 2"
@@ -87,12 +88,12 @@ object Catalog:
   private final case class UnsetLine(id: String, unset: Unset) extends Line
 
   private final case class Draft(
-    album: Option[(Int, String)] = None,
-    owner: Option[String] = None,
-    autoAdd: Boolean = false,
-    error: Option[Error] = None,
-    items: Seq[Item] = Seq.empty,
-    unsets: Seq[Unset] = Seq.empty
+      album: Option[(Int, String)] = None,
+      owner: Option[String] = None,
+      autoAdd: Boolean = false,
+      error: Option[Error] = None,
+      items: Seq[Item] = Seq.empty,
+      unsets: Seq[Unset] = Seq.empty
   )
 
   private final case class Build(order: Seq[String], drafts: Map[String, Draft]):
@@ -144,18 +145,19 @@ object Catalog:
           if draft.items.nonEmpty then throw IllegalArgumentException("auto-add has an item")
           if draft.unsets.nonEmpty then throw IllegalArgumentException("auto-add has an unset")
           if draft.error.isDefined then throw IllegalArgumentException("auto-add has an error")
-        else draft.error match
-          case Some(error) =>
-            if error.of != count then throw IllegalArgumentException("error.of does not equal count")
-            val got: Int = draft.items.length + draft.unsets.length
-            if error.got != got then
-              throw IllegalArgumentException("error.got does not equal item lines plus unset lines")
-            if error.got > error.of then throw IllegalArgumentException("error.got is greater than error.of")
-            if error.nameFailures != draft.unsets.length then
-              throw IllegalArgumentException("name-failures does not equal unset count")
-          case None =>
-            if draft.unsets.nonEmpty then throw IllegalArgumentException("unset without an error")
-            if draft.items.length != count then throw IllegalArgumentException("item count does not equal count")
+        else
+          draft.error match
+            case Some(error) =>
+              if error.of != count then throw IllegalArgumentException("error.of does not equal count")
+              val got: Int = draft.items.length + draft.unsets.length
+              if error.got != got then
+                throw IllegalArgumentException("error.got does not equal item lines plus unset lines")
+              if error.got > error.of then throw IllegalArgumentException("error.got is greater than error.of")
+              if error.nameFailures != draft.unsets.length then
+                throw IllegalArgumentException("name-failures does not equal unset count")
+            case None =>
+              if draft.unsets.nonEmpty then throw IllegalArgumentException("unset without an error")
+              if draft.items.length != count then throw IllegalArgumentException("item count does not equal count")
         Album(id, count, title, draft.owner, draft.autoAdd, draft.error, draft.items, draft.unsets)
 
   private def parseLine(line: String): Line =
@@ -174,13 +176,13 @@ object Catalog:
       case Seq("item", id, filename, date, key, uploader) =>
         if filename.isEmpty then throw IllegalArgumentException("empty item filename")
         ItemLine(id, Item(filename, parseDate(date), key, parseUploader(uploader)))
-      case Seq("album", _*) => throw IllegalArgumentException("wrong column count")
-      case Seq("owner", _*) => throw IllegalArgumentException("wrong column count")
+      case Seq("album", _*)    => throw IllegalArgumentException("wrong column count")
+      case Seq("owner", _*)    => throw IllegalArgumentException("wrong column count")
       case Seq("auto-add", _*) => throw IllegalArgumentException("wrong column count")
-      case Seq("error", _*) => throw IllegalArgumentException("wrong column count")
-      case Seq("unset", _*) => throw IllegalArgumentException("wrong column count")
-      case Seq("item", _*) => throw IllegalArgumentException("wrong column count")
-      case _ => throw IllegalArgumentException("unknown catalog line")
+      case Seq("error", _*)    => throw IllegalArgumentException("wrong column count")
+      case Seq("unset", _*)    => throw IllegalArgumentException("wrong column count")
+      case Seq("item", _*)     => throw IllegalArgumentException("wrong column count")
+      case _                   => throw IllegalArgumentException("unknown catalog line")
 
   private def parseInt(text: String): Int =
     if text.isEmpty || text.exists(ch => ch < '0' || ch > '9') then throw IllegalArgumentException("not an integer")
@@ -196,8 +198,9 @@ object Catalog:
         val date: LocalDate = LocalDate.parse(text)
         if date.toString != text then throw IllegalArgumentException("not a date")
         Some(date)
-      catch case _: DateTimeParseException =>
-        throw IllegalArgumentException("not a date")
+      catch
+        case _: DateTimeParseException =>
+          throw IllegalArgumentException("not a date")
 
   private def parseUploader(text: String): Option[String] =
     if text == "-" then None

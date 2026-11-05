@@ -21,12 +21,15 @@ private[photo] object PlanningWalk:
             val corrected: String =
               if raw != lower && Extension.all.exists(_.name == lower) then lower else raw
             Extension.all.exists(_.name == corrected) || corrected == Metadata.extension
-    DateTree.years(originals).foldLeft(Map.empty[LocalDate, Set[String]]):
-      (universe, year) =>
-        DateTree.months(year).foldLeft(universe):
-          (universe, month) =>
-            DateTree.days(month).foldLeft(universe):
-              (universe, day) =>
+    DateTree
+      .years(originals)
+      .foldLeft(Map.empty[LocalDate, Set[String]]): (universe, year) =>
+        DateTree
+          .months(year)
+          .foldLeft(universe): (universe, month) =>
+            DateTree
+              .days(month)
+              .foldLeft(universe): (universe, day) =>
                 val stems: Set[String] =
                   Pictures.grouped(Files.listFiles(day.directory).filter(accepted)).map(_._1).toSet
                 if stems.isEmpty then universe
@@ -35,19 +38,28 @@ private[photo] object PlanningWalk:
   // Album files only. Archive.scan also lists pictures with NameMode.Leave.
   private[photo] def planningAlbums(originals: File): Seq[Album.Loaded] =
     def albumsIn(directory: File, skipDigitToml: Boolean): Seq[Album.Loaded] =
-      Album.children(directory).filter(_.isFile).filter: file =>
-        val (stem, _) = Files.nameAndExtension(file)
-        file.getName.endsWith(".toml") && !(skipDigitToml && stem.headOption.exists(_.isDigit))
-      .sortBy(_.getName)
-      .map(file => Album.Loaded(file, Album.read(originals, file)))
+      Album
+        .children(directory)
+        .filter(_.isFile)
+        .filter: file =>
+          val (stem, _) = Files.nameAndExtension(file)
+          file.getName.endsWith(".toml") && !(skipDigitToml && stem.headOption.exists(_.isDigit))
+        .sortBy(_.getName)
+        .map(file => Album.Loaded(file, Album.read(originals, file)))
     val curated: Seq[Album.Loaded] = albumsIn(originals, skipDigitToml = false)
-    DateTree.years(originals).foldLeft(curated):
-      (albums, year) =>
-        Album.children(year.directory).filter(file => file.isFile && file.getName.endsWith(".toml")).foreach: file =>
-          throw IllegalArgumentException(s"$file: album files do not live in a year directory")
-        DateTree.months(year).foldLeft(albums):
-          (albums, month) =>
+    DateTree
+      .years(originals)
+      .foldLeft(curated): (albums, year) =>
+        Album
+          .children(year.directory)
+          .filter(file => file.isFile && file.getName.endsWith(".toml"))
+          .foreach: file =>
+            throw IllegalArgumentException(s"$file: album files do not live in a year directory")
+        DateTree
+          .months(year)
+          .foldLeft(albums): (albums, month) =>
             val withMonth: Seq[Album.Loaded] = albums ++ albumsIn(month.directory, skipDigitToml = false)
-            DateTree.days(month).foldLeft(withMonth):
-              (albums, day) =>
+            DateTree
+              .days(month)
+              .foldLeft(withMonth): (albums, day) =>
                 albums ++ albumsIn(day.directory, skipDigitToml = true)

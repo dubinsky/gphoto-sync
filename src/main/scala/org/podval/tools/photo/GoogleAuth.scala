@@ -6,7 +6,16 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.auth.oauth2.{ClientId, DefaultPKCEProvider, TokenStore, UserAuthorizer, UserCredentials}
 import java.awt.Desktop
 import java.io.{BufferedReader, File, FileInputStream, IOException, InputStreamReader}
-import java.net.{Inet6Address, InetAddress, InetSocketAddress, ServerSocket, Socket, SocketTimeoutException, URI, URLDecoder}
+import java.net.{
+  Inet6Address,
+  InetAddress,
+  InetSocketAddress,
+  ServerSocket,
+  Socket,
+  SocketTimeoutException,
+  URI,
+  URLDecoder
+}
 import java.nio.charset.StandardCharsets
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.SecureRandom
@@ -66,7 +75,8 @@ object GoogleAuth:
       val path = if rawPath == null || rawPath.isEmpty then "" else rawPath
       val callback = new URI("http", null, host, port, path, null, null)
       val pkce = new DefaultPKCEProvider()
-      val authorizer = UserAuthorizer.newBuilder()
+      val authorizer = UserAuthorizer
+        .newBuilder()
         .setClientId(clientId)
         .setScopes(scopes)
         .setCallbackUri(callback)
@@ -74,23 +84,27 @@ object GoogleAuth:
         .setTokenStore(TokenFileStore(tokenFile))
         .build()
       val state = newState()
-      browse(authorizer.getAuthorizationUrl(
-        null,
-        state,
-        callback,
-        java.util.Map.of("include_granted_scopes", "false")
-      ))
+      browse(
+        authorizer.getAuthorizationUrl(
+          null,
+          state,
+          callback,
+          java.util.Map.of("include_granted_scopes", "false")
+        )
+      )
       val params = readCallback(sockets)
       requireState(state, params.get("state"))
       if params.contains("error") then throw IllegalArgumentException("Google login failed")
-      val code = params.get("code").filter(_.nonEmpty).getOrElse(
-        throw IllegalArgumentException("Google login returned no authorization code")
-      )
+      val code = params
+        .get("code")
+        .filter(_.nonEmpty)
+        .getOrElse(
+          throw IllegalArgumentException("Google login returned no authorization code")
+        )
       val credentials = authorizer.getCredentialsFromCode(code, callback)
       authorizer.storeCredentials(tokenUser, credentials)
       Transcript.println(s"logged in (${tokenFile.getAbsolutePath})")
-    finally
-      sockets.foreach(_.close())
+    finally sockets.foreach(_.close())
 
   def status(tokenFile: File = tokenJson): Unit =
     if tokenFile.isFile then Transcript.println(s"logged in (${tokenFile.getAbsolutePath})")
@@ -100,17 +114,17 @@ object GoogleAuth:
     if tokenFile.isFile then
       java.nio.file.Files.delete(tokenFile.toPath)
       Transcript.println(s"logged out (${tokenFile.getAbsolutePath})")
-    else
-      Transcript.println(s"not logged in (${tokenFile.getAbsolutePath})")
+    else Transcript.println(s"not logged in (${tokenFile.getAbsolutePath})")
 
   // Stored user credential only. Does not open a browser or start a login.
   private[photo] def loadUserCredentials(
-    clientFile: File = clientJson,
-    tokenFile: File = tokenJson
+      clientFile: File = clientJson,
+      tokenFile: File = tokenJson
   ): UserCredentials =
     if !tokenFile.isFile then throw IllegalArgumentException(s"not logged in (${tokenFile.getAbsolutePath})")
     val (clientId, redirect) = readClient(clientFile)
-    val authorizer = UserAuthorizer.newBuilder()
+    val authorizer = UserAuthorizer
+      .newBuilder()
       .setClientId(clientId)
       .setScopes(scopes)
       .setCallbackUri(redirect)
@@ -137,7 +151,7 @@ object GoogleAuth:
           throw IllegalArgumentException(s"cannot parse OAuth client JSON: ${file.getAbsolutePath}")
     val detail = Option(json.get("installed")).orElse(Option(json.get("web"))) match
       case Some(map: java.util.Map[?, ?]) => map
-      case _ =>
+      case _                              =>
         throw IllegalArgumentException(s"OAuth client JSON has no installed or web client: ${file.getAbsolutePath}")
     val clientId =
       try ClientId.fromJson(json)
@@ -149,10 +163,11 @@ object GoogleAuth:
         val values = uris.iterator()
         if !values.hasNext then
           throw IllegalArgumentException(s"OAuth client JSON has no redirect URI: ${file.getAbsolutePath}")
-        else values.next() match
-          case uri: String => URI.create(uri)
-          case _ =>
-            throw IllegalArgumentException(s"OAuth client JSON has no redirect URI: ${file.getAbsolutePath}")
+        else
+          values.next() match
+            case uri: String => URI.create(uri)
+            case _           =>
+              throw IllegalArgumentException(s"OAuth client JSON has no redirect URI: ${file.getAbsolutePath}")
       case _ =>
         throw IllegalArgumentException(s"OAuth client JSON has no redirect URI: ${file.getAbsolutePath}")
     (clientId, redirect)
@@ -168,9 +183,8 @@ object GoogleAuth:
     try
       InetAddress.ofLiteral(host) match
         case address: Inet6Address => address.isLoopbackAddress
-        case _ => false
-    catch
-      case _: IllegalArgumentException => false
+        case _                     => false
+    catch case _: IllegalArgumentException => false
 
   private def openLoopback(host: String): Seq[ServerSocket] =
     val (sockets, _) = loopbackBindHosts(host).foldLeft((Seq.empty[ServerSocket], 0)): (state, bindHost) =>
@@ -222,13 +236,14 @@ object GoogleAuth:
       out.write(body)
       out.flush()
       params
-    finally
-      socket.close()
+    finally socket.close()
 
   @tailrec
-  private def acceptLoopback(sockets: Seq[ServerSocket], deadlineMs: Long = System.currentTimeMillis() + loginWaitMs): Socket =
-    if System.currentTimeMillis() >= deadlineMs then
-      throw IllegalStateException("Google login timed out")
+  private def acceptLoopback(
+      sockets: Seq[ServerSocket],
+      deadlineMs: Long = System.currentTimeMillis() + loginWaitMs
+  ): Socket =
+    if System.currentTimeMillis() >= deadlineMs then throw IllegalStateException("Google login timed out")
     else
       val accepted = sockets.foldLeft(Option.empty[Socket]): (found, server) =>
         found.orElse:
@@ -236,23 +251,27 @@ object GoogleAuth:
           catch case _: SocketTimeoutException => None
       accepted match
         case Some(socket) => socket
-        case None => acceptLoopback(sockets, deadlineMs)
+        case None         => acceptLoopback(sockets, deadlineMs)
 
   private def queryParameters(requestLine: String): Map[String, String] =
     val target = requestLine.split(" ", 3) match
       case Array(_, value, _*) => value
-      case _ => ""
+      case _                   => ""
     val query = target.span(_ != '?') match
       case (_, rest) if rest.nonEmpty => rest.drop(1)
-      case _ => ""
+      case _                          => ""
     if query.isEmpty then Map.empty
-    else query.split('&').toList.foldLeft(Map.empty[String, String]): (acc, pair) =>
-      val (key, rest) = pair.span(_ != '=')
-      val value = if rest.isEmpty then "" else rest.drop(1)
-      acc.updated(
-        URLDecoder.decode(key, StandardCharsets.UTF_8),
-        URLDecoder.decode(value, StandardCharsets.UTF_8)
-      )
+    else
+      query
+        .split('&')
+        .toList
+        .foldLeft(Map.empty[String, String]): (acc, pair) =>
+          val (key, rest) = pair.span(_ != '=')
+          val value = if rest.isEmpty then "" else rest.drop(1)
+          acc.updated(
+            URLDecoder.decode(key, StandardCharsets.UTF_8),
+            URLDecoder.decode(value, StandardCharsets.UTF_8)
+          )
 
   private final class TokenFileStore(file: File) extends TokenStore:
     override def load(id: String): String =

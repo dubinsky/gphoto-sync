@@ -26,7 +26,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
 
   behavior of "web"
 
-  it should "reject a path that leaves the archive" in :
+  it should "reject a path that leaves the archive" in:
     val archive: File = JFiles.createTempDirectory("web-archive").toFile
     val outside: File = JFiles.createTempDirectory("web-outside").toFile
     try
@@ -80,7 +80,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(archive)
       deleteTree(outside)
 
-  it should "disagree only when observed is in or out and desired differs" in :
+  it should "disagree only when observed is in or out and desired differs" in:
     Web.disagree(desired = true, "in") shouldBe false
     Web.disagree(desired = false, "in") shouldBe true
     Web.disagree(desired = true, "out") shouldBe true
@@ -88,7 +88,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     Web.disagree(desired = true, "unknown") shouldBe false
     Web.disagree(desired = false, "unknown") shouldBe false
 
-  it should "serve the date tree and one day without a catalog id" in :
+  it should "serve the date tree and one day without a catalog id" in:
     val archive: File = JFiles.createTempDirectory("web-tree").toFile
     val runtime: File = JFiles.createTempDirectory("web-tree-rt").toFile
     val port: Int = freePort()
@@ -129,46 +129,60 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       val (_, _, ended) = running(runtime, port):
         Web.useSession(sessionFor(archive))
         val root = json(get(port, "/api/tree"))
-        root shouldBe Json.Obj(Seq(
-          "at" -> Json.Str(""),
-          "kind" -> Json.Str("years"),
-          "entries" -> Json.Arr(Seq(
-            entry("2010", "2010", None),
-            entry("2011", "2011", None)
-          )),
-          "albums" -> Json.Arr(Seq.empty),
-          "curated" -> Json.Arr(Seq(
-            albumLink("Portraits", "Portraits.toml"),
-            albumLink("Unlisted", "Unlisted.toml")
-          )),
-          "catalog" -> catalogValue(catalog, present = true, readable = true)
-        ))
+        root shouldBe Json.Obj(
+          Seq(
+            "at" -> Json.Str(""),
+            "kind" -> Json.Str("years"),
+            "entries" -> Json.Arr(
+              Seq(
+                entry("2010", "2010", None),
+                entry("2011", "2011", None)
+              )
+            ),
+            "albums" -> Json.Arr(Seq.empty),
+            "curated" -> Json.Arr(
+              Seq(
+                albumLink("Portraits", "Portraits.toml"),
+                albumLink("Unlisted", "Unlisted.toml")
+              )
+            ),
+            "catalog" -> catalogValue(catalog, present = true, readable = true)
+          )
+        )
         textOf(get(port, "/api/tree")) should not include ("AF1Qip")
         textOf(get(port, "/api/tree")) should not include (".upload")
         Web.sessionNow.get.catalogCache shouldBe None
         json(get(port, "/api/tree?at=")) shouldBe root
         val year = json(getq(port, "/api/tree", "at", "2010"))
-        year shouldBe Json.Obj(Seq(
-          "at" -> Json.Str("2010"),
-          "kind" -> Json.Str("months"),
-          "entries" -> Json.Arr(Seq(
-            entry("07", "2010/07", None),
-            entry("08", "2010/08", None)
-          )),
-          "albums" -> Json.Arr(Seq.empty),
-          "curated" -> Json.Arr(Seq.empty),
-          "catalog" -> catalogValue(catalog, present = true, readable = true)
-        ))
+        year shouldBe Json.Obj(
+          Seq(
+            "at" -> Json.Str("2010"),
+            "kind" -> Json.Str("months"),
+            "entries" -> Json.Arr(
+              Seq(
+                entry("07", "2010/07", None),
+                entry("08", "2010/08", None)
+              )
+            ),
+            "albums" -> Json.Arr(Seq.empty),
+            "curated" -> Json.Arr(Seq.empty),
+            "catalog" -> catalogValue(catalog, present = true, readable = true)
+          )
+        )
         val month = json(getq(port, "/api/tree", "at", "2010/07"))
         field(month, "kind") shouldBe Json.Str("days")
-        field(month, "entries") shouldBe Json.Arr(Seq(
-          entry("04", "2010/07/04", Some(8)),
-          entry("05", "2010/07/05", Some(0))
-        ))
-        field(month, "albums") shouldBe Json.Arr(Seq(
-          albumLink("2010/07", "2010/07/album.toml"),
-          albumLink("2010/07/Zoo", "2010/07/Zoo.toml")
-        ))
+        field(month, "entries") shouldBe Json.Arr(
+          Seq(
+            entry("04", "2010/07/04", Some(8)),
+            entry("05", "2010/07/05", Some(0))
+          )
+        )
+        field(month, "albums") shouldBe Json.Arr(
+          Seq(
+            albumLink("2010/07", "2010/07/album.toml"),
+            albumLink("2010/07/Zoo", "2010/07/Zoo.toml")
+          )
+        )
         field(month, "curated") shouldBe Json.Arr(Seq.empty)
         error(getq(port, "/api/tree", "at", "2010/07/04"), 400, "not a branch")
         error(getq(port, "/api/tree", "at", ".."), 400, escape)
@@ -187,13 +201,22 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         dayResponse.body should not include ("AF1Qip")
         field(day, "day") shouldBe Json.Str("2010/07/04")
         field(day, "curated") shouldBe Json.Arr(Seq(Json.Str("Portraits"), Json.Str("Unlisted")))
-        field(day, "albums") shouldBe Json.Arr(Seq(
-          albumLink("2010/07/04-05/Cape Cod", "2010/07/04/to-05 Cape Cod.toml")
-        ))
+        field(day, "albums") shouldBe Json.Arr(
+          Seq(
+            albumLink("2010/07/04-05/Cape Cod", "2010/07/04/to-05 Cape Cod.toml")
+          )
+        )
         field(day, "catalog") shouldBe catalogValue(catalog, present = true, readable = true)
         val stems: Seq[Json] = arr(field(day, "stems"))
         stems.map(stem => str(field(stem, "stem"))) shouldBe Seq(
-          "1000", "1001", "1002", "1003", "1004", "1005", "1006", "1007"
+          "1000",
+          "1001",
+          "1002",
+          "1003",
+          "1004",
+          "1005",
+          "1006",
+          "1007"
         )
         stemAt(stems, "1000") shouldBe stemJson("1000", Seq("cr2"), "preview", uploadable = false, Seq.empty)
         stemAt(stems, "1001") shouldBe stemJson("1001", Seq("cr2", "jpg"), "jpeg", uploadable = true, Seq("Portraits"))
@@ -215,9 +238,21 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         field(capeJson, "name") shouldBe Json.Str("Cape Cod")
         field(capeJson, "curated") shouldBe Json.Bool(false)
         field(capeJson, "include") shouldBe Json.Arr(Seq(Json.Str("all")))
-        field(capeJson, "membership") shouldBe membership(joined = false, ambiguous = false, "unknown", Some("unjoined"))
+        field(capeJson, "membership") shouldBe membership(
+          joined = false,
+          ambiguous = false,
+          "unknown",
+          Some("unjoined")
+        )
         arr(field(capeJson, "tiles")).map(tile => str(field(tile, "stem"))) shouldBe Seq(
-          "1000", "1001", "1002", "1003", "1004", "1005", "1006", "1007"
+          "1000",
+          "1001",
+          "1002",
+          "1003",
+          "1004",
+          "1005",
+          "1006",
+          "1007"
         )
         arr(field(capeJson, "tiles")).foreach: tile =>
           field(tile, "desired") shouldBe Json.Bool(true)
@@ -231,7 +266,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(archive)
       deleteTree(runtime)
 
-  it should "report a stray file without its path" in :
+  it should "report a stray file without its path" in:
     val archive: File = JFiles.createTempDirectory("web-stray").toFile
     val runtime: File = JFiles.createTempDirectory("web-stray-rt").toFile
     val port: Int = freePort()
@@ -247,7 +282,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(archive)
       deleteTree(runtime)
 
-  it should "serve observed membership without leaking a catalog id" in :
+  it should "serve observed membership without leaking a catalog id" in:
     val archive: File = JFiles.createTempDirectory("web-album").toFile
     val runtime: File = JFiles.createTempDirectory("web-album-rt").toFile
     val port: Int = freePort()
@@ -311,10 +346,12 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
           ("2010/07/04", "2412", true, "in"),
           ("2010/07/05", "1000", false, "out")
         )
-        field(knownJson, "unmatched") shouldBe Json.Arr(Seq(
-          Json.Obj(Seq("filename" -> Json.Str("IMG_9999.JPG"), "day" -> Json.Str("2010/07/04"))),
-          Json.Obj(Seq("filename" -> Json.Str("LOST.JPG"), "day" -> Json.Null))
-        ))
+        field(knownJson, "unmatched") shouldBe Json.Arr(
+          Seq(
+            Json.Obj(Seq("filename" -> Json.Str("IMG_9999.JPG"), "day" -> Json.Str("2010/07/04"))),
+            Json.Obj(Seq("filename" -> Json.Str("LOST.JPG"), "day" -> Json.Null))
+          )
+        )
         Web.sessionNow.get.cached(File(archive, "2010/07/04")).isDefined shouldBe true
         writeCatalog(
           archive,
@@ -362,7 +399,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(archive)
       deleteTree(runtime)
 
-  it should "skip a missing day in a span and reject a directory symlink that leaves the archive" in :
+  it should "skip a missing day in a span and reject a directory symlink that leaves the archive" in:
     val archive: File = JFiles.createTempDirectory("web-gap").toFile
     val outside: File = JFiles.createTempDirectory("web-gap-out").toFile
     val runtime: File = JFiles.createTempDirectory("web-gap-rt").toFile
@@ -428,7 +465,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
           Web.useSession(sessionFor(linked))
           val listed: HttpResponse[String] = get(port, "/api/tree")
           listed.statusCode shouldBe 200
-          listed.body should include ("\"2010\"")
+          listed.body should include("\"2010\"")
           listed.body should not include ("secret-stem")
           val opened: HttpResponse[String] = getq(port, "/api/tree", "at", "2010")
           error(opened, 400, escape)
@@ -443,7 +480,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(outside)
       deleteTree(runtime)
 
-  it should "serve a scaled thumbnail, a placeholder, and the original file bytes" in :
+  it should "serve a scaled thumbnail, a placeholder, and the original file bytes" in:
     val archive: File = JFiles.createTempDirectory("web-thumb-archive").toFile
     val outside: File = JFiles.createTempDirectory("web-thumb-outside").toFile
     val runtime: File = JFiles.createTempDirectory("web-thumb-rt").toFile
@@ -457,7 +494,8 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     val secret: File = File(outside, "secret-stem.jpg")
     val placeholder: Array[Byte] =
       val in = getClass.getClassLoader.getResourceAsStream("org/podval/tools/photo/web/placeholder.jpg")
-      try in.readAllBytes() finally in.close()
+      try in.readAllBytes()
+      finally in.close()
     def filesIn(dir: File): Seq[File] =
       if !dir.exists then Seq.empty
       else
@@ -571,7 +609,9 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         jpeg.lastModified shouldBe originalMtime
         JFiles.readAllBytes(raw.toPath).sameElements(rawBytes) shouldBe true
         JFiles.readAllBytes(video.toPath).sameElements(videoBytes) shouldBe true
-        JFiles.readAllBytes(secret.toPath).sameElements("OUTSIDE-SECRET-BYTES".getBytes(StandardCharsets.UTF_8)) shouldBe true
+        JFiles
+          .readAllBytes(secret.toPath)
+          .sameElements("OUTSIDE-SECRET-BYTES".getBytes(StandardCharsets.UTF_8)) shouldBe true
       val logged: String = err.linesIterator.filterNot(_.startsWith("bound ")).mkString("\n")
       logged should not include ("2010/07/04")
       logged should not include ("1001")
@@ -583,7 +623,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(runtime)
       deleteTree(cacheHome)
 
-  it should "toggle include lines and reject a path the file does not claim" in :
+  it should "toggle include lines and reject a path the file does not claim" in:
     val archive: File = JFiles.createTempDirectory("web-toggle").toFile
     val outside: File = JFiles.createTempDirectory("web-toggle-out").toFile
     val runtime: File = JFiles.createTempDirectory("web-toggle-rt").toFile
@@ -591,37 +631,37 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     val xdgExisted: Boolean = xdgWriteLock.exists(_.isFile)
     val kept: String =
       "# keep\n" +
-      "external = true\n" +
-      "include = [\n" +
-      "  'all',\n" +
-      "]\n"
+        "external = true\n" +
+        "include = [\n" +
+        "  'all',\n" +
+        "]\n"
     val outsideText: String =
       "# stay\n" +
-      "external = true\n" +
-      "include = [\n" +
-      "  'all',\n" +
-      "]\n"
+        "external = true\n" +
+        "include = [\n" +
+        "  'all',\n" +
+        "]\n"
     val mixedText: String =
       "include = [\n" +
-      "  'all',\n" +
-      "  '2010/07/04 1000',\n" +
-      "]\n"
+        "  'all',\n" +
+        "  '2010/07/04 1000',\n" +
+        "]\n"
     val linesText: String =
       "include = [\n" +
-      "  '2010/07/04 1000..1002',\n" +
-      "]\n"
+        "  '2010/07/04 1000..1002',\n" +
+        "]\n"
     val portraits: String =
       "include = [\n" +
-      "  '2010/07/04-05 1000',\n" +
-      "]\n"
+        "  '2010/07/04-05 1000',\n" +
+        "]\n"
     val gapText: String =
       "include = [\n" +
-      "  '2010/09/06-07 1000',\n" +
-      "]\n"
+        "  '2010/09/06-07 1000',\n" +
+        "]\n"
     val linkText: String =
       "include = [\n" +
-      "  '2010/09/03-04 1000',\n" +
-      "]\n"
+        "  '2010/09/03-04 1000',\n" +
+        "]\n"
     val badText: String = "include = [\"2009/03/10 2412\",\n\"2009/01/01 0000\"]\n"
     val outsideFile: File = File(archive, "2010/07/04/Outside.toml")
     val mixedFile: File = File(archive, "2010/07/04/Mixed.toml")
@@ -662,11 +702,11 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       val (_, _, ended) = running(runtime, port):
         Web.useSession(sessionFor(archive))
         def flipped(
-          title: String,
-          path: String,
-          desired: Boolean,
-          include: Seq[String],
-          contentType: Option[String] = Some("application/json")
+            title: String,
+            path: String,
+            desired: Boolean,
+            include: Seq[String],
+            contentType: Option[String] = Some("application/json")
         ): HttpResponse[String] =
           val response: HttpResponse[String] =
             postJson(port, "/api/toggle", s"""{"title":"$title","path":"$path"}""", contentType)
@@ -685,13 +725,13 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
           Some("Application/JSON; charset=utf-8")
         )
         val dropped: String = readText(File(archive, "2010/07/04/album.toml"))
-        dropped should startWith ("# keep\nexternal = true\n")
-        dropped should include ("all except 1001")
+        dropped should startWith("# keep\nexternal = true\n")
+        dropped should include("all except 1001")
         flipped("2010/07/04/Lines", "2010/07/04/1001", desired = false, Seq("2010/07/04 1000", "2010/07/04 1002"))
         readText(linesFile) should not include ("all except")
         flipped("2010/09/01", "2010/09/01/1000", desired = true, Seq("2010/09/01 1000"))
         val twoStems: String = readText(File(archive, "2010/09/01/album.toml"))
-        twoStems should startWith ("# day\n")
+        twoStems should startWith("# day\n")
         twoStems should not include ("'all'")
         flipped("Shot", "2010/11/02/2412", desired = true, Seq("2010/11/02 2412"))
         readText(shotFile) should not include ("'all'")
@@ -724,16 +764,48 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         val unspliced: HttpResponse[String] =
           postJson(port, "/api/toggle", """{"title":"Bad","path":"2009/03/10/2412"}""")
         unspliced.statusCode shouldBe 500
-        unspliced.body should include ("include array does not end on its own line")
+        unspliced.body should include("include array does not end on its own line")
         readText(badFile) shouldBe badText
-        error(postJson(port, "/api/toggle", """{"title":"2010/07/04-03","path":"2010/07/04/1000"}"""), 400, "not an album title: 2010/07/04-03")
-        error(postJson(port, "/api/toggle", """{"title":"2010/02/31","path":"2010/07/04/1000"}"""), 400, "not an album title: 2010/02/31")
-        error(postJson(port, "/api/toggle", """{"title":"Gone","path":"2010/07/04/1000"}"""), 404, "no such album: Gone")
-        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"nope"}"""), 400, "not a picture path: nope")
-        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04"}"""), 400, "not a picture path: 2010/07/04")
-        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/02/31/1000"}"""), 400, "not a picture path: 2010/02/31/1000")
-        error(postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04/9999"}"""), 400, "no such picture: 2010/07/04/9999")
-        error(postJson(port, "/api/toggle", """{"title":"2010/07/04/Mixed","path":"2010/07/04/1000"}"""), 400, "include mixes all with other lines")
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/07/04-03","path":"2010/07/04/1000"}"""),
+          400,
+          "not an album title: 2010/07/04-03"
+        )
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/02/31","path":"2010/07/04/1000"}"""),
+          400,
+          "not an album title: 2010/02/31"
+        )
+        error(
+          postJson(port, "/api/toggle", """{"title":"Gone","path":"2010/07/04/1000"}"""),
+          404,
+          "no such album: Gone"
+        )
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"nope"}"""),
+          400,
+          "not a picture path: nope"
+        )
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04"}"""),
+          400,
+          "not a picture path: 2010/07/04"
+        )
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/02/31/1000"}"""),
+          400,
+          "not a picture path: 2010/02/31/1000"
+        )
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/07/04","path":"2010/07/04/9999"}"""),
+          400,
+          "no such picture: 2010/07/04/9999"
+        )
+        error(
+          postJson(port, "/api/toggle", """{"title":"2010/07/04/Mixed","path":"2010/07/04/1000"}"""),
+          400,
+          "include mixes all with other lines"
+        )
         readText(mixedFile) shouldBe mixedText
         error(postJson(port, "/api/toggle", "{", None), 415, "unsupported media type")
         error(postJson(port, "/api/toggle", "{", Some("text/plain")), 415, "unsupported media type")
@@ -756,13 +828,16 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         val shotText: String = readText(shotFile)
         val held = new CountDownLatch(1)
         val release = new CountDownLatch(1)
-        val holder = new Thread(() => {
-          Album.withWriteLockDirectory(runtime):
-            Album.withWriteLock:
-              held.countDown()
-              release.await(8, TimeUnit.SECONDS)
-              ()
-        }, "album-hold")
+        val holder = new Thread(
+          () => {
+            Album.withWriteLockDirectory(runtime):
+              Album.withWriteLock:
+                held.countDown()
+                release.await(8, TimeUnit.SECONDS)
+                ()
+          },
+          "album-hold"
+        )
         holder.setDaemon(true)
         holder.start()
         try
@@ -784,7 +859,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(outside)
       deleteTree(runtime)
 
-  it should "splice a stale include that waited, and re-read a toggle that waited" in :
+  it should "splice a stale include that waited, and re-read a toggle that waited" in:
     val archive: File = JFiles.createTempDirectory("web-overlap").toFile
     val runtime: File = JFiles.createTempDirectory("web-overlap-rt").toFile
     val port: Int = freePort()
@@ -793,9 +868,9 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     val file: File = File(archive, "2010/07/04/album.toml")
     val original: String =
       "include = [\n" +
-      "  '2010/07/04 1000',\n" +
-      "  '2010/07/04 1001',\n" +
-      "]\n"
+        "  '2010/07/04 1000',\n" +
+        "  '2010/07/04 1001',\n" +
+        "]\n"
     val universe: Map[LocalDate, Set[String]] = Map(day -> Set("1000", "1001"))
     Album.afterCompute = () => ()
     try
@@ -811,27 +886,30 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
           val entered = new CountDownLatch(1)
           val queued = new AtomicBoolean(false)
           val failed = new AtomicReference[Throwable](null)
-          val store = new Thread(() => {
-            try
-              Album.withWriteLockDirectory(runtime):
-                Album.afterCompute = () =>
+          val store = new Thread(
+            () => {
+              try
+                Album.withWriteLockDirectory(runtime):
+                  Album.afterCompute = () =>
+                    Album.afterCompute = () => ()
+                    entered.countDown()
+                    val deadline: Long = System.nanoTime() + 3000000000L
+                    def loop(): Unit =
+                      if Album.writeWaiters > 0 then queued.set(true)
+                      else if System.nanoTime() >= deadline then throw IllegalStateException("waiter not queued")
+                      else
+                        Thread.sleep(20)
+                        loop()
+                    loop()
+                  Album.storeRemovals(file, archive, Seq(day -> "1001"), universe)
+              catch
+                case error: Throwable =>
                   Album.afterCompute = () => ()
                   entered.countDown()
-                  val deadline: Long = System.nanoTime() + 3000000000L
-                  def loop(): Unit =
-                    if Album.writeWaiters > 0 then queued.set(true)
-                    else if System.nanoTime() >= deadline then throw IllegalStateException("waiter not queued")
-                    else
-                      Thread.sleep(20)
-                      loop()
-                  loop()
-                Album.storeRemovals(file, archive, Seq(day -> "1001"), universe)
-            catch
-              case error: Throwable =>
-                Album.afterCompute = () => ()
-                entered.countDown()
-                failed.set(error)
-          }, "album-store")
+                  failed.set(error)
+            },
+            "album-store"
+          )
           store.setDaemon(true)
           store.start()
           try
@@ -845,10 +923,13 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         writeText(file, original)
         overlap:
           val waiterFailed = new AtomicReference[Throwable](null)
-          val waiter = new Thread(() => {
-            try Album.withWriteLockDirectory(runtime)(Album.putInclude(file, stale))
-            catch case error: Throwable => waiterFailed.set(error)
-          }, "album-stale")
+          val waiter = new Thread(
+            () => {
+              try Album.withWriteLockDirectory(runtime)(Album.putInclude(file, stale))
+              catch case error: Throwable => waiterFailed.set(error)
+            },
+            "album-stale"
+          )
           waiter.setDaemon(true)
           waiter.start()
           waiter.join(15000)
@@ -867,7 +948,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         field(json(reread), "include") shouldBe Json.Arr(Seq.empty[Json])
         claims("1000") shouldBe false
         claims("1001") shouldBe false
-        readText(file) should include ("include = []")
+        readText(file) should include("include = []")
         writeText(file, original)
         Album.afterCompute = () => ()
         Album.withWriteLockDirectory(runtime):
@@ -886,7 +967,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       deleteTree(archive)
       deleteTree(runtime)
 
-  it should "seed a new album from a catalog match or from all and write nothing on failure" in :
+  it should "seed a new album from a catalog match or from all and write nothing on failure" in:
     val archive: File = JFiles.createTempDirectory("web-create").toFile
     val runtime: File = JFiles.createTempDirectory("web-create-rt").toFile
     val port: Int = freePort()
@@ -911,10 +992,10 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
               else Seq.empty
           walk(archive).map(file => archive.toPath.relativize(file.toPath).toString -> readText(file)).toMap
         def rejectCreate(
-          body: String,
-          status: Int,
-          message: String,
-          contentType: Option[String] = Some("application/json")
+            body: String,
+            status: Int,
+            message: String,
+            contentType: Option[String] = Some("application/json")
         ): Unit =
           val before: Map[String, String] = tomlTexts
           val response: HttpResponse[String] = postJson(port, "/api/albums", body, contentType)
@@ -928,7 +1009,11 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
           json(response)
         rejectCreate("""{"start":"2010-07-04","end":"2010-07-04"}""", 400, "not a day")
         rejectCreate("""{"start":"2010/07/05","end":"2010/07/04"}""", 400, "not a span")
-        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"bad/name"}""", 400, "not an album name: bad/name")
+        rejectCreate(
+          """{"start":"2010/07/04","end":"2010/07/04","name":"bad/name"}""",
+          400,
+          "not an album name: bad/name"
+        )
         rejectCreate("""{"start":"2010/07/04","end":"2010/07/04"}""", 415, "unsupported media type", None)
         rejectCreate("""{"start":"2010/07/04","end":"2010/07/04"}""", 415, "unsupported media type", Some("text/plain"))
         rejectCreate("[]", 400, "not json")
@@ -1000,7 +1085,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
         val absent: Json = created("""{"start":"2010/07/04","end":"2010/07/04","name":"Absent"}""")
         field(absent, "external") shouldBe Json.Bool(false)
         field(absent, "seed") shouldBe Json.Str("all")
-        readText(File(archive, "2010/07/04/Absent.toml")) should include ("external = false")
+        readText(File(archive, "2010/07/04/Absent.toml")) should include("external = false")
         val unnamed: Json = created("""{"start":"2010/07/20","end":"2010/07/20","name":""}""")
         field(unnamed, "title") shouldBe Json.Str("2010/07/20")
         field(unnamed, "path") shouldBe Json.Str("2010/07/20/album.toml")
@@ -1026,14 +1111,22 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
           "error\tAF1QipWebFixture\t1\t1\t0",
           "item\tAF1QipWebFixture\t2412.jpg\t2010-07-04\tAF1QipHit\t-"
         )
-        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"Broken"}""", 400, "catalog album is not readable")
+        rejectCreate(
+          """{"start":"2010/07/04","end":"2010/07/04","name":"Broken"}""",
+          400,
+          "catalog album is not readable"
+        )
         File(archive, "2010/07/04/Broken.toml").exists shouldBe false
         writeCatalog(
           archive,
           "album\tAF1QipWebFixture\t0\t2010/07/04/Auto",
           "auto-add\tAF1QipWebFixture"
         )
-        rejectCreate("""{"start":"2010/07/04","end":"2010/07/04","name":"Auto"}""", 400, "catalog album is not readable")
+        rejectCreate(
+          """{"start":"2010/07/04","end":"2010/07/04","name":"Auto"}""",
+          400,
+          "catalog album is not readable"
+        )
         File(archive, "2010/07/04/Auto.toml").exists shouldBe false
         writeCatalog(
           archive,
@@ -1059,27 +1152,32 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     WebRoutes.reject(archive, raw) shouldBe Left(Web.Rejected(400, escape))
 
   private def getBytes(port: Int, path: String): HttpResponse[Array[Byte]] =
-    val request: HttpRequest = HttpRequest.newBuilder(URI.create(s"http://$loopback:$port$path"))
+    val request: HttpRequest = HttpRequest
+      .newBuilder(URI.create(s"http://$loopback:$port$path"))
       .timeout(Duration.ofSeconds(30))
       .GET()
       .build()
     client.send(request, HttpResponse.BodyHandlers.ofByteArray())
 
   private def postJson(
-    port: Int,
-    path: String,
-    body: String,
-    contentType: Option[String] = Some("application/json")
+      port: Int,
+      path: String,
+      body: String,
+      contentType: Option[String] = Some("application/json")
   ): HttpResponse[String] =
-    val builder: HttpRequest.Builder = HttpRequest.newBuilder(URI.create(s"http://$loopback:$port$path"))
+    val builder: HttpRequest.Builder = HttpRequest
+      .newBuilder(URI.create(s"http://$loopback:$port$path"))
       .timeout(Duration.ofSeconds(15))
       .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
     contentType.foreach(value => builder.header("Content-Type", value))
     client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
 
   private def xdgWriteLock: Option[File] =
-    Option(System.getenv("XDG_RUNTIME_DIR")).map(_.trim).filter(_.nonEmpty).map: dir =>
-      File(File(dir, "org.podval.tools.photo"), "album-write.lock")
+    Option(System.getenv("XDG_RUNTIME_DIR"))
+      .map(_.trim)
+      .filter(_.nonEmpty)
+      .map: dir =>
+        File(File(dir, "org.podval.tools.photo"), "album-write.lock")
 
   private def assertRuntimeLock(runtime: File, xdgExisted: Boolean): Unit =
     perms(File(runtime, "album-write.lock")) shouldBe "rw-------"
@@ -1096,7 +1194,7 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
   private def json(response: HttpResponse[String]): Json =
     Serve.readJson(response.body) match
       case Right((value, rest)) if rest.isEmpty => value
-      case other => fail(s"$other from ${response.body}")
+      case other                                => fail(s"$other from ${response.body}")
 
   private def field(value: Json, name: String): Json = value match
     case Json.Obj(items) =>
@@ -1106,11 +1204,11 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
 
   private def arr(value: Json): Seq[Json] = value match
     case Json.Arr(values) => values
-    case other => fail(other.toString)
+    case other            => fail(other.toString)
 
   private def str(value: Json): String = value match
     case Json.Str(text) => text
-    case other => fail(other.toString)
+    case other          => fail(other.toString)
 
   private def error(response: HttpResponse[String], status: Int, message: String): Unit =
     response.statusCode shouldBe status
@@ -1124,31 +1222,35 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     Json.Obj(Seq("title" -> Json.Str(title), "path" -> Json.Str(path)))
 
   private def stemJson(
-    stem: String,
-    extensions: Seq[String],
-    kind: String,
-    uploadable: Boolean,
-    curated: Seq[String]
+      stem: String,
+      extensions: Seq[String],
+      kind: String,
+      uploadable: Boolean,
+      curated: Seq[String]
   ): Json =
-    Json.Obj(Seq(
-      "stem" -> Json.Str(stem),
-      "path" -> Json.Str(s"2010/07/04/$stem"),
-      "extensions" -> Json.Arr(extensions.map(Json.Str.apply)),
-      "kind" -> Json.Str(kind),
-      "uploadable" -> Json.Bool(uploadable),
-      "curated" -> Json.Arr(curated.map(Json.Str.apply))
-    ))
+    Json.Obj(
+      Seq(
+        "stem" -> Json.Str(stem),
+        "path" -> Json.Str(s"2010/07/04/$stem"),
+        "extensions" -> Json.Arr(extensions.map(Json.Str.apply)),
+        "kind" -> Json.Str(kind),
+        "uploadable" -> Json.Bool(uploadable),
+        "curated" -> Json.Arr(curated.map(Json.Str.apply))
+      )
+    )
 
   private def stemAt(stems: Seq[Json], stem: String): Json =
     stems.find(item => field(item, "stem") == Json.Str(stem)).getOrElse(fail(stem))
 
   private def membership(joined: Boolean, ambiguous: Boolean, observed: String, reason: Option[String]): Json =
-    Json.Obj(Seq(
-      "joined" -> Json.Bool(joined),
-      "ambiguous" -> Json.Bool(ambiguous),
-      "observed" -> Json.Str(observed),
-      "reason" -> reason.fold(Json.Null)(Json.Str.apply)
-    ))
+    Json.Obj(
+      Seq(
+        "joined" -> Json.Bool(joined),
+        "ambiguous" -> Json.Bool(ambiguous),
+        "observed" -> Json.Str(observed),
+        "reason" -> reason.fold(Json.Null)(Json.Str.apply)
+      )
+    )
 
   private def tilesOf(value: Json): Seq[(String, String, Boolean, String)] =
     arr(field(value, "tiles")).map: tile =>
@@ -1215,9 +1317,11 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
   private def catalogValue(file: File, present: Boolean, readable: Boolean): Json =
     val mtime: Json =
       if file.isFile then Json.Str(Instant.ofEpochMilli(file.lastModified).toString) else Json.Null
-    Json.Obj(Seq(
-      "present" -> Json.Bool(present),
-      "readable" -> Json.Bool(readable),
-      "mtime" -> mtime,
-      "zone" -> Json.Str("America/New_York")
-    ))
+    Json.Obj(
+      Seq(
+        "present" -> Json.Bool(present),
+        "readable" -> Json.Bool(readable),
+        "mtime" -> mtime,
+        "zone" -> Json.Str("America/New_York")
+      )
+    )

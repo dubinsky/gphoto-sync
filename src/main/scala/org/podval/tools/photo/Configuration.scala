@@ -7,8 +7,8 @@ import java.io.File
 import java.time.{DateTimeException, ZoneId}
 
 final case class Configuration(
-  rootPath: String,
-  zoneId: ZoneId
+    rootPath: String,
+    zoneId: ZoneId
 ) derives CanEqual:
   def archive: File = File(Configuration.homeDirectory, rootPath)
   def uploadDirectory: File = File(archive, UploadDirectory.directoryName)
@@ -32,11 +32,12 @@ object Configuration:
   def read: Configuration =
     if !configurationFile.exists() then write(default)
     try decode(Files.read(configurationFile))
-    catch case exception: (IllegalArgumentException | TomlException) =>
-      throw IllegalArgumentException(
-        s"Error parsing configuration file '$configurationFile': ${exception.getMessage}",
-        exception
-      )
+    catch
+      case exception: (IllegalArgumentException | TomlException) =>
+        throw IllegalArgumentException(
+          s"Error parsing configuration file '$configurationFile': ${exception.getMessage}",
+          exception
+        )
 
   def write(configuration: Configuration): Unit =
     Files.write(encode(configuration), configurationFile)
@@ -50,8 +51,9 @@ object Configuration:
     val zone: String = requiredString(table, "zoneId")
     val zoneId: ZoneId =
       try ZoneId.of(zone)
-      catch case exception: DateTimeException =>
-        throw IllegalArgumentException(s"zoneId '$zone' is not a zone", exception)
+      catch
+        case exception: DateTimeException =>
+          throw IllegalArgumentException(s"zoneId '$zone' is not a zone", exception)
     Configuration(
       rootPath = rootPath,
       zoneId = zoneId

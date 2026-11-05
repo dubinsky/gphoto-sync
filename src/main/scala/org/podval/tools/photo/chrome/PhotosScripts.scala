@@ -468,7 +468,7 @@ private[photo] object PhotosScripts:
     val headless: String =
       "hl.monitor({ output = " + quoted(name) + ", mode = \"1280x800@60\", position = \"20000x20000\", scale = 1 })"
     PhotosPark.focused match
-      case None => headless
+      case None          => headless
       case Some(monitor) =>
         headless + "\n" + restoreLua(monitor)
 
@@ -482,9 +482,9 @@ private[photo] object PhotosScripts:
   private[photo] def quoted(text: String): String =
     val body: String = text.flatMap:
       case '\\' => "\\\\"
-      case '"' => "\\\""
+      case '"'  => "\\\""
       case '\n' => "\\n"
       case '\r' => "\\r"
       case '\t' => "\\t"
-      case ch => String.valueOf(ch)
+      case ch   => String.valueOf(ch)
     "\"" + body + "\""

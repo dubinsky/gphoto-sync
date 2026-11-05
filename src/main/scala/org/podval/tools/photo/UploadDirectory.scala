@@ -6,8 +6,8 @@ object UploadDirectory:
   val directoryName: String = ".upload"
 
 final class UploadDirectory(
-  override val root: Root,
-  override val name: String
+    override val root: Root,
+    override val name: String
 ) extends Pictures:
   override def toString: String = s"$root/$name"
 

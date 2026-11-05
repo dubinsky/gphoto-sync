@@ -15,7 +15,7 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
   @targetName("operationCanEqual")
   private given [A <: Operation, B <: Operation] => CanEqual[A, B] = CanEqual.derived
 
-  "web" should "parse a loopback port and stay out of the operation until the port is legal" in :
+  "web" should "parse a loopback port and stay out of the operation until the port is legal" in:
     Cli.parse(List("web")) shouldBe Cli.Run(Cli.WebArgs(Web.defaultPort))
     Cli.parse(List("web", "--port", "8766")) shouldBe Cli.Run(Cli.WebArgs(8766))
     Cli.parse(List("web", "--port=65535")) shouldBe Cli.Run(Cli.WebArgs(65535))
@@ -29,7 +29,7 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
     Cli.toOperation(Cli.WebArgs(8766)) shouldBe Web(8766)
     Mcp.mcpTools.exists(_.name == "web") shouldBe false
 
-  it should "serve the shell and refuse a second start or a taken port" in :
+  it should "serve the shell and refuse a second start or a taken port" in:
     val runtime: File = JFiles.createTempDirectory("web-rt").toFile
     val port: Int = freePort()
     try
@@ -42,25 +42,25 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
         page.statusCode shouldBe 200
         page.headers.firstValue("content-type").orElse("") shouldBe "text/html; charset=utf-8"
         page.headers.firstValue("access-control-allow-origin").isEmpty shouldBe true
-        page.body should include ("<h1>Photo archive</h1>")
-        page.body should include ("/app.js")
+        page.body should include("<h1>Photo archive</h1>")
+        page.body should include("/app.js")
         val script: HttpResponse[String] = get(port, "/app.js")
         script.statusCode shouldBe 200
         script.headers.firstValue("content-type").orElse("") shouldBe "text/javascript; charset=utf-8"
-        script.body should include ("/api/tree")
-        script.body should include ("/api/day")
-        script.body should include ("/api/album")
-        script.body should include ("/api/thumb")
-        script.body should include ("/api/file")
-        script.body should include ("/api/toggle")
-        script.body should include ("/api/albums")
-        script.body should include ("event.key === \"x\"")
-        script.body should include ("\"desired\"")
-        script.body should include ("\"observed\"")
+        script.body should include("/api/tree")
+        script.body should include("/api/day")
+        script.body should include("/api/album")
+        script.body should include("/api/thumb")
+        script.body should include("/api/file")
+        script.body should include("/api/toggle")
+        script.body should include("/api/albums")
+        script.body should include("event.key === \"x\"")
+        script.body should include("\"desired\"")
+        script.body should include("\"observed\"")
         val style: HttpResponse[String] = get(port, "/app.css")
         style.statusCode shouldBe 200
         style.headers.firstValue("content-type").orElse("") shouldBe "text/css; charset=utf-8"
-        style.body should include ("font-family")
+        style.body should include("font-family")
         val missing: HttpResponse[String] = get(port, "/missing")
         missing.statusCode shouldBe 404
         missing.body shouldBe """{"error":"not found"}"""
@@ -75,7 +75,7 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
       assert(Web.handlerRuntime.isEmpty)
     finally deleteTree(runtime)
 
-  it should "release the lock when the port is taken and reject port 0 before binding" in :
+  it should "release the lock when the port is taken and reject port 0 before binding" in:
     val runtime: File = JFiles.createTempDirectory("web-taken").toFile
     val taken: Int = freePort()
     val socket = new java.net.ServerSocket()
@@ -101,7 +101,7 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
       socket.close()
       deleteTree(runtime)
 
-  it should "report a bind failure that is not a taken port" in :
+  it should "report a bind failure that is not a taken port" in:
     val runtime: File = JFiles.createTempDirectory("web-denied").toFile
     val probe = new java.net.ServerSocket()
     try
@@ -109,8 +109,9 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
         try
           probe.bind(new InetSocketAddress(loopback, 80))
           None
-        catch case caught: java.net.BindException =>
-          Some(Option(caught.getMessage).getOrElse(""))
+        catch
+          case caught: java.net.BindException =>
+            Some(Option(caught.getMessage).getOrElse(""))
       denied match
         case Some(message) =>
           val out = new ByteArrayOutputStream
@@ -120,8 +121,7 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
               Web.start(runtime, 80)
           if message.contains("Address already in use") then
             failed shouldBe Left(s"address already in use: $loopback:80")
-          else
-            failed shouldBe Left(message)
+          else failed shouldBe Left(message)
           text(out) shouldBe ""
           text(err) shouldBe ""
           assert(Web.handlerRuntime.isEmpty)
@@ -134,7 +134,7 @@ class WebServerTest extends AnyFlatSpec, WebTestSupport:
       probe.close()
       deleteTree(runtime)
 
-  it should "keep another holder of web.lock when this JVM already has it" in :
+  it should "keep another holder of web.lock when this JVM already has it" in:
     val runtime: File = JFiles.createTempDirectory("web-overlap").toFile
     val port: Int = freePort()
     Serve.prepare(runtime)

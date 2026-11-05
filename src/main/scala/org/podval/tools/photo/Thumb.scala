@@ -145,7 +145,7 @@ object Thumb:
       case (ext, file) +: tail =>
         body(ext, file) match
           case some @ Some(_) => some
-          case None => first(tail)(body)
+          case None           => first(tail)(body)
 
   private def thumbBytes(ext: String, file: File): Option[Array[Byte]] =
     if stillSet.contains(ext) || ext == Extension.PNG.name then
@@ -155,8 +155,7 @@ object Thumb:
       embeddedJpeg(file, thumbCap).flatMap: bytes =>
         scaled(thumbEdge, subsample = true):
           ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))
-    else if videoSet.contains(ext) then
-      ffmpeg(file, thumbEdge)
+    else if videoSet.contains(ext) then ffmpeg(file, thumbEdge)
     else None
 
   private def displayOne(ext: String, file: File): Option[Display] =
@@ -165,8 +164,7 @@ object Thumb:
     else if ext == Extension.PNG.name then Some(Display.Stream(file, "image/png"))
     else if embeddedSet.contains(ext) || rawSet.contains(ext) then
       embeddedJpeg(file, fullCap).map(bytes => Display.Inline(bytes, "image/jpeg"))
-    else if videoSet.contains(ext) then
-      ffmpeg(file, fullEdge).map(bytes => Display.Inline(bytes, "image/jpeg"))
+    else if videoSet.contains(ext) then ffmpeg(file, fullEdge).map(bytes => Display.Inline(bytes, "image/jpeg"))
     else None
 
   private def scaled(edge: Int, subsample: Boolean)(open: => ImageInputStream): Option[Array[Byte]] =
@@ -238,9 +236,10 @@ object Thumb:
           output.flush()
           val bytes: Array[Byte] = buffer.toByteArray
           if isJpeg(bytes) then Some(bytes) else None
-        catch case _: IOException =>
-          logOnce(encodeLogged, "ImageIO cannot encode jpeg")
-          None
+        catch
+          case _: IOException =>
+            logOnce(encodeLogged, "ImageIO cannot encode jpeg")
+            None
         finally
           writer.dispose()
           output.close()
@@ -260,7 +259,7 @@ object Thumb:
           case Shot.Again =>
             ffmpegAt(file, edge, "0") match
               case Shot.Frame(bytes) => Some(bytes)
-              case _ => None
+              case _                 => None
       finally ffmpegSlots.release()
 
   // Sequence argv, no shell. ss=1, then ss=0 when that result is empty or not a JPEG.
@@ -270,18 +269,33 @@ object Thumb:
     else
       val started: Option[Process] =
         try
-          Some(new ProcessBuilder(
-            "ffmpeg", "-v", "error", "-ss", ss, "-i", file.getAbsolutePath,
-            "-frames:v", "1",
-            "-vf", s"scale=$edge:$edge:force_original_aspect_ratio=decrease",
-            "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"
-          ).redirectError(ProcessBuilder.Redirect.DISCARD).start())
-        catch case error: IOException =>
-          // EMFILE and other spawn errors are this request only. A missing binary stays missing.
-          if Option(error.getMessage).exists(_.contains("No such file or directory")) then
-            ffmpegMissing.set(true)
-            logOnce(ffmpegLogged, "ffmpeg is missing")
-          None
+          Some(
+            new ProcessBuilder(
+              "ffmpeg",
+              "-v",
+              "error",
+              "-ss",
+              ss,
+              "-i",
+              file.getAbsolutePath,
+              "-frames:v",
+              "1",
+              "-vf",
+              s"scale=$edge:$edge:force_original_aspect_ratio=decrease",
+              "-f",
+              "image2pipe",
+              "-vcodec",
+              "mjpeg",
+              "pipe:1"
+            ).redirectError(ProcessBuilder.Redirect.DISCARD).start()
+          )
+        catch
+          case error: IOException =>
+            // EMFILE and other spawn errors are this request only. A missing binary stays missing.
+            if Option(error.getMessage).exists(_.contains("No such file or directory")) then
+              ffmpegMissing.set(true)
+              logOnce(ffmpegLogged, "ffmpeg is missing")
+            None
       started match
         case None =>
           Shot.Stop
@@ -289,11 +303,14 @@ object Thumb:
           try process.getOutputStream.close()
           catch case _: IOException => ()
           val output = new ByteArrayOutputStream
-          val pump = new Thread(() =>
-            try
-              val _: Long = process.getInputStream.transferTo(output)
-            catch case _: IOException => ()
-          , "photo-web-ffmpeg")
+          val pump = new Thread(
+            () => {
+              try
+                val _: Long = process.getInputStream.transferTo(output)
+              catch case _: IOException => ()
+            },
+            "photo-web-ffmpeg"
+          )
           pump.setDaemon(true)
           pump.start()
           try
@@ -304,12 +321,10 @@ object Thumb:
             pump.join(1000)
             val bytes: Array[Byte] = output.toByteArray
             if !finished then Shot.Stop
-            else if process.exitValue() != 0 then
-              if bytes.isEmpty || !isJpeg(bytes) then Shot.Again else Shot.Stop
+            else if process.exitValue() != 0 then if bytes.isEmpty || !isJpeg(bytes) then Shot.Again else Shot.Stop
             else if isJpeg(bytes) then Shot.Frame(bytes)
             else Shot.Again
-          finally
-            if process.isAlive then process.destroyForcibly()
+          finally if process.isAlive then process.destroyForcibly()
 
   private def load(material: String)(generate: => Option[Array[Byte]]): Option[Array[Byte]] =
     val dest: File = cacheFile(material)
@@ -321,14 +336,17 @@ object Thumb:
         var result: Option[Array[Byte]] = None
         try
           result = readCached(dest).orElse:
-            generate.filter(isJpeg).map: bytes =>
-              try writeAtomic(dest, bytes)
-              catch case _: IOException => ()
-              bytes
+            generate
+              .filter(isJpeg)
+              .map: bytes =>
+                try writeAtomic(dest, bytes)
+                catch case _: IOException => ()
+                bytes
           result
-        catch case NonFatal(_) =>
-          result = None
-          None
+        catch
+          case NonFatal(_) =>
+            result = None
+            None
         finally
           created.complete(result)
           inflight.remove(material, created)

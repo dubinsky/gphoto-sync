@@ -6,7 +6,7 @@ final class Root(val configuration: Configuration) extends Directory:
   override def root: Root = this
 
   override def name: String = ""
-  
+
   override def toString: String = name
 
   override protected def getDirectory: File = configuration.archive
@@ -26,4 +26,4 @@ final class Root(val configuration: Configuration) extends Directory:
 
   def parsePicture(path: String): Picture = parse(path) match
     case picture: Picture => picture
-    case path => throw IllegalArgumentException(s"'$path' is not a picture")
+    case path             => throw IllegalArgumentException(s"'$path' is not a picture")

@@ -10,18 +10,20 @@ private[photo] final class AgentStems(dayText: String) extends Operation:
       val (loaded, grouped, sidecars) = AgentSupport.loadGrouped(session, day, readSidecars = true)
       val rows: Seq[String] = grouped.map: (stem, extensions) =>
         s"$stem ${extensions.toSeq.sorted.mkString("+")}"
-      val value: Json = Json.Obj(Seq(
-        "day" -> Json.Str(Title.dayText(day.date)),
-        "stems" -> Json.Arr(grouped.map: (stem, extensions) =>
-          Json.Obj(Seq(
-            "stem" -> Json.Str(stem),
-            "extensions" -> Json.Arr(extensions.toSeq.sorted.map(Json.Str.apply)),
-            "metadata" -> AgentSupport.metadataValue(sidecars.getOrElse(stem, Metadata.default))
-          ))
+      val value: Json = Json.Obj(
+        Seq(
+          "day" -> Json.Str(Title.dayText(day.date)),
+          "stems" -> Json.Arr(grouped.map: (stem, extensions) =>
+            Json.Obj(
+              Seq(
+                "stem" -> Json.Str(stem),
+                "extensions" -> Json.Arr(extensions.toSeq.sorted.map(Json.Str.apply)),
+                "metadata" -> AgentSupport.metadataValue(sidecars.getOrElse(stem, Metadata.default))
+              )
+            ))
         )
-      ))
+      )
       (loaded, Result.Ok(AgentSupport.textOf(rows), value))
-
 
 private[photo] object AgentYears extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -30,55 +32,57 @@ private[photo] object AgentYears extends Operation:
       val value: Json = Json.Obj(Seq("years" -> Json.Arr(years.map(Json.Str.apply))))
       (session, Result.Ok(AgentSupport.textOf(years), value))
 
-
 private[photo] final class AgentMonths(yearText: String) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
       val year: Year =
-        try session.parse(yearText) match
-          case found: Year => found
-          case _ => throw IllegalArgumentException("not a year")
+        try
+          session.parse(yearText) match
+            case found: Year => found
+            case _           => throw IllegalArgumentException("not a year")
         catch
           case _: (NoSuchElementException | DateTimeException | IllegalArgumentException) =>
             throw IllegalArgumentException("not a year")
       val present: Boolean = year.directory.isDirectory
       val months: Seq[String] =
         if present then year.lsd.map(month => month.toString.stripPrefix("/")) else Seq.empty
-      val value: Json = Json.Obj(Seq(
-        "year" -> Json.Str(year.toString.stripPrefix("/")),
-        "present" -> Json.Bool(present),
-        "months" -> Json.Arr(months.map(Json.Str.apply))
-      ))
+      val value: Json = Json.Obj(
+        Seq(
+          "year" -> Json.Str(year.toString.stripPrefix("/")),
+          "present" -> Json.Bool(present),
+          "months" -> Json.Arr(months.map(Json.Str.apply))
+        )
+      )
       (session, Result.Ok(AgentSupport.textOf(months), value))
-
 
 private[photo] final class AgentDays(monthText: String) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
       val month: Month =
-        try session.parse(monthText) match
-          case found: Month => found
-          case _ => throw IllegalArgumentException("not a month")
+        try
+          session.parse(monthText) match
+            case found: Month => found
+            case _            => throw IllegalArgumentException("not a month")
         catch
           case _: (NoSuchElementException | DateTimeException | IllegalArgumentException) =>
             throw IllegalArgumentException("not a month")
       val present: Boolean = month.directory.isDirectory
       val days: Seq[String] =
         if present then month.lsd.map(day => day.toString.stripPrefix("/")) else Seq.empty
-      val value: Json = Json.Obj(Seq(
-        "month" -> Json.Str(month.toString.stripPrefix("/")),
-        "present" -> Json.Bool(present),
-        "days" -> Json.Arr(days.map(Json.Str.apply))
-      ))
+      val value: Json = Json.Obj(
+        Seq(
+          "month" -> Json.Str(month.toString.stripPrefix("/")),
+          "present" -> Json.Bool(present),
+          "days" -> Json.Arr(days.map(Json.Str.apply))
+        )
+      )
       (session, Result.Ok(AgentSupport.textOf(days), value))
-
 
 private[photo] final class AgentClaims(dayText: String) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
       val day: Day = AgentSupport.parseDay(session, dayText)
-      if !day.directory.isDirectory then
-        (session, Result.Ok("", claimsValue(day, present = false, Seq.empty)))
+      if !day.directory.isDirectory then (session, Result.Ok("", claimsValue(day, present = false, Seq.empty)))
       else
         val (loaded, grouped, _) = AgentSupport.loadGrouped(session, day, readSidecars = false)
         val pictureNames: Set[String] = (Extension.normal ++ Extension.raw ++ Extension.image).map(_.name)
@@ -91,30 +95,33 @@ private[photo] final class AgentClaims(dayText: String) extends Operation:
             try
               val found: Archive.Scan = Archive.scan(loaded.root.configuration.archive)
               (DirectoryIndex.now, found)
-            finally
-              DirectoryIndex.end(previous)
+            finally DirectoryIndex.end(previous)
           val (edited, scan) = scanned
-          val resolved: Seq[Claims.Resolved] = Claims.resolve(Archive.Scan(
-            scan.albums,
-            scan.pictures.filter(_.folderDay.isEqual(day.date))
-          ))
+          val resolved: Seq[Claims.Resolved] = Claims.resolve(
+            Archive.Scan(
+              scan.albums,
+              scan.pictures.filter(_.folderDay.isEqual(day.date))
+            )
+          )
           (edited, Result.Ok(AgentSupport.textOf(resolved.map(_.line)), claimsValue(day, present = true, resolved)))
 
   private def claimsValue(day: Day, present: Boolean, claims: Seq[Claims.Resolved]): Json =
-    Json.Obj(Seq(
-      "path" -> Json.Str(Title.dayText(day.date)),
-      "present" -> Json.Bool(present),
-      "claims" -> Json.Arr(claims.map: claim =>
-        val stem: String = Files.splitOnLast(claim.path, '/')._2.getOrElse(claim.path)
-        Json.Obj(Seq(
-          "path" -> Json.Str(claim.path),
-          "stem" -> Json.Str(stem),
-          "albums" -> Json.Arr(claim.albums.map(Json.Str.apply)),
-          "excludedOnly" -> Json.Bool(claim.excludedOnly)
-        ))
+    Json.Obj(
+      Seq(
+        "path" -> Json.Str(Title.dayText(day.date)),
+        "present" -> Json.Bool(present),
+        "claims" -> Json.Arr(claims.map: claim =>
+          val stem: String = Files.splitOnLast(claim.path, '/')._2.getOrElse(claim.path)
+          Json.Obj(
+            Seq(
+              "path" -> Json.Str(claim.path),
+              "stem" -> Json.Str(stem),
+              "albums" -> Json.Arr(claim.albums.map(Json.Str.apply)),
+              "excludedOnly" -> Json.Bool(claim.excludedOnly)
+            )
+          ))
       )
-    ))
-
+    )
 
 private[photo] object AgentCatalog extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -124,13 +131,13 @@ private[photo] object AgentCatalog extends Operation:
       val sorted: Seq[Catalog.Album] = albums.sortBy(album => (album.title, album.id))
       val lines: Seq[String] = sorted.map: album =>
         AgentSupport.catalogLine(album, counts.getOrElse(album.title, 0) > 1)
-      val value: Json = Json.Obj(Seq(
-        "albums" -> Json.Arr(sorted.map: album =>
-          AgentSupport.albumValue(album, counts.getOrElse(album.title, 0) > 1)
+      val value: Json = Json.Obj(
+        Seq(
+          "albums" -> Json.Arr(sorted.map: album =>
+            AgentSupport.albumValue(album, counts.getOrElse(album.title, 0) > 1))
         )
-      ))
+      )
       (loaded, Result.Ok(AgentSupport.textOf(lines), value))
-
 
 private[photo] final class AgentItems(id: Option[String], title: String) extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -143,7 +150,6 @@ private[photo] final class AgentItems(id: Option[String], title: String) extends
           else AgentSupport.textOf(AgentSupport.itemLines(album))
         (loaded, Result.Ok(text, AgentSupport.itemsValue(album)))
 
-
 private[photo] final class AgentMatch(id: Option[String], title: String) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -155,25 +161,21 @@ private[photo] final class AgentMatch(id: Option[String], title: String) extends
           AgentSupport.skipped(loaded, album, "unread names")
         else AgentQueries.matchItems(loaded, album)
 
-
 private[photo] final class AgentLocate(dayText: String, stem: String) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
       AgentQueries.locate(session, dayText, stem)
-
 
 private[photo] object AgentDrift extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
       AgentQueries.drift(session)
 
-
 private[photo] object AgentMissing extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
       val (loaded, albums) = session.loadCatalog
       AgentQueries.listMissing(loaded, albums)
-
 
 private[photo] final class AgentInclude(spanText: Option[String], paths: Seq[String]) extends Operation:
   override def execute(session: Session): (Session, Result) =
@@ -187,10 +189,12 @@ private[photo] final class AgentInclude(spanText: Option[String], paths: Seq[Str
       val days: Seq[LocalDate] = span.fold(claimedPairs.map(_._1).distinct)(AgentSupport.eachDay)
       val (loaded, universe) = AgentSupport.scanDays(session, days)
       val entries: Seq[Include.Entry] = Include.compress(span, claimed, universe)
-      val value: Json = Json.Obj(Seq(
-        "rendered" -> Json.Arr(entries.map(entry => Json.Str(Include.render(entry)))),
-        "logical" -> Json.Arr(entries.map(entry => Json.Str(Include.logical(entry))))
-      ))
+      val value: Json = Json.Obj(
+        Seq(
+          "rendered" -> Json.Arr(entries.map(entry => Json.Str(Include.render(entry)))),
+          "logical" -> Json.Arr(entries.map(entry => Json.Str(Include.logical(entry))))
+        )
+      )
       (loaded, Result.Ok(AgentSupport.textOf(entries.map(Include.render)), value))
 
 private[photo] object AgentQueries:
@@ -236,32 +240,38 @@ private[photo] object AgentQueries:
                 None
         val lines: Seq[String] = rows.map: (album, item, date) =>
           s"${album.title} ${date.toString} ${item.filename} ${AgentSupport.showUploader(item.uploader)}"
-        (cataloged, Result.Ok(AgentSupport.textOf(lines), locateValue(shown, stem, directory = true, present = true, rows)))
+        (
+          cataloged,
+          Result.Ok(AgentSupport.textOf(lines), locateValue(shown, stem, directory = true, present = true, rows))
+        )
 
   private def locateValue(
-    day: String,
-    stem: String,
-    directory: Boolean,
-    present: Boolean,
-    rows: Seq[(Catalog.Album, Catalog.Item, LocalDate)]
+      day: String,
+      stem: String,
+      directory: Boolean,
+      present: Boolean,
+      rows: Seq[(Catalog.Album, Catalog.Item, LocalDate)]
   ): Json =
-    Json.Obj(Seq(
-      "day" -> Json.Str(day),
-      "stem" -> Json.Str(stem),
-      "directory" -> Json.Bool(directory),
-      "present" -> Json.Bool(present),
-      "ambiguous" -> Json.Bool(rows.length > 1),
-      "matches" -> Json.Arr(rows.map: (album, item, date) =>
-        Json.Obj(Seq(
-          "title" -> Json.Str(album.title),
-          "date" -> Json.Str(date.toString),
-          "filename" -> Json.Str(item.filename),
-          "uploader" -> Json.Str(AgentSupport.showUploader(item.uploader)),
-          "id" -> Json.Str(album.id),
-          "key" -> Json.Str(item.key)
-        ))
+    Json.Obj(
+      Seq(
+        "day" -> Json.Str(day),
+        "stem" -> Json.Str(stem),
+        "directory" -> Json.Bool(directory),
+        "present" -> Json.Bool(present),
+        "ambiguous" -> Json.Bool(rows.length > 1),
+        "matches" -> Json.Arr(rows.map: (album, item, date) =>
+          Json.Obj(
+            Seq(
+              "title" -> Json.Str(album.title),
+              "date" -> Json.Str(date.toString),
+              "filename" -> Json.Str(item.filename),
+              "uploader" -> Json.Str(AgentSupport.showUploader(item.uploader)),
+              "id" -> Json.Str(album.id),
+              "key" -> Json.Str(item.key)
+            )
+          ))
       )
-    ))
+    )
 
   // Same classes reconcile prints. dry-run builds no write touches, and the link file is not published.
   def drift(session: Session): (Session, Result) =
@@ -293,15 +303,18 @@ private[photo] object AgentQueries:
         (next, soFar ++ added)
     val lines: Seq[String] = rows.map: (album, item) =>
       s"missing ${album.title} ${AgentSupport.catalogDate(item.date)} ${item.filename} ${AgentSupport.showUploader(item.uploader)}"
-    val value: Json = Json.Obj(Seq(
-      "missing" -> Json.Arr(rows.map: (album, item) =>
-        Json.Obj(Seq(
-          "title" -> Json.Str(album.title),
-          "date" -> Json.Str(AgentSupport.catalogDate(item.date)),
-          "filename" -> Json.Str(item.filename),
-          "uploader" -> Json.Str(AgentSupport.showUploader(item.uploader)),
-          "key" -> Json.Str(item.key)
-        ))
+    val value: Json = Json.Obj(
+      Seq(
+        "missing" -> Json.Arr(rows.map: (album, item) =>
+          Json.Obj(
+            Seq(
+              "title" -> Json.Str(album.title),
+              "date" -> Json.Str(AgentSupport.catalogDate(item.date)),
+              "filename" -> Json.Str(item.filename),
+              "uploader" -> Json.Str(AgentSupport.showUploader(item.uploader)),
+              "key" -> Json.Str(item.key)
+            )
+          ))
       )
-    ))
+    )
     (ready, Result.Ok(AgentSupport.textOf(lines), value))

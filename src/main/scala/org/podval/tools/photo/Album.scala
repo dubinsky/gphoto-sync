@@ -24,10 +24,10 @@ private[photo] enum AlbumRole:
 
 // One album. The title is not the path: the file sits in the start folder, and a span's end is `to-` in the name.
 final case class Album private (
-  title: String,
-  span: Option[Title.Span],
-  include: Seq[Include.Entry],
-  private[photo] val role: AlbumRole
+    title: String,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    private[photo] val role: AlbumRole
 ):
   // fromProduct and copy call this constructor and skip the factories.
   role match
@@ -42,24 +42,24 @@ final case class Album private (
 
   def external: Boolean = role match
     case _: AlbumRole.External => true
-    case _: AlbumRole.Client => false
+    case _: AlbumRole.Client   => false
 
   def googleAlbumId: String = role match
     case AlbumRole.Client(_, Publication.Published(id, _)) => id
-    case _ => ""
+    case _                                                 => ""
 
   def publishedTitle: String = role match
     case AlbumRole.Client(_, Publication.Published(_, stored)) => stored
-    case AlbumRole.Client(_, Publication.Pending(stored)) => stored.getOrElse("")
-    case _: AlbumRole.External => ""
+    case AlbumRole.Client(_, Publication.Pending(stored))      => stored.getOrElse("")
+    case _: AlbumRole.External                                 => ""
 
   def googleTitle: String = role match
     case AlbumRole.External(stored, _) => stored.getOrElse("")
-    case AlbumRole.Client(stored, _) => stored.getOrElse("")
+    case AlbumRole.Client(stored, _)   => stored.getOrElse("")
 
   def owner: Option[String] = role match
     case AlbumRole.External(_, stored) => stored
-    case _: AlbumRole.Client => None
+    case _: AlbumRole.Client           => None
 
   def desiredGoogleTitle: String =
     if googleTitle.nonEmpty then googleTitle else title
@@ -74,11 +74,11 @@ final case class Album private (
 
 object Album:
   private[photo] def external(
-    title: String,
-    span: Option[Title.Span],
-    include: Seq[Include.Entry],
-    googleTitle: Option[String],
-    owner: Option[String]
+      title: String,
+      span: Option[Title.Span],
+      include: Seq[Include.Entry],
+      googleTitle: Option[String],
+      owner: Option[String]
   ): Album =
     val keptTitle: Option[String] = googleTitle.filter(_.nonEmpty)
     owner.foreach: name =>
@@ -87,11 +87,11 @@ object Album:
     new Album(title, span, include, AlbumRole.External(keptTitle, owner))
 
   private[photo] def pending(
-    title: String,
-    span: Option[Title.Span],
-    include: Seq[Include.Entry],
-    googleTitle: Option[String] = None,
-    publishedTitle: Option[String] = None
+      title: String,
+      span: Option[Title.Span],
+      include: Seq[Include.Entry],
+      googleTitle: Option[String] = None,
+      publishedTitle: Option[String] = None
   ): Album =
     new Album(
       title,
@@ -104,12 +104,12 @@ object Album:
     )
 
   private[photo] def published(
-    title: String,
-    span: Option[Title.Span],
-    include: Seq[Include.Entry],
-    id: String,
-    publishedTitle: String,
-    googleTitle: Option[String] = None
+      title: String,
+      span: Option[Title.Span],
+      include: Seq[Include.Entry],
+      id: String,
+      publishedTitle: String,
+      googleTitle: Option[String] = None
   ): Album =
     require(id.nonEmpty, "id must be non-empty")
     new Album(
@@ -128,7 +128,7 @@ object Album:
   def fileFor(originals: File, title: String): File =
     Title.parse(title) match
       case Some(parsed) => Title.file(originals, parsed)
-      case None => throw IllegalArgumentException(s"not an album title: $title")
+      case None         => throw IllegalArgumentException(s"not an album title: $title")
 
   def read(originals: File, file: File): Album =
     val (title, span, include, role) = AlbumFile.read(originals, file)
@@ -146,10 +146,12 @@ object Album:
     prefix.filter(_.nonEmpty).forall(selected => path == selected || path.startsWith(s"$selected/"))
 
   def albumMatches(startDir: String, title: String, prefix: Option[String]): Boolean =
-    prefix.filter(_.nonEmpty).forall: selected =>
-      val titleHit: Boolean = title == selected || title.startsWith(s"$selected/")
-      val startHit: Boolean = startDir == selected || startDir.startsWith(s"$selected/")
-      titleHit || startHit
+    prefix
+      .filter(_.nonEmpty)
+      .forall: selected =>
+        val titleHit: Boolean = title == selected || title.startsWith(s"$selected/")
+        val startHit: Boolean = startDir == selected || startDir.startsWith(s"$selected/")
+        titleHit || startHit
 
   private[photo] def messageOf(error: Exception): String =
     Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName)
@@ -172,10 +174,10 @@ object Album:
   // Recompress each include entry that claims one of these stems. An empty album writes include = [].
   // The read is inside the lock. A next include computed before tryLock is not spliced.
   def storeRemovals(
-    file: File,
-    originals: File,
-    removals: Seq[(LocalDate, String)],
-    universe: Map[LocalDate, Set[String]]
+      file: File,
+      originals: File,
+      removals: Seq[(LocalDate, String)],
+      universe: Map[LocalDate, Set[String]]
   ): Unit =
     withWriteLock:
       val album: Album = read(originals, file)
@@ -202,9 +204,9 @@ object Album:
 
   // Same reads as rewriteInclude, no write. A bad curated file fails before a move.
   private[photo] def planCurated(
-    originals: File,
-    from: (LocalDate, String),
-    to: (LocalDate, String)
+      originals: File,
+      from: (LocalDate, String),
+      to: (LocalDate, String)
   ): Seq[(File, Seq[Include.Entry])] =
     if from._1.equals(to._1) && from._2 == to._2 then Seq.empty
     else
@@ -220,10 +222,10 @@ object Album:
           Some(file -> next)
 
   private[photo] def planDated(
-    originals: File,
-    from: (LocalDate, String),
-    to: (LocalDate, String),
-    fromPath: String
+      originals: File,
+      from: (LocalDate, String),
+      to: (LocalDate, String),
+      fromPath: String
   ): Seq[(File, Seq[Include.Entry])] =
     val universe: Map[LocalDate, Set[String]] = PlanningWalk.planningUniverse(originals)
     val loaded: Seq[Loaded] = PlanningWalk.planningAlbums(originals)
@@ -250,7 +252,7 @@ object Album:
               one.album.include.collect:
                 case entry @ Include.Entry.Dates(_, Some(_), _)
                     if Include.claims(one.album.span, entry, from._1, from._2) &&
-                       !Include.claims(one.album.span, entry, to._1, to._2) =>
+                      !Include.claims(one.album.span, entry, to._1, to._2) =>
                   entry
             if rewrite.isEmpty then None
             else
@@ -301,17 +303,20 @@ object Album:
 
   // Checks and the create share one lock, so two creates of the same title cannot both pass.
   private[photo] def create(originals: File, album: Album): File =
-    val parsed: Title.Parsed = Title.parse(album.title).getOrElse(
-      throw IllegalArgumentException(s"not an album title: ${album.title}")
-    )
+    val parsed: Title.Parsed = Title
+      .parse(album.title)
+      .getOrElse(
+        throw IllegalArgumentException(s"not an album title: ${album.title}")
+      )
     val file: File = Title.file(originals, parsed)
     withWriteLock:
       if file.exists then throw IllegalArgumentException(s"album already exists: ${album.title}")
       val parent: File = file.getParentFile
       if parent == null || !parent.isDirectory then throw IllegalArgumentException("no such directory")
       try replaceAtomic(file, renderFile(album), replace = false)
-      catch case _: FileAlreadyExistsException =>
-        throw IllegalArgumentException(s"album already exists: ${album.title}")
+      catch
+        case _: FileAlreadyExistsException =>
+          throw IllegalArgumentException(s"album already exists: ${album.title}")
     file
 
   // The scope is the whole call, not one lock. withWriteLock reads it and does not clear it.
@@ -328,9 +333,10 @@ object Album:
     val deadline: Long = System.nanoTime() + writeWaitNanos
     val acquired: Boolean =
       try writeGate.tryLock(math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
-      catch case _: InterruptedException =>
-        Thread.currentThread.interrupt()
-        false
+      catch
+        case _: InterruptedException =>
+          Thread.currentThread.interrupt()
+          false
     if !acquired then throw IllegalArgumentException("album file is busy")
     try
       if writeGate.getHoldCount > 1 then body
@@ -377,18 +383,20 @@ object Album:
     else if System.nanoTime() >= deadline then throw IllegalArgumentException("album file is busy")
     else
       try Thread.sleep(20)
-      catch case _: InterruptedException =>
-        Thread.currentThread.interrupt()
-        throw IllegalArgumentException("album file is busy")
+      catch
+        case _: InterruptedException =>
+          Thread.currentThread.interrupt()
+          throw IllegalArgumentException("album file is busy")
       pollLock(channel, deadline)
 
   // ThreadLocal when the caller set it, else the running web server, else the serve runtime directory.
   private def lockPlace(): Either[String, File] =
     val chosen: Option[File] = writeLockDirectory.get
     if chosen != null && chosen.isDefined then Right(chosen.get)
-    else Web.handlerRuntime match
-      case Some(dir) => Right(dir)
-      case None => Serve.runtimeDirectory()
+    else
+      Web.handlerRuntime match
+        case Some(dir) => Right(dir)
+        case None      => Serve.runtimeDirectory()
 
   private def replaceAtomic(file: File, text: String, replace: Boolean): Unit =
     val parent: File = file.getParentFile
@@ -421,9 +429,9 @@ object Album:
     finally channel.close()
 
   private[photo] def spliceTitles(
-    file: File,
-    googleTitle: Option[Option[String]],
-    publishedTitle: Option[String]
+      file: File,
+      googleTitle: Option[Option[String]],
+      publishedTitle: Option[String]
   ): Unit =
     googleTitle.foreach(_.foreach(text => AlbumFile.rejectControl(file, "google-title", text)))
     publishedTitle.foreach(text => AlbumFile.rejectControl(file, "published-title", text))
@@ -432,7 +440,9 @@ object Album:
     if rendered != original then Files.write(rendered, file)
 
   private def curatedFiles(originals: File): Seq[File] =
-    Option(originals.listFiles).map(_.toSeq).getOrElse(Seq.empty)
+    Option(originals.listFiles)
+      .map(_.toSeq)
+      .getOrElse(Seq.empty)
       .filter(file => file.isFile && file.getName.endsWith(".toml"))
       .sortBy(_.getName)
 

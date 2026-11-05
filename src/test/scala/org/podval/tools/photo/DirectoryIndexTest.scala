@@ -22,7 +22,7 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
   private val july: String = "2010/07/19"
   private val misnamed: String = "2010/07/20"
 
-  "Pictures.grouped" should "not enact and not print" in :
+  "Pictures.grouped" should "not enact and not print" in:
     withArchive: archive =>
       val file: File = jpeg(File(archive, july), "VID_1.jpg")
       val (text, thrown) = Transcript.collect:
@@ -31,7 +31,7 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       text shouldBe ""
       file.getName shouldBe "VID_1.jpg"
 
-  "a shell ls" should "match a cold run and not construct Extension on the second command" in :
+  "a shell ls" should "match a cold run and not construct Extension on the second command" in:
     withArchive: archive =>
       jpeg(File(archive, august), "1000.jpg")
       jpeg(File(archive, august), "20100812_013216.jpg")
@@ -45,7 +45,7 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       val only: String = cold(root, "ls", "--timestamp-from-name-only", august)
       plain should not be long
       only should not be plain
-      only should include ("timestampFromName=")
+      only should include("timestampFromName=")
       only should not include ("1000")
 
       val first: Seq[String] = Seq(s"ls $august", s"ls --long $august")
@@ -71,7 +71,8 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       out3 shouldBe only + only
       deltas3(1) shouldBe 0L
 
-      val (namedCode, namedOut, namedDeltas, namedTexts) = shellTexts(cursor, Seq(s"ls $misnamed", s"ls $misnamed", "exit"))
+      val (namedCode, namedOut, namedDeltas, namedTexts) =
+        shellTexts(cursor, Seq(s"ls $misnamed", s"ls $misnamed", "exit"))
       namedCode shouldBe 0
       val oneShotMisnamed: String = cold(root, "ls", misnamed)
       oneShotMisnamed.linesIterator.count(_.contains("WRONG NAME")) shouldBe 1
@@ -96,7 +97,7 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       augustText.linesIterator.filter(_.startsWith(s"/$august/")).map(_.takeWhile(_ != ' ')).toSeq shouldBe
         Seq(s"/$august/20100812_013216", s"/$august/1000")
 
-  it should "not store a listing when the extractor rejects the file" in :
+  it should "not store a listing when the extractor rejects the file" in:
     withArchive: archive =>
       val relative: String = "2010/08/13"
       val directory: File = File(archive, relative)
@@ -116,25 +117,28 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       intercept[ImageProcessingException]:
         shell(cursor, Seq(s"ls --long $relative", "exit"))
 
-  it should "keep a filtered ls of a misnamed sidecar in the shell" in :
+  it should "keep a filtered ls of a misnamed sidecar in the shell" in:
     withArchive: archive =>
       val day: String = "2010/07/21"
       jpeg(File(archive, day), "VID_1.jpg")
       write(archive, s"$day/VID_1.toml", "source = \"camera\"\n")
       val root: Root = rootFor(archive)
       val cursor: Session = Session(root, PathStyle.Cursor, root)
-      val (code, _, _, texts) = shellTexts(cursor, Seq(
-        s"ls --name-contains zz $day",
-        "pwd",
-        "exit"
-      ))
+      val (code, _, _, texts) = shellTexts(
+        cursor,
+        Seq(
+          s"ls --name-contains zz $day",
+          "pwd",
+          "exit"
+        )
+      )
       code shouldBe 0
       texts should have size 2
-      texts.head should include ("WRONG NAME")
+      texts.head should include("WRONG NAME")
       texts.head shouldBe cold(root, "ls", "--name-contains", "zz", day)
       texts(1) shouldBe "/\n"
 
-  it should "not fill on cd or on a one-shot ls" in :
+  it should "not fill on cd or on a one-shot ls" in:
     withArchive: archive =>
       jpeg(File(archive, july), "2412.jpg")
       JFiles.createDirectory(archive.toPath.resolve(".gphoto-sync"))
@@ -142,10 +146,13 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       val root: Root = rootFor(archive)
       val cursor: Session = Session(root, PathStyle.Cursor, root)
       var afterCd: Session = cursor
-      val (code, _, _) = shell(cursor, Seq(s"cd $july", "exit"), (current, parsed) =>
-        val result: (Session, Result) = Cli.toOperation(parsed).execute(current)
-        afterCd = result._1
-        result
+      val (code, _, _) = shell(
+        cursor,
+        Seq(s"cd $july", "exit"),
+        (current, parsed) =>
+          val result: (Session, Result) = Cli.toOperation(parsed).execute(current)
+          afterCd = result._1
+          result
       )
       code shouldBe 0
       afterCd.index.isEmpty shouldBe true
@@ -155,7 +162,7 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       text shouldBe "/2010/07/19/2412 jpg\n"
       oneShot.index.isEmpty shouldBe true
 
-  "the directory index" should "reuse a month only when its own children match and a day only when its files match" in :
+  "the directory index" should "reuse a month only when its own children match and a day only when its files match" in:
     withArchive: archive =>
       jpeg(File(archive, july), "2412.jpg")
       jpeg(File(archive, august), "1000.jpg")
@@ -191,7 +198,9 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       longAgain should not be longText
       longAgain shouldBe cold(root, "ls", "--long", july)
       reread.index.get(File(archive, "2010/07")).get.albums.head should be theSameInstanceAs julyMonth
-      reread.index.get(File(archive, "2010")).get should be theSameInstanceAs listed.index.get(File(archive, "2010")).get
+      reread.index.get(File(archive, "2010")).get should be theSameInstanceAs listed.index
+        .get(File(archive, "2010"))
+        .get
 
       write(archive, "2010/07/album.toml", "include = []\n")
       JFiles.setLastModifiedTime(
@@ -204,7 +213,7 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       (reloaded.index.get(File(archive, "2010/07")).get.albums.head eq julyMonth) shouldBe false
       reloaded.index.get(File(archive, july)).get.grouped.map(_._1) shouldBe Seq("2412")
 
-  "drops" should "follow the write and leave a dry run cached" in :
+  "drops" should "follow the write and leave a dry run cached" in:
     withArchive: archive =>
       jpeg(File(archive, july), "2412.jpg")
       jpeg(File(archive, july), "1000.jpg")
@@ -218,7 +227,9 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       val (dryNames, _) = runOk(warmed, "repair", "--names", "--dry-run", july)
       dryNames.index.get(File(archive, july)).get should be theSameInstanceAs warmed.index.get(File(archive, july)).get
       val (dryRaw, _) = runOk(dryNames, "repair", "--raw", "--dry-run", july)
-      dryRaw.index.get(File(archive, august)).get should be theSameInstanceAs warmed.index.get(File(archive, august)).get
+      dryRaw.index.get(File(archive, august)).get should be theSameInstanceAs warmed.index
+        .get(File(archive, august))
+        .get
       val (dryTimestamps, _) = runOk(dryRaw, "repair", "--timestamps", "--dry-run", july)
       dryTimestamps should be theSameInstanceAs dryRaw
       val (dryDays, _) = runOk(dryTimestamps, "repair", "--days", "--dry-run", july)
@@ -227,7 +238,7 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
       val (usage, usageResult) = run(dryDays, "item", "set", "nope", s"$july/2412")
       usageResult match
         case Result.Usage(_) => usage should be theSameInstanceAs dryDays
-        case other => fail(other.toString)
+        case other           => fail(other.toString)
 
       val (clearedDay, _) = runOk(usage, "item", "set", "source=camera", s"$july/2412")
       clearedDay.index.get(File(archive, july)) shouldBe None
@@ -281,23 +292,23 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
 
   private def runOk(session: Session, args: String*): (Session, String) =
     run(session, args*) match
-      case (returned, Result.Ok(text, _)) => (returned, text)
+      case (returned, Result.Ok(text, _))       => (returned, text)
       case (_, Result.Failed(text, _, message)) => fail(s"$message\n$text")
-      case (_, Result.Usage(message)) => fail(message)
+      case (_, Result.Usage(message))           => fail(message)
 
   private def run(session: Session, args: String*): (Session, Result) =
     Cli.parse(args.toList) match
       case Cli.Run(parsed) => Cli.toOperation(parsed).execute(session)
-      case other => fail(other.toString)
+      case other           => fail(other.toString)
 
   private def shell(session: Session, lines: Seq[String]): (Int, String, Seq[Long]) =
     val (code, out, deltas, _) = shellTexts(session, lines)
     (code, out, deltas)
 
   private def shell(
-    session: Session,
-    lines: Seq[String],
-    executeCommand: (Session, Cli.Parsed) => (Session, Result)
+      session: Session,
+      lines: Seq[String],
+      executeCommand: (Session, Cli.Parsed) => (Session, Result)
   ): (Int, String, String) =
     val out: ByteArrayOutputStream = new ByteArrayOutputStream
     val err: ByteArrayOutputStream = new ByteArrayOutputStream
@@ -309,15 +320,18 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
   private def shellTexts(session: Session, lines: Seq[String]): (Int, String, Seq[Long], Seq[String]) =
     val deltas: ListBuffer[Long] = ListBuffer.empty
     val texts: ListBuffer[String] = ListBuffer.empty
-    val (code, out, _) = shell(session, lines, (current, parsed) =>
-      val before: Long = Extension.constructed
-      val result: (Session, Result) = Cli.toOperation(parsed).execute(current)
-      deltas += Extension.constructed - before
-      result._2 match
-        case Result.Ok(text, _) => texts += text
-        case Result.Failed(text, _, _) => texts += text
-        case Result.Usage(_) => ()
-      result
+    val (code, out, _) = shell(
+      session,
+      lines,
+      (current, parsed) =>
+        val before: Long = Extension.constructed
+        val result: (Session, Result) = Cli.toOperation(parsed).execute(current)
+        deltas += Extension.constructed - before
+        result._2 match
+          case Result.Ok(text, _)        => texts += text
+          case Result.Failed(text, _, _) => texts += text
+          case Result.Usage(_)           => ()
+        result
     )
     (code, out, deltas.toSeq, texts.toSeq)
 

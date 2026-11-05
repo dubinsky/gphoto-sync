@@ -13,10 +13,8 @@ final case class ItemSet(dryRun: Boolean, property: String, picture: String) ext
       // `date=` is a clear. LocalDate.parse rejects the empty string.
       val present: Option[String] = raw.filter(_.nonEmpty)
       val updated: Metadata =
-        if name == "date" && present.isDefined then
-          parsed.metadata.copy(date = Some(parsePlacementDay(present.get)))
-        else
-          Property.AndValue(Property.forName(name), present).set(parsed.metadata)
+        if name == "date" && present.isDefined then parsed.metadata.copy(date = Some(parsePlacementDay(present.get)))
+        else Property.AndValue(Property.forName(name), present).set(parsed.metadata)
       val folder: Option[LocalDate] = parsed.parent.day.map(_.date)
       val placed: Option[LocalDate] = if name == "date" then updated.date else None
       val moves: Boolean = placed.exists(day => !folder.contains(day))
@@ -25,17 +23,18 @@ final case class ItemSet(dryRun: Boolean, property: String, picture: String) ext
         if !moves then
           writeSidecar(parsed, updated)
           None
-        else
-          Some(movePicture(parsed, fromPath, placed.get, updated))
+        else Some(movePicture(parsed, fromPath, placed.get, updated))
       val resultPath: String = if moves && !dryRun then moved.get else fromPath
       val movedTo: Json = if moves && !dryRun then Json.Str(moved.get) else Json.Null
-      produced = Json.Obj(Seq(
-        "dryRun" -> Json.Bool(dryRun),
-        "path" -> Json.Str(resultPath),
-        "property" -> Json.Str(name),
-        "value" -> stored(name, updated),
-        "movedTo" -> movedTo
-      ))
+      produced = Json.Obj(
+        Seq(
+          "dryRun" -> Json.Bool(dryRun),
+          "path" -> Json.Str(resultPath),
+          "property" -> Json.Str(name),
+          "value" -> stored(name, updated),
+          "movedTo" -> movedTo
+        )
+      )
 
   private def writeSidecar(parsed: Picture, updated: Metadata): Unit =
     if updated == Metadata.default then
@@ -87,22 +86,22 @@ final case class ItemSet(dryRun: Boolean, property: String, picture: String) ext
     toPath
 
   private def stored(name: String, metadata: Metadata): Json = name match
-    case "source" => metadata.source.fold(Json.Null)(Json.Str(_))
-    case "timestamp" => metadata.timestamp.fold(Json.Null)(Json.Str(_))
-    case "date" => metadata.date.fold(Json.Null)(day => Json.Str(day.toString))
-    case "bad-raw" => metadata.`bad-raw`.fold(Json.Null)(Json.Bool(_))
-    case "orientation" => metadata.orientation.fold(Json.Null)(Json.Str(_))
+    case "source"               => metadata.source.fold(Json.Null)(Json.Str(_))
+    case "timestamp"            => metadata.timestamp.fold(Json.Null)(Json.Str(_))
+    case "date"                 => metadata.date.fold(Json.Null)(day => Json.Str(day.toString))
+    case "bad-raw"              => metadata.`bad-raw`.fold(Json.Null)(Json.Bool(_))
+    case "orientation"          => metadata.orientation.fold(Json.Null)(Json.Str(_))
     case "google-media-item-id" => metadata.`google-media-item-id`.fold(Json.Null)(Json.Str(_))
-    case "already-in-google" => metadata.`already-in-google`.fold(Json.Null)(Json.Bool(_))
-    case "uploader" => metadata.uploader.fold(Json.Null)(Json.Str(_))
-    case _ => Json.Null
+    case "already-in-google"    => metadata.`already-in-google`.fold(Json.Null)(Json.Bool(_))
+    case "uploader"             => metadata.uploader.fold(Json.Null)(Json.Str(_))
+    case _                      => Json.Null
 
   private def parsePlacementDay(raw: String): LocalDate =
     Title.parse(raw) match
-      case Some(Title.Parsed(Some(span), None))
-          if span.grain.equals(Title.Grain.Day) && span.start.equals(span.end) =>
+      case Some(Title.Parsed(Some(span), None)) if span.grain.equals(Title.Grain.Day) && span.start.equals(span.end) =>
         span.start
       case _ =>
         try LocalDate.parse(raw)
-        catch case _: DateTimeException =>
-          throw IllegalArgumentException(s"invalid date '$raw'")
+        catch
+          case _: DateTimeException =>
+            throw IllegalArgumentException(s"invalid date '$raw'")

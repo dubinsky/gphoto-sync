@@ -8,7 +8,7 @@ import java.nio.file.{Files as NFiles}
 import java.time.LocalDate
 
 class CatalogTest extends AnyFlatSpec, Matchers:
-  "Catalog" should "reject a file that starts with ## without parsing the rest" in :
+  "Catalog" should "reject a file that starts with ## without parsing the rest" in:
     withTemp: dir =>
       val garbage: String = "## \nitem\t\t\tnot-a-date\t\t\nwrong column count\n"
       val caught: IllegalArgumentException = intercept[IllegalArgumentException]:
@@ -20,21 +20,23 @@ class CatalogTest extends AnyFlatSpec, Matchers:
         Catalog.read(binary)
       binaryCaught.getMessage shouldBe "catalog is not version 2"
 
-  it should "reject a second owner" in :
+  it should "reject a second owner" in:
     withTemp: dir =>
       val caught: IllegalArgumentException = intercept[IllegalArgumentException]:
         Catalog.read(catalog(dir, "album\ta\t0\tJune", "owner\ta\tAda", "owner\ta\tBea"))
       caught.getMessage shouldBe "second owner"
 
-  it should "parse a shortfall whose name-failures are 0" in :
+  it should "parse a shortfall whose name-failures are 0" in:
     withTemp: dir =>
-      Catalog.read(catalog(
-        dir,
-        "album\ta\t5\tJune ",
-        "error\ta\t2\t5\t0",
-        "item\ta\tone.jpg\t2010-06-01\tk1\t-",
-        "item\ta\ttwo.jpg\t-\tk2\tAda"
-      )) shouldBe Seq(
+      Catalog.read(
+        catalog(
+          dir,
+          "album\ta\t5\tJune ",
+          "error\ta\t2\t5\t0",
+          "item\ta\tone.jpg\t2010-06-01\tk1\t-",
+          "item\ta\ttwo.jpg\t-\tk2\tAda"
+        )
+      ) shouldBe Seq(
         Catalog.Album(
           id = "a",
           count = 5,
@@ -50,53 +52,65 @@ class CatalogTest extends AnyFlatSpec, Matchers:
         )
       )
 
-  it should "count an unset line as a name failure" in :
+  it should "count an unset line as a name failure" in:
     withTemp: dir =>
-      val album: Catalog.Album = Catalog.read(catalog(
-        dir,
-        "item\ta\tone.jpg\t2012-02-29\tk1\t-",
-        "unset\ta\t2010-06-02\tk2\tBea",
-        "album\ta\t4\tJune",
-        "error\ta\t2\t4\t1"
-      )).head
+      val album: Catalog.Album = Catalog
+        .read(
+          catalog(
+            dir,
+            "item\ta\tone.jpg\t2012-02-29\tk1\t-",
+            "unset\ta\t2010-06-02\tk2\tBea",
+            "album\ta\t4\tJune",
+            "error\ta\t2\t4\t1"
+          )
+        )
+        .head
       album.error shouldBe Some(Catalog.Error(got = 2, of = 4, nameFailures = 1))
       album.items.length shouldBe 1
       album.unsets shouldBe Seq(Catalog.Unset(Some(LocalDate.parse("2010-06-02")), "k2", Some("Bea")))
       album.error.get.nameFailures shouldBe album.unsets.length
 
-  it should "require error.got to equal item lines plus unset lines" in :
+  it should "require error.got to equal item lines plus unset lines" in:
     withTemp: dir =>
-      val parsed: Catalog.Album = Catalog.read(catalog(
-        dir,
-        "album\ta\t4\tJune",
-        "error\ta\t3\t4\t1",
-        "item\ta\tone.jpg\t-\tk1\t-",
-        "item\ta\ttwo.jpg\t-\tk2\t-",
-        "unset\ta\t-\tk3\t-"
-      )).head
+      val parsed: Catalog.Album = Catalog
+        .read(
+          catalog(
+            dir,
+            "album\ta\t4\tJune",
+            "error\ta\t3\t4\t1",
+            "item\ta\tone.jpg\t-\tk1\t-",
+            "item\ta\ttwo.jpg\t-\tk2\t-",
+            "unset\ta\t-\tk3\t-"
+          )
+        )
+        .head
       parsed.error.get.got shouldBe parsed.items.length + parsed.unsets.length
       val caught: IllegalArgumentException = intercept[IllegalArgumentException]:
-        Catalog.read(catalog(
-          dir,
-          "album\ta\t4\tJune",
-          "error\ta\t2\t4\t1",
-          "item\ta\tone.jpg\t-\tk1\t-",
-          "item\ta\ttwo.jpg\t-\tk2\t-",
-          "unset\ta\t-\tk3\t-"
-        ))
+        Catalog.read(
+          catalog(
+            dir,
+            "album\ta\t4\tJune",
+            "error\ta\t2\t4\t1",
+            "item\ta\tone.jpg\t-\tk1\t-",
+            "item\ta\ttwo.jpg\t-\tk2\t-",
+            "unset\ta\t-\tk3\t-"
+          )
+        )
       caught.getMessage shouldBe "error.got does not equal item lines plus unset lines"
       val above: IllegalArgumentException = intercept[IllegalArgumentException]:
-        Catalog.read(catalog(
-          dir,
-          "album\ta\t2\tJune",
-          "error\ta\t3\t2\t0",
-          "item\ta\tone.jpg\t-\tk1\t-",
-          "item\ta\ttwo.jpg\t-\tk2\t-",
-          "item\ta\tthree.jpg\t-\tk3\t-"
-        ))
+        Catalog.read(
+          catalog(
+            dir,
+            "album\ta\t2\tJune",
+            "error\ta\t3\t2\t0",
+            "item\ta\tone.jpg\t-\tk1\t-",
+            "item\ta\ttwo.jpg\t-\tk2\t-",
+            "item\ta\tthree.jpg\t-\tk3\t-"
+          )
+        )
       above.getMessage shouldBe "error.got is greater than error.of"
 
-  it should "reject a repeated album id and item key on item or unset" in :
+  it should "reject a repeated album id and item key on item or unset" in:
     withTemp: dir =>
       val pairs: Seq[Seq[String]] = Seq(
         Seq("album\ta\t2\tJune", "item\ta\tone.jpg\t-\tk1\t-", "item\ta\ttwo.jpg\t-\tk1\t-"),
@@ -112,28 +126,38 @@ class CatalogTest extends AnyFlatSpec, Matchers:
         val caught: IllegalArgumentException = intercept[IllegalArgumentException]:
           Catalog.read(catalog(dir, lines*))
         caught.getMessage shouldBe "repeated item key"
-      Catalog.read(catalog(
-        dir,
-        "album\ta\t1\tJune",
-        "item\ta\tone.jpg\t-\tk1\t-",
-        "album\tb\t1\tJuly",
-        "item\tb\ttwo.jpg\t-\tk1\t-"
-      )).map(_.id) shouldBe Seq("a", "b")
+      Catalog
+        .read(
+          catalog(
+            dir,
+            "album\ta\t1\tJune",
+            "item\ta\tone.jpg\t-\tk1\t-",
+            "album\tb\t1\tJuly",
+            "item\tb\ttwo.jpg\t-\tk1\t-"
+          )
+        )
+        .map(_.id) shouldBe Seq("a", "b")
 
-  it should "reject an empty item filename" in :
+  it should "reject an empty item filename" in:
     withTemp: dir =>
       val caught: IllegalArgumentException = intercept[IllegalArgumentException]:
         Catalog.read(catalog(dir, "album\ta\t1\tJune", "item\ta\t\t2010-06-01\tk1\t-"))
       caught.getMessage shouldBe "empty item filename"
-      val kept: Catalog.Item = Catalog.read(catalog(
-        dir,
-        "album\ta\t1\t June",
-        "item\ta\t one.jpg \t-\tk1\t Ada "
-      )).head.items.head
+      val kept: Catalog.Item = Catalog
+        .read(
+          catalog(
+            dir,
+            "album\ta\t1\t June",
+            "item\ta\t one.jpg \t-\tk1\t Ada "
+          )
+        )
+        .head
+        .items
+        .head
       kept.filename shouldBe " one.jpg "
       kept.uploader shouldBe Some(" Ada ")
 
-  it should "reject a missing file, a CR, a blank line, and a partial line" in :
+  it should "reject a missing file, a CR, a blank line, and a partial line" in:
     withTemp: dir =>
       val absent: File = File(dir, "catalog.txt")
       val missing: IllegalArgumentException = intercept[IllegalArgumentException]:
@@ -149,7 +173,7 @@ class CatalogTest extends AnyFlatSpec, Matchers:
         Catalog.read(writeBytes(dir, "bom.txt", bom))
       bomCaught.getMessage shouldBe "catalog is not version 2"
 
-  it should "reject a bad integer, date, uploader, or owner label" in :
+  it should "reject a bad integer, date, uploader, or owner label" in:
     withTemp: dir =>
       message(dir, "# gphoto-catalog 2\nalbum\ta\t01\tJune\n") shouldBe "leading zero"
       message(dir, "# gphoto-catalog 2\nalbum\ta\t2147483648\tJune\n") shouldBe "integer does not fit"
@@ -160,14 +184,18 @@ class CatalogTest extends AnyFlatSpec, Matchers:
       message(dir, "# gphoto-catalog 2\nalbum\ta\t0\tJune\nowner\ta\t\n") shouldBe "owner label is empty"
       message(dir, "# gphoto-catalog 2\nalbum\ta\t0\tJune\nowner\ta\t   \n") shouldBe "owner label is only whitespace"
 
-  it should "keep an owner on an auto-add album and reject its items" in :
+  it should "keep an owner on an auto-add album and reject its items" in:
     withTemp: dir =>
-      val album: Catalog.Album = Catalog.read(catalog(
-        dir,
-        "album\tb\t10\tAuto",
-        "auto-add\tb",
-        "owner\tb\tAda: Owner"
-      )).head
+      val album: Catalog.Album = Catalog
+        .read(
+          catalog(
+            dir,
+            "album\tb\t10\tAuto",
+            "auto-add\tb",
+            "owner\tb\tAda: Owner"
+          )
+        )
+        .head
       album.owner shouldBe Some("Ada: Owner")
       album.autoAdd shouldBe true
       album.items shouldBe Seq.empty[Catalog.Item]
@@ -175,7 +203,7 @@ class CatalogTest extends AnyFlatSpec, Matchers:
         Catalog.read(catalog(dir, "album\tb\t0\tAuto", "auto-add\tb", "item\tb\tone.jpg\t-\tk1\t-"))
       caught.getMessage shouldBe "auto-add has an item"
 
-  it should "treat a count of 0 with no items as an empty album" in :
+  it should "treat a count of 0 with no items as an empty album" in:
     withTemp: dir =>
       val album: Catalog.Album = Catalog.read(catalog(dir, "album\ta\t0\tJune")).head
       album.count shouldBe 0
@@ -187,7 +215,7 @@ class CatalogTest extends AnyFlatSpec, Matchers:
         Catalog.read(catalog(dir, "album\ta\t0\tJune", "unset\ta\t-\tk1\t-"))
       unset.getMessage shouldBe "unset without an error"
 
-  it should "reject a line whose album is missing and a second album, auto-add, or error" in :
+  it should "reject a line whose album is missing and a second album, auto-add, or error" in:
     withTemp: dir =>
       Seq(
         "owner\ta\tAda",

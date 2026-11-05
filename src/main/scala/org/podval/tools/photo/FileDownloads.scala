@@ -20,7 +20,7 @@ object FileDownloads:
 
     def path: String = this match
       case Dated(_, _, relative) => relative
-      case Kept(_, relative, _) => relative
+      case Kept(_, relative, _)  => relative
 
   private enum Action:
     case Filing(staged: File, day: String, stagedName: String, archiveName: String, destination: File)
@@ -39,7 +39,7 @@ object FileDownloads:
         day -> decideDay(day, File(archive, day), existing(day), items).iterator
       staged.map:
         case Staged.Kept(_, relative, reason) => Action.Keep(relative, reason)
-        case Staged.Dated(day, _, _) => actions(day).next()
+        case Staged.Dated(day, _, _)          => actions(day).next()
 
   private def perform(actions: Seq[Action], dryRun: Boolean): Unit =
     actions.foreach: action =>
@@ -67,7 +67,7 @@ object FileDownloads:
       val standIn: File = File(dayDir, item.file.getName)
       standInProblem(standIn) match
         case Some(message) => Left(Action.Keep(item.relative, message))
-        case None => Right((item, standIn))
+        case None          => Right((item, standIn))
     val good: Seq[(Staged.Dated, File)] = probed.collect { case Right(pair) => pair }
     val planned: Either[String, Seq[Pictures.Planned]] =
       if good.isEmpty then Right(Seq.empty)
@@ -81,11 +81,11 @@ object FileDownloads:
       case Left(_) =>
         Set.empty
     probed.map:
-      case Left(keep) => keep
+      case Left(keep)             => keep
       case Right((item, standIn)) =>
         planned match
           case Left(message) => Action.Keep(item.relative, message)
-          case Right(rows) => actionFor(day, dayDir, onDay, item, standIn, rows)
+          case Right(rows)   => actionFor(day, dayDir, onDay, item, standIn, rows)
 
   // plannedFile throws before a row exists. Keep that download and plan the rest of the day.
   private def standInProblem(standIn: File): Option[String] =
@@ -95,12 +95,12 @@ object FileDownloads:
     catch case e: IllegalArgumentException => Some(e.getMessage)
 
   private def actionFor(
-    day: String,
-    dayDir: File,
-    onDay: Set[String],
-    item: Staged.Dated,
-    standIn: File,
-    rows: Seq[Pictures.Planned]
+      day: String,
+      dayDir: File,
+      onDay: Set[String],
+      item: Staged.Dated,
+      standIn: File,
+      rows: Seq[Pictures.Planned]
   ): Action =
     rows.find(_.file eq standIn) match
       case None =>
@@ -116,8 +116,7 @@ object FileDownloads:
           if onDay.contains(row.stem) then Seq.empty else adjacentHits(day, item.file.getName)
         if hits.isEmpty then
           Action.Filing(item.file, day, item.file.getName, row.finalName, File(dayDir, row.finalName))
-        else
-          Action.DateMismatch(day, item.file.getName, hits)
+        else Action.DateMismatch(day, item.file.getName, hits)
 
   // Previous day, then next. loadGrouped does not create a missing neighbor.
   private def adjacentHits(day: String, filename: String): Seq[(String, String)] =
@@ -132,10 +131,13 @@ object FileDownloads:
             AgentSupport.loadGrouped(session, AgentSupport.civilDay(session.root, neighbor))
           if loaded ne session then DirectoryIndex.replace(loaded)
           rows.toMap
-        catch case _: IllegalArgumentException =>
-          Map.empty
-      AgentSupport.resolve(grouped, stem, extension).map: local =>
-        Title.dayText(neighbor) -> local
+        catch
+          case _: IllegalArgumentException =>
+            Map.empty
+      AgentSupport
+        .resolve(grouped, stem, extension)
+        .map: local =>
+          Title.dayText(neighbor) -> local
 
   // commitFile moves with REPLACE_EXISTING and would overwrite an archive original.
   private def commit(staged: File, destination: File): Boolean =
@@ -157,8 +159,7 @@ object FileDownloads:
           linkPartial(partial, destination)
           linked = true
         catch case _: FileAlreadyExistsException => ()
-    finally
-      NFiles.deleteIfExists(partial.toPath)
+    finally NFiles.deleteIfExists(partial.toPath)
     if linked then
       DirectoryIndex.dropAll()
       NFiles.delete(staged.toPath)
@@ -170,7 +171,9 @@ object FileDownloads:
 
   // A killed copy leaves `.file-*.partial` in the day directory. Drop those before writing a new one.
   private def deleteLeftoverPartials(dayDir: File): Unit =
-    Files.list(dayDir)._2
+    Files
+      .list(dayDir)
+      ._2
       .filter(file => file.getName.startsWith(".file-") && file.getName.endsWith(".partial"))
       .foreach(file => NFiles.deleteIfExists(file.toPath))
 
@@ -211,7 +214,7 @@ object FileDownloads:
       case Seq(year, month, day, _) =>
         civil(year, month, day) match
           case Some(canonical) => Staged.Dated(canonical, file, relative)
-          case None => Staged.Kept(file, relative, "not a civil day")
+          case None            => Staged.Kept(file, relative, "not a civil day")
       case _ =>
         Staged.Kept(file, relative, "not a civil day")
 

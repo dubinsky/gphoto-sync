@@ -20,12 +20,12 @@ object RefreshPlan:
     case Drop(stored: Catalog.Album)
 
   final case class Diff(
-    cards: Seq[Card],
-    stored: Seq[Catalog.Album],
-    actions: Seq[Action],
-    itemReads: Set[String],
-    named: Set[String],
-    mode: Mode
+      cards: Seq[Card],
+      stored: Seq[Catalog.Album],
+      actions: Seq[Action],
+      itemReads: Set[String],
+      named: Set[String],
+      mode: Mode
   ) derives CanEqual
 
   final case class Prepared(diff: Diff, albums: Seq[Catalog.Album], text: String) derives CanEqual
@@ -41,10 +41,10 @@ object RefreshPlan:
   private val Bom: Array[Byte] = Array(0xef.toByte, 0xbb.toByte, 0xbf.toByte)
 
   def diff(
-    lines: Seq[String],
-    stored: Seq[Catalog.Album],
-    mode: Mode,
-    allowShrink: Boolean
+      lines: Seq[String],
+      stored: Seq[Catalog.Album],
+      mode: Mode,
+      allowShrink: Boolean
   ): Either[String, Diff] =
     guard(lines, useFloor(mode, allowShrink)).flatMap: cards =>
       index(stored).flatMap: storedById =>
@@ -59,16 +59,19 @@ object RefreshPlan:
     val survivors: Seq[(Catalog.Album, Seq[String])] = found.stored.flatMap: album =>
       val copyWhole: Boolean = found.mode match
         case Mode.Album(_) => !found.named.contains(album.id)
-        case _ => false
+        case _             => false
       if copyWhole then Some(album -> copiedLines(album, blocks))
-      else cardById.get(album.id).map: card =>
-        val readItems: Boolean = found.itemReads.contains(album.id)
-        val next: Catalog.Album = rewrite(album, card, readItems, reads)
-        next -> keptLines(album, next, readItems, blocks)
+      else
+        cardById
+          .get(album.id)
+          .map: card =>
+            val readItems: Boolean = found.itemReads.contains(album.id)
+            val next: Catalog.Album = rewrite(album, card, readItems, reads)
+            next -> keptLines(album, next, readItems, blocks)
     val appended: Seq[(Catalog.Album, Seq[String])] = found.cards.flatMap: card =>
       val wanted: Boolean = found.mode match
         case Mode.Album(_) => found.named.contains(card.id)
-        case _ => true
+        case _             => true
       if !storedIds.contains(card.id) && wanted then
         val next: Catalog.Album = taken(card, reads.get(card.id))
         Some(next -> recordLines(next))
@@ -77,19 +80,19 @@ object RefreshPlan:
     Prepared(found, rows.map(_._1), renderLines(rows.map(_._2)))
 
   def plan(
-    lines: Seq[String],
-    stored: Seq[Catalog.Album],
-    mode: Mode,
-    allowShrink: Boolean,
-    reads: Map[String, Catalog.Album] = Map.empty,
-    source: String = ""
+      lines: Seq[String],
+      stored: Seq[Catalog.Album],
+      mode: Mode,
+      allowShrink: Boolean,
+      reads: Map[String, Catalog.Album] = Map.empty,
+      source: String = ""
   ): Either[String, Prepared] =
     diff(lines, stored, mode, allowShrink).map(found => splice(found, reads, source))
 
   def publish(
-    directory: File,
-    prepared: Prepared,
-    move: (File, File) => Unit = moveReplacing
+      directory: File,
+      prepared: Prepared,
+      move: (File, File) => Unit = moveReplacing
   ): Either[String, Unit] =
     val partial: File = File(directory, PartialName)
     val live: File = File(directory, LiveName)
@@ -99,13 +102,13 @@ object RefreshPlan:
       swap(live, partial, previous, move)
 
   def run(
-    directory: File,
-    lines: Seq[String],
-    stored: Seq[Catalog.Album],
-    mode: Mode,
-    allowShrink: Boolean,
-    reads: Map[String, Catalog.Album] = Map.empty,
-    source: String = ""
+      directory: File,
+      lines: Seq[String],
+      stored: Seq[Catalog.Album],
+      mode: Mode,
+      allowShrink: Boolean,
+      reads: Map[String, Catalog.Album] = Map.empty,
+      source: String = ""
   ): Either[String, Prepared] =
     plan(lines, stored, mode, allowShrink, reads, source).flatMap: prepared =>
       publish(directory, prepared).map(_ => prepared)
@@ -126,28 +129,30 @@ object RefreshPlan:
 
   private def useFloor(mode: Mode, allowShrink: Boolean): Boolean = mode match
     case Mode.Album(_) => false
-    case _ => !allowShrink
+    case _             => !allowShrink
 
   // A trailing newline is not a row. The list reader drops empty lines before the shape check.
   private def guard(lines: Seq[String], floor: Boolean): Either[String, Seq[Card]] =
     val fields: Seq[Seq[String]] = lines.filter(_.nonEmpty).map(_.split("\t", -1).toSeq)
     if fields.exists(_.length != Columns) then Left("bad row")
     else if fields.exists(row => row.drop(1).headOption.contains("")) then Left("empty count")
-    else cardsOf(fields).flatMap: cards =>
-      if floor && cards.length < Floor then Left("rows < 250")
-      else Right(cards)
+    else
+      cardsOf(fields).flatMap: cards =>
+        if floor && cards.length < Floor then Left("rows < 250")
+        else Right(cards)
 
   private def cardsOf(fields: Seq[Seq[String]]): Either[String, Seq[Card]] =
-    fields.foldLeft[Either[String, (Set[String], Seq[Card])]](Right((Set.empty, Seq.empty))):
-      case (Left(message), _) => Left(message)
-      case (Right((seen, acc)), Seq(title, count, id, _, _)) =>
-        parseCount(count) match
-          case None => Left("bad row")
-          case Some(_) if id.isEmpty => Left("bad row")
-          case Some(_) if seen.contains(id) => Left("repeated card id")
-          case Some(n) => Right((seen + id, acc :+ Card(id, n, title)))
-      case (Right(_), _) => Left("bad row")
-    .map(_._2)
+    fields
+      .foldLeft[Either[String, (Set[String], Seq[Card])]](Right((Set.empty, Seq.empty))):
+        case (Left(message), _)                                => Left(message)
+        case (Right((seen, acc)), Seq(title, count, id, _, _)) =>
+          parseCount(count) match
+            case None                         => Left("bad row")
+            case Some(_) if id.isEmpty        => Left("bad row")
+            case Some(_) if seen.contains(id) => Left("repeated card id")
+            case Some(n)                      => Right((seen + id, acc :+ Card(id, n, title)))
+        case (Right(_), _) => Left("bad row")
+      .map(_._2)
 
   private def parseCount(text: String): Option[Int] =
     if text.isEmpty || text.exists(ch => ch < '0' || ch > '9') then None
@@ -158,18 +163,18 @@ object RefreshPlan:
 
   private def index(albums: Seq[Catalog.Album]): Either[String, Map[String, Catalog.Album]] =
     albums.foldLeft[Either[String, Map[String, Catalog.Album]]](Right(Map.empty)):
-      case (Left(message), _) => Left(message)
+      case (Left(message), _)                            => Left(message)
       case (Right(acc), album) if acc.contains(album.id) => Left("repeated album id")
-      case (Right(acc), album) => Right(acc.updated(album.id, album))
+      case (Right(acc), album)                           => Right(acc.updated(album.id, album))
 
   private def resolve(mode: Mode, cards: Seq[Card], stored: Seq[Catalog.Album]): Either[String, Set[String]] =
     mode match
       case Mode.Album(titles) => namedIds(cards, stored, titles)
-      case _ => Right(Set.empty)
+      case _                  => Right(Set.empty)
 
   private def namedIds(cards: Seq[Card], stored: Seq[Catalog.Album], titles: Seq[String]): Either[String, Set[String]] =
     titles.foldLeft[Either[String, Set[String]]](Right(Set.empty)):
-      case (Left(message), _) => Left(message)
+      case (Left(message), _)  => Left(message)
       case (Right(acc), title) =>
         val onCards: Seq[Card] = cards.filter(_.title == title)
         val onStored: Seq[Catalog.Album] = stored.filter(_.title == title)
@@ -178,50 +183,51 @@ object RefreshPlan:
         else Right(acc + onCards.head.id)
 
   private def classify(
-    cards: Seq[Card],
-    stored: Seq[Catalog.Album],
-    storedById: Map[String, Catalog.Album],
-    mode: Mode,
-    named: Set[String]
+      cards: Seq[Card],
+      stored: Seq[Catalog.Album],
+      storedById: Map[String, Catalog.Album],
+      mode: Mode,
+      named: Set[String]
   ): Seq[Action] =
     val cardIds: Set[String] = cards.map(_.id).toSet
     val relevant: Seq[Card] = mode match
       case Mode.Album(_) => cards.filter(card => named.contains(card.id))
-      case _ => cards
+      case _             => cards
     val listed: Seq[Action] = relevant.map(card => action(card, storedById.get(card.id)))
     val drops: Seq[Action] = mode match
       case Mode.Album(_) => Seq.empty
-      case _ => stored.filterNot(album => cardIds.contains(album.id)).map(Action.Drop.apply)
+      case _             => stored.filterNot(album => cardIds.contains(album.id)).map(Action.Drop.apply)
     listed ++ drops
 
   private def action(card: Card, stored: Option[Catalog.Album]): Action = stored match
-    case None => Action.Add(card)
+    case None                                     => Action.Add(card)
     case Some(album) if album.count != card.count => Action.CountChange(album, card)
     case Some(album) if album.title != card.title => Action.Retitle(album, card)
-    case Some(album) => Action.Keep(album, card)
+    case Some(album)                              => Action.Keep(album, card)
 
   private def itemReads(
-    cards: Seq[Card],
-    storedById: Map[String, Catalog.Album],
-    actions: Seq[Action],
-    mode: Mode,
-    named: Set[String]
+      cards: Seq[Card],
+      storedById: Map[String, Catalog.Album],
+      actions: Seq[Action],
+      mode: Mode,
+      named: Set[String]
   ): Set[String] =
     def readable(id: String): Boolean = !storedById.get(id).exists(_.autoAdd)
     mode match
-      case Mode.Full => cards.map(_.id).filter(readable).toSet
-      case Mode.Album(_) => named.filter(readable)
+      case Mode.Full        => cards.map(_.id).filter(readable).toSet
+      case Mode.Album(_)    => named.filter(readable)
       case Mode.Incremental =>
-        actions.collect:
-          case Action.Add(card) if readable(card.id) => card.id
-          case Action.CountChange(album, card) if !album.autoAdd => card.id
-        .toSet
+        actions
+          .collect:
+            case Action.Add(card) if readable(card.id)             => card.id
+            case Action.CountChange(album, card) if !album.autoAdd => card.id
+          .toSet
 
   private def rewrite(
-    stored: Catalog.Album,
-    card: Card,
-    readItems: Boolean,
-    reads: Map[String, Catalog.Album]
+      stored: Catalog.Album,
+      card: Card,
+      readItems: Boolean,
+      reads: Map[String, Catalog.Album]
   ): Catalog.Album =
     if stored.autoAdd then carried(stored, card, reads)
     else if readItems then taken(card, reads.get(card.id))
@@ -278,10 +284,10 @@ object RefreshPlan:
     blocks.getOrElse(album.id, recordLines(album))
 
   private[photo] def keptLines(
-    stored: Catalog.Album,
-    next: Catalog.Album,
-    readItems: Boolean,
-    blocks: Map[String, Seq[String]]
+      stored: Catalog.Album,
+      next: Catalog.Album,
+      readItems: Boolean,
+      blocks: Map[String, Seq[String]]
   ): Seq[String] =
     val block: Seq[String] = blocks.getOrElse(stored.id, Seq.empty)
     if readItems || block.isEmpty || next.copy(title = stored.title) != stored then recordLines(next)
@@ -291,8 +297,7 @@ object RefreshPlan:
   private[photo] def retitle(lines: Seq[String], title: String): Seq[String] =
     lines.map: line =>
       val fields: Seq[String] = line.split("\t", -1).toSeq
-      if fields.headOption.contains("album") && fields.length >= 4 then
-        fields.take(3).mkString("\t") + "\t" + title
+      if fields.headOption.contains("album") && fields.length >= 4 then fields.take(3).mkString("\t") + "\t" + title
       else line
 
   private[photo] def renderLines(groups: Seq[Seq[String]]): String =
@@ -302,7 +307,7 @@ object RefreshPlan:
   private def plain(text: String): String =
     text.map:
       case '\t' | '\n' | '\r' => ' '
-      case ch => ch
+      case ch                 => ch
 
   private def dateText(date: Option[LocalDate]): String = date.fold("-")(_.toString)
 
@@ -322,7 +327,7 @@ object RefreshPlan:
     val got: Set[String] = albums.map(_.id).toSet
     val ok: Boolean = found.mode match
       case Mode.Album(_) => found.named.subsetOf(got)
-      case _ => got == found.cards.map(_.id).toSet
+      case _             => got == found.cards.map(_.id).toSet
     if ok then Right(()) else Left("album set")
 
   private[photo] var moveReplacing: (File, File) => Unit = (from, to) =>
@@ -345,27 +350,29 @@ object RefreshPlan:
         move(partial, live)
         forget(previous)
         Right(())
-      catch case failed: Exception =>
-        restore(live, previous, hadLive, move) match
-          case Right(()) => Left(renameMessage(failed))
-          case Left(during) => Left(s"${renameMessage(failed)}; $during")
-    catch case failed: Exception =>
-      Left(renameMessage(failed))
+      catch
+        case failed: Exception =>
+          restore(live, previous, hadLive, move) match
+            case Right(())    => Left(renameMessage(failed))
+            case Left(during) => Left(s"${renameMessage(failed)}; $during")
+    catch
+      case failed: Exception =>
+        Left(renameMessage(failed))
 
   private def restore(
-    live: File,
-    previous: File,
-    hadLive: Boolean,
-    move: (File, File) => Unit
+      live: File,
+      previous: File,
+      hadLive: Boolean,
+      move: (File, File) => Unit
   ): Either[String, Unit] =
     if hadLive && !live.isFile && previous.isFile then
       try
         move(previous, live)
         Right(())
-      catch case failed: Exception =>
-        Left(s"catalog.txt is missing: ${renameMessage(failed)}")
-    else if hadLive && !live.isFile then
-      Left("catalog.txt is missing")
+      catch
+        case failed: Exception =>
+          Left(s"catalog.txt is missing: ${renameMessage(failed)}")
+    else if hadLive && !live.isFile then Left("catalog.txt is missing")
     else Right(())
 
   private def forget(previous: File): Unit =
@@ -374,5 +381,3 @@ object RefreshPlan:
 
   private def renameMessage(failed: Exception): String =
     Option(failed.getMessage).filter(_.nonEmpty).getOrElse("rename failed")
-
-

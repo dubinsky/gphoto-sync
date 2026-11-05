@@ -21,21 +21,23 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
 
   private val zone: ZoneId = ZoneId.of("America/New_York")
 
-  "reconcile flags" should "parse dry-run and delete, and reject a repeat" in :
+  "reconcile flags" should "parse dry-run and delete, and reject a repeat" in:
     Cli.parse(List("reconcile")) shouldBe Cli.Run(Cli.ReconcileArgs(dryRun = false, delete = false))
-    Cli.parse(List("reconcile", "--dry-run", "--delete")) shouldBe Cli.Run(Cli.ReconcileArgs(dryRun = true, delete = true))
+    Cli.parse(List("reconcile", "--dry-run", "--delete")) shouldBe Cli.Run(
+      Cli.ReconcileArgs(dryRun = true, delete = true)
+    )
     Cli.parse(List("reconcile", "--dry-run", "--dry-run")) shouldBe Cli.Usage("repeated option '--dry-run'")
     Cli.parse(List("reconcile", "--delete", "--delete")) shouldBe Cli.Usage("repeated option '--delete'")
     Cli.parse(List("reconcile", "--help")) match
       case Cli.Help(text) =>
-        text should include ("--dry-run")
-        text should include ("print the classes and write nothing")
-        text should include ("--delete")
-        text should include ("remove a toml whose link id is gone")
+        text should include("--dry-run")
+        text should include("print the classes and write nothing")
+        text should include("--delete")
+        text should include("remove a toml whose link id is gone")
       case other =>
         fail(other.toString)
 
-  "photo reconcile" should "link an external file by its working title and not write a second file" in :
+  "photo reconcile" should "link an external file by its working title and not write a second file" in:
     withArchive: archive =>
       val before: String = "external = true\n"
       writeToml(archive, "Picnic.toml", before)
@@ -54,7 +56,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       partials(archive) shouldBe Seq.empty[String]
       back.catalogCache.isDefined shouldBe true
 
-  it should "link an external file by google-title when that key is present" in :
+  it should "link an external file by google-title when that key is present" in:
     withArchive: archive =>
       val before: String =
         """external = true
@@ -74,7 +76,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       File(archive, "Island (Ada).toml").exists shouldBe false
       links(archive) shouldBe "# gphoto-album-links 1\ncid-google\tIsland.toml\n"
 
-  it should "keep the path on a rename and set google-title" in :
+  it should "keep the path on a rename and set google-title" in:
     withArchive: archive =>
       val before: String =
         """# keep
@@ -106,7 +108,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       links(archive) shouldBe "# gphoto-album-links 1\ncid-hawaii\tHawaii.toml\n"
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "set published-title on a client album in the same splice" in :
+  it should "set published-title on a client album in the same splice" in:
     withArchive: archive =>
       writeToml(
         archive,
@@ -135,7 +137,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           |published-title = "Trip Renamed"
           |""".stripMargin
 
-  it should "omit google-title when a client title equals the path title" in :
+  it should "omit google-title when a client title equals the path title" in:
     withArchive: archive =>
       writeToml(
         archive,
@@ -159,7 +161,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           |published-title = "Trip"
           |""".stripMargin
 
-  it should "skip an owner that checkGoogle would reject and still record the link" in :
+  it should "skip an owner that checkGoogle would reject and still record the link" in:
     withArchive: archive =>
       val before: String =
         """external = false
@@ -184,7 +186,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       tomls(archive) shouldBe Seq("Shared.toml")
       links(archive) shouldBe "# gphoto-album-links 1\ncid-owner\tShared.toml\n"
 
-  it should "leave a pending file and an unlinked external file in place" in :
+  it should "leave a pending file and an unlinked external file in place" in:
     withArchive: archive =>
       writeToml(archive, "Pending.toml", "external = false\n")
       val extra: String = "external = true\n"
@@ -200,7 +202,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       links(archive) shouldBe ""
       File(archive, ".gphoto-sync/album-links.tsv").isFile shouldBe false
 
-  it should "report a gone link and keep the toml until --delete" in :
+  it should "report a gone link and keep the toml until --delete" in:
     withArchive: archive =>
       writeToml(
         archive,
@@ -229,7 +231,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/19/1234.jpg").isFile shouldBe true
       links(archive) shouldBe ""
 
-  it should "delete only the gone toml" in :
+  it should "delete only the gone toml" in:
     withArchive: archive =>
       writeToml(
         archive,
@@ -259,7 +261,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       readToml(archive, "Extra.toml") shouldBe extra
       File(archive, "2010/07/19/1234.jpg").isFile shouldBe true
 
-  it should "write nothing on --dry-run and then create the external file" in :
+  it should "write nothing on --dry-run and then create the external file" in:
     withArchive: archive =>
       writeCatalog(archive, "album\tcid-notes\t0\tNotes")
       val cursor: Session = sessionFor(archive).copy(style = PathStyle.Cursor)
@@ -289,7 +291,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       requests(archive).isFile shouldBe false
       partials(archive) shouldBe Seq.empty[String]
 
-  it should "still write a file when nothing matches, and skip unread names and a digit leftover" in :
+  it should "still write a file when nothing matches, and skip unread names and a digit leftover" in:
     withArchive: archive =>
       mkdir(archive, "2010/07/19")
       touch(File(archive, "2010/07/19"), "1000.jpg")
@@ -306,10 +308,10 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
         "auto-add\tcid-auto"
       )
       val text: String = ok(exec(sessionFor(archive), "reconcile")._2)
-      text should include ("create Picnic\n")
-      text should include ("skipped Broken unread names\n")
-      text should include ("skipped 19 Kislev digit\n")
-      text should include ("skipped Travel auto-add\n")
+      text should include("create Picnic\n")
+      text should include("skipped Broken unread names\n")
+      text should include("skipped 19 Kislev digit\n")
+      text should include("skipped Travel auto-add\n")
       quiet(text, "cid-pic", "key-pic", "cid-unread", "key-unset", "cid-digit", "key-digit", "cid-auto")
       val picnic: File = File(archive, "2010/07/19/Picnic.toml")
       picnic.isFile shouldBe true
@@ -320,7 +322,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       File(archive, "19 Kislev.toml").exists shouldBe false
       File(archive, "Broken.toml").exists shouldBe false
 
-  it should "reject a blank or duplicate link row without printing the id" in :
+  it should "reject a blank or duplicate link row without printing the id" in:
     withArchive: archive =>
       writeCatalog(archive)
       writeRaw(archive, ".gphoto-sync/album-links.tsv", "# gphoto-album-links 1\n\ncid-secret\tPicnic.toml\n")
@@ -339,7 +341,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       usage(sessionFor(archive), "reconcile") shouldBe "album link path"
       File(archive, "Picnic.toml").exists shouldBe false
 
-  it should "run in this process while serve holds its lock" in :
+  it should "run in this process while serve holds its lock" in:
     withArchive: archive =>
       writeCatalog(archive)
       val session: Session = sessionFor(archive)
@@ -355,7 +357,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       try
         val parsed: Cli.Parsed = Cli.parse(List("reconcile")) match
           case Cli.Run(value) => value
-          case other => fail(other.toString)
+          case other          => fail(other.toString)
         val result: Result = Cli.executeOneShot(session, List("reconcile"), parsed, Right(runtime), waitMs = 250)
         ok(result) shouldBe ""
         result match
@@ -369,7 +371,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
         channel.close()
         deleteTree(runtime)
 
-  it should "stay in the shell and be rejected on the socket" in :
+  it should "stay in the shell and be rejected on the socket" in:
     withArchive: archive =>
       writeCatalog(archive)
       val session: Session = sessionFor(archive)
@@ -395,9 +397,9 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           (session, Result.Ok("ran\n", Json.Null))
       )
       ran shouldBe false
-      line should include ("reconcile runs in the calling process")
+      line should include("reconcile runs in the calling process")
 
-  it should "skip an extra title that places on a free path and still update another album" in :
+  it should "skip an extra title that places on a free path and still update another album" in:
     withArchive: archive =>
       val hawaii: String =
         """# keep
@@ -438,7 +440,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
           |cid-notes	Notes.toml
           |""".stripMargin
 
-  it should "not give an existing path to the first of two titles that place there" in :
+  it should "not give an existing path to the first of two titles that place there" in:
     withArchive: archive =>
       val before: String = "external = true\n"
       writeToml(archive, "2010/07/19/Picnic.toml", before)
@@ -465,7 +467,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       links(archive) shouldBe "# gphoto-album-links 1\ncid-trip\tTrip.toml\n"
       readToml(archive, "Trip.toml") shouldBe ""
 
-  it should "not store an empty catalog title on an owner file" in :
+  it should "not store an empty catalog title on an owner file" in:
     withArchive: archive =>
       val before: String =
         """external = true
@@ -488,7 +490,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       again shouldBe text
       readToml(archive, "Trip.toml") shouldBe before
 
-  it should "not set an empty published-title from an empty catalog title" in :
+  it should "not set an empty published-title from an empty catalog title" in:
     withArchive: archive =>
       val before: String =
         """external = false
@@ -505,7 +507,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       readToml(archive, "Trip.toml") shouldBe before
       links(archive) shouldBe "# gphoto-album-links 1\ncid-empty\tTrip.toml\n"
 
-  it should "preview the link rows a real --delete would keep" in :
+  it should "preview the link rows a real --delete would keep" in:
     withArchive: archive =>
       val before: String =
         """external = true
@@ -538,7 +540,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       File(archive, "2010/07/19/1234.jpg").isFile shouldBe true
       links(archive) shouldBe ""
 
-  it should "report pending-rename and write nothing when the path title differs" in :
+  it should "report pending-rename and write nothing when the path title differs" in:
     withArchive: archive =>
       val before: String = "external = true\n"
       writeToml(archive, "Best Of.toml", before)
@@ -553,7 +555,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       File(archive, ".gphoto-sync/album-links.tsv").isFile shouldBe false
       requests(archive).isFile shouldBe false
 
-  it should "keep an existing link on pending-rename and leave the file" in :
+  it should "keep an existing link on pending-rename and leave the file" in:
     withArchive: archive =>
       val before: String = "external = true\n"
       writeToml(archive, "Best Of.toml", before)
@@ -566,7 +568,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
       readToml(archive, "Best Of.toml") shouldBe before
       links(archive) shouldBe "# gphoto-album-links 1\ncid-best\tBest Of.toml\n"
 
-  it should "keep a stale link that names a pending-rename file under --delete" in :
+  it should "keep a stale link that names a pending-rename file under --delete" in:
     withArchive: archive =>
       val before: String = "external = true\n"
       writeToml(archive, "Best Of.toml", before)
@@ -590,26 +592,28 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
 
   private def ok(result: Result): String = result match
     case Result.Ok(text, _) => text
-    case other => fail(other.toString)
+    case other              => fail(other.toString)
 
   private def valueHas(result: Result, id: String): Unit = result match
-    case Result.Ok(_, value) => value.toString should include (id)
-    case other => fail(other.toString)
+    case Result.Ok(_, value) => value.toString should include(id)
+    case other               => fail(other.toString)
 
   private def linkRows(result: Result): String = result match
     case Result.Ok(_, Json.Obj(fields)) =>
-      fields.collectFirst:
-        case ("links", Json.Arr(rows)) =>
-          rows.flatMap:
-            case Json.Obj(link) =>
-              for
-                id <- link.collectFirst { case ("id", Json.Str(value)) => value }
-                path <- link.collectFirst { case ("path", Json.Str(value)) => value }
-              yield s"$id\t$path"
-            case _ =>
-              None
-          .mkString("\n")
-      .getOrElse(fail("no links"))
+      fields
+        .collectFirst:
+          case ("links", Json.Arr(rows)) =>
+            rows
+              .flatMap:
+                case Json.Obj(link) =>
+                  for
+                    id <- link.collectFirst { case ("id", Json.Str(value)) => value }
+                    path <- link.collectFirst { case ("path", Json.Str(value)) => value }
+                  yield s"$id\t$path"
+                case _ =>
+                  None
+              .mkString("\n")
+        .getOrElse(fail("no links"))
     case other =>
       fail(other.toString)
 
@@ -621,7 +625,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
   private def usage(session: Session, args: String*): String =
     exec(session, args*)._2 match
       case Result.Usage(message) => message
-      case other => fail(other.toString)
+      case other                 => fail(other.toString)
 
   private def exec(session: Session, args: String*): (Session, Result) =
     Cli.parse(args.toList) match
@@ -631,9 +635,9 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
         fail(other.toString)
 
   private def shell(
-    session: Session,
-    lines: Seq[String],
-    exchange: Option[(Session, List[String]) => Result]
+      session: Session,
+      lines: Seq[String],
+      exchange: Option[(Session, List[String]) => Result]
   ): (Int, String, String) =
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream
@@ -685,8 +689,7 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
     def walk(file: File): Seq[String] =
       if file.isDirectory && file.getName != ".gphoto-sync" then
         Option(file.listFiles).getOrElse(Array.empty[File]).toSeq.flatMap(walk)
-      else if file.isFile && file.getName.endsWith(".toml") then
-        Seq(archive.toPath.relativize(file.toPath).toString)
+      else if file.isFile && file.getName.endsWith(".toml") then Seq(archive.toPath.relativize(file.toPath).toString)
       else Seq.empty
     walk(archive).sorted
 

@@ -33,12 +33,13 @@ private[photo] object PhotosPark:
               PhotosScripts.quoted(name + " silent") + ", no_initial_focus = true, no_anim = true })"
           )
           ruleEnabled = true
-    catch case error: Exception =>
-      parkLog(error)
+    catch
+      case error: Exception =>
+        parkLog(error)
 
   private[photo] def confirmPark(): Unit =
     createdOutput match
-      case None => ()
+      case None       => ()
       case Some(name) =>
         try
           findWindow(System.currentTimeMillis + 20000L) match
@@ -56,8 +57,9 @@ private[photo] object PhotosPark:
                 savedCursor.foreach(cursor =>
                   hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${cursor._1}, y = ${cursor._2} })")
                 )
-        catch case error: Exception =>
-          parkLog(error)
+        catch
+          case error: Exception =>
+            parkLog(error)
 
   // Remove the output this process created even when the monitor restore throws.
   private[photo] def unpark(): Unit =
@@ -71,21 +73,25 @@ private[photo] object PhotosPark:
     createdOutput = None
     if enabled then
       try hypr("hyprctl", "eval", "hl.window_rule({ name = \"gphoto-sync-park\", enabled = false })")
-      catch case error: Exception =>
-        parkLog(error)
+      catch
+        case error: Exception =>
+          parkLog(error)
     try monitor.foreach(recorded => hypr("hyprctl", "eval", PhotosScripts.restoreLua(recorded)))
-    catch case error: Exception =>
-      parkLog(error)
+    catch
+      case error: Exception =>
+        parkLog(error)
     try
       cursor.foreach(recorded =>
         hypr("hyprctl", "dispatch", s"hl.dsp.cursor.move({ x = ${recorded._1}, y = ${recorded._2} })")
       )
-    catch case error: Exception =>
-      parkLog(error)
+    catch
+      case error: Exception =>
+        parkLog(error)
     name.foreach: output =>
       try hypr("hyprctl", "output", "remove", output)
-      catch case error: Exception =>
-        parkLog(error)
+      catch
+        case error: Exception =>
+          parkLog(error)
 
   private def parkLog(error: Exception): Unit =
     System.err.println(s"refresh park: ${Option(error.getMessage).getOrElse(error.getClass.getSimpleName)}")
@@ -99,28 +105,30 @@ private[photo] object PhotosPark:
     topObjects(hypr("hyprctl", "monitors", "-j")).flatMap(obj => jsonString(obj, "name"))
 
   private def focusedMonitor(): Option[Monitor] =
-    topObjects(hypr("hyprctl", "monitors", "-j")).collectFirst:
-      case obj if """"focused"\s*:\s*true""".r.findFirstIn(obj).isDefined =>
-        for
-          name <- jsonString(obj, "name")
-          x <- jsonNumber(obj, "x")
-          y <- jsonNumber(obj, "y")
-        yield Monitor(name, x, y)
-    .flatten
+    topObjects(hypr("hyprctl", "monitors", "-j"))
+      .collectFirst:
+        case obj if """"focused"\s*:\s*true""".r.findFirstIn(obj).isDefined =>
+          for
+            name <- jsonString(obj, "name")
+            x <- jsonNumber(obj, "x")
+            y <- jsonNumber(obj, "y")
+          yield Monitor(name, x, y)
+      .flatten
 
   private def findWindow(deadlineMs: Long): Option[(String, Option[String])] =
     findWindowNow() match
-      case found @ Some(_) => found
+      case found @ Some(_)                                => found
       case None if System.currentTimeMillis >= deadlineMs => None
-      case None =>
+      case None                                           =>
         Thread.sleep(300)
         findWindow(deadlineMs)
 
   private def findWindowNow(): Option[(String, Option[String])] =
-    topObjects(hypr("hyprctl", "clients", "-j")).collectFirst:
-      case obj if jsonNumber(obj, "pid").exists(mainChrome) =>
-        jsonString(obj, "address").map(address => (address, jsonNumber(obj, "monitor")))
-    .flatten
+    topObjects(hypr("hyprctl", "clients", "-j"))
+      .collectFirst:
+        case obj if jsonNumber(obj, "pid").exists(mainChrome) =>
+          jsonString(obj, "address").map(address => (address, jsonNumber(obj, "monitor")))
+      .flatten
 
   private def mainChrome(pid: String): Boolean =
     val path = Paths.get("/proc", pid, "cmdline")

@@ -21,7 +21,7 @@ class CardTest extends AnyFlatSpec, Matchers:
   private val mountArgs: Seq[String] =
     Seq("udisksctl", "mount", "-b", "/dev/sdb1", "-o", "ro", "--no-user-interaction")
 
-  "card" should "parse fixture lsblk JSON and not call the mount runner unless one card is unmounted" in :
+  "card" should "parse fixture lsblk JSON and not call the mount runner unless one card is unmounted" in:
     val none = probe(Seq(doc(nvme)))
     none.mounts shouldBe Seq.empty[Seq[String]]
     none.text shouldBe ""
@@ -48,26 +48,34 @@ class CardTest extends AnyFlatSpec, Matchers:
       missing.text shouldBe line("/dev/sdb1", "", empty.getPath, "exfat", "no")
       failure(missing.thrown) shouldBe "no memory card"
 
-    val two = probe(Seq(doc(
-      volume("/dev/sdc1", label = "\"B\""),
-      volume("/dev/sdb1", label = "\"A\"")
-    )))
+    val two = probe(
+      Seq(
+        doc(
+          volume("/dev/sdc1", label = "\"B\""),
+          volume("/dev/sdb1", label = "\"A\"")
+        )
+      )
+    )
     two.mounts shouldBe Seq.empty[Seq[String]]
     two.text shouldBe
       line("/dev/sdb1", "A", "unmounted", "exfat", "unknown") +
-        line("/dev/sdc1", "B", "unmounted", "exfat", "unknown")
+      line("/dev/sdc1", "B", "unmounted", "exfat", "unknown")
     failure(two.thrown) shouldBe "more than one memory card"
 
     withTemp: yes =>
       JFiles.createDirectories(File(yes, "DCIM").toPath)
-      val both = probe(Seq(doc(
-        volume("/dev/sdc1"),
-        volume("/dev/sdb1", mountpoints = mounts(yes), fstype = "\"vfat\"")
-      )))
+      val both = probe(
+        Seq(
+          doc(
+            volume("/dev/sdc1"),
+            volume("/dev/sdb1", mountpoints = mounts(yes), fstype = "\"vfat\"")
+          )
+        )
+      )
       both.mounts shouldBe Seq.empty[Seq[String]]
       both.text shouldBe
         line("/dev/sdb1", "CANON", yes.getPath, "vfat", "yes") +
-          line("/dev/sdc1", "CANON", "unmounted", "exfat", "unknown")
+        line("/dev/sdc1", "CANON", "unmounted", "exfat", "unknown")
       failure(both.thrown) shouldBe "more than one memory card"
 
     probe(Seq(doc(volume("/dev/sdb1", rm = "1"))), dryRun = true).thrown.isEmpty shouldBe true
@@ -83,10 +91,14 @@ class CardTest extends AnyFlatSpec, Matchers:
 
     withTemp: other =>
       JFiles.createDirectories(File(other, "DCIM").toPath)
-      val mixed = probe(Seq(doc(
-        volume("/dev/sdb1", mountpoints = """["/a","/b"]"""),
-        volume("/dev/sdc1", mountpoints = mounts(other), fstype = "\"vfat\"")
-      )))
+      val mixed = probe(
+        Seq(
+          doc(
+            volume("/dev/sdb1", mountpoints = """["/a","/b"]"""),
+            volume("/dev/sdc1", mountpoints = mounts(other), fstype = "\"vfat\"")
+          )
+        )
+      )
       mixed.mounts shouldBe Seq.empty[Seq[String]]
       mixed.text shouldBe line("/dev/sdc1", "CANON", other.getPath, "vfat", "yes")
       failure(mixed.thrown) shouldBe "more than one mountpoint: /dev/sdb1"
@@ -113,7 +125,9 @@ class CardTest extends AnyFlatSpec, Matchers:
     withTemp: root =>
       JFiles.createDirectories(File(root, "DCIM").toPath)
       val singular =
-        s"""{"blockdevices":[{"name":"sdb1","path":"/dev/sdb1","rm":true,"type":"disk","fstype":"vfat","label":null,"mountpoint":${jsonString(root.getPath)}}]}
+        s"""{"blockdevices":[{"name":"sdb1","path":"/dev/sdb1","rm":true,"type":"disk","fstype":"vfat","label":null,"mountpoint":${jsonString(
+            root.getPath
+          )}}]}
            |""".stripMargin
       val found = probe(Seq(singular))
       found.mounts shouldBe Seq.empty[Seq[String]]
@@ -129,7 +143,7 @@ class CardTest extends AnyFlatSpec, Matchers:
     failed.text shouldBe ""
     failure(failed.thrown) shouldBe "lsblk failed"
 
-  it should "mount one unmounted card and read the mountpoint from the second document" in :
+  it should "mount one unmounted card and read the mountpoint from the second document" in:
     withTemp: root =>
       JFiles.createDirectories(File(root, "DCIM").toPath)
       val found = probe(Seq(canon("[]"), canon(mounts(root), fstype = "\"vfat\"")))
@@ -170,14 +184,15 @@ class CardTest extends AnyFlatSpec, Matchers:
         dryRun = false,
         lsblk = () =>
           calls += 1
-          if calls == 1 then Right(canon("[]")) else Left("x"),
+          if calls == 1 then Right(canon("[]")) else Left("x")
+        ,
         mount = _ => (0, "")
       )
     calls shouldBe 2
     again._1 shouldBe ""
     failure(again._2) shouldBe "lsblk failed"
 
-  "card copy" should "copy DCIM picture files flat into .upload and leave the card" in :
+  "card copy" should "copy DCIM picture files flat into .upload and leave the card" in:
     withTemp: archive =>
       withTemp: card =>
         val source: File = write(card, "DCIM/100CANON/IMG_0001.JPG", "same-bytes")
@@ -235,13 +250,22 @@ class CardTest extends AnyFlatSpec, Matchers:
         val copiedAt: Long = JFiles.getLastModifiedTime(File(upload, "IMG_0001.JPG").toPath).toMillis
 
         val second: String = first
-          .replace("copy DCIM/100CANON/IMG_0001.JPG .upload/IMG_0001.JPG", "keep DCIM/100CANON/IMG_0001.JPG already copied")
-          .replace("copy DCIM/100CANON/IMG_0003.THM .upload/IMG_0003.THM", "keep DCIM/100CANON/IMG_0003.THM already copied")
-          .replace("copy DCIM/100CANON/IMG_0004.TIF .upload/IMG_0004.TIF", "keep DCIM/100CANON/IMG_0004.TIF already copied")
+          .replace(
+            "copy DCIM/100CANON/IMG_0001.JPG .upload/IMG_0001.JPG",
+            "keep DCIM/100CANON/IMG_0001.JPG already copied"
+          )
+          .replace(
+            "copy DCIM/100CANON/IMG_0003.THM .upload/IMG_0003.THM",
+            "keep DCIM/100CANON/IMG_0003.THM already copied"
+          )
+          .replace(
+            "copy DCIM/100CANON/IMG_0004.TIF .upload/IMG_0004.TIF",
+            "keep DCIM/100CANON/IMG_0004.TIF already copied"
+          )
         runCopy(session, card, dryRun = false) shouldBe (second, Json.Null)
         JFiles.getLastModifiedTime(File(upload, "IMG_0001.JPG").toPath).toMillis shouldBe copiedAt
 
-  it should "print copy lines without creating .upload, and delete only .card partials on a real keep" in :
+  it should "print copy lines without creating .upload, and delete only .card partials on a real keep" in:
     withTemp: archive =>
       withTemp: card =>
         write(card, "DCIM/100CANON/IMG_0001.JPG", "pic")
@@ -270,9 +294,9 @@ class CardTest extends AnyFlatSpec, Matchers:
         write(upload, ".card-left.partial", "leftover")
         write(upload, ".file-keep.partial", "stay")
         val session: Session = sessionFor(archive)
-        runCopy(session, card, dryRun = true)._1 should include ("illegal extension txt")
+        runCopy(session, card, dryRun = true)._1 should include("illegal extension txt")
         read(File(upload, ".card-left.partial")) shouldBe "leftover"
-        runCopy(session, card, dryRun = false)._1 should include ("illegal extension txt")
+        runCopy(session, card, dryRun = false)._1 should include("illegal extension txt")
         File(upload, ".card-left.partial").exists shouldBe false
         read(File(upload, ".file-keep.partial")) shouldBe "stay"
         File(upload, "NOTE.TXT").exists shouldBe false
@@ -289,7 +313,7 @@ class CardTest extends AnyFlatSpec, Matchers:
         read(File(card, "DCIM/100CANON/IMG_0001.JPG")) shouldBe "pic"
         File(upload, "IMG_0001.JPG").exists shouldBe false
 
-  it should "reject a path that is not one real DCIM root, and a non-directory .upload" in :
+  it should "reject a path that is not one real DCIM root, and a non-directory .upload" in:
     withTemp: archive =>
       withTemp: card =>
         val session: Session = sessionFor(archive)
@@ -321,7 +345,7 @@ class CardTest extends AnyFlatSpec, Matchers:
           read(File(archive, ".upload")) shouldBe "nope"
         finally deleteTree(root)
 
-  it should "mount on copy --dry-run without a path and write nothing" in :
+  it should "mount on copy --dry-run without a path and write nothing" in:
     withTemp: archive =>
       withTemp: card =>
         write(card, "DCIM/100CANON/IMG_0001.JPG", "pic")
@@ -342,11 +366,11 @@ class CardTest extends AnyFlatSpec, Matchers:
         mountsSeen.toSeq shouldBe Seq(mountArgs)
         text shouldBe
           line("/dev/sdb1", "CANON", card.getPath, "vfat", "yes") +
-            "copy DCIM/100CANON/IMG_0001.JPG .upload/IMG_0001.JPG\n"
+          "copy DCIM/100CANON/IMG_0001.JPG .upload/IMG_0001.JPG\n"
         File(archive, ".upload").exists shouldBe false
         read(File(card, "DCIM/100CANON/IMG_0001.JPG")) shouldBe "pic"
 
-  it should "tell serve that card runs in the calling process" in :
+  it should "tell serve that card runs in the calling process" in:
     withTemp: archive =>
       val session: Session = sessionFor(archive)
       var ran: Boolean = false
@@ -358,19 +382,19 @@ class CardTest extends AnyFlatSpec, Matchers:
           (session, Result.Ok("ran\n", Json.Null))
       )
       ran shouldBe false
-      response should include ("card runs in the calling process")
+      response should include("card runs in the calling process")
 
   private final case class Probe(
-    text: String,
-    thrown: Option[Throwable],
-    mounts: Seq[Seq[String]],
-    root: Option[File]
+      text: String,
+      thrown: Option[Throwable],
+      mounts: Seq[Seq[String]],
+      root: Option[File]
   )
 
   private def probe(
-    documents: Seq[String],
-    dryRun: Boolean = false,
-    mountResult: (Int, String) = (0, "")
+      documents: Seq[String],
+      dryRun: Boolean = false,
+      mountResult: (Int, String) = (0, "")
   ): Probe =
     val docs: Iterator[String] = documents.iterator
     val seen = ArrayBuffer.empty[Seq[String]]
@@ -387,8 +411,8 @@ class CardTest extends AnyFlatSpec, Matchers:
 
   private def failure(thrown: Option[Throwable]): String = thrown match
     case Some(error: IllegalArgumentException) => error.getMessage
-    case Some(error) => fail(error.toString)
-    case None => fail("expected failure")
+    case Some(error)                           => fail(error.toString)
+    case None                                  => fail("expected failure")
 
   private def line(device: String, label: String, mount: String, fstype: String, dcim: String): String =
     s"card device=$device label=${Album.quote(label)} mountpoint=${Album.quote(mount)} fstype=$fstype dcim=$dcim\n"
@@ -396,12 +420,12 @@ class CardTest extends AnyFlatSpec, Matchers:
   private def runCopy(session: Session, card: File, dryRun: Boolean): (String, Json) =
     CopyCard(dryRun, Some(card.getPath)).execute(session)._2 match
       case Result.Ok(text, value) => (text, value)
-      case other => fail(other.toString)
+      case other                  => fail(other.toString)
 
   private def usage(session: Session, path: String): String =
     CopyCard(dryRun = false, Some(path)).execute(session)._2 match
       case Result.Usage(message) => message
-      case other => fail(other.toString)
+      case other                 => fail(other.toString)
 
   private def sessionFor(archive: File): Session =
     val home: File = File(System.getProperty("user.home"))
@@ -432,9 +456,9 @@ class CardTest extends AnyFlatSpec, Matchers:
   private def jsonString(value: String): String =
     val escaped: String = value.flatMap:
       case '\\' => "\\\\"
-      case '"' => "\\\""
+      case '"'  => "\\\""
       case '\n' => "\\n"
-      case ch => ch.toString
+      case ch   => ch.toString
     "\"" + escaped + "\""
 
   private def mounts(dir: File): String = s"[${jsonString(dir.getPath)}]"
@@ -444,16 +468,18 @@ class CardTest extends AnyFlatSpec, Matchers:
 """
 
   private def volume(
-    path: String,
-    rm: String = "true",
-    fstype: String = "\"exfat\"",
-    label: String = "\"CANON\"",
-    mountpoints: String = "[]",
-    children: Seq[String] = Nil,
-    nodeType: String = "part"
+      path: String,
+      rm: String = "true",
+      fstype: String = "\"exfat\"",
+      label: String = "\"CANON\"",
+      mountpoints: String = "[]",
+      children: Seq[String] = Nil,
+      nodeType: String = "part"
   ): String =
     val nested: String = if children.isEmpty then "" else s""","children":[${children.mkString(",")}]"""
-    s"""{"name":${jsonString(path.stripPrefix("/dev/"))},"path":${jsonString(path)},"rm":$rm,"type":${jsonString(nodeType)},"fstype":$fstype,"label":$label,"mountpoints":$mountpoints$nested}"""
+    s"""{"name":${jsonString(path.stripPrefix("/dev/"))},"path":${jsonString(path)},"rm":$rm,"type":${jsonString(
+        nodeType
+      )},"fstype":$fstype,"label":$label,"mountpoints":$mountpoints$nested}"""
 
   private def nvme: String =
     volume(
@@ -462,28 +488,32 @@ class CardTest extends AnyFlatSpec, Matchers:
       fstype = "null",
       label = "null",
       nodeType = "disk",
-      children = Seq(volume(
-        "/dev/nvme0n1p2",
-        rm = "false",
-        fstype = "null",
-        label = "null",
-        mountpoints = """["/"]""",
-        children = Seq(volume(
-          "/dev/mapper/root",
+      children = Seq(
+        volume(
+          "/dev/nvme0n1p2",
           rm = "false",
-          fstype = "\"ext4\"",
+          fstype = "null",
           label = "null",
-          nodeType = "crypt",
-          mountpoints = """["/"]"""
-        ))
-      ))
+          mountpoints = """["/"]""",
+          children = Seq(
+            volume(
+              "/dev/mapper/root",
+              rm = "false",
+              fstype = "\"ext4\"",
+              label = "null",
+              nodeType = "crypt",
+              mountpoints = """["/"]"""
+            )
+          )
+        )
+      )
     )
 
   private def canon(
-    mountpoints: String,
-    fstype: String = "\"exfat\"",
-    label: String = "\"CANON\"",
-    rm: String = "true"
+      mountpoints: String,
+      fstype: String = "\"exfat\"",
+      label: String = "\"CANON\"",
+      rm: String = "true"
   ): String =
     doc(
       nvme,

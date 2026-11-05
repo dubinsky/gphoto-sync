@@ -24,9 +24,10 @@ private[photo] object PlaywrightPhotosUi:
     try
       ui.start()
       ui
-    catch case error: Throwable =>
-      ui.close()
-      throw error
+    catch
+      case error: Throwable =>
+        ui.close()
+        throw error
 
 private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends PhotosAct:
   private var playwright: Playwright = null
@@ -44,14 +45,16 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     options.setViewportSize(1400, 900)
     options.setAcceptDownloads(true)
     options.setIgnoreDefaultArgs(java.util.List.of("--enable-automation"))
-    options.setArgs(java.util.List.of(
-      "--disable-blink-features=AutomationControlled",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--window-position=40,40",
-      "--window-size=1400,900",
-      "--class=gphoto-sync"
-    ))
+    options.setArgs(
+      java.util.List.of(
+        "--disable-blink-features=AutomationControlled",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--window-position=40,40",
+        "--window-size=1400,900",
+        "--class=gphoto-sync"
+      )
+    )
     val home: String = Option(System.getenv("HOME")).filter(_.nonEmpty).getOrElse(System.getProperty("user.home"))
     // A set signature can outlive the compositor. All three checks have to hold.
     val hyprland: Boolean =
@@ -59,11 +62,12 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         val signature: String = System.getenv("HYPRLAND_INSTANCE_SIGNATURE")
         val runtime: String = System.getenv("XDG_RUNTIME_DIR")
         signature != null && !signature.isBlank &&
-          runtime != null && !runtime.isBlank &&
-          new File(new File(runtime, "hypr"), signature).isDirectory &&
-          { PhotosPark.hypr("hyprctl", "monitors", "-j"); true }
-      catch case _: Exception =>
-        false
+        runtime != null && !runtime.isBlank &&
+        new File(new File(runtime, "hypr"), signature).isDirectory &&
+        { PhotosPark.hypr("hyprctl", "monitors", "-j"); true }
+      catch
+        case _: Exception =>
+          false
     if !hyprland then System.err.println("refresh park: hyprland not running")
     else PhotosPark.preparePark()
     context = created.chromium().launchPersistentContext(Paths.get(home, ".config", "gphoto-sync-chrome"), options)
@@ -83,17 +87,17 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     secondSweep()
     val tsv: String = page.evaluate("() => window.__gphoto.tsv()") match
       case text: String => text
-      case _ => ""
+      case _            => ""
     tsv.split("\n", -1).toSeq.filter(_.nonEmpty).map(Refresh.cardOf)
 
   def readOwner(card: AlbumCard): Option[String] =
     if !onPhotos || !wizardReady then ensureSession()
     val value: Object = page.evaluate(PhotosScripts.ownerScript, cardArgs(card))
     value match
-      case null => None
+      case null                         => None
       case text: String if text.isEmpty => None
-      case text: String => Some(text)
-      case _ => throw IllegalStateException("owner read failed")
+      case text: String                 => Some(text)
+      case _                            => throw IllegalStateException("owner read failed")
 
   def readAlbum(card: AlbumCard): Catalog.Album =
     if !onPhotos || !wizardReady then ensureSession()
@@ -101,10 +105,11 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       val value: Object = page.evaluate(PhotosScripts.readScript, cardArgs(card))
       val text: String = value match
         case body: String => body
-        case _ => throw IllegalStateException("read failed")
+        case _            => throw IllegalStateException("read failed")
       Refresh.parseBody(text)
-    catch case error: Exception =>
-      throw IllegalStateException(redact(card, error))
+    catch
+      case error: Exception =>
+        throw IllegalStateException(redact(card, error))
 
   def close(): Unit =
     val currentContext = context
@@ -231,11 +236,11 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         if added.lengthIs == 1 then
           readFact(added.head, destination.id) match
             case Some(found) => Map(added.head -> found)
-            case None => Map.empty
+            case None        => Map.empty
         else Map.empty
       AgentChrome.confirmedAdd(before, after, named, current) match
         case Some(found) => found
-        case None => throw Refresh.ActMiss("live key differs", confirmed = true)
+        case None        => throw Refresh.ActMiss("live key differs", confirmed = true)
     catch
       case miss: Refresh.ActMiss =>
         throw miss
@@ -262,8 +267,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       )
       val buttons: Seq[String] = dialogButtons(dialog)
       // A trash dialog is not a remove, so it is not clicked.
-      if isTrash(dialogText(dialog), buttons) then
-        throw Refresh.ActMiss("trash dialog", confirmed = false)
+      if isTrash(dialogText(dialog), buttons) then throw Refresh.ActMiss("trash dialog", confirmed = false)
       if !isRemoveButton(name) || !buttons.contains(name) then
         throw Refresh.ActMiss("Remove is absent", confirmed = false)
       val button: Locator = dialog.getByRole(
@@ -273,8 +277,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       if button.count() == 0 then throw Refresh.ActMiss("Remove is absent", confirmed = false)
       confirmed = true
       click(button.first())
-      if readKeyList(album.id).contains(item.key) then
-        throw Refresh.ActMiss("source key is present", confirmed = true)
+      if readKeyList(album.id).contains(item.key) then throw Refresh.ActMiss("source key is present", confirmed = true)
     catch
       case miss: Refresh.ActMiss =>
         throw miss
@@ -339,8 +342,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       )
       // Dialog Done adds a library photo. The chooser is the upload, so the flag flips at setFiles.
       val chooser: FileChooser = page.waitForFileChooser(new Runnable:
-        def run(): Unit = click(computer.first())
-      )
+        def run(): Unit = click(computer.first()))
       confirmed = true
       chooser.setFiles(file.toPath)
 
@@ -352,10 +354,10 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
           if added.lengthIs == 1 then
             readFact(added.head, destination.id) match
               case Some(found) => Map(added.head -> found)
-              case None => Map.empty
+              case None        => Map.empty
           else Map.empty
         AgentChrome.confirmedAdd(before, after, named, current) match
-          case Some(found) => found
+          case Some(found)                                  => found
           case None if System.currentTimeMillis >= deadline =>
             throw Refresh.ActMiss("live key differs", confirmed = true)
           case None =>
@@ -377,8 +379,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       ensureSession()
       navigate(albumsUrl)
       // The plus menu is a different control. An absent button is not a reason to open it.
-      if !visibleButton("Create album") then
-        throw Refresh.ActMiss("Create album is absent", confirmed = false)
+      if !visibleButton("Create album") then throw Refresh.ActMiss("Create album is absent", confirmed = false)
       val button: Locator = page.getByRole(
         AriaRole.BUTTON,
         new Page.GetByRoleOptions().setName("Create album").setExact(true)
@@ -492,10 +493,13 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     folded.startsWith("delete forever") || folded.startsWith("empty trash")
 
   private def isTrashConfirm(name: String): Boolean =
-    java.util.regex.Pattern.compile(
-      "^Move to trash\\b",
-      java.util.regex.Pattern.CASE_INSENSITIVE
-    ).matcher(name).find()
+    java.util.regex.Pattern
+      .compile(
+        "^Move to trash\\b",
+        java.util.regex.Pattern.CASE_INSENSITIVE
+      )
+      .matcher(name)
+      .find()
 
   @tailrec
   private def awaitRemove(deadline: Long): String =
@@ -507,10 +511,9 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         awaitRemove(deadline)
       case Some(dialog) =>
         val buttons: Seq[String] = dialogButtons(dialog)
-        if isTrash(dialogText(dialog), buttons) then
-          throw Refresh.ActMiss("trash dialog", confirmed = false)
+        if isTrash(dialogText(dialog), buttons) then throw Refresh.ActMiss("trash dialog", confirmed = false)
         buttons.find(isRemoveButton) match
-          case Some(name) => name
+          case Some(name)                                   => name
           case None if System.currentTimeMillis >= deadline =>
             throw Refresh.ActMiss("Remove is absent", confirmed = false)
           case None =>
@@ -528,14 +531,12 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       case Some(dialog) =>
         val buttons: Seq[String] = dialogButtons(dialog)
         // Delete forever, Empty trash, and Move to trash stay unclicked even when Delete is also listed.
-        if buttons.exists(refusedButton) then
-          throw Refresh.ActMiss("refused dialog", confirmed = false)
+        if buttons.exists(refusedButton) then throw Refresh.ActMiss("refused dialog", confirmed = false)
         val named: Set[String] = buttons.map(_.trim).toSet
         val text: String = dialogText(dialog)
         if named.contains("Delete") && named.contains("Keep album") && text.contains("remain in Google Photos") then
           dialog
-        else if System.currentTimeMillis >= deadline then
-          throw Refresh.ActMiss("Delete is absent", confirmed = false)
+        else if System.currentTimeMillis >= deadline then throw Refresh.ActMiss("Delete is absent", confirmed = false)
         else
           Thread.sleep(300)
           awaitAlbumDelete(deadline)
@@ -550,7 +551,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
   private def dialogButtons(dialog: Locator): Seq[String] =
     dialog.evaluate(PhotosScripts.dialogButtonsScript) match
       case text: String => text.split("\n", -1).toSeq.filter(_.nonEmpty)
-      case _ => throw IllegalStateException("dialog read failed")
+      case _            => throw IllegalStateException("dialog read failed")
 
   private def isTrash(text: String, buttons: Seq[String]): Boolean =
     val lower: String = text.toLowerCase(java.util.Locale.ROOT)
@@ -566,12 +567,12 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
   private def readKeyList(albumId: String): Seq[String] =
     page.evaluate(PhotosScripts.albumKeysScript, albumId) match
       case text: String => text.split("\n", -1).toSeq.filter(_.nonEmpty)
-      case _ => throw IllegalStateException("read failed")
+      case _            => throw IllegalStateException("read failed")
 
   private def readFact(key: String, albumId: String): Option[Catalog.Item] =
     page.evaluate(PhotosScripts.itemFactScript, key + "\t" + albumId) match
       case text: String if text.isEmpty => None
-      case text: String =>
+      case text: String                 =>
         text.split("\t", -1).toSeq match
           case Seq(filename, date, uploader) if filename.nonEmpty =>
             Some(Catalog.Item(filename, factDate(date), key, factUploader(uploader)))
@@ -691,7 +692,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     if !onPhotos || !wizardReady then ensureSession()
     page.evaluate(PhotosScripts.itemDateScript, key) match
       case text: String => text
-      case _ => throw IllegalStateException("read failed")
+      case _            => throw IllegalStateException("read failed")
 
   private val clock: Regex = """(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})""".r
 
@@ -704,7 +705,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
   private def awaitMenu(deadline: Long): String =
     val names: Seq[String] = Seq("Edit album", "Rename album", "Rename")
     names.find(name => menuItem(name).count() > 0) match
-      case Some(name) => name
+      case Some(name)                                   => name
       case None if System.currentTimeMillis >= deadline =>
         throw Refresh.ActMiss("menuitem is absent", confirmed = false)
       case None =>
@@ -717,8 +718,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
   @tailrec
   private def focusTitle(current: String, deadline: Long): Unit =
     if asBool(page.evaluate(PhotosScripts.focusTitleScript, current)) then ()
-    else if System.currentTimeMillis >= deadline then
-      throw Refresh.ActMiss("title field is absent", confirmed = false)
+    else if System.currentTimeMillis >= deadline then throw Refresh.ActMiss("title field is absent", confirmed = false)
     else
       Thread.sleep(300)
       focusTitle(current, deadline)
@@ -757,8 +757,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     if editorOpen && System.currentTimeMillis < deadline then
       Thread.sleep(300)
       awaitLive(albumId, updated, deadline)
-    else if editorOpen then
-      throw Refresh.ActMiss("live title differs", confirmed = true)
+    else if editorOpen then throw Refresh.ActMiss("live title differs", confirmed = true)
     else
       // The live title is this id's card on the albums list.
       val live: Option[String] = albumCards().find(_.id == albumId).map(_.title)
@@ -767,9 +766,10 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
 
   private def awaitEditor(locator: Locator, absent: String): Unit =
     try awaitCount(locator, System.currentTimeMillis + 20000L, absent)
-    catch case miss: Refresh.ActMiss =>
-      val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse(absent)
-      throw Refresh.ActMiss(detail, confirmed = true)
+    catch
+      case miss: Refresh.ActMiss =>
+        val detail: String = Option(miss.getMessage).filter(_.nonEmpty).getOrElse(absent)
+        throw Refresh.ActMiss(detail, confirmed = true)
 
   @tailrec
   private def awaitCount(locator: Locator, deadline: Long, absent: String): Unit =
@@ -829,9 +829,9 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
 
   private def seenCount(): Int =
     page.evaluate("() => String(window.__gphoto.seen.size)") match
-      case text: String => Integer.parseInt(text)
+      case text: String   => Integer.parseInt(text)
       case number: Number => number.intValue
-      case _ => 0
+      case _              => 0
 
   private def ensureSession(): Unit =
     val deadline: Long = System.currentTimeMillis + 60L * 60L * 1000L
@@ -854,21 +854,22 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     throw IllegalStateException("sign-in timed out")
 
   private def wizardReady: Boolean =
-    try
-      asBool(page.evaluate(PhotosScripts.wizardScript))
-    catch case _: Exception =>
-      false
+    try asBool(page.evaluate(PhotosScripts.wizardScript))
+    catch
+      case _: Exception =>
+        false
 
   private def onPhotos: Boolean =
     try
       val host: String = new java.net.URI(page.url()).getHost
       host == "photos.google.com"
-    catch case _: Exception =>
-      false
+    catch
+      case _: Exception =>
+        false
 
   private def asBool(value: Object): Boolean = value match
     case flag: java.lang.Boolean => flag.booleanValue
-    case _ => false
+    case _                       => false
 
   private def cardArgs(card: AlbumCard): java.util.Map[String, String] =
     val map = new java.util.HashMap[String, String]()

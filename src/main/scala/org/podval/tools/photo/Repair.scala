@@ -5,12 +5,12 @@ import java.nio.file.{FileAlreadyExistsException, Files as NFiles}
 import java.time.Instant
 
 final case class Repair(
-  path: String,
-  names: Boolean,
-  raw: Boolean,
-  timestamps: Boolean,
-  days: Boolean,
-  dryRun: Boolean
+    path: String,
+    names: Boolean,
+    raw: Boolean,
+    timestamps: Boolean,
+    days: Boolean,
+    dryRun: Boolean
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
@@ -29,39 +29,46 @@ final case class Repair(
 
 object Repair:
   def run(
-    path: Path,
-    names: Boolean,
-    raw: Boolean,
-    timestamps: Boolean,
-    days: Boolean,
-    dryRun: Boolean,
-    generate: Picture => Unit = RawConverter.DCRaw.generate,
-    setTimestamp: (Picture, String, Instant) => Unit = Dates.FromFile.set,
-    link: (File, File) => Unit = FileDownloads.linkPartial
+      path: Path,
+      names: Boolean,
+      raw: Boolean,
+      timestamps: Boolean,
+      days: Boolean,
+      dryRun: Boolean,
+      generate: Picture => Unit = RawConverter.DCRaw.generate,
+      setTimestamp: (Picture, String, Instant) => Unit = Dates.FromFile.set,
+      link: (File, File) => Unit = FileDownloads.linkPartial
   ): Unit =
     if names then walk(path, if dryRun then NameMode.Preview else NameMode.Apply)
     if raw then each(path)(repairRaw(_, dryRun, generate))
     if timestamps then each(path)(repairTimestamps(_, dryRun, setTimestamp))
     if days then
-      if !dryRun then path match
-        case _: Root | _: UploadDirectory =>
-          path.root.lsd.collect { case year: Year => year }.foreach: year =>
-            year.lsd.collect { case month: Month => month }.foreach: month =>
-              month.lsd.collect { case day: Day => day }.foreach: day =>
-                Files.listFiles(day.directory).foreach: file =>
-                  val name: String = file.getName
-                  if name.startsWith(".inbox-") && name.endsWith(".partial") then
-                    val inboxName: String = name.drop(".inbox-".length).dropRight(".partial".length)
-                    val finalFile: File = File(day.directory, inboxName)
-                    val uploadFile: File = File(path.root.configuration.uploadDirectory, inboxName)
-                    if finalFile.exists && NFiles.isSameFile(finalFile.toPath, file.toPath) then
-                      NFiles.deleteIfExists(file.toPath)
-                    else if !finalFile.exists && !uploadFile.exists then
-                      Files.move(file, uploadFile)
-                    else
-                      throw IllegalArgumentException(s"leftover inbox partial: $name")
-        case _ =>
-          ()
+      if !dryRun then
+        path match
+          case _: Root | _: UploadDirectory =>
+            path.root.lsd
+              .collect { case year: Year => year }
+              .foreach: year =>
+                year.lsd
+                  .collect { case month: Month => month }
+                  .foreach: month =>
+                    month.lsd
+                      .collect { case day: Day => day }
+                      .foreach: day =>
+                        Files
+                          .listFiles(day.directory)
+                          .foreach: file =>
+                            val name: String = file.getName
+                            if name.startsWith(".inbox-") && name.endsWith(".partial") then
+                              val inboxName: String = name.drop(".inbox-".length).dropRight(".partial".length)
+                              val finalFile: File = File(day.directory, inboxName)
+                              val uploadFile: File = File(path.root.configuration.uploadDirectory, inboxName)
+                              if finalFile.exists && NFiles.isSameFile(finalFile.toPath, file.toPath) then
+                                NFiles.deleteIfExists(file.toPath)
+                              else if !finalFile.exists && !uploadFile.exists then Files.move(file, uploadFile)
+                              else throw IllegalArgumentException(s"leftover inbox partial: $name")
+          case _ =>
+            ()
       each(path)(repairDays(_, dryRun, link))
 
   private def walk(path: Path, names: NameMode): Unit =
@@ -75,12 +82,12 @@ object Repair:
   private def each(path: Path)(use: Picture => Unit): Unit =
     note(path)
     path match
-      case pictures: Pictures => pictures.lsd(NameMode.Leave).foreach(use)
+      case pictures: Pictures   => pictures.lsd(NameMode.Leave).foreach(use)
       case directory: Directory => directory.lsd.foreach(child => each(child)(use))
 
   private def note(path: Path): Unit = path match
     case directory: Directory => DirectoryIndex.noteRead(directory.directory)
-    case _ => ()
+    case _                    => ()
 
   private def repairRaw(picture: Picture, dryRun: Boolean, generate: Picture => Unit): Unit =
     val suppressed: Boolean = picture.metadata.`bad-raw`.contains(true)
@@ -88,9 +95,9 @@ object Repair:
       act(dryRun, s"$picture: generating '${RawConverter.extension}' from raw file")(generate(picture))
 
   private def repairTimestamps(
-    picture: Picture,
-    dryRun: Boolean,
-    setTimestamp: (Picture, String, Instant) => Unit
+      picture: Picture,
+      dryRun: Boolean,
+      setTimestamp: (Picture, String, Instant) => Unit
   ): Unit =
     PictureAudit(picture).writesMtime.foreach: clock =>
       val instant: Instant = clock.civil.atZone(picture.zone).toInstant
@@ -120,10 +127,8 @@ object Repair:
                 File(dayShouldBe.directory, s".inbox-${picture.name}.$extension.partial"),
                 File(dayShouldBe.directory, s"${picture.name}.$extension")
               )
-            if moves.exists(_._3.exists) then
-              Transcript.println(s"keep $picture $dayShouldBe already exists")
-            else if dryRun then
-              Transcript.println(s"moving $picture to $dayShouldBe")
+            if moves.exists(_._3.exists) then Transcript.println(s"keep $picture $dayShouldBe already exists")
+            else if dryRun then Transcript.println(s"moving $picture to $dayShouldBe")
             else
               Files.mkDirs(dayShouldBe.directory)
               var staged: List[(File, File)] = Nil

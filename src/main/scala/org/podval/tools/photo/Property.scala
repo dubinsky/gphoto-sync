@@ -3,8 +3,8 @@ package org.podval.tools.photo
 import java.time.LocalDate
 
 sealed abstract class Property[T](
-  val name: String,
-  val get: Metadata => Option[T]
+    val name: String,
+    val get: Metadata => Option[T]
 ):
   def set(metadata: Metadata, value: Option[T]): Metadata
   def parser(string: String): T
@@ -35,21 +35,21 @@ object Property:
     all.find(_.name == name).getOrElse(throw IllegalArgumentException(s"unknown property '$name'"))
 
   sealed abstract class StringProperty(
-    name: String,
-    get: Metadata => Option[String]
+      name: String,
+      get: Metadata => Option[String]
   ) extends Property[String](
-    name,
-    get
-  ):
+        name,
+        get
+      ):
     final override def parser(string: String): String = string
 
   sealed abstract class BooleanProperty(
-    name: String,
-    get: Metadata => Option[Boolean]
+      name: String,
+      get: Metadata => Option[Boolean]
   ) extends Property[Boolean](
-    name,
-    get
-  ):
+        name,
+        get
+      ):
     final override def parser(string: String): Boolean = string.toBoolean
 
   private case object Source extends StringProperty("source", _.source):
