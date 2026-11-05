@@ -3,6 +3,7 @@ plugins {
   id 'application'
   id 'org.podval.conventions'
   id 'org.podval.tools.scalajs' version '2.3.1'
+  id 'com.diffplug.spotless' version '8.11.0'
 }
 
 description = 'Process Photographs'
@@ -55,3 +56,10 @@ tasks.register('scaladocJar', Jar) {
   archiveClassifier.set('scaladoc')
 }
 scaladocJar.dependsOn scaladoc
+
+spotless {
+  scala {
+    target 'src/**/*.scala'
+    scalafmt().configFile('.scalafmt.conf')
+  }
+}
