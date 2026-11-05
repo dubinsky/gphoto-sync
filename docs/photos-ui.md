@@ -369,6 +369,7 @@ Do not invent or guess a `batchexecute` RPC for this.
 
 ## Requests
 
+`photo agent rename-album` changes one album title.
 The album has no `owner` line.
 The control is More options, then the menuitem Edit album, Rename album, or Rename.
 Replace the title field and confirm with Done, or with Enter when Done is absent.
@@ -415,6 +416,7 @@ Google Photos is not changed.
 The command does not replace an archive original.
 `photo file` is still the filer.
 
+`photo agent add-to-album` adds one item to an existing album.
 The destination is a different album.
 Before Chrome opens, the command refuses when the destination has an `owner` line, when the destination is `auto-add`,
 when `name-failures` is greater than 0, or when any `unset` line is present.
@@ -447,6 +449,7 @@ Anything else leaves `catalog.txt` byte-identical.
 A miss before Add to album or before the destination option is one-click.
 After the destination option was clicked, a live read that is not the clean case is refresh-only.
 
+`photo agent remove-from-album` removes one item from an album.
 The command does not require the uploader to be `-` and does not reject an `owner` line.
 It opens the item the way `photo agent download-item` opens it.
 It does not use the album-grid Select photos path.
@@ -572,6 +575,7 @@ The archive inbox `.upload` is a different directory.
 
 ### Upload
 
+`photo agent upload-item` uploads one archive file into an existing album.
 This is not `batchCreate`.
 The command does not call `Publish`.
 Before Chrome opens, the command refuses when `path` is outside the archive, when the extension is not `jpg`, `jpeg`,
@@ -613,6 +617,7 @@ After the file was chosen, a live read that is not the clean case is refresh-onl
 
 ### Create
 
+`photo agent create-album` creates an empty album.
 The command does not call `Publish.createAlbum`.
 The command does not write an album toml.
 Linking stays `photo reconcile` or `photo agent album-file`.
