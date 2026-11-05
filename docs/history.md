@@ -1,0 +1,63 @@
+# History
+
+I started dabbling in this area around year 2000, when our daughter was born and I got my first digital camera :)
+
+### Metadata Extraction
+
+My take on extracting metadata from image files is in the (now archived)
+[podval-imageio](https://github.com/dubinsky/podval-imageio) repository.
+
+There, between 2003 and 2009, I worked on:
+
+- extracting image metadata from the image file
+- extracting thumbnails from the raw image file
+- demosaicing raw images
+
+There were some good ideas there:
+
+- describing metadata structure in XML
+- push and pull parsing of the metadata
+
+I contributed small discoveries I made in 2002 about Canon RAW format (crw) to David Burren.
+
+In the end I realized: it does not make sense to do this myself when there are groups of people who dedicate significant
+time to developing and maintaining dedicated tools like `dcraw`, `metadata-extractor` and `ffmpeg` :)
+
+### Metadata Extraction Tools
+
+- [metadata-extractor](https://github.com/drewnoakes/metadata-extractor) (originally, https://drewnoakes.com/code/exif/)
+  by [Drew Noakes](https://github.com/drewnoakes)
+- [Canon EXIF Maker Note](http://www.burren.cx/david/canon.html) by David Burren
+- [dcraw](http://www.cybercom.net/~dcoffin/dcraw/) by Dave Coffin
+- libraw
+- [ExifTool](http://www.sno.phy.queensu.ca/~phil/exiftool/exiftool)
+- ffprobe
+- [jhead](http://www.sentex.net/~mwandel/jhead/)
+- [Java USB Camera Tools](http://jphoto.sourceforge.net/)
+
+### Synchronization with the Cloud
+
+My previous attempt at code to synchronize local photo archive with the cloud photo services is in the (now archived)
+[podval-photo-sync](https://github.com/dubinsky/podval-photo-sync) repository.
+
+There, between 2009 and 2011, I worked on:
+
+- synchronizing with Zenfolio (which I no longer use)
+- synchronizing with Picasa and Google+ (which no longer exist)
+- expose locally recorded timestamp and image orientation to the cloud service
+
+There were some good ideas there:
+
+- group files belonging to the same picture (raw, jpg, metadata)
+- use family polymorphism to abstract over cloud photo services
+
+In the end, while chasing ever-changing cloud, I neglected the management of the local photo archive - something that
+this repository finally delivers.
+
+This client publishes albums whose files I have written.
+The archive files are external.
+Ones I own are renamed by hand.
+Ones I do not own have `owner` and `google-title` and are not renamed.
+Publish does not upload or rename an external album, and it does not call `updateAlbumTitle` for an album with `owner`.
+A client album is `external = false`.
+Cron is out of scope.

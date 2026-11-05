@@ -1,208 +1,11 @@
-# Google Photos reconciliation protocol
-
-The archive agent reconciles the archive with Google Photos.
-This note is the contract.
-A catalog id is a Photos UI key.
-It is not a Library API id.
-Keep catalog ids and item keys out of chat and out of `google-album-id` and `google-media-item-id`.
-
-- Files — who writes each file.
-- Catalog — the `catalog.txt` grammar.
-- Album links — the `album-links.tsv` grammar.
-- Refresh — how `photo refresh` reads Google Photos.
-- Album files — match, the album file, reconcile, and filing.
-- Push — `photo push`.
-- Requests — `photo agent rename-album`, `photo agent set-description`, `photo agent set-date`,
-  `photo agent download-item`, `photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`,
-  `photo agent delete-item`, `photo agent upload-item`, `photo agent create-album`, and `photo agent delete-album`.
-- Agent reads — the read-only `photo agent` commands.
-
-## Files
-
-The archive is the configured originals directory.
-`rootPath` in the configuration file names it, under the home directory.
-The catalog and `album-links.tsv` live in `archive/.gphoto-sync/`.
-There is no config key for that directory.
-
-`photo refresh` rewrites `catalog.txt`.
-`photo agent rename-album` rewrites one album line after the live title equals the new title.
-`photo agent set-description` does not rewrite `catalog.txt`.
-`photo agent set-date` rewrites that item's date after the `fDcn4b` read shows the calendar day.
-`photo agent download-item` stages one original and does not rewrite `catalog.txt`.
-`photo agent add-to-album` rewrites the destination album only for the clean confirmed key and otherwise leaves
-`catalog.txt` byte-identical.
-`photo agent remove-from-album` rewrites that album only when the source key is gone and otherwise leaves `catalog.txt`
-byte-identical.
-`photo agent move-item` rewrites the source album and the destination album in one swap only when `putInAlbum` and
-`takeOut` are both clean.
-Otherwise `catalog.txt` stays byte-identical.
-If the add confirm ran, recovery is refresh-only and the text names both titles.
-`photo agent delete-item` removes that item line when the source key is already absent, and when the trash confirm
-leaves the key gone.
-Delete forever and Empty trash are not clicked.
-`photo agent delete-item` publishes nothing for Delete forever or Empty trash.
-When the confirm ran and the key is still present, `catalog.txt` stays byte-identical.
-`photo agent delete-item` does not change the archive or `.download/`.
-`photo agent upload-item` adds one destination `item` line only for the clean confirmed key and otherwise leaves
-`catalog.txt` byte-identical.
-`photo agent create-album` adds the new album `RefreshPlan.publish` writes for that card and otherwise leaves
-`catalog.txt` byte-identical.
-It does not write an album toml.
-`photo agent delete-album` omits that album's block when the live card list has at least 250 cards and those ids are
-exactly the stored ids minus the deleted id.
-Otherwise it leaves `catalog.txt` byte-identical.
-It copies every other block and does not retitle or recount.
-It does not trash library items.
-`photo push` rewrites `catalog.txt` for each action that publishes, as Push describes.
-`photo reconcile` reads and writes `album-links.tsv`.
-`photo refresh` does not write that file.
-`photo agent download-item` stages that original in `.download/`, as Download describes.
-`photo file` files a dated download from there, as Filing describes.
-
-`photo refresh` only reads Google Photos.
-`photo agent rename-album` changes one album title.
-`photo agent set-description` changes one item description.
-`photo agent set-date` changes one item's date taken.
-`photo agent download-item` downloads one original and does not change Google Photos.
-`photo agent add-to-album` adds one item to an existing album.
-`photo agent remove-from-album` removes one item from an album.
-`photo agent move-item` adds one item to an existing album and then removes it from the source album, in one session.
-`photo agent delete-item` moves one library item to Google Photos trash.
-`photo agent upload-item` uploads one archive file into an existing album.
-`photo agent create-album` creates an empty album.
-`photo agent delete-album` deletes an album and leaves its photos and videos in the library.
-`photo push` changes Google Photos for external albums, as Push describes.
-`photo publish` and `photo sync` still change Google Photos.
-
-`catalog.txt.partial` and `catalog.txt.previous` exist only while a catalog rewrite is published.
-They are not a second catalog.
-
-## Catalog
-
-`archive/.gphoto-sync/catalog.txt` is the catalog.
-
-The reader accepts one grammar.
-A file whose first line is not exactly `# gphoto-catalog 2` fails with `catalog is not version 2`.
-The parser does not look at the rest, and it does not try a `##` header.
-UTF-8, no BOM, LF only.
-A CR is an error.
-A blank line is an error.
-No comments beyond the version line.
-No quotes and no backslash escapes.
-Nothing is trimmed.
-No field contains a tab or a newline.
-Title spaces, including leading and trailing spaces, are significant.
-Exact titles are never trimmed.
-Titles are not unique.
-The album id is the identity.
-An album id and an item key are Photos UI keys and start with `AF1Qip`.
-
-```
-# gphoto-catalog 2
-album	<id>	<count>	<title>
-owner	<id>	<label>
-auto-add	<id>
-error	<id>	<got>	<of>	<name-failures>
-unset	<id>	<date>	<item-key>	<uploader>
-item	<id>	<filename>	<date>	<item-key>	<uploader>
-```
-
-Column counts are fixed: `album` 4, `owner` 3, `auto-add` 2, `error` 5, `unset` 5, `item` 6.
-`<id>` is the album id on every line, so a line does not need a section.
-Order is not significant.
-The local reader still groups lines by album so a person can read the file.
-
-Integers are `[0-9]+` and fit in a 32-bit signed int.
-No sign and no leading zero, except the number 0 itself.
-`date` is `-` or `YYYY-MM-DD`.
-It is the calendar date Google Photos shows for that item.
-A clock time is omitted.
-The date is the item's date, not the album's date.
-`uploader` is `-` when the signed-in account uploaded the item.
-Otherwise it is the display name, or the account id when no name is shown.
-Empty is not a substitute for `-`.
-An item filename is exact.
-An item key is the stable id of that item in that album.
-It is not a library id.
-The same filename in two albums is two keys.
-A move writes a new destination key, as Catalog updates describes.
-
-The following are parse errors:
-
-- Exactly one `album` line per id.
-  A second `album`, `owner`, `auto-add`, or `error` for the same id is an error.
-- Every `owner`, `auto-add`, `error`, `unset`, and `item` id has that album line.
-- `owner` is present only when the signed-in account does not own the album.
-  No `owner` line means that account owns it.
-  The owner is not the uploader.
-  Do not infer ownership from who uploaded the items.
-  Do not put the owner on the `album` line.
-  The label is non-empty and is not only whitespace.
-  It may contain spaces and colons.
-  The local reader turns each tab or newline in a label or an uploader name into one space before it writes the field,
-  with no collapsing and no other trim.
-  Titles and filenames are not rewritten.
-  If a title or a filename contains a tab or a newline, the local reader fails the completeness check instead of
-  substituting.
-- `count` is the album-list count.
-  It may exceed the number of `item` lines when an `error` line is present.
-- `error.of` equals the album `count`.
-  `error.got` equals the number of `item` lines plus the number of `unset` lines for that id, and `error.got` is less
-  than or equal to `error.of`.
-  `error.name-failures` equals the number of `unset` lines.
-- The identity of an `item` or `unset` line is the pair (album id, item key).
-  A second `item` or `unset` with that same pair is an error, including one `item` and one `unset`.
-  Other fields do not make the pair legal twice.
-- An `item` filename is non-empty.
-  An empty filename is a parse error.
-  `unset` has no filename column.
-- No `error` and no `auto-add`: the number of `item` lines equals `count`, and there is no `unset` line.
-  A count of 0 with no items is an empty album.
-- `auto-add` has no `item`, no `unset`, and no `error`.
-  An `owner` line may sit on an auto-add album.
-  Its items are not read.
-- An `unset` line is an item whose filename was not read.
-  It still carries a date, an item key, and an uploader when the local reader knows them.
-  The date may be `-`.
-  Do not invent a filename for it.
-
-`count` on the album line stays the album-list count under an error, including when `name-failures` is 0.
-The `item` lines are then the items to match.
-The reader does not invent filenames for the missing ones.
-An album with `name-failures` greater than 0, or with an `unset` line, still has unread names.
-Refresh decides which read is kept.
-
-Album ids are private album links.
-Do not share the file.
-
-## Album links
-
-`archive/.gphoto-sync/album-links.tsv` is the link file.
-The file is absent until the first reconcile that has a row.
-Do not create it empty.
-A file that exists and does not start with `# gphoto-album-links 1` is `album links are not version 1`.
-The parser does not rewrite it into the new shape and does not delete it.
-
-```
-# gphoto-album-links 1
-<catalog-album-id>	<archive-relative toml path>
-```
-
-Two columns.
-The path is archive-relative, such as `2010/07/album.toml`, with no leading slash.
-UTF-8, LF only.
-A CR is an error.
-No blank line.
-Nothing is trimmed.
-A second row for the same id or the same path is an error.
-A pending album has no row.
-Human command output does not print the catalog id.
+# Photos UI
 
 ## Refresh
 
+`photo refresh` only reads Google Photos.
+
 `photo refresh` builds the catalog: every album with its item count and id, then each item's filename and date, album by
 album.
-It runs in the calling process.
 It does not shell out.
 It rewrites `catalog.txt` for every album, or for the titles the operator names.
 A change the operator makes in Google Photos by hand is not written into `catalog.txt` until a refresh reads that album.
@@ -283,7 +86,7 @@ A change the operator makes in Google Photos by hand is not written into `catalo
      name.
      One call per album is enough for an owner-only pass (260 albums in under a minute).
      Write an `owner` line for that album id only when the owner isn't the signed-in account.
-     The label is written as Catalog specifies.
+     The label is written as Files describes.
      The album owner is not the uploader of an item.
    - Item details: RPC `fDcn4b`, args `[itemKey, 1, null, null, 1]`.
      In `result[0]`: `[2]` = filename, `[3]` = timestamp ms (UTC), `[4]` = timezone offset ms. Item date =
@@ -327,10 +130,10 @@ A change the operator makes in Google Photos by hand is not written into `catalo
      The other keys are `phase` and the counts that phase has: `seen`, `pass`, `need`, `done`, `total`, and `error`.
      The file contains no album id.
    - Never invent a filename for a name that was not read.
-     Write an `unset` line for that returned item, as Catalog describes.
+     Write an `unset` line for that returned item, as Files describes.
      Write an `error` line when the number of returned item keys is less than the album-list count, or when any name was
      not read.
-     Fill `of`, `got`, and `name-failures` as Catalog requires.
+     Fill `of`, `got`, and `name-failures` as Files describes.
 5. **Resume.** Reuse `albums.tsv` only when `phase` is `items` and that file was written as one whole replacement after
    the short-scroll checks passed.
    Check 4 compares that saved card list, not a TSV of only the missing albums.
@@ -514,326 +317,11 @@ A file that fails the version line is an error, not a cue to parse the old shape
 `photo refresh` is the command.
 This section is its procedure.
 
-## Album files
-
-Match one catalog album to the archive and write one album file.
-Title grammar and on-disk paths are the archive-layout section of `README.adoc` in this repository.
-A historical album file is external.
-The key may be absent.
-`external = true` is still external.
-`google-album-id` stays unset.
-
-`photo reconcile` links every catalog album to the files already in the archive.
-It is not `photo agent album-file`.
-Reconcile is that command.
-
-`google-title` and `owner` mean what the archive-layout section of the README says.
-An `owner` line is Catalog.
-
-An album with an `owner` line is shared.
-`photo agent album-file` does not rename it.
-`google-title` is the exact catalog title, including its spaces.
-`owner` is the label on that line.
-The path title is still the local file, chosen from the working title below.
-
-An album with no `owner` line, whose Google title is the path title, leaves `google-title` unset.
-When the catalog title differs from that path title, `photo agent album-file` prints `rename yes`.
-A rename the operator wants is `photo agent rename-album`.
-`--current` is the exact catalog title.
-`--new` is the path title.
-
-An album with no `owner` line, whose Google title is an override, stores that exact string in `google-title`.
-`photo agent rename-album` is still the rename.
-`--current` is the exact catalog title.
-`--new` is a string the operator chose.
-
-Sync compares Library API media ids and does not match filenames, so it cannot reconcile a hand-made album.
-`photo agent album-file` stops at the local file.
-It does not publish, sync, or run `repair --names`.
-`photo agent move-item` uses the catalog item key, as Requests describes.
-`photo agent delete-item` moves one library item to trash, as Delete describes.
-
-### Names
-
-Take the working title from the catalog title.
-Remove leading and trailing spaces.
-Collapse each run of spaces to one space.
-Use that working title for the local path title.
-When there is no `owner` line and `google-title` is unset, that path title is the `--new` of `photo agent rename-album`.
-`--current` stays the exact catalog title.
-
-### Skip
-
-Skip an `auto-add` album.
-`error`, `name-failures`, and `unset` mean what Catalog says.
-When `name-failures` is 0, match the `item` lines.
-Do not wait for a refetch.
-When `name-failures` is greater than 0, or an `unset` line is present, skip that album until the names are read.
-A working title with no year and no month name is a curated album.
-Leave it as a `.toml` directly in `originals`.
-
-### Match
-
-The program performs the match.
-Join a catalog item to the archive by its filename stem and its civil date.
-The stem matches when that day's folder contains it.
-Ignore extension case.
-Stem case stays exact.
-RAW, JPEG, and THM in one folder are one stem.
-An uploader other than the signed-in account still counts when the stem matches.
-An item with no local file stays in Google Photos.
-
-When the raw stem is absent from the archive, drop one leading prefix, whichever is longest.
-The prefixes are `MVIMG_`, `PXL_`, `IMG_`, `VID_`, and `MVI_`, in either case.
-A `.MP` or `.PORTRAIT` tail stays in the stem.
-Accept the remainder only when that same day's folder contains it.
-A stem found only on the previous or next civil day is a date mismatch, not a match, not a missing item, and not a
-second file.
-A stem found only further away stays unmatched.
-The same camera counter on another day is a different picture.
-
-A still (`jpg` or `gif`) and a video (`mp4`, `mov`, `avi`, or `3gp`) in that day's folder that drop to one stem use a
-trailing `v` on the video only.
-
-The denominator of the match count is the `item` lines.
-The album `count` is not the denominator.
-Items the `error` line says were not returned are ignored.
-The match rate does not decide whether to write the file.
-Write the file from the pairs that match.
-A catalog item with no local file stays out of `include`.
-It is downloaded later into `archive/.gphoto-sync/.download/`, as Download describes.
-`photo file` files a dated download from there.
-Zero local matches still get a file.
-`include` is then empty.
-
-### Leftover name
-
-Tokens are whitespace-separated words of the working title.
-Remove the 4-digit year of the items.
-Remove a day number that is one of the item days.
-Remove one English month name, or its abbreviation (`Jan`, `Feb`, `Mar`, `Apr`, `May`, `Jun`, `Jul`, `Aug`, `Sep`,
-`Sept`, `Oct`, `Nov`, `Dec`), when other name words remain.
-Remove that single month word even when the span crosses into a later month.
-`2010 February Purim Seuda` leaves `Purim Seuda`.
-`2019 Feb 3 Bar Mitzvah Gold` leaves `Bar Mitzvah Gold`.
-
-Two month words stay in the leftover.
-They are not a span.
-Turn the hyphen between them into a space, and keep any words after them.
-`2011 March-April` stays `March April`.
-A leftover that is nothing but those month words is dropped, and the title has no name.
-`2009 December` and `2009 July` have no name.
-
-A day number that is not an item day stays in the name.
-`19 Kislev` keeps `19` because those items are not on the 19th.
-When the leftover starts with a digit, write no file.
-The scanner treats that `.toml` as a picture sidecar.
-
-### File
-
-One album.
-A picture may be in several albums.
-Date grain and an optional name are not types.
-The file sits in the start folder, next to the pictures or the day folders.
-The title is not the path.
-An existing destination is an error unless `--replace`.
-That is a curated file at the archive root, a month file, and a day file.
-Day folders do hold non-digit album files.
-
-A catalog album that is not a `YYYY/MM` title uses the catalog items' days.
-The start is the earliest of those days.
-The end is the latest.
-The name is the leftover.
-`include` lists only the matched pairs, which may be empty.
-A leftover that is only month words is dropped.
-One civil day with an empty leftover is `YYYY/MM/DD/album.toml`.
-Use `all` when every local stem that day is matched.
-Otherwise that day uses the compressor lines.
-A stem with `bad-raw = true` and no JPEG still counts.
-
-`include` is the compressor output over the matched `(day, stem)` set.
-`all` is every picture whose folder day is in the title span.
-`all except` is that set minus stems missing on every day they occur, and only when that line is strictly shorter than
-the per-day lines.
-Otherwise write per-day lines.
-Do not merge days into one range.
-A stem range is a maximal contiguous slice of that day's scanned stems, of equal width, in string order.
-Quote a stem only when a bare token would be wrong: a space, `"`, `\`, `..`, or the word `except`.
-Write the bare form otherwise.
-`include = ["all"]` is the local spelling of `all`.
-A client album still receives the stem.
-`all` is still legal.
-The external claim is not a reason to leave the stem out of the client album.
-
-Both albums may list a shared stem.
-There is no narrower-wins rule.
-
-A `YYYY/MM` catalog title stays a month title, including a partial month.
-It does not become a file in the first day folder, and the English month is not a name.
-The file is `originals/YYYY/MM/album.toml` when the leftover is empty, or `originals/YYYY/MM/Name.toml` when a real
-label remains.
-`all` on that file is used only when every local day in the month that has pictures has at least one matched pair, and
-the number of missing local `(day, stem)` pairs is at most `max(5, (localPairs * 2) / 100)`.
-`localPairs` is that count of local `(day, stem)` pairs, on days that have pictures.
-The arithmetic is integer arithmetic, not floating point.
-When the heuristic passes, `include` is `["all"]`.
-When it fails, the album span stays the month, the title is still `YYYY/MM` or `YYYY/MM/Name`, and `include` is
-`Include.compress(None, claimed, universe)`.
-`claimed` is the matched `(day, stem)` set, and `universe` is the local pictures in the month.
-That is per-day lines, and not album-level `all` or `all except`.
-Write that file.
-The match rate does not decide.
-A day span that already reaches a later month stays a day span.
-
-| Situation | File | Title | Include |
-|---|---|---|---|
-| Heuristic passes, no real leftover | `originals/YYYY/MM/album.toml` | `YYYY/MM` | `["all"]` |
-| Heuristic passes, a real label remains | `originals/YYYY/MM/Name.toml` | `YYYY/MM/Name` | `["all"]` |
-| Heuristic fails | `originals/YYYY/MM/album.toml` or `Name.toml` | `YYYY/MM` or `YYYY/MM/Name` | per-day lines, not album-level `all` or `all except` |
-
-### Toml
-
-Client files start with `external = false`.
-External files omit the key.
-Then write quoted `google-title` and `owner` when set, then `google-album-id` and `published-title` when they are
-already set, then `include`, one string per line.
-A legacy `external = true` line is not rewritten.
-Quote a stem inside an include entry only when a bare token would be wrong.
-Store `google-title` and `owner` exactly, with their spaces.
-Leave the file as written.
-Do not run the file through jtoml.
-jtoml sorts keys and drops comments.
-
-### Check
-
-The command enforces `Include.expand` in process before the rename.
-It does not shell out.
-In the ordinary case, the expansion equals the matched `(day, stem)` set.
-When the month heuristic passes, the expansion equals the local universe of the month, the matched set is a subset,
-every day that has pictures has a match, and the number of missing `(day, stem)` pairs is at most the cap in the File
-section.
-A failed check writes no file.
-From this repository, run `./gradlew run --args='album claims YYYY/MM' --quiet`.
-That line stays as a human check.
-The picture line's `albums=` value contains the title just written, with no spaces after commas.
-There is no `dated=` column.
-An empty claim prints `albums=-`.
-
-### Reconcile
-
-`photo reconcile` reads `catalog.txt` and `album-links.tsv`.
-The link grammar is Album links.
-`photo reconcile` does not call `photo agent album-file`.
-A rename is `photo agent rename-album`.
-
-Pending means the file contains `external = false` and the id is empty.
-A missing key is not pending.
-There is no pending key.
-Reconcile does not create, rewrite, or delete a pending file.
-A pending album has no link row.
-
-`pending-rename` is not pending.
-It is an external file with no `owner` line and an empty `google-title`, matched to a catalog album whose title differs
-from the path title.
-The text line is `pending-rename` and the path.
-The text line does not include a catalog id.
-Reconcile does not write that file.
-Reconcile does not add a link row for that match.
-A link row that already names the file stays.
-
-The first link of an external file uses the working title.
-That title splits the catalog title on spaces, drops empty tokens, and rejoins them.
-When `google-title` is present, the match is that exact catalog title.
-Otherwise the match is the working title against the path title.
-If the path that placement would use already exists, the working titles agree, and the file is not `pending-rename`,
-reconcile links that file.
-It does not create a second file.
-If that path exists and the working titles disagree, reconcile reports it and skips it.
-It does not overwrite.
-Two catalog titles that place to one free path record one create.
-The extra album is `ambiguous title` and is not linked.
-Two catalog titles that place to one existing path are both `ambiguous title`.
-Neither album takes that file.
-
-After a row exists, the catalog id is the identity.
-A later rename keeps the file path and does not move the file.
-It sets `google-title` to the exact new catalog title when the omit rule below stores that key.
-If that title newly parses as a different date span, reconcile reports it and leaves the file.
-
-Omit `google-title` only when the album has no owner.
-A shared album keeps `google-title` equal to the exact catalog title even when that equals the path title.
-A file that `checkGoogle` would reject is reported and skipped.
-Reconcile does not write `owner` onto a file that has `google-album-id`.
-It does not write `google-album-id`.
-An empty catalog title is not written.
-Reconcile skips that album instead of storing `google-title = ""` or an empty `published-title`.
-
-A published client album contains the line `external = false` and the id.
-A file with the id and without that line does not read.
-The first link is `published-title`, the title the client last wrote.
-The UI id is stored only in `album-links.tsv`.
-It is not copied into `google-album-id`.
-When the matched include differs, reconcile updates `include`.
-On that client album the same splice sets `published-title` to the desired title the file will have after the splice.
-That is the new `google-title` when that line is stored, otherwise the path title.
-The next `photo publish` then does not call `updateAlbumTitle`.
-When the catalog title equals the path title, omit `google-title` and set `published-title` to the path title if it
-differs.
-External albums do not gain a `published-title`.
-
-`--delete` removes only a toml whose stored link id is gone.
-Day-folder pictures stay.
-Without `--delete`, a gone file is reported and kept, and its link row stays so a later `--delete` still sees it.
-An external file that never linked is reported and kept.
-`--dry-run` prints the classes and writes neither toml nor `album-links.tsv`.
-`--dry-run --delete` prints `gone` and its link rows are the rows a real `--delete` would keep.
-It still does not remove the toml.
-
-Classes are `create`, `update`, `gone`, `pending`, `pending-rename`, and `skipped`.
-`photo agent drift` reports those classes and writes nothing.
-
-### Filing
-
-`photo file` reads `<archive>/.gphoto-sync/.download/` only.
-There is no config key.
-The staging layout is Download.
-A dated file is `YYYY/MM/DD/<catalog filename>`.
-When the catalog date is `-`, the directory is `undated`.
-Undated files stay there and are not filed.
-Nothing inside `.download/` is renamed.
-The strip happens on the archive name.
-
-The destination name drops one leading prefix, whichever is longest, as Match does, and lowercases a known extension.
-That is the same repair `repair --names` uses.
-The command plans each day once, on that day's files plus every staged file for that day.
-A video gains a trailing `v` when a still of the repaired stem is in that set, including one staged with the video.
-A stem that is empty or does not start with a digit stays staged.
-
-The destination is `<archive>/YYYY/MM/DD/<name>`.
-The command creates the day directory.
-If the planned stem is absent on the staged day and `resolve` hits the previous or next civil day, print
-`date-mismatch <catalog-day> <catalog-filename> <archive-day> <stem>`, do not create the day directory, and do not
-write.
-The staged file stays in `.download`.
-A stem found only further away stays the current file-or-keep behavior.
-It never overwrites an archive file.
-If the destination exists, or the repaired name would collide with a different picture, the staged file stays and the
-command reports it.
-The same catalog date and filename in two albums is one staged file and one archive file.
-Items in no album are out of scope.
-This command does not download and does not call Google.
-Other people's items that the Download control can fetch stay on `photo agent download-item`.
-`--dry-run` prints the actions and writes nothing.
-
 ## Push
 
-`photo push` edits external albums through the Photos UI.
 It is not part of `photo publish`.
 It does not create a Library API album, does not write `google-album-id`, and does not call `batchCreate`.
 
-Push scope is an external file with no `owner` line.
-External is a missing key or `external = true`.
-An `owner` line is skipped.
 An app-created album stays on `photo publish` and `photo sync`.
 A file with no `album-links.tsv` row is skipped.
 A link whose album is absent from the catalog is skipped.
@@ -870,13 +358,10 @@ A real run takes one refresh lock and one browser.
 It calls `takeOut`, `putInAlbum`, and the upload function.
 It does not shell out to `photo agent`.
 Each clean success publishes before the next action.
-On failure, stop.
-That action leaves `catalog.txt` byte-identical.
 Earlier actions in the run may already have published.
 The failure says `catalog unchanged` when this run published nothing, and `catalog updated` when an earlier action
 already published.
 Recovery is one-click when the confirm did not run, and refresh-only when it did.
-The operator refreshes the named titles and runs `photo push` again.
 The next run plans from the new catalog.
 It does not retry a refresh-only step by clicking it.
 The command does not write an album toml, `status.txt`, `albums.tsv`, or `parts/`.
@@ -884,10 +369,7 @@ Do not invent or guess a `batchexecute` RPC for this.
 
 ## Requests
 
-`photo agent rename-album` changes one album title.
 The album has no `owner` line.
-`--current` equals the catalog title exactly.
-`--new` is non-empty and differs from `--current`.
 The control is More options, then the menuitem Edit album, Rename album, or Rename.
 Replace the title field and confirm with Done, or with Enter when Done is absent.
 After the live title equals `--new`, that album line's title becomes `--new`.
@@ -895,9 +377,6 @@ The album id, the count, the owner line, and the item lines stay.
 
 `photo agent set-description` sets one item's description.
 The item key is an `item` line on exactly one album.
-`--current` equals that filename.
-`--new` may be empty.
-A tab or a newline in `--new` is rejected.
 Open info when the panel is closed.
 The control is the button whose aria-label is Open info, or the i key.
 The empty field's text is Add a description.
@@ -909,8 +388,6 @@ The catalog is not written.
 
 `photo agent set-date` sets one item's date taken.
 The item key is an `item` line on exactly one album.
-`--current` equals that filename.
-`--new` is `YYYY-MM-DD HH:MM` local.
 In the info panel, open the control whose aria-label starts with `Date taken`.
 Open info first when that control is absent.
 The fields are Year, Month, Day, Hour, Minutes, and AM/PM.
@@ -925,10 +402,7 @@ The item key, the filename, the uploader, and the album count stay.
 A read that shows a different day leaves the old date.
 
 `photo agent download-item` downloads one item into the staging directory in Download.
-`--title` names the album.
-`--id` is required when more than one album has that title, and it must match that title.
 The item key is one `item` line on that album.
-`--current` equals that filename.
 This is not the unique-across-catalog check.
 A filename of `.`, `..`, or a string containing `/` is rejected.
 The control is More options, then the menuitem whose accessible name starts with Download.
@@ -941,11 +415,6 @@ Google Photos is not changed.
 The command does not replace an archive original.
 `photo file` is still the filer.
 
-`photo agent add-to-album` adds one item to an existing album.
-`--title` names the source album and `--dest` names the destination album.
-`--id` is required when more than one album has the source title, and it must match.
-`--dest-id` is required when more than one album has the destination title, and it must match.
-The source item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
 The destination is a different album.
 Before Chrome opens, the command refuses when the destination has an `owner` line, when the destination is `auto-add`,
 when `name-failures` is greater than 0, or when any `unset` line is present.
@@ -978,10 +447,6 @@ Anything else leaves `catalog.txt` byte-identical.
 A miss before Add to album or before the destination option is one-click.
 After the destination option was clicked, a live read that is not the clean case is refresh-only.
 
-`photo agent remove-from-album` removes one item from an album.
-`--title` names the album.
-`--id` is required when more than one album has that title, and it must match.
-The item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
 The command does not require the uploader to be `-` and does not reject an `owner` line.
 It opens the item the way `photo agent download-item` opens it.
 It does not use the album-grid Select photos path.
@@ -1002,10 +467,6 @@ A miss before Remove from album or before the Remove button is one-click.
 After the Remove button was clicked, a source key that is still present is refresh-only.
 
 `photo agent move-item` moves one item from the source album to the destination album in one session.
-`--title` names the source album and `--dest` names the destination album.
-`--id` is required when more than one album has the source title, and it must match.
-`--dest-id` is required when more than one album has the destination title, and it must match.
-The source item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
 The command does not require the uploader to be `-` and does not reject an `owner` line on the source.
 The destination is a different album.
 `acceptPut` runs on the destination before Chrome opens, and again on the reread under the lock.
@@ -1034,16 +495,11 @@ Recovery is refresh-only and the text names both titles.
 If `putInAlbum` returned the clean key and `takeOut` then fails, recovery is refresh-only, the text names both titles,
 and neither album is published.
 A catalog read that throws after both halves return is refresh-only and leaves the file byte-identical.
-Success names the action and both titles.
-Stdout has no album id and no item key.
 
 `photo agent upload-item` uploads one archive file into an existing album, as Upload describes.
 `photo agent create-album` creates an empty album, as Create describes.
 `photo agent delete-album` deletes an album and leaves library items, as Delete album describes.
 `photo agent delete-item` moves one library item to Google Photos trash, as Delete describes.
-`--title` names the album.
-`--id` is required when more than one album has that title, and it must match.
-The item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
 Before Chrome opens, the album has no `owner` line and the item's uploader is `-`.
 A refusal is usage.
 Chrome stays closed and `catalog.txt` stays byte-identical.
@@ -1072,7 +528,7 @@ Album titles are not unique, and some are not safe directory names.
 The same date and filename in two albums is one file here.
 Nothing in this directory is renamed.
 `photo file` is still the filer.
-It files a dated download into the archive day folder, as Filing describes.
+It files a dated download into the archive day folder, as Files describes.
 The strip happens on the archive name.
 Undated files stay in `undated/`.
 The program does not read `.download` as archive pictures.
@@ -1116,10 +572,6 @@ The archive inbox `.upload` is a different directory.
 
 ### Upload
 
-`photo agent upload-item` uploads one archive file into an existing album.
-The positional is `path`.
-`--dest` names the destination album.
-`--dest-id` is required when more than one album has that title, and it must match.
 This is not `batchCreate`.
 The command does not call `Publish`.
 Before Chrome opens, the command refuses when `path` is outside the archive, when the extension is not `jpg`, `jpeg`,
@@ -1161,14 +613,11 @@ After the file was chosen, a live read that is not the clean case is refresh-onl
 
 ### Create
 
-`photo agent create-album` creates an empty album.
-`--title` is the only flag.
 The command does not call `Publish.createAlbum`.
 The command does not write an album toml.
 Linking stays `photo reconcile` or `photo agent album-file`.
 Before Chrome opens, the command refuses an empty title, a title that contains a tab, a CR, or a newline, and a title
 that already names a stored album.
-A missing `--title` is usage.
 A refusal is usage.
 Chrome stays closed and `catalog.txt` stays byte-identical.
 The command opens `https://photos.google.com/albums`.
@@ -1196,10 +645,6 @@ Do not invent or guess a `batchexecute` RPC for this.
 
 ### Delete
 
-`photo agent delete-item` moves one library item to Google Photos trash.
-`--title` names the album.
-`--id` is required when more than one album has that title, and it must match.
-The item is that album's one `item` line whose key is `--item` and whose filename equals `--current`.
 Before Chrome opens, the album has no `owner` line and the item's uploader is `-`.
 A refusal is usage.
 Chrome stays closed and `catalog.txt` stays byte-identical.
@@ -1227,11 +672,6 @@ When the confirm ran and the source key is still present, `catalog.txt` stays by
 
 ### Delete album
 
-`photo agent delete-album` deletes an album and leaves its photos and videos in the library.
-`--title` names the album.
-`--id` is required when more than one album has that title, and it must match.
-The command is the confirmation.
-There is no confirmation file and no `--yes`.
 Before Chrome opens, the album has no `owner` line and it is not `auto-add`.
 A refusal is usage.
 Chrome stays closed and `catalog.txt` stays byte-identical.
@@ -1273,159 +713,3 @@ Do not invent or guess a `batchexecute` RPC for this.
 `photo agent upload-item` is the applier for uploading one archive file into an existing album.
 `photo agent create-album` is the applier for creating an empty album.
 `photo agent delete-album` is the applier for deleting an album.
-
-## Agent reads
-
-When `photo` is on `PATH`, call the command and use its JSON.
-Do not parse `catalog.txt`, sidecar TOML, or the `YYYY/MM/DD` tree to answer these questions.
-The grammars stay in their own sections for an agent that does not have the program.
-This section does not restate the catalog grammar.
-It does not document the MCP JSON-RPC envelope, the socket path, or the Grok config.
-A truncated tool result is incomplete.
-
-### photo agent stems
-
-`photo agent stems <day>` lists that day's grouped stems.
-The command does not write.
-A line is the stem, then the extensions sorted and joined with `+`.
-The metadata comes from sidecar TOML, not from EXIF.
-JSON has `day` and `stems`.
-Each stem has `stem`, `extensions`, and `metadata`.
-A `metadata` key that is unset is absent.
-The keys that may be present are `source`, `timestamp`, `date`, `bad-raw`, `orientation`, `google-media-item-id`,
-`already-in-google`, and `uploader`.
-Keep `google-media-item-id` out of chat.
-
-### photo agent years
-
-`photo agent years` lists the archive years.
-The command does not write.
-A line is the year, with no leading slash, such as `2009`.
-JSON has `years`, an array of those strings.
-The JSON has no album id, item key, or `google-media-item-id`.
-
-### photo agent months
-
-`photo agent months <year>` lists the months of one year.
-The command does not write.
-A line is the archive-relative month, with no leading slash, such as `2010/07`.
-JSON has `year`, `present`, and `months`.
-`present` is false when that year directory is absent, and `months` is then empty.
-The JSON has no album id, item key, or `google-media-item-id`.
-
-### photo agent days
-
-`photo agent days <month>` lists the days of one month.
-The month is `YYYY/MM`, such as `2010/07`.
-The command does not write.
-A line is the archive-relative day, with no leading slash, such as `2010/07/19`.
-JSON has `month`, `present`, and `days`.
-`present` is false when that month directory is absent, and `days` is then empty.
-The JSON has no album id, item key, or `google-media-item-id`.
-
-### photo agent claims
-
-`photo agent claims <path>` lists album claims for one day.
-The path is that day.
-The command does not write.
-A line is `<day>/<stem> albums=<title>,<title>`, with titles sorted and no spaces after commas.
-An empty claim and an excluded-only claim both print `albums=-`.
-JSON has `path`, `present`, and `claims`.
-Each claim has `path`, `stem`, `albums`, and `excludedOnly`.
-`albums` is titles only.
-`excludedOnly` is how JSON tells an empty claim from an excluded-only claim.
-`Pictures.plan` omits a stem that has only `toml`, `thm`, or `tif`, so both `agent stems` and `claims` omit it, and a
-day of only `2412.tif` is `present: true` and `"claims": []`.
-When the day directory is absent, `present` is false and `claims` is empty.
-The JSON has no album id, item key, or `google-media-item-id`.
-
-### photo agent catalog
-
-`photo agent catalog` lists every catalog album, sorted by title.
-The command does not write.
-A line is `AgentCommands.catalogLine`: the quoted title, `count=<count> items=<items>`, then `owned` or
-`owner="<label>"`, and, when set, `auto-add`, `error got=<got> of=<of> name-failures=<n>`, `unset=<n>`, and `ambiguous`.
-The line does not include the album id.
-JSON has `albums`.
-Each album has `id`, `title`, `count`, `owned`, `owner`, `autoAdd`, `error`, `unset`, `items`, and `ambiguous`.
-`owner` and `error` may be null.
-When `error` is an object it has `got`, `of`, and `nameFailures`.
-Keep the album id out of chat.
-
-### photo agent items
-
-`photo agent items [--id <id>] <album>` lists that album's item and unset rows.
-The album is an exact catalog title.
-The command does not write.
-An auto-add album prints `auto-add`.
-Otherwise a line is `<filename> <date> <uploader>`, and an unset line is `unset <date> <uploader>`.
-On the line, `date` and `uploader` are `-` when the catalog has no value.
-JSON has `id`, `error`, `items`, and `unsets`.
-Each item has `filename`, `date`, `key`, and `uploader`.
-Each unset has `date`, `key`, and `uploader`.
-In JSON, `date` and `uploader` are null when the catalog has no value.
-`error` is the same nullable object as catalog.
-Keep the album id and the item key out of chat.
-
-### photo agent match
-
-`photo agent match [--id <id>] <album>` matches that album's items to local stems.
-The command does not write.
-A line is `matched <n> of <m>`, then one `<day> <filename> <stem>` line per hit, then one `unmatched <day> <filename>`
-line per miss, and that day is `-` when the catalog date is `-`.
-A date mismatch in that non-hit section is `date-mismatch <catalog-day> <filename> <archive-day> <stem>`.
-An auto-add album prints `skipped auto-add`.
-An album with unread names prints `skipped unread names`.
-JSON has `id`, `matched`, `unmatched`, and `dateMismatches`.
-Each matched element has `day` and `stem`.
-`unmatched` is an array of strings.
-Each `dateMismatches` element has `catalogDay`, `filename`, `archiveDay`, and `stem`.
-Keep the album id and every unmatched string out of chat.
-
-### photo agent locate
-
-`photo agent locate <day> <stem>` lists catalog rows that match one local stem.
-The command does not write.
-The stem is the grouped stem `photo agent stems` lists.
-The catalog filename uses the prefix rule in Match.
-A date of `-` is not a row, and `photo agent missing` lists those items.
-A line is the album title, the date `YYYY-MM-DD`, the filename, and the uploader.
-The title is not quoted.
-The line has no album id and no item key.
-More than one row is `ambiguous: true` with every row present.
-JSON has `day`, `stem`, `directory`, `present`, `ambiguous`, and `matches`.
-Each match has `title`, `date`, `filename`, `uploader`, `id`, and `key`.
-When the day directory is absent, `directory` and `present` are false and `matches` is empty.
-When the stem is not in that day's grouped stems, `directory` is true, `present` is false, and `matches` is empty.
-Keep the album id and the item key out of chat.
-
-### photo agent include
-
-`photo agent include [--span <span>] <year>/<month>/<day>/<stem> …` prints compressed include lines.
-The command does not write.
-The human line is `Include.render`.
-JSON has `rendered` and `logical`, each an array of strings.
-The JSON has no album id, item key, or `google-media-item-id`.
-
-### photo agent drift
-
-`photo agent drift` reports reconcile drift.
-The command does not write.
-The human line is `Reconcile.line`.
-JSON has `actions`.
-Each action has `class`, `title`, `path`, `reason`, and `id`.
-`reason` and `id` may be null, and both keys are present.
-Keep the album id out of chat.
-
-### photo agent missing
-
-`photo agent missing` lists every catalog item whose filename stem is absent from that civil day's folder.
-A stem on the previous or next civil day is not a missing line, and a stem found only further away still is.
-The command does not write.
-A line is `missing <title> <date> <filename> <uploader>`.
-The title is not quoted.
-`date` and `uploader` are the string `-` when the catalog has no value.
-The line does not include a catalog id or an item key.
-JSON has `missing`.
-Each element has `title`, `date`, `filename`, `uploader`, and `key`.
-Keep the item key out of chat.

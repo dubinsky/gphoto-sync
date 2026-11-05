@@ -90,7 +90,7 @@ object Pictures:
 
   private val droppedPrefixes: Seq[String] = Seq("MVIMG_", "PXL_", "IMG_", "VID_", "MVI_")
 
-  // One list. Match calls this; the Match section of protocol.md is the same longest prefix.
+  // One list. Match calls this; the Match section of docs/files.md is the same longest prefix.
   private[photo] def dropOnePrefix(stem: String): String =
     droppedPrefixes
       .find(prefix => stem.take(prefix.length).equalsIgnoreCase(prefix))
