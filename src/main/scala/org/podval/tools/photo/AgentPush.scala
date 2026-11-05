@@ -24,12 +24,12 @@ private[photo] object AgentPush:
   private enum PushAction:
     case Remove(albumId: String, key: String, current: String, albumTitle: String)
     case Add(
-        sourceId: String,
-        key: String,
-        current: String,
-        destinationId: String,
-        albumTitle: String,
-        sourceTitle: String
+      sourceId: String,
+      key: String,
+      current: String,
+      destinationId: String,
+      albumTitle: String,
+      sourceTitle: String
     )
     case Upload(destinationId: String, pathText: String, albumTitle: String)
 
@@ -52,19 +52,19 @@ private[photo] object AgentPush:
       case Upload(_, _, albumTitle)       => albumTitle
 
   private final case class PushStop(
-      line: String,
-      step: String,
-      recovery: String,
-      detail: String,
-      title: String
+    line: String,
+    step: String,
+    recovery: String,
+    detail: String,
+    title: String
   )
 
   private final case class PushRow(path: String, fileAlbum: Album, catalog: Catalog.Album)
 
   private final case class PushDay(
-      directory: File,
-      grouped: Map[String, Set[String]],
-      sidecars: Map[String, Metadata]
+    directory: File,
+    grouped: Map[String, Set[String]],
+    sidecars: Map[String, Metadata]
   )
 
   // A later album is not replanned after an earlier publish.
@@ -100,9 +100,9 @@ private[photo] object AgentPush:
       album.unsets.nonEmpty
 
   private def planAlbum(
-      session: Session,
-      row: PushRow,
-      stored: Seq[Catalog.Album]
+    session: Session,
+    row: PushRow,
+    stored: Seq[Catalog.Album]
   ): (Session, Seq[PushAction]) =
     val (ready, facts) = pushDays(row.fileAlbum).foldLeft((session, Map.empty[LocalDate, PushDay])):
       case ((current, acc), day) =>
@@ -139,9 +139,9 @@ private[photo] object AgentPush:
         PushAction.Remove(row.catalog.id, item.key, item.filename, row.catalog.title)
 
   private def pushAdds(
-      row: PushRow,
-      desired: Set[(LocalDate, String)],
-      hits: Map[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]]
+    row: PushRow,
+    desired: Set[(LocalDate, String)],
+    hits: Map[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]]
   ): Seq[PushAction] =
     desired.toSeq
       .flatMap: pair =>
@@ -170,11 +170,11 @@ private[photo] object AgentPush:
           (Seq.empty[Int], Seq.empty[Int], Seq.empty[Int])
 
   private def pushUploads(
-      session: Session,
-      row: PushRow,
-      desired: Set[(LocalDate, String)],
-      facts: Map[LocalDate, PushDay],
-      hits: Map[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]]
+    session: Session,
+    row: PushRow,
+    desired: Set[(LocalDate, String)],
+    facts: Map[LocalDate, PushDay],
+    hits: Map[(LocalDate, String), Seq[(Catalog.Album, Catalog.Item)]]
   ): Seq[PushAction] =
     val archive: File = session.root.configuration.archive
     desired.toSeq
@@ -208,8 +208,8 @@ private[photo] object AgentPush:
     literal.orElse(fallback).map(row => Album.relative(archive, row.file))
 
   private def pushStem(
-      facts: Map[LocalDate, PushDay],
-      item: Catalog.Item
+    facts: Map[LocalDate, PushDay],
+    item: Catalog.Item
   ): Option[(LocalDate, String)] =
     item.date.flatMap: day =>
       facts
@@ -269,9 +269,9 @@ private[photo] object AgentPush:
         catch case _: Exception => ()
 
   private def applyPush(
-      ui: PhotosAct,
-      session: Session,
-      action: PushAction
+    ui: PhotosAct,
+    session: Session,
+    action: PushAction
   ): Either[PushStop, (Session, String)] =
     try
       action match

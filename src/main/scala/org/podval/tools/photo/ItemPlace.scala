@@ -7,20 +7,20 @@ private object ItemPlace:
   private final case class Pic(path: String, day: LocalDate, stem: String, month: YearMonth)
 
   private final case class Working(
-      file: File,
-      album: Album,
-      current: Seq[Include.Entry],
-      drops: Seq[(LocalDate, String)],
-      adds: Seq[(LocalDate, String)]
+    file: File,
+    album: Album,
+    current: Seq[Include.Entry],
+    drops: Seq[(LocalDate, String)],
+    adds: Seq[(LocalDate, String)]
   )
 
   private final case class Created(file: File, album: Album)
 
   private final case class Spoken(
-      lines: Seq[String],
-      created: Seq[String],
-      excluded: Seq[(String, String)],
-      included: Seq[(String, String)]
+    lines: Seq[String],
+    created: Seq[String],
+    excluded: Seq[(String, String)],
+    included: Seq[(String, String)]
   ):
     def addCreate(title: String): Spoken =
       copy(lines = lines :+ s"create $title", created = created :+ title)
@@ -153,10 +153,10 @@ private object ItemPlace:
         )
 
   private def dropPair(
-      files: Map[String, Working],
-      pair: (LocalDate, String),
-      universe: Map[LocalDate, Set[String]],
-      other: Working => Boolean
+    files: Map[String, Working],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]],
+    other: Working => Boolean
   ): Map[String, Working] =
     files.foldLeft(files):
       case (acc, (key, working)) =>
@@ -188,16 +188,16 @@ private object ItemPlace:
     titles.sorted
 
   private def excludePairs(
-      files: Iterable[Working],
-      pic: Pic,
-      other: Working => Boolean
+    files: Iterable[Working],
+    pic: Pic,
+    other: Working => Boolean
   ): Seq[(String, String)] =
     excludeTitles(files, pic, other).map(title => title -> pic.path)
 
   private def replay(
-      fresh: Album,
-      working: Working,
-      universe: Map[LocalDate, Set[String]]
+    fresh: Album,
+    working: Working,
+    universe: Map[LocalDate, Set[String]]
   ): Seq[Include.Entry] =
     val dropped: Seq[Include.Entry] = working.drops.foldLeft(fresh.include): (cur, pair) =>
       Include.drop(cur, fresh.span, pair, universe)
@@ -207,11 +207,11 @@ private object ItemPlace:
 
   // The file can change before this lock. Replay on what is there now.
   private def commit(
-      originals: File,
-      dryRun: Boolean,
-      files: Iterable[Working],
-      creates: Seq[Created],
-      spoken: Spoken
+    originals: File,
+    dryRun: Boolean,
+    files: Iterable[Working],
+    creates: Seq[Created],
+    spoken: Spoken
   ): Json =
     val changed: Seq[Working] =
       files.filter(working => !AlbumCommand.same(working.album.include, working.current)).toSeq

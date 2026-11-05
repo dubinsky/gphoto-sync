@@ -831,12 +831,12 @@ class ServeTest extends AnyFlatSpec, Matchers:
     case other           => fail(other.toString)
 
   private def rendered(
-      session: Session,
-      ok: Boolean,
-      text: Option[String] = None,
-      error: Option[String] = None,
-      value: Option[Json] = None,
-      id: Option[String] = None
+    session: Session,
+    ok: Boolean,
+    text: Option[String] = None,
+    error: Option[String] = None,
+    value: Option[Json] = None,
+    id: Option[String] = None
   ): String =
     Serve.render(id, ok, text, error, value, Serve.archiveOf(session))
 
@@ -850,10 +850,10 @@ class ServeTest extends AnyFlatSpec, Matchers:
     """{"id":"""" + id + "\"," + line.drop(1)
 
   private def respond(
-      session: Session,
-      lines: Seq[String],
-      executeCommand: (Session, Cli.Parsed) => (Session, Result) = (current, parsed) =>
-        Cli.toOperation(parsed).execute(current)
+    session: Session,
+    lines: Seq[String],
+    executeCommand: (Session, Cli.Parsed) => (Session, Result) = (current, parsed) =>
+      Cli.toOperation(parsed).execute(current)
   ): List[String] =
     val (_, rendered) =
       lines.foldLeft((session, List.empty[String])):
@@ -867,9 +867,9 @@ class ServeTest extends AnyFlatSpec, Matchers:
     rendered
 
   private def shell(
-      session: Session,
-      lines: Seq[String],
-      exchange: Option[(Session, List[String]) => Result]
+    session: Session,
+    lines: Seq[String],
+    exchange: Option[(Session, List[String]) => Result]
   ): (Int, String, String) =
     val out: ByteArrayOutputStream = new ByteArrayOutputStream
     val err: ByteArrayOutputStream = new ByteArrayOutputStream
@@ -966,11 +966,11 @@ class ServeTest extends AnyFlatSpec, Matchers:
     output
 
   private final class Running(
-      val errBytes: ByteArrayOutputStream,
-      holder: AtomicReference[ServerSocketChannel],
-      stopped: CountDownLatch,
-      runtime: File,
-      session: Session
+    val errBytes: ByteArrayOutputStream,
+    holder: AtomicReference[ServerSocketChannel],
+    stopped: CountDownLatch,
+    runtime: File,
+    session: Session
   ):
     def err: String = text(errBytes)
 

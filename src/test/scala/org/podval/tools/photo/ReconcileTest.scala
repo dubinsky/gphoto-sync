@@ -635,9 +635,9 @@ class ReconcileTest extends AnyFlatSpec, Matchers:
         fail(other.toString)
 
   private def shell(
-      session: Session,
-      lines: Seq[String],
-      exchange: Option[(Session, List[String]) => Result]
+    session: Session,
+    lines: Seq[String],
+    exchange: Option[(Session, List[String]) => Result]
   ): (Int, String, String) =
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream

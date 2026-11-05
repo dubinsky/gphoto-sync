@@ -21,11 +21,11 @@ private[photo] object Serve:
   private[photo] final case class Request(id: Option[String], argv: List[String])
   private[photo] final case class Problem(id: Option[String], message: String)
   private[photo] final case class Response(
-      id: Option[String],
-      ok: Boolean,
-      text: Option[String],
-      error: Option[String],
-      archive: String
+    id: Option[String],
+    ok: Boolean,
+    text: Option[String],
+    error: Option[String],
+    archive: String
   )
 
   private[photo] final case class Called(response: Response, value: Json)
@@ -91,12 +91,12 @@ private[photo] object Serve:
             else responseOf(seen).map(response => Called(response, seen.json.getOrElse(Json.Null)))
 
   private[photo] def render(
-      id: Option[String],
-      ok: Boolean,
-      text: Option[String],
-      error: Option[String],
-      value: Option[Json],
-      archive: String
+    id: Option[String],
+    ok: Boolean,
+    text: Option[String],
+    error: Option[String],
+    value: Option[Json],
+    archive: String
   ): String =
     val fields: Seq[(String, Json)] =
       id.toSeq.map(text => "id" -> Json.Str(text)) ++
@@ -144,21 +144,21 @@ private[photo] object Serve:
 
   // Only a string id and a string argv are kept. Every other JSON value is skipped or rejected.
   private final case class Seen(
-      id: Option[String] = None,
-      ids: Int = 0,
-      argv: Option[List[String]] = None,
-      argvs: Int = 0,
-      ok: Option[Boolean] = None,
-      oks: Int = 0,
-      archive: Option[String] = None,
-      archives: Int = 0,
-      text: Option[String] = None,
-      texts: Int = 0,
-      error: Option[String] = None,
-      errors: Int = 0,
-      values: Int = 0,
-      json: Option[Json] = None,
-      other: Boolean = false
+    id: Option[String] = None,
+    ids: Int = 0,
+    argv: Option[List[String]] = None,
+    argvs: Int = 0,
+    ok: Option[Boolean] = None,
+    oks: Int = 0,
+    archive: Option[String] = None,
+    archives: Int = 0,
+    text: Option[String] = None,
+    texts: Int = 0,
+    error: Option[String] = None,
+    errors: Int = 0,
+    values: Int = 0,
+    json: Option[Json] = None,
+    other: Boolean = false
   )
 
   private enum Take:
@@ -202,11 +202,11 @@ private[photo] object Serve:
   // allowEmpty is true only before the first field, so a trailing comma is not an empty object.
   @tailrec
   private def fields(
-      rest: String,
-      seen: Seen,
-      take: Take,
-      allowEmpty: Boolean,
-      retain: Boolean = false
+    rest: String,
+    seen: Seen,
+    take: Take,
+    allowEmpty: Boolean,
+    retain: Boolean = false
   ): Walk =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("}") then Walk.Done(seen, left.drop(1))
@@ -228,11 +228,11 @@ private[photo] object Serve:
                 else Walk.Failed(next)
 
   private def accept(
-      key: String,
-      rest: String,
-      seen: Seen,
-      take: Take,
-      retain: Boolean
+    key: String,
+    rest: String,
+    seen: Seen,
+    take: Take,
+    retain: Boolean
   ): Option[(Seen, String)] =
     take match
       case Take.Skip =>
@@ -334,10 +334,10 @@ private[photo] object Serve:
 
   @tailrec
   private def elements(
-      rest: String,
-      acc: List[String],
-      mixed: Boolean,
-      allowEmpty: Boolean
+    rest: String,
+    acc: List[String],
+    mixed: Boolean,
+    allowEmpty: Boolean
   ): ArrayRead =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("]") then
@@ -457,9 +457,9 @@ private[photo] object Serve:
 
   @tailrec
   private def readObject(
-      rest: String,
-      acc: List[(String, Json)],
-      allowEmpty: Boolean
+    rest: String,
+    acc: List[(String, Json)],
+    allowEmpty: Boolean
   ): Either[String, (Json, String)] =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("}") then Right((Json.Obj(acc.reverse), left.drop(1)))
@@ -483,9 +483,9 @@ private[photo] object Serve:
 
   @tailrec
   private def readArray(
-      rest: String,
-      acc: List[Json],
-      allowEmpty: Boolean
+    rest: String,
+    acc: List[Json],
+    allowEmpty: Boolean
   ): Either[String, (Json, String)] =
     val left: String = skip(rest)
     if allowEmpty && left.startsWith("]") then Right((Json.Arr(acc.reverse), left.drop(1)))
@@ -534,9 +534,9 @@ private[photo] object Serve:
 
   // Tests pass a temp directory. Production passes $XDG_RUNTIME_DIR/org.podval.tools.photo.
   private[photo] def listen(
-      session: Session,
-      runtime: File,
-      onBound: ServerSocketChannel => Unit = _ => ()
+    session: Session,
+    runtime: File,
+    onBound: ServerSocketChannel => Unit = _ => ()
   ): Int =
     prepare(runtime)
     val lockFile: File = File(runtime, lockName)
@@ -589,9 +589,9 @@ private[photo] object Serve:
     ensure(directory, () => spawnServe(directory), acceptWaitMs)
 
   private[photo] def ensure(
-      directory: File,
-      spawn: () => Either[String, Unit],
-      waitMs: Long
+    directory: File,
+    spawn: () => Either[String, Unit],
+    waitMs: Long
   ): Either[String, Unit] =
     if canConnect(directory) then Right(())
     else if lockHeld(directory) then
@@ -603,11 +603,11 @@ private[photo] object Serve:
           if waitUntilConnect(directory, waitMs) then Right(()) else Left("serve did not start")
 
   private[photo] def client(
-      runtime: File,
-      argv: List[String],
-      archive: String,
-      stop: Boolean = false,
-      waitMs: Long = acceptWaitMs
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    stop: Boolean = false,
+    waitMs: Long = acceptWaitMs
   ): Attempt =
     exchangeOrWait(runtime, argv, archive, stop, waitMs, dropValue) match
       case Reply.Absent if stop =>
@@ -620,11 +620,11 @@ private[photo] object Serve:
         Attempt.Done(called.response)
 
   private[photo] def call(
-      runtime: File,
-      argv: List[String],
-      archive: String,
-      waitMs: Long = acceptWaitMs,
-      id: Option[String] = None
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    waitMs: Long = acceptWaitMs,
+    id: Option[String] = None
   ): Either[String, Called] =
     exchangeOrWait(runtime, argv, archive, stop = false, waitMs, readValued, id) match
       case Reply.Absent =>
@@ -689,13 +689,13 @@ private[photo] object Serve:
         Cli.Step.Continue(session)
 
   private def exchangeOrWait(
-      runtime: File,
-      argv: List[String],
-      archive: String,
-      stop: Boolean,
-      waitMs: Long,
-      readBody: String => Either[Problem, Called],
-      id: Option[String] = None
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    stop: Boolean,
+    waitMs: Long,
+    readBody: String => Either[Problem, Called],
+    id: Option[String] = None
   ): Reply =
     def once(): Reply = exchange(runtime, argv, archive, stop, waitMs, readBody, id)
     once() match
@@ -709,14 +709,14 @@ private[photo] object Serve:
         other
 
   private def exchange(
-      runtime: File,
-      argv: List[String],
-      archive: String,
-      stop: Boolean,
-      waitMs: Long,
-      readBody: String => Either[Problem, Called],
-      id: Option[String] = None,
-      noSend: Boolean = false
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    stop: Boolean,
+    waitMs: Long,
+    readBody: String => Either[Problem, Called],
+    id: Option[String] = None,
+    noSend: Boolean = false
   ): Reply =
     openChannel(File(runtime, socketName)) match
       case None =>
@@ -727,15 +727,15 @@ private[photo] object Serve:
         finally channel.close()
 
   private def talk(
-      channel: SocketChannel,
-      runtime: File,
-      argv: List[String],
-      archive: String,
-      stop: Boolean,
-      waitMs: Long,
-      readBody: String => Either[Problem, Called],
-      id: Option[String] = None,
-      noSend: Boolean = false
+    channel: SocketChannel,
+    runtime: File,
+    argv: List[String],
+    archive: String,
+    stop: Boolean,
+    waitMs: Long,
+    readBody: String => Either[Problem, Called],
+    id: Option[String] = None,
+    noSend: Boolean = false
   ): Reply =
     readLine(channel, Some(waitMs)) match
       case Line.TimedOut | Line.Eof =>

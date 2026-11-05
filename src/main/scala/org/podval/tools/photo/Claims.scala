@@ -4,9 +4,9 @@ import java.io.File
 
 object Claims:
   final case class Resolved(
-      path: String,
-      albums: Seq[String],
-      excludedOnly: Boolean
+    path: String,
+    albums: Seq[String],
+    excludedOnly: Boolean
   ):
     def line: String =
       val text: String = if albums.isEmpty then "-" else albums.mkString(",")

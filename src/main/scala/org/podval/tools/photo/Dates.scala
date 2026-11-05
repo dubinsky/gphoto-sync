@@ -125,24 +125,24 @@ object Dates:
     case FolderDay
 
   final case class Clock(
-      civil: LocalDateTime,
-      offset: Option[ZoneOffset],
-      source: Source
+    civil: LocalDateTime,
+    offset: Option[ZoneOffset],
+    source: Source
   ) derives CanEqual:
     def day: LocalDate = civil.toLocalDate
 
   final case class Observed(
-      extension: String,
-      votes: Boolean,
-      clock: Option[Clock]
+    extension: String,
+    votes: Boolean,
+    clock: Option[Clock]
   ) derives CanEqual
 
   final case class Assessment(
-      clock: Option[Clock],
-      timestampsVary: Boolean,
-      timestampWrong: Boolean,
-      dayShouldBe: Option[Day],
-      disagreement: Option[Ranked.Disagree]
+    clock: Option[Clock],
+    timestampsVary: Boolean,
+    timestampWrong: Boolean,
+    dayShouldBe: Option[Day],
+    disagreement: Option[Ranked.Disagree]
   ) derives CanEqual:
     // Folder midnight is not a capture time, and a disagreement has no winner to stamp.
     def writesMtime: Option[Clock] =
@@ -160,11 +160,11 @@ object Dates:
     Math.abs(ChronoUnit.MINUTES.between(left, right))
 
   final case class RankInput(
-      timestamp: Option[LocalDateTime],
-      date: Option[LocalDate],
-      embedded: Option[Clock],
-      filename: Option[Clock],
-      folder: Option[Clock]
+    timestamp: Option[LocalDateTime],
+    date: Option[LocalDate],
+    embedded: Option[Clock],
+    filename: Option[Clock],
+    folder: Option[Clock]
   ) derives CanEqual
 
   enum Ranked derives CanEqual:
@@ -204,10 +204,10 @@ object Dates:
 
   // Disagree and Undated store no clock and do not stamp, even when a caller passes raw mtimes.
   def assessment(
-      picture: Picture,
-      ranked: Ranked,
-      timestampsVary: Boolean,
-      currents: Iterable[Instant]
+    picture: Picture,
+    ranked: Ranked,
+    timestampsVary: Boolean,
+    currents: Iterable[Instant]
   ): Assessment =
     val moveTo: Option[Day] = dayShouldBe(picture, ranked)
     ranked match
@@ -256,10 +256,10 @@ object Dates:
   private val exifDateTime: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
 
   def parseExifClock(
-      text: String,
-      sub: Option[String],
-      offsetText: Option[String],
-      source: Source
+    text: String,
+    sub: Option[String],
+    offsetText: Option[String],
+    source: Source
   ): Option[Clock] =
     val trimmed: String = text.trim
     if trimmed.isEmpty || trimmed == "0000:00:00 00:00:00" then None
@@ -315,9 +315,9 @@ object Dates:
     else text
 
   def chooseZ(
-      digits: LocalDateTime,
-      filename: Option[Clock],
-      zone: ZoneId
+    digits: LocalDateTime,
+    filename: Option[Clock],
+    zone: ZoneId
   ): Clock =
     val instant: Instant = digits.toInstant(ZoneOffset.UTC)
     val shifted: LocalDateTime = instant.atZone(zone).toLocalDateTime

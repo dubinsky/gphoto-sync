@@ -4,11 +4,11 @@ import java.io.File
 import org.podval.tools.photo.Catalog
 
 private[photo] final case class AlbumCard(
-    id: String,
-    title: String,
-    countText: String,
-    auth: String,
-    leaves: String = ""
+  id: String,
+  title: String,
+  countText: String,
+  auth: String,
+  leaves: String = ""
 )
 
 // Gradle tests pass a fake. The Playwright class is loaded only when this default is called.

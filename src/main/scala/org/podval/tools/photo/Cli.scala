@@ -38,22 +38,22 @@ object Cli:
 
   private[photo] sealed trait Parsed
   private[photo] final case class Ls(
-      path: Option[String],
-      long: Boolean,
-      recursive: Boolean,
-      nameContains: Option[String],
-      hasExtension: Option[String],
-      property: Option[String],
-      timestampFromNameFormat: Option[String],
-      timestampFromName: Boolean,
-      timestampFromNameOnly: Boolean,
-      timestampsVary: Boolean,
-      hasMetadata: Boolean,
-      noNormal: Boolean,
-      noTimestamp: Boolean,
-      wrongTimestamp: Boolean,
-      wrongDay: Boolean,
-      wrong: Boolean
+    path: Option[String],
+    long: Boolean,
+    recursive: Boolean,
+    nameContains: Option[String],
+    hasExtension: Option[String],
+    property: Option[String],
+    timestampFromNameFormat: Option[String],
+    timestampFromName: Boolean,
+    timestampFromNameOnly: Boolean,
+    timestampsVary: Boolean,
+    hasMetadata: Boolean,
+    noNormal: Boolean,
+    noTimestamp: Boolean,
+    wrongTimestamp: Boolean,
+    wrongDay: Boolean,
+    wrong: Boolean
   ) extends Parsed
   private[photo] final case class ItemShowArgs(picture: String) extends Parsed
   private[photo] final case class ItemSetArgs(dryRun: Boolean, property: String, picture: String) extends Parsed
@@ -61,7 +61,7 @@ object Cli:
   private[photo] final case class AlbumShowArgs(title: String) extends Parsed
   private[photo] final case class AlbumClaimsArgs(path: Option[String]) extends Parsed
   private[photo] final case class AlbumNewArgs(dryRun: Boolean, span: Option[String], name: Option[String])
-      extends Parsed
+    extends Parsed
   private[photo] final case class AlbumRmArgs(dryRun: Boolean, title: String) extends Parsed
   private[photo] final case class AlbumMvArgs(dryRun: Boolean, from: String, to: String) extends Parsed
   private[photo] final case class AlbumIncludeArgs(dryRun: Boolean, title: String, pictures: Seq[String]) extends Parsed
@@ -72,9 +72,9 @@ object Cli:
   private[photo] final case class PublishArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class SyncArgs(path: Option[String], recursive: Boolean, dryRun: Boolean) extends Parsed
   private[photo] final case class RefreshArgs(
-      mode: RefreshPlan.Mode,
-      list: Boolean,
-      allowShrink: Boolean
+    mode: RefreshPlan.Mode,
+    list: Boolean,
+    allowShrink: Boolean
   ) extends Parsed
   private[photo] final case class ReconcileArgs(dryRun: Boolean, delete: Boolean) extends Parsed
   private[photo] final case class FileArgs(dryRun: Boolean) extends Parsed
@@ -83,12 +83,12 @@ object Cli:
   private[photo] final case class CardCopy(dryRun: Boolean, path: Option[String]) extends Parsed
   private[photo] final case class WebArgs(port: Int) extends Parsed
   private[photo] final case class RepairArgs(
-      path: String,
-      names: Boolean,
-      raw: Boolean,
-      timestamps: Boolean,
-      days: Boolean,
-      dryRun: Boolean
+    path: String,
+    names: Boolean,
+    raw: Boolean,
+    timestamps: Boolean,
+    days: Boolean,
+    dryRun: Boolean
   ) extends Parsed
   private[photo] case object LoginArgs extends Parsed
   private[photo] case object StatusArgs extends Parsed
@@ -107,66 +107,66 @@ object Cli:
   private[photo] final case class AgentLocateArgs(day: String, stem: String) extends Parsed
   private[photo] final case class AgentIncludeArgs(span: Option[String], paths: Seq[String]) extends Parsed
   private[photo] final case class AgentAlbumFileArgs(
-      id: Option[String],
-      dryRun: Boolean,
-      replace: Boolean,
-      googleTitle: Option[String],
-      album: String
+    id: Option[String],
+    dryRun: Boolean,
+    replace: Boolean,
+    googleTitle: Option[String],
+    album: String
   ) extends Parsed
   private[photo] final case class RenameAlbumArgs(
-      title: Option[String],
-      current: Option[String],
-      updated: Option[String],
-      id: Option[String]
+    title: Option[String],
+    current: Option[String],
+    updated: Option[String],
+    id: Option[String]
   ) extends Parsed
   private[photo] final case class SetDescriptionArgs(
-      item: Option[String],
-      current: Option[String],
-      updated: Option[String]
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String]
   ) extends Parsed
   private[photo] final case class SetDateArgs(
-      item: Option[String],
-      current: Option[String],
-      updated: Option[String]
+    item: Option[String],
+    current: Option[String],
+    updated: Option[String]
   ) extends Parsed
   private[photo] final case class DownloadItemArgs(
-      title: Option[String],
-      item: Option[String],
-      current: Option[String],
-      id: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
   ) extends Parsed
   private[photo] final case class AddToAlbumArgs(
-      title: Option[String],
-      item: Option[String],
-      current: Option[String],
-      dest: Option[String],
-      id: Option[String],
-      destId: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    dest: Option[String],
+    id: Option[String],
+    destId: Option[String]
   ) extends Parsed
   private[photo] final case class RemoveFromAlbumArgs(
-      title: Option[String],
-      item: Option[String],
-      current: Option[String],
-      id: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
   ) extends Parsed
   private[photo] final case class MoveItemArgs(
-      title: Option[String],
-      item: Option[String],
-      current: Option[String],
-      dest: Option[String],
-      id: Option[String],
-      destId: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    dest: Option[String],
+    id: Option[String],
+    destId: Option[String]
   ) extends Parsed
   private[photo] final case class DeleteItemArgs(
-      title: Option[String],
-      item: Option[String],
-      current: Option[String],
-      id: Option[String]
+    title: Option[String],
+    item: Option[String],
+    current: Option[String],
+    id: Option[String]
   ) extends Parsed
   private[photo] final case class UploadItemArgs(
-      path: Option[String],
-      dest: Option[String],
-      destId: Option[String]
+    path: Option[String],
+    dest: Option[String],
+    destId: Option[String]
   ) extends Parsed
   private[photo] final case class CreateAlbumArgs(title: Option[String]) extends Parsed
   private[photo] final case class DeleteAlbumArgs(title: Option[String], id: Option[String]) extends Parsed
@@ -300,11 +300,11 @@ object Cli:
           other
 
   private[photo] def shell(
-      session: Session,
-      lines: Iterator[String],
-      run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session),
-      exchange: Option[(Session, List[String]) => Result] = None,
-      interactive: Boolean = false
+    session: Session,
+    lines: Iterator[String],
+    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session),
+    exchange: Option[(Session, List[String]) => Result] = None,
+    interactive: Boolean = false
   ): Int =
     // Assigned before each readLine. Tab runs inside that read, so cd is already visible.
     var live: Session = session
@@ -355,17 +355,17 @@ object Cli:
 
   // The socket writes this line on the connection. serveResponse does not print it.
   private[photo] def serveResponse(
-      session: Session,
-      line: String,
-      run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
+    session: Session,
+    line: String,
+    run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session)
   ): (Step, String) =
     val archive: String = Serve.archiveOf(session)
     def reply(
-        id: Option[String],
-        ok: Boolean,
-        text: Option[String],
-        error: Option[String],
-        value: Option[Json]
+      id: Option[String],
+      ok: Boolean,
+      text: Option[String],
+      error: Option[String],
+      value: Option[Json]
     ): String =
       Serve.render(id, ok, text, error, value, archive)
 
@@ -406,10 +406,10 @@ object Cli:
     session.copy(cursor = session.root, style = PathStyle.Serve)
 
   private def step(
-      session: Session,
-      line: String,
-      run: (Session, Parsed) => (Session, Result),
-      exchange: Option[(Session, List[String]) => Result]
+    session: Session,
+    line: String,
+    run: (Session, Parsed) => (Session, Result),
+    exchange: Option[(Session, List[String]) => Result]
   ): Step =
     splitLine(line) match
       case Left(message) =>
@@ -534,9 +534,9 @@ object Cli:
     case _                      => false
 
   private def remoteStep(
-      session: Session,
-      args: List[String],
-      exchange: (Session, List[String]) => Result
+    session: Session,
+    args: List[String],
+    exchange: (Session, List[String]) => Result
   ): Step =
     val argv: List[String] =
       try rewritePaths(session, args)
@@ -613,11 +613,11 @@ object Cli:
       case Serve.Attempt.Done(response)  => Serve.toResult(response)
 
   private[photo] def executeOneShot(
-      session: Session,
-      argv: List[String],
-      parsed: Parsed,
-      runtime: Either[String, File],
-      waitMs: Long = 5000
+    session: Session,
+    argv: List[String],
+    parsed: Parsed,
+    runtime: Either[String, File],
+    waitMs: Long = 5000
   ): Result =
     def cold: Result = toOperation(parsed).execute(session)._2
     if runsInCaller(parsed) then cold
@@ -632,8 +632,8 @@ object Cli:
             case Serve.Attempt.Done(response)  => Serve.toResult(response)
 
   private[photo] def executeStop(
-      runtime: Either[String, File],
-      waitMs: Long = 5000
+    runtime: Either[String, File],
+    waitMs: Long = 5000
   ): Either[String, Serve.Response] =
     runtime match
       case Right(dir) if dir.isDirectory =>
@@ -955,9 +955,9 @@ object Cli:
           case None          => finish(command, values, positionals, front)
 
   private def readFlags(
-      command: Command,
-      args: List[String],
-      values: Values
+    command: Command,
+    args: List[String],
+    values: Values
   ): Either[Outcome, (Values, List[String])] = args match
     case Nil =>
       Right((values, Nil))
@@ -981,11 +981,11 @@ object Cli:
                 readValue(command, flag, attached, rest, values)
 
   private def readValue(
-      command: Command,
-      flag: Flag,
-      attached: Option[String],
-      rest: List[String],
-      values: Values
+    command: Command,
+    flag: Flag,
+    attached: Option[String],
+    rest: List[String],
+    values: Values
   ): Either[Outcome, (Values, List[String])] = flag.kind match
     case BooleanKind =>
       attached match
@@ -1169,7 +1169,7 @@ object Cli:
   private[photo] final case class Optional(name: String, path: Boolean = false) extends Positional
   // schemaName is the JSON key when name is not an identifier. Help still prints name.
   private[photo] final case class Rest(name: String, path: Boolean = false, schemaName: Option[String] = None)
-      extends Positional
+    extends Positional
 
   private[photo] sealed trait FlagKind
   private[photo] case object BooleanKind extends FlagKind
@@ -1179,9 +1179,9 @@ object Cli:
   private[photo] final case class Flag(name: String, alias: Option[String], kind: FlagKind, description: String)
 
   private[photo] final case class Values(
-      bools: Map[String, Boolean] = Map.empty,
-      texts: Map[String, String] = Map.empty,
-      repeats: Map[String, List[String]] = Map.empty
+    bools: Map[String, Boolean] = Map.empty,
+    texts: Map[String, String] = Map.empty,
+    repeats: Map[String, List[String]] = Map.empty
   ):
     // A repeatable flag is not a repeated option.
     def has(name: String): Boolean = bools.contains(name) || texts.contains(name)
@@ -1191,11 +1191,11 @@ object Cli:
       copy(repeats = repeats.updated(name, repeats.getOrElse(name, Nil) :+ value))
 
   private[photo] final case class Command(
-      name: String,
-      help: String,
-      positionals: List[Positional],
-      flags: List[Flag],
-      build: (Values, List[String]) => Parsed
+    name: String,
+    help: String,
+    positionals: List[Positional],
+    flags: List[Flag],
+    build: (Values, List[String]) => Parsed
   )
 
   private val lsLongFlag: Flag = Flag(

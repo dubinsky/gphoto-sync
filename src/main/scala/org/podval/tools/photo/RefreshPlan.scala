@@ -20,12 +20,12 @@ object RefreshPlan:
     case Drop(stored: Catalog.Album)
 
   final case class Diff(
-      cards: Seq[Card],
-      stored: Seq[Catalog.Album],
-      actions: Seq[Action],
-      itemReads: Set[String],
-      named: Set[String],
-      mode: Mode
+    cards: Seq[Card],
+    stored: Seq[Catalog.Album],
+    actions: Seq[Action],
+    itemReads: Set[String],
+    named: Set[String],
+    mode: Mode
   ) derives CanEqual
 
   final case class Prepared(diff: Diff, albums: Seq[Catalog.Album], text: String) derives CanEqual
@@ -41,10 +41,10 @@ object RefreshPlan:
   private val Bom: Array[Byte] = Array(0xef.toByte, 0xbb.toByte, 0xbf.toByte)
 
   def diff(
-      lines: Seq[String],
-      stored: Seq[Catalog.Album],
-      mode: Mode,
-      allowShrink: Boolean
+    lines: Seq[String],
+    stored: Seq[Catalog.Album],
+    mode: Mode,
+    allowShrink: Boolean
   ): Either[String, Diff] =
     guard(lines, useFloor(mode, allowShrink)).flatMap: cards =>
       index(stored).flatMap: storedById =>
@@ -80,19 +80,19 @@ object RefreshPlan:
     Prepared(found, rows.map(_._1), renderLines(rows.map(_._2)))
 
   def plan(
-      lines: Seq[String],
-      stored: Seq[Catalog.Album],
-      mode: Mode,
-      allowShrink: Boolean,
-      reads: Map[String, Catalog.Album] = Map.empty,
-      source: String = ""
+    lines: Seq[String],
+    stored: Seq[Catalog.Album],
+    mode: Mode,
+    allowShrink: Boolean,
+    reads: Map[String, Catalog.Album] = Map.empty,
+    source: String = ""
   ): Either[String, Prepared] =
     diff(lines, stored, mode, allowShrink).map(found => splice(found, reads, source))
 
   def publish(
-      directory: File,
-      prepared: Prepared,
-      move: (File, File) => Unit = moveReplacing
+    directory: File,
+    prepared: Prepared,
+    move: (File, File) => Unit = moveReplacing
   ): Either[String, Unit] =
     val partial: File = File(directory, PartialName)
     val live: File = File(directory, LiveName)
@@ -102,13 +102,13 @@ object RefreshPlan:
       swap(live, partial, previous, move)
 
   def run(
-      directory: File,
-      lines: Seq[String],
-      stored: Seq[Catalog.Album],
-      mode: Mode,
-      allowShrink: Boolean,
-      reads: Map[String, Catalog.Album] = Map.empty,
-      source: String = ""
+    directory: File,
+    lines: Seq[String],
+    stored: Seq[Catalog.Album],
+    mode: Mode,
+    allowShrink: Boolean,
+    reads: Map[String, Catalog.Album] = Map.empty,
+    source: String = ""
   ): Either[String, Prepared] =
     plan(lines, stored, mode, allowShrink, reads, source).flatMap: prepared =>
       publish(directory, prepared).map(_ => prepared)
@@ -183,11 +183,11 @@ object RefreshPlan:
         else Right(acc + onCards.head.id)
 
   private def classify(
-      cards: Seq[Card],
-      stored: Seq[Catalog.Album],
-      storedById: Map[String, Catalog.Album],
-      mode: Mode,
-      named: Set[String]
+    cards: Seq[Card],
+    stored: Seq[Catalog.Album],
+    storedById: Map[String, Catalog.Album],
+    mode: Mode,
+    named: Set[String]
   ): Seq[Action] =
     val cardIds: Set[String] = cards.map(_.id).toSet
     val relevant: Seq[Card] = mode match
@@ -206,11 +206,11 @@ object RefreshPlan:
     case Some(album)                              => Action.Keep(album, card)
 
   private def itemReads(
-      cards: Seq[Card],
-      storedById: Map[String, Catalog.Album],
-      actions: Seq[Action],
-      mode: Mode,
-      named: Set[String]
+    cards: Seq[Card],
+    storedById: Map[String, Catalog.Album],
+    actions: Seq[Action],
+    mode: Mode,
+    named: Set[String]
   ): Set[String] =
     def readable(id: String): Boolean = !storedById.get(id).exists(_.autoAdd)
     mode match
@@ -224,10 +224,10 @@ object RefreshPlan:
           .toSet
 
   private def rewrite(
-      stored: Catalog.Album,
-      card: Card,
-      readItems: Boolean,
-      reads: Map[String, Catalog.Album]
+    stored: Catalog.Album,
+    card: Card,
+    readItems: Boolean,
+    reads: Map[String, Catalog.Album]
   ): Catalog.Album =
     if stored.autoAdd then carried(stored, card, reads)
     else if readItems then taken(card, reads.get(card.id))
@@ -284,10 +284,10 @@ object RefreshPlan:
     blocks.getOrElse(album.id, recordLines(album))
 
   private[photo] def keptLines(
-      stored: Catalog.Album,
-      next: Catalog.Album,
-      readItems: Boolean,
-      blocks: Map[String, Seq[String]]
+    stored: Catalog.Album,
+    next: Catalog.Album,
+    readItems: Boolean,
+    blocks: Map[String, Seq[String]]
   ): Seq[String] =
     val block: Seq[String] = blocks.getOrElse(stored.id, Seq.empty)
     if readItems || block.isEmpty || next.copy(title = stored.title) != stored then recordLines(next)
@@ -360,10 +360,10 @@ object RefreshPlan:
         Left(renameMessage(failed))
 
   private def restore(
-      live: File,
-      previous: File,
-      hadLive: Boolean,
-      move: (File, File) => Unit
+    live: File,
+    previous: File,
+    hadLive: Boolean,
+    move: (File, File) => Unit
   ): Either[String, Unit] =
     if hadLive && !live.isFile && previous.isFile then
       try

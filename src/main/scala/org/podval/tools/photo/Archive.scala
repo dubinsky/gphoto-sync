@@ -8,13 +8,13 @@ import java.time.{LocalDate, YearMonth}
 // Any other non-toml file is stray.
 object Archive:
   final case class Picture(
-      path: String,
-      name: String,
-      directory: File,
-      folderDay: LocalDate,
-      yearMonth: YearMonth,
-      extensions: Set[String],
-      metadata: Metadata
+    path: String,
+    name: String,
+    directory: File,
+    folderDay: LocalDate,
+    yearMonth: YearMonth,
+    extensions: Set[String],
+    metadata: Metadata
   )
 
   final case class Scan(albums: Seq[Album.Loaded], pictures: Seq[Picture]):
@@ -157,10 +157,10 @@ object Archive:
     picturesFrom(originals, month, day, Pictures.group(files, NameMode.Leave))
 
   private def picturesFrom(
-      originals: File,
-      month: DateTree.MonthDir,
-      day: DateTree.DayDir,
-      grouped: Seq[(String, Set[String])]
+    originals: File,
+    month: DateTree.MonthDir,
+    day: DateTree.DayDir,
+    grouped: Seq[(String, Set[String])]
   ): Seq[Picture] =
     val folderDay: LocalDate = LocalDate.of(month.year, month.month, day.day)
     grouped.flatMap: (name, extensions) =>

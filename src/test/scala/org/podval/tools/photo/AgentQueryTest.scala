@@ -929,10 +929,10 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
   private def emptyMatch(id: String): Json = matchValue(id, Seq.empty, Seq.empty)
 
   private def matchValue(
-      id: String,
-      matched: Seq[(String, String)],
-      unmatched: Seq[String],
-      mismatches: Seq[(String, String, String, String)] = Seq.empty
+    id: String,
+    matched: Seq[(String, String)],
+    unmatched: Seq[String],
+    mismatches: Seq[(String, String, String, String)] = Seq.empty
   ): Json =
     Json.Obj(
       Seq(
@@ -992,11 +992,11 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
       fail(other.toString)
 
   private def driftValue(
-      kind: String,
-      title: String,
-      path: String,
-      reason: Option[String],
-      id: Option[String]
+    kind: String,
+    title: String,
+    path: String,
+    reason: Option[String],
+    id: Option[String]
   ): Json =
     Json.Obj(
       Seq(
@@ -1017,11 +1017,11 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
     )
 
   private def locateValue(
-      day: String,
-      stem: String,
-      directory: Boolean,
-      present: Boolean,
-      matches: Seq[Json]
+    day: String,
+    stem: String,
+    directory: Boolean,
+    present: Boolean,
+    matches: Seq[Json]
   ): Json =
     Json.Obj(
       Seq(
@@ -1035,12 +1035,12 @@ class AgentQueryTest extends AnyFlatSpec, Matchers:
     )
 
   private def locateRow(
-      title: String,
-      date: String,
-      filename: String,
-      uploader: String,
-      id: String,
-      key: String
+    title: String,
+    date: String,
+    filename: String,
+    uploader: String,
+    id: String,
+    key: String
   ): Json =
     Json.Obj(
       Seq(

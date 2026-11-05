@@ -25,8 +25,8 @@ object Extension:
   private[photo] var constructed: Long = 0
 
   sealed class Descriptor(
-      val name: String,
-      val dater: Dates.Reader
+    val name: String,
+    val dater: Dates.Reader
   ):
     override def toString: String = name
 

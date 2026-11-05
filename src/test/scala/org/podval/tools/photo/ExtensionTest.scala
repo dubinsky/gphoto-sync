@@ -41,13 +41,13 @@ class ExtensionTest extends AnyFlatSpec, Matchers:
     Extension.all.exists(_.name == "mkv") shouldBe false
 
   private def check(
-      descriptor: Extension.Descriptor,
-      name: String,
-      dater: Dates.Reader,
-      normal: Boolean,
-      video: Boolean,
-      raw: Boolean,
-      image: Boolean
+    descriptor: Extension.Descriptor,
+    name: String,
+    dater: Dates.Reader,
+    normal: Boolean,
+    video: Boolean,
+    raw: Boolean,
+    image: Boolean
   ): Unit =
     descriptor.name shouldBe name
     (descriptor.dater eq dater) shouldBe true

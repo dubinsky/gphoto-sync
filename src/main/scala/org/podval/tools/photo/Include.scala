@@ -66,9 +66,9 @@ object Include:
   // Per-day logical length, and the `all except` length when that candidate exists.
   // A full `all` has no except length. Newlines are not part of either length.
   private[photo] def weights(
-      albumSpan: Option[Title.Span],
-      claimed: Set[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]]
+    albumSpan: Option[Title.Span],
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
   ): (Int, Option[Int]) =
     val prepared: Prepared = prepare(albumSpan, claimed, universe)
     (lengthSum(prepared.perDay), prepared.allExcept.map(entry => logical(entry).length))
@@ -77,10 +77,10 @@ object Include:
   // Equal logical length keeps the per-day lines. Newlines are not part of either length.
   // allowAll false skips both all candidates even when the claimed set is the whole span.
   def compress(
-      albumSpan: Option[Title.Span],
-      claimed: Set[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]],
-      allowAll: Boolean = true
+    albumSpan: Option[Title.Span],
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]],
+    allowAll: Boolean = true
   ): Seq[Entry] =
     val prepared: Prepared = prepare(albumSpan, claimed, universe, allowAll)
     prepared.all
@@ -94,10 +94,10 @@ object Include:
   private final case class Prepared(perDay: Seq[Entry], all: Option[Entry], allExcept: Option[Entry])
 
   private def prepare(
-      albumSpan: Option[Title.Span],
-      claimed: Set[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]],
-      allowAll: Boolean = true
+    albumSpan: Option[Title.Span],
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]],
+    allowAll: Boolean = true
   ): Prepared =
     val widened: Map[LocalDate, Set[String]] = withClaimed(universe, claimed)
     val perDay: Seq[Entry] = perDayLines(claimed, widened)
@@ -114,9 +114,9 @@ object Include:
             Prepared(perDay, None, excepted)
 
   def expand(
-      albumSpan: Option[Title.Span],
-      entry: Entry,
-      universe: Map[LocalDate, Set[String]]
+    albumSpan: Option[Title.Span],
+    entry: Entry,
+    universe: Map[LocalDate, Set[String]]
   ): Set[(LocalDate, String)] =
     val span: Option[Title.Span] = entry match
       case Entry.All(_)             => albumSpan
@@ -127,10 +127,10 @@ object Include:
         claims(albumSpan, entry, day, stem) && !banned.contains(stem)
 
   def drop(
-      include: Seq[Entry],
-      albumSpan: Option[Title.Span],
-      pair: (LocalDate, String),
-      universe: Map[LocalDate, Set[String]]
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]]
   ): Seq[Entry] =
     include.flatMap: entry =>
       if !claims(albumSpan, entry, pair._1, pair._2) then Seq(entry)
@@ -141,11 +141,11 @@ object Include:
 
   // Curated moves do not invent `all`. Dated albums are not rewritten: their date follows the folder.
   def relocate(
-      include: Seq[Entry],
-      albumSpan: Option[Title.Span],
-      from: (LocalDate, String),
-      to: (LocalDate, String),
-      universe: Map[LocalDate, Set[String]]
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    from: (LocalDate, String),
+    to: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]]
   ): Seq[Entry] =
     if !include.exists(entry => claims(albumSpan, entry, from._1, from._2)) then include
     else
@@ -158,10 +158,10 @@ object Include:
   // Album-level all is only an empty include or a lone Entry.All on add, and only a lone Entry.All on remove.
   // A lone Entry.Dates uses compress(None). An empty after does not call compress: empty equals empty would be all.
   def toggle(
-      include: Seq[Entry],
-      albumSpan: Option[Title.Span],
-      pair: (LocalDate, String),
-      universe: Map[LocalDate, Set[String]]
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]]
   ): Seq[Entry] =
     val (alls, others) = include.partition:
       case Entry.All(_)         => true
@@ -176,11 +176,11 @@ object Include:
     else addOne(include, albumSpan, pair, widened, before + pair)
 
   private def removeOne(
-      include: Seq[Entry],
-      albumSpan: Option[Title.Span],
-      pair: (LocalDate, String),
-      universe: Map[LocalDate, Set[String]],
-      after: Set[(LocalDate, String)]
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]],
+    after: Set[(LocalDate, String)]
   ): Seq[Entry] =
     if after.isEmpty then Seq.empty
     else
@@ -194,11 +194,11 @@ object Include:
             if pairs.isEmpty then Seq.empty else compress(None, pairs, universe)
 
   private def addOne(
-      include: Seq[Entry],
-      albumSpan: Option[Title.Span],
-      pair: (LocalDate, String),
-      universe: Map[LocalDate, Set[String]],
-      after: Set[(LocalDate, String)]
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]],
+    after: Set[(LocalDate, String)]
   ): Seq[Entry] =
     include match
       case Seq() =>
@@ -216,18 +216,18 @@ object Include:
 
   // Untouched entries stay in order. The touched group is recompressed at the first touched index.
   private def spliceTouched(
-      include: Seq[Entry],
-      touched: Entry => Boolean
+    include: Seq[Entry],
+    touched: Entry => Boolean
   )(replaced: Seq[Entry] => Seq[Entry]): Seq[Entry] =
     val (prefix, tail) = include.span(entry => !touched(entry))
     val (hit, kept) = tail.partition(touched)
     prefix ++ replaced(hit) ++ kept
 
   private[photo] def add(
-      include: Seq[Entry],
-      albumSpan: Option[Title.Span],
-      pair: (LocalDate, String),
-      universe: Map[LocalDate, Set[String]]
+    include: Seq[Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    universe: Map[LocalDate, Set[String]]
   ): Seq[Entry] =
     val widened: Map[LocalDate, Set[String]] =
       universe.updated(pair._1, universe.getOrElse(pair._1, Set.empty) + pair._2)
@@ -242,8 +242,8 @@ object Include:
     case Entry.Dates(_, _, except) => except
 
   private def withClaimed(
-      universe: Map[LocalDate, Set[String]],
-      claimed: Set[(LocalDate, String)]
+    universe: Map[LocalDate, Set[String]],
+    claimed: Set[(LocalDate, String)]
   ): Map[LocalDate, Set[String]] =
     claimed.foldLeft(universe): (acc, pair) =>
       acc.updated(pair._1, acc.getOrElse(pair._1, Set.empty) + pair._2)
@@ -254,8 +254,8 @@ object Include:
 
   // Each stem in the set is missing on every day it occurs, and every miss is one of those stems.
   private def uniformExcept(
-      pictures: Set[(LocalDate, String)],
-      missing: Set[(LocalDate, String)]
+    pictures: Set[(LocalDate, String)],
+    missing: Set[(LocalDate, String)]
   ): Option[Seq[String]] =
     if missing.isEmpty then None
     else
@@ -265,8 +265,8 @@ object Include:
       Option.when(uniform)(stems.toSeq.sorted)
 
   private def perDayLines(
-      claimed: Set[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]]
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
   ): Seq[Entry] =
     claimed
       .map(_._1)

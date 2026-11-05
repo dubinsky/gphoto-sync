@@ -5,12 +5,12 @@ import java.nio.file.{FileAlreadyExistsException, Files as NFiles}
 import java.time.Instant
 
 final case class Repair(
-    path: String,
-    names: Boolean,
-    raw: Boolean,
-    timestamps: Boolean,
-    days: Boolean,
-    dryRun: Boolean
+  path: String,
+  names: Boolean,
+  raw: Boolean,
+  timestamps: Boolean,
+  days: Boolean,
+  dryRun: Boolean
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     Operation.run(session):
@@ -29,15 +29,15 @@ final case class Repair(
 
 object Repair:
   def run(
-      path: Path,
-      names: Boolean,
-      raw: Boolean,
-      timestamps: Boolean,
-      days: Boolean,
-      dryRun: Boolean,
-      generate: Picture => Unit = RawConverter.DCRaw.generate,
-      setTimestamp: (Picture, String, Instant) => Unit = Dates.FromFile.set,
-      link: (File, File) => Unit = FileDownloads.linkPartial
+    path: Path,
+    names: Boolean,
+    raw: Boolean,
+    timestamps: Boolean,
+    days: Boolean,
+    dryRun: Boolean,
+    generate: Picture => Unit = RawConverter.DCRaw.generate,
+    setTimestamp: (Picture, String, Instant) => Unit = Dates.FromFile.set,
+    link: (File, File) => Unit = FileDownloads.linkPartial
   ): Unit =
     if names then walk(path, if dryRun then NameMode.Preview else NameMode.Apply)
     if raw then each(path)(repairRaw(_, dryRun, generate))
@@ -95,9 +95,9 @@ object Repair:
       act(dryRun, s"$picture: generating '${RawConverter.extension}' from raw file")(generate(picture))
 
   private def repairTimestamps(
-      picture: Picture,
-      dryRun: Boolean,
-      setTimestamp: (Picture, String, Instant) => Unit
+    picture: Picture,
+    dryRun: Boolean,
+    setTimestamp: (Picture, String, Instant) => Unit
   ): Unit =
     PictureAudit(picture).writesMtime.foreach: clock =>
       val instant: Instant = clock.civil.atZone(picture.zone).toInstant

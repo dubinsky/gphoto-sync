@@ -51,25 +51,25 @@ private[photo] object TextLines:
 object Catalog:
   final case class Error(got: Int, of: Int, nameFailures: Int) derives CanEqual
   final case class Item(
-      filename: String,
-      date: Option[LocalDate],
-      key: String,
-      uploader: Option[String]
+    filename: String,
+    date: Option[LocalDate],
+    key: String,
+    uploader: Option[String]
   ) derives CanEqual
   final case class Unset(
-      date: Option[LocalDate],
-      key: String,
-      uploader: Option[String]
+    date: Option[LocalDate],
+    key: String,
+    uploader: Option[String]
   ) derives CanEqual
   final case class Album(
-      id: String,
-      count: Int,
-      title: String,
-      owner: Option[String],
-      autoAdd: Boolean,
-      error: Option[Error],
-      items: Seq[Item],
-      unsets: Seq[Unset]
+    id: String,
+    count: Int,
+    title: String,
+    owner: Option[String],
+    autoAdd: Boolean,
+    error: Option[Error],
+    items: Seq[Item],
+    unsets: Seq[Unset]
   ) derives CanEqual
 
   private val Header: String = "# gphoto-catalog 2"
@@ -88,12 +88,12 @@ object Catalog:
   private final case class UnsetLine(id: String, unset: Unset) extends Line
 
   private final case class Draft(
-      album: Option[(Int, String)] = None,
-      owner: Option[String] = None,
-      autoAdd: Boolean = false,
-      error: Option[Error] = None,
-      items: Seq[Item] = Seq.empty,
-      unsets: Seq[Unset] = Seq.empty
+    album: Option[(Int, String)] = None,
+    owner: Option[String] = None,
+    autoAdd: Boolean = false,
+    error: Option[Error] = None,
+    items: Seq[Item] = Seq.empty,
+    unsets: Seq[Unset] = Seq.empty
   )
 
   private final case class Build(order: Seq[String], drafts: Map[String, Draft]):

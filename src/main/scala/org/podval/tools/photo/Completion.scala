@@ -51,10 +51,10 @@ object Completion:
       None
 
   private def argumentCandidates(
-      session: Session,
-      command: Cli.Command,
-      args: List[String],
-      current: String
+    session: Session,
+    command: Cli.Command,
+    args: List[String],
+    current: String
   ): List[String] =
     val (set, count, eating) = consume(command, args)
     if current.startsWith("-") then flagCandidates(command, set, current)

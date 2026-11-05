@@ -246,11 +246,11 @@ private[photo] object AgentQueries:
         )
 
   private def locateValue(
-      day: String,
-      stem: String,
-      directory: Boolean,
-      present: Boolean,
-      rows: Seq[(Catalog.Album, Catalog.Item, LocalDate)]
+    day: String,
+    stem: String,
+    directory: Boolean,
+    present: Boolean,
+    rows: Seq[(Catalog.Album, Catalog.Item, LocalDate)]
   ): Json =
     Json.Obj(
       Seq(

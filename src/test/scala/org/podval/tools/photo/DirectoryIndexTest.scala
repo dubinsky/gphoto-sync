@@ -306,9 +306,9 @@ class DirectoryIndexTest extends AnyFlatSpec, Matchers:
     (code, out, deltas)
 
   private def shell(
-      session: Session,
-      lines: Seq[String],
-      executeCommand: (Session, Cli.Parsed) => (Session, Result)
+    session: Session,
+    lines: Seq[String],
+    executeCommand: (Session, Cli.Parsed) => (Session, Result)
   ): (Int, String, String) =
     val out: ByteArrayOutputStream = new ByteArrayOutputStream
     val err: ByteArrayOutputStream = new ByteArrayOutputStream

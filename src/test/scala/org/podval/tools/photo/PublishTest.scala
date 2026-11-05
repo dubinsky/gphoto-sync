@@ -1401,13 +1401,13 @@ class PublishTest extends AnyFlatSpec, Matchers:
     Album.read(originals, Album.fileFor(originals, title))
 
   private def run(
-      originals: File,
-      fake: Fake,
-      prefix: Option[String],
-      recursive: Boolean = false,
-      dryRun: Boolean = false,
-      exiftool: Seq[String] => Either[String, Unit] = _ => Right(()),
-      onOpen: () => Unit = () => ()
+    originals: File,
+    fake: Fake,
+    prefix: Option[String],
+    recursive: Boolean = false,
+    dryRun: Boolean = false,
+    exiftool: Seq[String] => Either[String, Unit] = _ => Right(()),
+    onOpen: () => Unit = () => ()
   ): Unit =
     val tempDirectory: File = File(originals.getParentFile, "exif")
     tempDirectory.mkdirs()
@@ -1468,14 +1468,14 @@ class PublishTest extends AnyFlatSpec, Matchers:
     file.delete()
 
   private final class Fake(
-      missingId: Boolean = false,
-      statusMessage: Option[String] = None,
-      failCreateAfter: Option[Int] = None,
-      unowned: Boolean = false,
-      initialRemote: Seq[(String, String)] = Seq.empty,
-      failList: Boolean = false,
-      failCreateTitles: Set[String] = Set.empty,
-      failUpdateTitles: Set[String] = Set.empty
+    missingId: Boolean = false,
+    statusMessage: Option[String] = None,
+    failCreateAfter: Option[Int] = None,
+    unowned: Boolean = false,
+    initialRemote: Seq[(String, String)] = Seq.empty,
+    failList: Boolean = false,
+    failCreateTitles: Set[String] = Set.empty,
+    failUpdateTitles: Set[String] = Set.empty
   ) extends Publish.GoogleTransport:
     val uploads: scala.collection.mutable.ArrayBuffer[File] = scala.collection.mutable.ArrayBuffer.empty
     val events: scala.collection.mutable.ArrayBuffer[String] = scala.collection.mutable.ArrayBuffer.empty

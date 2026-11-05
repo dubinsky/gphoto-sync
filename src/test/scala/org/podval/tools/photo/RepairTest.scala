@@ -605,16 +605,16 @@ class RepairTest extends AnyFlatSpec, Matchers:
       originals.list.length shouldBe 0
 
   private def run(
-      root: Root,
-      path: String,
-      names: Boolean = false,
-      raw: Boolean = false,
-      timestamps: Boolean = false,
-      days: Boolean = false,
-      dryRun: Boolean = false,
-      generate: Picture => Unit = _ => (),
-      setTimestamp: (Picture, String, java.time.Instant) => Unit = (_, _, _) => (),
-      link: (File, File) => Unit = FileDownloads.linkPartial
+    root: Root,
+    path: String,
+    names: Boolean = false,
+    raw: Boolean = false,
+    timestamps: Boolean = false,
+    days: Boolean = false,
+    dryRun: Boolean = false,
+    generate: Picture => Unit = _ => (),
+    setTimestamp: (Picture, String, java.time.Instant) => Unit = (_, _, _) => (),
+    link: (File, File) => Unit = FileDownloads.linkPartial
   ): Unit =
     Repair.run(
       root.parse(path),

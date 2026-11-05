@@ -95,12 +95,12 @@ object FileDownloads:
     catch case e: IllegalArgumentException => Some(e.getMessage)
 
   private def actionFor(
-      day: String,
-      dayDir: File,
-      onDay: Set[String],
-      item: Staged.Dated,
-      standIn: File,
-      rows: Seq[Pictures.Planned]
+    day: String,
+    dayDir: File,
+    onDay: Set[String],
+    item: Staged.Dated,
+    standIn: File,
+    rows: Seq[Pictures.Planned]
   ): Action =
     rows.find(_.file eq standIn) match
       case None =>

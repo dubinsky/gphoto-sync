@@ -6,32 +6,32 @@ import java.time.Instant
 private[photo] final case class FileStamp(name: String, size: Long, mtimeMillis: Long) derives CanEqual
 
 private[photo] final case class ListedExtension(
-    name: String,
-    read: Option[Dates.Clock],
-    current: Instant
+  name: String,
+  read: Option[Dates.Clock],
+  current: Instant
 )
 
 // One complete ls fact row. A missing field is a listing miss, even when grouped is filled.
 private[photo] final case class ListedPicture(
-    stem: String,
-    textPath: String,
-    hasMetadata: Boolean,
-    hasNormal: Boolean,
-    extensionNames: Vector[String],
-    metadata: Metadata,
-    timestampFromName: Option[(Dates.Clock, String)],
-    audit: Dates.Assessment,
-    extensions: Vector[ListedExtension]
+  stem: String,
+  textPath: String,
+  hasMetadata: Boolean,
+  hasNormal: Boolean,
+  extensionNames: Vector[String],
+  metadata: Metadata,
+  timestampFromName: Option[(Dates.Clock, String)],
+  audit: Dates.Assessment,
+  extensions: Vector[ListedExtension]
 )
 
 private[photo] final case class DirEntry(
-    fingerprint: Vector[FileStamp],
-    grouped: Seq[(String, Set[String])],
-    albums: Seq[Album.Loaded],
-    listing: Option[Seq[ListedPicture]],
-    // None means this fill did not parse sidecars. agent stems stores Some so a warm hit
-    // does not list the day again. Listing stays separate so EXIF is not the sidecar path.
-    sidecars: Option[Map[String, Metadata]] = None
+  fingerprint: Vector[FileStamp],
+  grouped: Seq[(String, Set[String])],
+  albums: Seq[Album.Loaded],
+  listing: Option[Seq[ListedPicture]],
+  // None means this fill did not parse sidecars. agent stems stores Some so a warm hit
+  // does not list the day again. Listing stays separate so EXIF is not the sidecar path.
+  sidecars: Option[Map[String, Metadata]] = None
 )
 
 // In-memory for the life of the session. One-shot never reads or fills it.

@@ -196,10 +196,10 @@ private[photo] object WebRoutes:
             else albumResponse(start, view, parsed, file)
 
   private def albumResponse(
-      start: Session,
-      view: CatalogView,
-      parsed: Title.Parsed,
-      file: File
+    start: Session,
+    view: CatalogView,
+    parsed: Title.Parsed,
+    file: File
   ): Either[Rejected, Json] =
     val archive: File = start.root.configuration.archive
     val loaded: Album = Album.read(archive, file)
@@ -244,10 +244,10 @@ private[photo] object WebRoutes:
   private final case class CatalogView(present: Boolean, readable: Boolean, albums: Seq[Catalog.Album], next: Session)
 
   private final case class Observed(
-      reason: Option[String],
-      hits: Set[(LocalDate, String)],
-      unmatched: Seq[Json],
-      next: Session
+    reason: Option[String],
+    hits: Set[(LocalDate, String)],
+    unmatched: Seq[Json],
+    next: Session
   )
 
   private def branchOf(at: String): Either[Rejected, Branch] =
@@ -275,10 +275,10 @@ private[photo] object WebRoutes:
         case _: FileSystemException => Left(Rejected(400, escapeMessage))
 
   private def dayCounts(
-      archive: File,
-      year: String,
-      month: String,
-      children: Seq[File]
+    archive: File,
+    year: String,
+    month: String,
+    children: Seq[File]
   ): Either[Rejected, Seq[Json]] =
     val root: java.nio.file.Path = archive.toPath.toRealPath()
     children
@@ -368,8 +368,8 @@ private[photo] object WebRoutes:
       .distinct
 
   private def groupedDays(
-      archive: File,
-      dates: Seq[LocalDate]
+    archive: File,
+    dates: Seq[LocalDate]
   ): Either[Rejected, List[(LocalDate, Seq[(String, Seq[String])])]] =
     val root: java.nio.file.Path = archive.toPath.toRealPath()
     dates.foldLeft[Either[Rejected, List[(LocalDate, Seq[(String, Seq[String])])]]](Right(Nil)): (acc, date) =>
@@ -386,9 +386,9 @@ private[photo] object WebRoutes:
             case _: FileSystemException => Left(Rejected(400, escapeMessage))
 
   private def tileRows(
-      album: Album,
-      rows: List[(LocalDate, Seq[(String, Seq[String])])],
-      observed: Observed
+    album: Album,
+    rows: List[(LocalDate, Seq[(String, Seq[String])])],
+    observed: Observed
   ): Seq[Json] =
     val universe: Map[LocalDate, Set[String]] = rows.foldLeft(Map.empty[LocalDate, Set[String]]): (acc, row) =>
       val names: Set[String] = row._2.map(_._1).toSet
@@ -406,11 +406,11 @@ private[photo] object WebRoutes:
         else None
 
   private def tileJson(
-      day: LocalDate,
-      stem: String,
-      extensions: Seq[String],
-      desired: Boolean,
-      observed: String
+    day: LocalDate,
+    stem: String,
+    extensions: Seq[String],
+    desired: Boolean,
+    observed: String
   ): Json =
     val shown: String = Title.dayText(day)
     Json.Obj(
@@ -473,11 +473,11 @@ private[photo] object WebRoutes:
           Observed(None, pairs, misses, gathered)
 
   private def join(
-      archive: File,
-      file: File,
-      album: Album,
-      catalog: Seq[Catalog.Album],
-      links: Seq[AlbumLinks.Row]
+    archive: File,
+    file: File,
+    album: Album,
+    catalog: Seq[Catalog.Album],
+    links: Seq[AlbumLinks.Row]
   ): Joined =
     val relative: String = Album.relative(archive, file)
     links.find(_.path == relative) match
@@ -672,9 +672,9 @@ private[photo] object WebRoutes:
         None
 
   private def openSources(
-      archive: File,
-      day: String,
-      rows: Seq[Pictures.Planned]
+    archive: File,
+    day: String,
+    rows: Seq[Pictures.Planned]
   ): Either[Rejected, Seq[(String, File)]] =
     val byExt: Map[String, Pictures.Planned] =
       rows.foldLeft(Map.empty[String, Pictures.Planned]): (acc, row) =>
@@ -840,9 +840,9 @@ private[photo] object WebRoutes:
 
   // No catalog title is all and not external. A readable match is external, with no google-album-id.
   private def seedAlbum(
-      session: Session,
-      archive: File,
-      parsed: Title.Parsed
+    session: Session,
+    archive: File,
+    parsed: Title.Parsed
   ): Either[Rejected, (Album, String)] =
     val span: Title.Span = parsed.span.getOrElse(throw IllegalArgumentException("not a span"))
     val view: CatalogView = viewCatalog(session)
@@ -878,9 +878,9 @@ private[photo] object WebRoutes:
           )
 
   private def createdTitle(
-      start: LocalDate,
-      end: LocalDate,
-      name: Option[String]
+    start: LocalDate,
+    end: LocalDate,
+    name: Option[String]
   ): Either[Rejected, Title.Parsed] =
     val parsed: Title.Parsed = Title.Parsed(Some(Title.Span(start, end, Title.Grain.Day)), name)
     Title.parse(parsed.title) match
@@ -916,8 +916,8 @@ private[photo] object WebRoutes:
         None
 
   private def stemUniverse(
-      archive: File,
-      dates: Seq[LocalDate]
+    archive: File,
+    dates: Seq[LocalDate]
   ): Either[Rejected, Map[LocalDate, Set[String]]] =
     groupedDays(archive, dates).map: rows =>
       rows.foldLeft(Map.empty[LocalDate, Set[String]]): (acc, row) =>

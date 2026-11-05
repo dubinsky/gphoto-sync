@@ -19,8 +19,8 @@ trait Pictures extends Directory:
     Pictures.group(Files.listFiles(directory), names)
 
   private def mkPicture(
-      name: String,
-      extensions: Set[String]
+    name: String,
+    extensions: Set[String]
   ): Picture =
     val nameFull: String = s"$this/$name"
 
@@ -51,12 +51,12 @@ enum NameMode:
 object Pictures:
   // One planned rename. Publish reads the same rows group enacts.
   private[photo] final case class Planned(
-      file: File,
-      stem: String,
-      extension: String,
-      omitted: Boolean,
-      renameRefused: Boolean,
-      notRenamed: Option[String]
+    file: File,
+    stem: String,
+    extension: String,
+    omitted: Boolean,
+    renameRefused: Boolean,
+    notRenamed: Option[String]
   ):
     def finalName: String = s"$stem.$extension"
 

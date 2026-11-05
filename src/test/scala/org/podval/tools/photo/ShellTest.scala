@@ -324,11 +324,11 @@ class ShellTest extends AnyFlatSpec, Matchers:
         fail(other.toString)
 
   private def run(
-      session: Session,
-      lines: Seq[String],
-      executeCommand: (Session, Cli.Parsed) => (Session, Result) = (current, parsed) =>
-        Cli.toOperation(parsed).execute(current),
-      exchange: Option[(Session, List[String]) => Result] = None
+    session: Session,
+    lines: Seq[String],
+    executeCommand: (Session, Cli.Parsed) => (Session, Result) = (current, parsed) =>
+      Cli.toOperation(parsed).execute(current),
+    exchange: Option[(Session, List[String]) => Result] = None
   ): (Int, String, String) =
     val out: ByteArrayOutputStream = new ByteArrayOutputStream
     val err: ByteArrayOutputStream = new ByteArrayOutputStream

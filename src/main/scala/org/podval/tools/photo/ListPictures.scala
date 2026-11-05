@@ -6,22 +6,22 @@ import java.time.{Instant, LocalDateTime, ZoneId}
 import java.time.temporal.ChronoUnit
 
 final case class ListPictures(
-    path: Option[String],
-    long: Boolean,
-    nameContains: Option[String],
-    hasExtension: Option[String],
-    property: Option[String],
-    timestampFromNameFormat: Option[String],
-    timestampFromName: Boolean,
-    timestampFromNameOnly: Boolean,
-    timestampsVary: Boolean,
-    hasMetadata: Boolean,
-    noNormal: Boolean,
-    noTimestamp: Boolean,
-    wrongTimestamp: Boolean,
-    wrongDay: Boolean,
-    wrong: Boolean,
-    recursive: Boolean = false
+  path: Option[String],
+  long: Boolean,
+  nameContains: Option[String],
+  hasExtension: Option[String],
+  property: Option[String],
+  timestampFromNameFormat: Option[String],
+  timestampFromName: Boolean,
+  timestampFromNameOnly: Boolean,
+  timestampsVary: Boolean,
+  hasMetadata: Boolean,
+  noNormal: Boolean,
+  noTimestamp: Boolean,
+  wrongTimestamp: Boolean,
+  wrongDay: Boolean,
+  wrong: Boolean,
+  recursive: Boolean = false
 ) extends Operation:
 
   override def execute(session: Session): (Session, Result) =
@@ -122,9 +122,9 @@ final case class ListPictures(
       throw IllegalArgumentException("not a date-tree path")
 
   private def listDay(
-      session: Session,
-      day: Day,
-      propertyAndValue: Option[Property.AndValue[?]]
+    session: Session,
+    day: Day,
+    propertyAndValue: Option[Property.AndValue[?]]
   ): (Session, Seq[ListedLine]) =
     val fingerprint: Vector[FileStamp] = DirectoryIndex.fingerprint(day.directory, filesOnly = true)
     val cached: Option[DirEntry] = session.cached(day.directory).filter(_.fingerprint == fingerprint)
@@ -186,9 +186,9 @@ final case class ListPictures(
       else sourceFile(picture, Metadata.extension).filter(_.isFile).fold(Metadata.default)(Metadata.read)
 
   private def listedExtension(
-      picture: Picture,
-      extension: Extension,
-      filename: Option[Dates.Clock]
+    picture: Picture,
+    extension: Extension,
+    filename: Option[Dates.Clock]
   ): ListedExtension =
     val corrected: File = picture.file(extension.name)
     if corrected.isFile then ListedExtension(extension.name, extension.read, extension.current)
@@ -270,9 +270,9 @@ final case class ListPictures(
       )
 
   private def lsListed(
-      row: ListedPicture,
-      propertyAndValue: Option[Property.AndValue[?]],
-      zone: ZoneId
+    row: ListedPicture,
+    propertyAndValue: Option[Property.AndValue[?]],
+    zone: ZoneId
   ): Option[ListedLine] =
     val included: Boolean =
       (nameContains.isEmpty || row.stem.contains(nameContains.get)) &&
@@ -346,10 +346,10 @@ final case class ListPictures(
       else value.clock.map(_.civil)
 
   private def itemJson(
-      textPath: String,
-      extensionNames: Seq[String],
-      sidecar: String,
-      audit: Option[Dates.Assessment]
+    textPath: String,
+    extensionNames: Seq[String],
+    sidecar: String,
+    audit: Option[Dates.Assessment]
   ): Json =
     Json.Obj(
       Seq(
@@ -365,10 +365,10 @@ final case class ListPictures(
     Json.Obj(Seq("kind" -> Json.Str("directories"), "entries" -> Json.Arr(entries)))
 
   private final case class ListedLine(
-      text: String,
-      json: Json,
-      when: Option[LocalDateTime],
-      path: String
+    text: String,
+    json: Json,
+    when: Option[LocalDateTime],
+    path: String
   )
 
   private def itemsJson(entries: Seq[ListedLine]): Json =
@@ -391,11 +391,11 @@ final case class ListPictures(
             " NO TIMESTAMP"
 
   private def extensionLine(
-      name: String,
-      read: Option[Dates.Clock],
-      current: Instant,
-      writes: Option[Dates.Clock],
-      zone: ZoneId
+    name: String,
+    read: Option[Dates.Clock],
+    current: Instant,
+    writes: Option[Dates.Clock],
+    zone: ZoneId
   ): String =
     val currentText: String =
       current.atZone(zone).toLocalDateTime.truncatedTo(ChronoUnit.SECONDS).toString

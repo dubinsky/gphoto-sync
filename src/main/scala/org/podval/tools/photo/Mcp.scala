@@ -26,11 +26,11 @@ private[photo] object Mcp:
     case TooLong
 
   private[photo] def run(
-      runtime: Either[String, File],
-      session: Session,
-      input: InputStream,
-      output: OutputStream,
-      waitMs: Long = Serve.acceptWaitMs
+    runtime: Either[String, File],
+    session: Session,
+    input: InputStream,
+    output: OutputStream,
+    waitMs: Long = Serve.acceptWaitMs
   ): Int =
     runtime match
       case Left(message) =>
@@ -85,10 +85,10 @@ private[photo] object Mcp:
     if text.endsWith("\n") then text else text + "\n"
 
   private final case class Live(
-      directory: File,
-      private var session: Session,
-      output: OutputStream,
-      waitMs: Long
+    directory: File,
+    private var session: Session,
+    output: OutputStream,
+    waitMs: Long
   ):
     def frames(input: InputStream): Int =
       @tailrec
@@ -142,10 +142,10 @@ private[photo] object Mcp:
           initialized
 
     private def dispatch(
-        method: String,
-        id: Json,
-        params: Option[Json],
-        initialized: Boolean
+      method: String,
+      id: Json,
+      params: Option[Json],
+      initialized: Boolean
     ): Boolean =
       method match
         case "ping" =>
@@ -423,14 +423,14 @@ private[photo] object Mcp:
     case RestPos(name: String)
 
   private[photo] final case class McpTool(
-      name: String,
-      description: String,
-      params: List[McpParam],
-      required: List[String],
-      readOnlyHint: Boolean,
-      destructiveHint: Boolean,
-      argvHead: List[String],
-      outputSchema: Option[Json]
+    name: String,
+    description: String,
+    params: List[McpParam],
+    required: List[String],
+    readOnlyHint: Boolean,
+    destructiveHint: Boolean,
+    argvHead: List[String],
+    outputSchema: Option[Json]
   ):
     def inputSchema: Json = mcpSchema(params, required)
 
@@ -472,18 +472,18 @@ private[photo] object Mcp:
     }
 
   private[photo] def mcpArgv(
-      tool: McpTool,
-      arguments: Seq[(String, Json)]
+    tool: McpTool,
+    arguments: Seq[(String, Json)]
   ): Either[String, List[String]] =
     readMcpFields(tool.params, arguments).map: values =>
       tool.argvHead ++ mcpTokens(tool.params, values)
 
   private def mcpTool(
-      command: Cli.Command,
-      toolName: String,
-      argvHead: List[String],
-      readOnly: Boolean,
-      destructive: Boolean
+    command: Cli.Command,
+    toolName: String,
+    argvHead: List[String],
+    readOnly: Boolean,
+    destructive: Boolean
   ): McpTool =
     val params: List[McpParam] = command.flags.map(mcpFlag) ++ command.positionals.map(mcpPositional)
     val required: List[String] =
@@ -602,9 +602,9 @@ private[photo] object Mcp:
     )
 
   private def mcpObjectSchema(
-      properties: Seq[(String, Json)],
-      required: Seq[String],
-      nullable: Boolean = false
+    properties: Seq[(String, Json)],
+    required: Seq[String],
+    nullable: Boolean = false
   ): Json =
     val kind: Json =
       if nullable then Json.Arr(Seq(Json.Str("object"), Json.Str("null")))
@@ -895,8 +895,8 @@ private[photo] object Mcp:
   )
 
   private def readMcpFields(
-      params: List[McpParam],
-      fields: Seq[(String, Json)]
+    params: List[McpParam],
+    fields: Seq[(String, Json)]
   ): Either[String, Map[String, Json]] =
     fields.foldLeft[Either[String, Map[String, Json]]](Right(Map.empty)):
       case (Left(message), _) =>

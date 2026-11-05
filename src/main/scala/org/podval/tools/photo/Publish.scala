@@ -38,9 +38,9 @@ object Publish:
 
   private[photo] final case class CreateItem(uploadToken: String, fileName: String)
   private[photo] final case class Created(
-      uploadToken: String,
-      mediaItemId: Option[String],
-      status: Option[String] = None
+    uploadToken: String,
+    mediaItemId: Option[String],
+    status: Option[String] = None
   )
 
   private[photo] trait GoogleTransport extends AutoCloseable:
@@ -70,13 +70,13 @@ object Publish:
   private[photo] def openLibrary(): GoogleTransport = LibraryTransport(Google.newClient())
 
   private[photo] def run(
-      originals: File,
-      prefix: Option[String],
-      recursive: Boolean,
-      dryRun: Boolean,
-      google: () => GoogleTransport,
-      exiftool: Seq[String] => Either[String, Unit],
-      tempDirectory: File
+    originals: File,
+    prefix: Option[String],
+    recursive: Boolean,
+    dryRun: Boolean,
+    google: () => GoogleTransport,
+    exiftool: Seq[String] => Either[String, Unit],
+    tempDirectory: File
   ): Unit =
     val selectedPrefix: Option[String] = prefix.map(_.stripPrefix("/")).filter(_.nonEmpty)
     if Album.needsRecursive(selectedPrefix) && !recursive then
@@ -134,13 +134,13 @@ object Publish:
         )
 
   private def publish(
-      allAlbums: Seq[Album.Loaded],
-      selected: Seq[Claims.Resolved],
-      albums: Map[String, Album.Loaded],
-      work: Seq[Work],
-      ensuredTitles: Seq[String],
-      google: () => GoogleTransport,
-      exiftool: Seq[String] => Either[String, Unit]
+    allAlbums: Seq[Album.Loaded],
+    selected: Seq[Claims.Resolved],
+    albums: Map[String, Album.Loaded],
+    work: Seq[Work],
+    ensuredTitles: Seq[String],
+    google: () => GoogleTransport,
+    exiftool: Seq[String] => Either[String, Unit]
   ): Unit =
     var failureLines: List[String] = Nil
     def fail(picture: String, album: String, message: String): Unit =
@@ -195,11 +195,11 @@ object Publish:
     if failed > 0 then throw IllegalArgumentException("publish failed")
 
   private def uploadNew(
-      work: Seq[Work],
-      ensured: Map[String, String],
-      exiftool: Seq[String] => Either[String, Unit],
-      transport: GoogleTransport,
-      fail: (String, String, String) => Unit
+    work: Seq[Work],
+    ensured: Map[String, String],
+    exiftool: Seq[String] => Either[String, Unit],
+    transport: GoogleTransport,
+    fail: (String, String, String) => Unit
   ): (Seq[(UploadNew, String)], Int) =
     val ready: Seq[UploadNew] = work
       .collect { case item: UploadNew => item }
@@ -232,9 +232,9 @@ object Publish:
         (acc._1 ++ created, acc._2 + already)
 
   private def createBatch(
-      batch: Seq[(UploadNew, String)],
-      transport: GoogleTransport,
-      fail: (String, String, String) => Unit
+    batch: Seq[(UploadNew, String)],
+    transport: GoogleTransport,
+    fail: (String, String, String) => Unit
   ): (Seq[(UploadNew, String)], Int) =
     if batch.isEmpty then (Seq.empty, 0)
     else
@@ -272,10 +272,10 @@ object Publish:
               (stored, already)
 
   private def acceptMediaId(
-      picture: UploadNew,
-      result: Created,
-      owned: Set[String],
-      fail: (String, String, String) => Unit
+    picture: UploadNew,
+    result: Created,
+    owned: Set[String],
+    fail: (String, String, String) => Unit
   ): Option[(UploadNew, String)] =
     result.mediaItemId.filter(_.nonEmpty) match
       case Some(id) if owned.contains(id) =>
@@ -290,9 +290,9 @@ object Publish:
         None
 
   private def rejectMissingId(
-      picture: UploadNew,
-      status: Option[String],
-      fail: (String, String, String) => Unit
+    picture: UploadNew,
+    status: Option[String],
+    fail: (String, String, String) => Unit
   ): Unit =
     val message: String = status
       .filter(_.nonEmpty)
@@ -301,11 +301,11 @@ object Publish:
     fail(picture.path, picture.targets.mkString(","), message)
 
   private def fileIntoAlbums(
-      work: Seq[Work],
-      uploaded: Seq[(UploadNew, String)],
-      ensured: Map[String, String],
-      transport: GoogleTransport,
-      fail: (String, String, String) => Unit
+    work: Seq[Work],
+    uploaded: Seq[(UploadNew, String)],
+    ensured: Map[String, String],
+    transport: GoogleTransport,
+    fail: (String, String, String) => Unit
   ): Int =
     val titleById: Map[String, String] = ensured.map(_.swap)
     val fromNew: Seq[(String, String, String)] = uploaded.flatMap: (picture, mediaId) =>
@@ -332,12 +332,12 @@ object Publish:
                 acc
 
   private def ensure(
-      allAlbums: Seq[Album.Loaded],
-      titles: Seq[String],
-      albums: Map[String, Album.Loaded],
-      pictures: Seq[Claims.Resolved],
-      transport: GoogleTransport,
-      fail: (String, String, String) => Unit
+    allAlbums: Seq[Album.Loaded],
+    titles: Seq[String],
+    albums: Map[String, Album.Loaded],
+    pictures: Seq[Claims.Resolved],
+    transport: GoogleTransport,
+    fail: (String, String, String) => Unit
   ): Map[String, String] =
     if titles.isEmpty then Map.empty
     else
@@ -368,18 +368,18 @@ object Publish:
           ensured
 
   private def failClaimers(
-      title: String,
-      message: String,
-      pictures: Seq[Claims.Resolved],
-      fail: (String, String, String) => Unit
+    title: String,
+    message: String,
+    pictures: Seq[Claims.Resolved],
+    fail: (String, String, String) => Unit
   ): Unit =
     reportClaimers(title, message, pictures, fail)
 
   private def reportClaimers(
-      title: String,
-      message: String,
-      pictures: Seq[Claims.Resolved],
-      report: (String, String, String) => Unit
+    title: String,
+    message: String,
+    pictures: Seq[Claims.Resolved],
+    report: (String, String, String) => Unit
   ): Unit =
     val claimers: Seq[Claims.Resolved] = pictures.filter(_.albums.contains(title))
     if claimers.isEmpty then report("-", title, message)
@@ -404,10 +404,10 @@ object Publish:
   private[photo] final case class Ensured(id: String, remote: Seq[(String, String)], ids: Map[String, String])
 
   private[photo] def ensureOne(
-      loaded: Album.Loaded,
-      remote: Seq[(String, String)],
-      ids: Map[String, String],
-      transport: GoogleTransport
+    loaded: Album.Loaded,
+    remote: Seq[(String, String)],
+    ids: Map[String, String],
+    transport: GoogleTransport
   ): Either[String, Ensured] =
     val album: Album = loaded.album
     album.role match
@@ -468,10 +468,10 @@ object Publish:
         case None     => LibraryMark.Unknown
 
   private def plan(
-      picture: Claims.Resolved,
-      albums: Map[String, Album.Loaded],
-      fact: Archive.Picture,
-      tempDirectory: File
+    picture: Claims.Resolved,
+    albums: Map[String, Album.Loaded],
+    fact: Archive.Picture,
+    tempDirectory: File
   ): Work =
     val titles: Seq[String] = picture.albums
     val targets: Seq[String] = titles.filter: title =>
@@ -525,14 +525,14 @@ object Publish:
   private final case class Broken(path: String, album: String, message: String) extends Work
   private final case class FileExisting(path: String, mediaId: String, targets: Seq[String]) extends Work
   private final case class UploadNew(
-      path: String,
-      targets: Seq[String],
-      metadata: Metadata,
-      metadataFile: File,
-      source: File,
-      bytes: File,
-      extension: String,
-      argv: Option[Seq[String]]
+    path: String,
+    targets: Seq[String],
+    metadata: Metadata,
+    metadataFile: File,
+    source: File,
+    bytes: File,
+    extension: String,
+    argv: Option[Seq[String]]
   ) extends Work
 
   private def localAlbumIds(albums: Seq[Album.Loaded]): Map[String, String] =

@@ -916,9 +916,9 @@ class RefreshTest extends AnyFlatSpec, Matchers:
     ui.ownerCalls shouldBe 0
 
   private def refreshArgs(
-      mode: RefreshPlan.Mode = RefreshPlan.Mode.Incremental,
-      list: Boolean = false,
-      allowShrink: Boolean = false
+    mode: RefreshPlan.Mode = RefreshPlan.Mode.Incremental,
+    list: Boolean = false,
+    allowShrink: Boolean = false
   ): Cli.RefreshArgs = Cli.RefreshArgs(mode, list, allowShrink)
 
   private def parsedOf(argv: String*): Cli.Parsed = Cli.parse(argv.toList) match
@@ -958,10 +958,10 @@ class RefreshTest extends AnyFlatSpec, Matchers:
     )
 
   private final class Fake(
-      cards: Seq[AlbumCard],
-      ownerOf: AlbumCard => Option[String] = _ => None,
-      albumOf: AlbumCard => Catalog.Album = card => okAlbum(card),
-      onCards: () => Unit = () => ()
+    cards: Seq[AlbumCard],
+    ownerOf: AlbumCard => Option[String] = _ => None,
+    albumOf: AlbumCard => Catalog.Album = card => okAlbum(card),
+    onCards: () => Unit = () => ()
   ) extends PhotosUi:
     var cardsCalls: Int = 0
     var ownerCalls: Int = 0
@@ -988,11 +988,11 @@ class RefreshTest extends AnyFlatSpec, Matchers:
     def close(): Unit = closed = true
 
   private def run(
-      session: Session,
-      places: Refresh.Places,
-      args: Cli.RefreshArgs,
-      ui: PhotosUi,
-      pause: () => Unit = () => ()
+    session: Session,
+    places: Refresh.Places,
+    args: Cli.RefreshArgs,
+    ui: PhotosUi,
+    pause: () => Unit = () => ()
   ): (Session, Result) =
     Refresh.run(session, args, _ => ui, places, pause)
 
@@ -1069,10 +1069,10 @@ class RefreshTest extends AnyFlatSpec, Matchers:
     case other                 => fail(other.toString)
 
   private def shell(
-      session: Session,
-      lines: Seq[String],
-      executeCommand: (Session, Cli.Parsed) => (Session, Result),
-      exchange: Option[(Session, List[String]) => Result]
+    session: Session,
+    lines: Seq[String],
+    executeCommand: (Session, Cli.Parsed) => (Session, Result),
+    exchange: Option[(Session, List[String]) => Result]
   ): (Int, String, String) =
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream

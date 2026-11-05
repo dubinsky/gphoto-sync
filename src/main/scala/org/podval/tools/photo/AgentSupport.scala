@@ -89,8 +89,8 @@ private[photo] object AgentSupport:
     case Mismatch(catalogDay: LocalDate, filename: String, archiveDay: LocalDate, stem: String)
 
   def gather(
-      session: Session,
-      album: Catalog.Album
+    session: Session,
+    album: Catalog.Album
   ): (Session, Seq[(LocalDate, String, String)], Seq[NonHit]) =
     album.items.foldLeft(
       (session, Seq.empty[(LocalDate, String, String)], Seq.empty[NonHit])
@@ -165,9 +165,9 @@ private[photo] object AgentSupport:
   // readSidecars parses TOML on a miss and on a grouped hit that never stored it.
   // A hit that already has the map does not list the day again.
   def loadGrouped(
-      session: Session,
-      day: Day,
-      readSidecars: Boolean = false
+    session: Session,
+    day: Day,
+    readSidecars: Boolean = false
   ): (Session, Seq[(String, Set[String])], Map[String, Metadata]) =
     if !day.directory.isDirectory then (session, Seq.empty, Map.empty)
     else
@@ -194,25 +194,25 @@ private[photo] object AgentSupport:
           (next, grouped, known.getOrElse(Map.empty))
 
   private def sidecarMap(
-      directory: File,
-      grouped: Seq[(String, Set[String])],
-      planned: Seq[Pictures.Planned]
+    directory: File,
+    grouped: Seq[(String, Set[String])],
+    planned: Seq[Pictures.Planned]
   ): Map[String, Metadata] =
     grouped.map(row => row._1 -> sidecar(planned, directory, row._1)).toMap
 
   private[photo] def resolve(
-      grouped: Map[String, Set[String]],
-      stem: String,
-      extension: Option[String]
+    grouped: Map[String, Set[String]],
+    stem: String,
+    extension: Option[String]
   ): Option[String] =
     hit(grouped, stem, extension).orElse:
       val stripped: String = Pictures.dropOnePrefix(stem)
       if stripped == stem then None else hit(grouped, stripped, extension)
 
   private def hit(
-      grouped: Map[String, Set[String]],
-      stem: String,
-      extension: Option[String]
+    grouped: Map[String, Set[String]],
+    stem: String,
+    extension: Option[String]
   ): Option[String] =
     grouped
       .get(stem)
@@ -261,10 +261,10 @@ private[photo] object AgentSupport:
     )
 
   private[photo] def matchValue(
-      album: Catalog.Album,
-      hits: Seq[(LocalDate, String)],
-      misses: Seq[String],
-      mismatches: Seq[NonHit.Mismatch]
+    album: Catalog.Album,
+    hits: Seq[(LocalDate, String)],
+    misses: Seq[String],
+    mismatches: Seq[NonHit.Mismatch]
   ): Json =
     Json.Obj(
       Seq(
@@ -304,8 +304,8 @@ private[photo] object AgentSupport:
         finally Refresh.release(channel, lock)
 
   private[photo] def scanDays(
-      session: Session,
-      days: Seq[LocalDate]
+    session: Session,
+    days: Seq[LocalDate]
   ): (Session, Map[LocalDate, Set[String]]) =
     days.foldLeft((session, Map.empty[LocalDate, Set[String]])): (acc, date) =>
       val (current, soFar) = acc

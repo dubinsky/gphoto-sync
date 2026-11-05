@@ -576,10 +576,10 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       Files.read(file) shouldBe body
 
   private def placeValue(
-      dryRun: Boolean,
-      created: Seq[String],
-      excluded: Seq[(String, String)],
-      included: Seq[(String, String)]
+    dryRun: Boolean,
+    created: Seq[String],
+    excluded: Seq[(String, String)],
+    included: Seq[(String, String)]
   ): Json =
     def pairs(values: Seq[(String, String)]): Json = Json.Arr(values.map: (title, path) =>
       Json.Obj(Seq("title" -> Json.Str(title), "path" -> Json.Str(path))))

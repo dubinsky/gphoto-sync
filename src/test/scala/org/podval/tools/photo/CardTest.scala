@@ -385,16 +385,16 @@ class CardTest extends AnyFlatSpec, Matchers:
       response should include("card runs in the calling process")
 
   private final case class Probe(
-      text: String,
-      thrown: Option[Throwable],
-      mounts: Seq[Seq[String]],
-      root: Option[File]
+    text: String,
+    thrown: Option[Throwable],
+    mounts: Seq[Seq[String]],
+    root: Option[File]
   )
 
   private def probe(
-      documents: Seq[String],
-      dryRun: Boolean = false,
-      mountResult: (Int, String) = (0, "")
+    documents: Seq[String],
+    dryRun: Boolean = false,
+    mountResult: (Int, String) = (0, "")
   ): Probe =
     val docs: Iterator[String] = documents.iterator
     val seen = ArrayBuffer.empty[Seq[String]]
@@ -468,13 +468,13 @@ class CardTest extends AnyFlatSpec, Matchers:
 """
 
   private def volume(
-      path: String,
-      rm: String = "true",
-      fstype: String = "\"exfat\"",
-      label: String = "\"CANON\"",
-      mountpoints: String = "[]",
-      children: Seq[String] = Nil,
-      nodeType: String = "part"
+    path: String,
+    rm: String = "true",
+    fstype: String = "\"exfat\"",
+    label: String = "\"CANON\"",
+    mountpoints: String = "[]",
+    children: Seq[String] = Nil,
+    nodeType: String = "part"
   ): String =
     val nested: String = if children.isEmpty then "" else s""","children":[${children.mkString(",")}]"""
     s"""{"name":${jsonString(path.stripPrefix("/dev/"))},"path":${jsonString(path)},"rm":$rm,"type":${jsonString(
@@ -510,10 +510,10 @@ class CardTest extends AnyFlatSpec, Matchers:
     )
 
   private def canon(
-      mountpoints: String,
-      fstype: String = "\"exfat\"",
-      label: String = "\"CANON\"",
-      rm: String = "true"
+    mountpoints: String,
+    fstype: String = "\"exfat\"",
+    label: String = "\"CANON\"",
+    rm: String = "true"
   ): String =
     doc(
       nvme,

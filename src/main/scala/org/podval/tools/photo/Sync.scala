@@ -31,11 +31,11 @@ object Sync:
   private[photo] def openLibrary(): Library = ClientLibrary(Google.newClient())
 
   private[photo] def run(
-      originals: File,
-      prefix: Option[String],
-      recursive: Boolean,
-      dryRun: Boolean,
-      google: () => Library
+    originals: File,
+    prefix: Option[String],
+    recursive: Boolean,
+    dryRun: Boolean,
+    google: () => Library
   ): Unit =
     val selectedPrefix: Option[String] = prefix.map(_.stripPrefix("/")).filter(_.nonEmpty)
     if Album.needsRecursive(selectedPrefix) && !recursive then
@@ -57,15 +57,15 @@ object Sync:
   // Membership is remote, so a dry run still lists and batchGets in order to print the same lines.
   // It does not write album files and does not call batchRemove.
   private def syncAlbums(
-      originals: File,
-      universe: Map[LocalDate, Set[String]],
-      facts: Map[String, Archive.Picture],
-      selected: Seq[Claims.Resolved],
-      byTitle: Map[String, LoadedAlbum],
-      albums: Seq[LoadedAlbum],
-      inScope: Seq[LoadedAlbum],
-      dryRun: Boolean,
-      google: () => Library
+    originals: File,
+    universe: Map[LocalDate, Set[String]],
+    facts: Map[String, Archive.Picture],
+    selected: Seq[Claims.Resolved],
+    byTitle: Map[String, LoadedAlbum],
+    albums: Seq[LoadedAlbum],
+    inScope: Seq[LoadedAlbum],
+    dryRun: Boolean,
+    google: () => Library
   ): Unit =
     val library: Library = google()
     try
@@ -78,9 +78,9 @@ object Sync:
     finally library.close()
 
   private def listAll(
-      library: Library,
-      albums: Seq[LoadedAlbum],
-      selected: Seq[Claims.Resolved]
+    library: Library,
+    albums: Seq[LoadedAlbum],
+    selected: Seq[Claims.Resolved]
   ): Map[String, Set[String]] =
     albums.foldLeft(Map.empty[String, Set[String]]): (acc, loaded) =>
       val ids: Set[String] =
@@ -97,10 +97,10 @@ object Sync:
     if lines.nonEmpty then lines else Seq(s"- ${loaded.album.title}: $message")
 
   private def lookup(
-      library: Library,
-      filed: Seq[(Claims.Resolved, String)],
-      byTitle: Map[String, LoadedAlbum],
-      albums: Seq[LoadedAlbum]
+    library: Library,
+    filed: Seq[(Claims.Resolved, String)],
+    byTitle: Map[String, LoadedAlbum],
+    albums: Seq[LoadedAlbum]
   ): Set[String] =
     val ids: Seq[String] = filed.map(_._2).distinct
     ids
@@ -119,10 +119,10 @@ object Sync:
         acc ++ found
 
   private def failureLines(
-      picture: Claims.Resolved,
-      byTitle: Map[String, LoadedAlbum],
-      albums: Seq[LoadedAlbum],
-      message: String
+    picture: Claims.Resolved,
+    byTitle: Map[String, LoadedAlbum],
+    albums: Seq[LoadedAlbum],
+    message: String
   ): Seq[String] =
     val titles: Seq[String] = (clientClaims(picture, byTitle) ++ excludedAlbums(picture, albums))
       .map(_.album.title)
@@ -135,10 +135,10 @@ object Sync:
     throw IllegalArgumentException(lines.mkString("\n"))
 
   private def filedPictures(
-      facts: Map[String, Archive.Picture],
-      selected: Seq[Claims.Resolved],
-      byTitle: Map[String, LoadedAlbum],
-      albums: Seq[LoadedAlbum]
+    facts: Map[String, Archive.Picture],
+    selected: Seq[Claims.Resolved],
+    byTitle: Map[String, LoadedAlbum],
+    albums: Seq[LoadedAlbum]
   ): Seq[(Claims.Resolved, String)] =
     selected.flatMap: picture =>
       facts
@@ -150,11 +150,11 @@ object Sync:
           Option.when(relevant)(picture -> id)
 
   private def planFor(
-      filed: Seq[(Claims.Resolved, String)],
-      byTitle: Map[String, LoadedAlbum],
-      albums: Seq[LoadedAlbum],
-      mediaByTitle: Map[String, Set[String]],
-      present: Set[String]
+    filed: Seq[(Claims.Resolved, String)],
+    byTitle: Map[String, LoadedAlbum],
+    albums: Seq[LoadedAlbum],
+    mediaByTitle: Map[String, Set[String]],
+    present: Set[String]
   ): Plan =
     filed.foldLeft(Plan(Seq.empty, Seq.empty)): (plan, pair) =>
       val (picture, id) = pair
@@ -177,10 +177,10 @@ object Sync:
     albums.map(loaded => ExceptChange(loaded.file, loaded.album.title, day, name))
 
   private def removesFor(
-      albums: Seq[LoadedAlbum],
-      picture: Claims.Resolved,
-      name: String,
-      id: String
+    albums: Seq[LoadedAlbum],
+    picture: Claims.Resolved,
+    name: String,
+    id: String
   ): Seq[RemoveChange] =
     albums.map: loaded =>
       RemoveChange(loaded.album.googleAlbumId, loaded.album.title, name, picture.path, id)
@@ -190,10 +190,10 @@ object Sync:
     plan.removes.foreach(change => Transcript.println(s"remove ${change.title} ${Album.quote(change.stem)}"))
 
   private def applyPlan(
-      originals: File,
-      universe: Map[LocalDate, Set[String]],
-      library: Library,
-      plan: Plan
+    originals: File,
+    universe: Map[LocalDate, Set[String]],
+    library: Library,
+    plan: Plan
   ): Unit =
     plan.excepts
       .groupBy(_.file)
@@ -222,9 +222,9 @@ object Sync:
       picture.albums.contains(loaded.album.title) || excepts(loaded.album, picture)
 
   private def scope(
-      selected: Seq[Claims.Resolved],
-      byTitle: Map[String, LoadedAlbum],
-      albums: Seq[LoadedAlbum]
+    selected: Seq[Claims.Resolved],
+    byTitle: Map[String, LoadedAlbum],
+    albums: Seq[LoadedAlbum]
   ): Seq[LoadedAlbum] =
     selected
       .flatMap(picture => clientClaims(picture, byTitle) ++ excludedAlbums(picture, albums))

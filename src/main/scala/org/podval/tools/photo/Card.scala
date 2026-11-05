@@ -22,9 +22,9 @@ final case class CopyCard(dryRun: Boolean, path: Option[String]) extends Operati
 
 object Card:
   private[photo] def discover(
-      dryRun: Boolean,
-      lsblk: () => Either[String, String] = readLsblk,
-      mount: Seq[String] => (Int, String) = runMount
+    dryRun: Boolean,
+    lsblk: () => Either[String, String] = readLsblk,
+    mount: Seq[String] => (Int, String) = runMount
   ): Option[File] =
     val rows: Seq[Row] = judgeAll(readDocument(lsblk))
     rejectOrContinue(rows) match
@@ -49,11 +49,11 @@ object Card:
           else mountAndReread(one.path, lsblk, mount)
 
   private[photo] def copy(
-      session: Session,
-      dryRun: Boolean,
-      path: Option[String],
-      lsblk: () => Either[String, String] = readLsblk,
-      mount: Seq[String] => (Int, String) = runMount
+    session: Session,
+    dryRun: Boolean,
+    path: Option[String],
+    lsblk: () => Either[String, String] = readLsblk,
+    mount: Seq[String] => (Int, String) = runMount
   ): Unit =
     val upload: File = session.root.configuration.uploadDirectory
     path match
@@ -68,9 +68,9 @@ object Card:
             throw IllegalStateException("no mount root")
 
   private def mountAndReread(
-      device: String,
-      lsblk: () => Either[String, String],
-      mount: Seq[String] => (Int, String)
+    device: String,
+    lsblk: () => Either[String, String],
+    mount: Seq[String] => (Int, String)
   ): Option[File] =
     val (_, stderr) = mount(
       Seq(
@@ -271,11 +271,11 @@ object Card:
         else Seq(Entry.Irregular(rel))
 
   private def place(
-      upload: File,
-      file: File,
-      rel: String,
-      dryRun: Boolean,
-      claimed: Set[String]
+    upload: File,
+    file: File,
+    rel: String,
+    dryRun: Boolean,
+    claimed: Set[String]
   ): Set[String] =
     val (stem, extension) = Files.nameAndExtension(file)
     extension match

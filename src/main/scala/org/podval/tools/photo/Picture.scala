@@ -4,14 +4,14 @@ import java.io.File
 import java.time.ZoneId
 
 final class Picture(
-    override val parent: Pictures,
-    override val name: String,
-    val hasMetadata: Boolean,
-    val normal: Option[Extension.Descriptor],
-    val raw: Option[Extension.Descriptor],
-    val image: Option[Extension.Descriptor],
-    thumbnail: Option[Extension.Descriptor],
-    aux: Option[Extension.Descriptor]
+  override val parent: Pictures,
+  override val name: String,
+  val hasMetadata: Boolean,
+  val normal: Option[Extension.Descriptor],
+  val raw: Option[Extension.Descriptor],
+  val image: Option[Extension.Descriptor],
+  thumbnail: Option[Extension.Descriptor],
+  aux: Option[Extension.Descriptor]
 ) extends Item:
   require(normal.isDefined || raw.isDefined || image.isDefined, s"no images for $this")
 

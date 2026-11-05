@@ -43,11 +43,11 @@ object Refresh:
     else kinds.length < 2
 
   private[photo] def run(
-      session: Session,
-      args: Cli.RefreshArgs,
-      open: (Notice => Unit) => PhotosUi,
-      places: Places,
-      pause: () => Unit = () => Thread.sleep(500)
+    session: Session,
+    args: Cli.RefreshArgs,
+    open: (Notice => Unit) => PhotosUi,
+    places: Places,
+    pause: () => Unit = () => Thread.sleep(500)
   ): (Session, Result) =
     try
       claim(places.lock) match
@@ -64,11 +64,11 @@ object Refresh:
         (session, Result.Usage(oneLine(error)))
 
   private def work(
-      session: Session,
-      args: Cli.RefreshArgs,
-      open: (Notice => Unit) => PhotosUi,
-      places: Places,
-      pause: () => Unit
+    session: Session,
+    args: Cli.RefreshArgs,
+    open: (Notice => Unit) => PhotosUi,
+    places: Places,
+    pause: () => Unit
   ): (Session, Result) =
     if lockInside(places) then throw IllegalStateException("refresh lock is inside the work directory")
     val (stored, source) = loadCatalog(session)
@@ -108,15 +108,15 @@ object Refresh:
     finally ui.foreach(closeQuiet)
 
   private def publish(
-      session: Session,
-      places: Places,
-      state: RunState,
-      found: RefreshPlan.Diff,
-      lines: Seq[String],
-      stored: Seq[Catalog.Album],
-      source: String,
-      allowShrink: Boolean,
-      reads: Map[String, Catalog.Album]
+    session: Session,
+    places: Places,
+    state: RunState,
+    found: RefreshPlan.Diff,
+    lines: Seq[String],
+    stored: Seq[Catalog.Album],
+    source: String,
+    allowShrink: Boolean,
+    reads: Map[String, Catalog.Album]
   ): (Session, Result) =
     val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
     if !directory.isDirectory then directory.mkdirs()
@@ -138,12 +138,12 @@ object Refresh:
             )
 
   private def readItems(
-      directory: File,
-      ui: PhotosUi,
-      found: RefreshPlan.Diff,
-      cards: Map[String, AlbumCard],
-      state: RunState,
-      pause: () => Unit
+    directory: File,
+    ui: PhotosUi,
+    found: RefreshPlan.Diff,
+    cards: Map[String, AlbumCard],
+    state: RunState,
+    pause: () => Unit
   ): Map[String, Catalog.Album] =
     val planById: Map[String, RefreshPlan.Card] = found.cards.map(card => card.id -> card).toMap
     val order: Seq[String] = found.itemReads.toSeq.sortBy(id => planById.get(id).fold(0)(_.count))
@@ -177,10 +177,10 @@ object Refresh:
 
   // The three shortfall reads stay in memory. One winner file is written after they settle.
   private def pull(
-      ui: PhotosUi,
-      card: AlbumCard,
-      plan: RefreshPlan.Card,
-      acc: Seq[Catalog.Album]
+    ui: PhotosUi,
+    card: AlbumCard,
+    plan: RefreshPlan.Card,
+    acc: Seq[Catalog.Album]
   ): (Seq[Catalog.Album], Option[String]) =
     if !needsAnother(acc.map(kindOf)) then (acc, None)
     else
@@ -227,10 +227,10 @@ object Refresh:
     read.copy(id = plan.id, count = plan.count, title = plan.title, autoAdd = false, error = error)
 
   private def readOwners(
-      ui: PhotosUi,
-      found: RefreshPlan.Diff,
-      cards: Map[String, AlbumCard],
-      pause: () => Unit
+    ui: PhotosUi,
+    found: RefreshPlan.Diff,
+    cards: Map[String, AlbumCard],
+    pause: () => Unit
   ): Map[String, Catalog.Album] =
     val storedById: Map[String, Catalog.Album] = found.stored.map(album => album.id -> album).toMap
     val listed: Set[String] = found.cards.map(_.id).toSet

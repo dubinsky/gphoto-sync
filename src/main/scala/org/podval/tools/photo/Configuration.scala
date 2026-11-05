@@ -7,8 +7,8 @@ import java.io.File
 import java.time.{DateTimeException, ZoneId}
 
 final case class Configuration(
-    rootPath: String,
-    zoneId: ZoneId
+  rootPath: String,
+  zoneId: ZoneId
 ) derives CanEqual:
   def archive: File = File(Configuration.homeDirectory, rootPath)
   def uploadDirectory: File = File(archive, UploadDirectory.directoryName)

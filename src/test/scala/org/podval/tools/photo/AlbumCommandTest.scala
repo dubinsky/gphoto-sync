@@ -630,12 +630,12 @@ class AlbumCommandTest extends AnyFlatSpec, Matchers:
     Option(root.listFiles).toSeq.flatten.flatMap(walk).toMap
 
   private def showJson(
-      path: String,
-      title: String,
-      span: Json,
-      name: Json,
-      external: Boolean,
-      include: Seq[String]
+    path: String,
+    title: String,
+    span: Json,
+    name: Json,
+    external: Boolean,
+    include: Seq[String]
   ): Json = Json.Obj(
     Seq(
       "path" -> Json.Str(path),

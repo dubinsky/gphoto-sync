@@ -27,10 +27,10 @@ private[photo] object AlbumCommand:
 
   // Include.add keeps only pairs on the hit day. A multi-day line would lose its other days.
   def addCovering(
-      current: Seq[Include.Entry],
-      albumSpan: Option[Title.Span],
-      pair: (LocalDate, String),
-      scanned: Map[LocalDate, Set[String]]
+    current: Seq[Include.Entry],
+    albumSpan: Option[Title.Span],
+    pair: (LocalDate, String),
+    scanned: Map[LocalDate, Set[String]]
   ): Seq[Include.Entry] =
     val widened: Map[LocalDate, Set[String]] =
       scanned.updated(pair._1, scanned.getOrElse(pair._1, Set.empty) + pair._2)
@@ -50,11 +50,11 @@ private[photo] object AlbumCommand:
     prefix ++ touched ++ kept
 
   def edit(
-      include: Seq[Include.Entry],
-      span: Option[Title.Span],
-      universe: Map[LocalDate, Set[String]],
-      pictures: Seq[Picture],
-      exclude: Boolean
+    include: Seq[Include.Entry],
+    span: Option[Title.Span],
+    universe: Map[LocalDate, Set[String]],
+    pictures: Seq[Picture],
+    exclude: Boolean
   ): (Seq[Include.Entry], Seq[String]) =
     pictures.foldLeft((include, Seq.empty[String])):
       case ((current, changed), picture) =>
@@ -265,10 +265,10 @@ final case class AlbumMv(dryRun: Boolean, from: String, to: String) extends Oper
       )
 
 final case class AlbumEdit(
-    dryRun: Boolean,
-    exclude: Boolean,
-    title: String,
-    pictures: Seq[String]
+  dryRun: Boolean,
+  exclude: Boolean,
+  title: String,
+  pictures: Seq[String]
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     var produced: Json = Json.Null
@@ -352,23 +352,23 @@ final case class AlbumMerge(dryRun: Boolean, first: String, second: String) exte
       )
 
   private final case class Plan(
-      earlierFile: File,
-      laterFile: File,
-      resultFile: File,
-      resultTitle: String,
-      earlierTitle: String,
-      laterTitle: String,
-      include: Seq[Include.Entry],
-      lines: Seq[String]
+    earlierFile: File,
+    laterFile: File,
+    resultFile: File,
+    resultTitle: String,
+    earlierTitle: String,
+    laterTitle: String,
+    include: Seq[Include.Entry],
+    lines: Seq[String]
   )
 
   private def planOf(
-      originals: File,
-      fileA: File,
-      albumA: Album,
-      fileB: File,
-      albumB: Album,
-      universe: Map[LocalDate, Set[String]]
+    originals: File,
+    fileA: File,
+    albumA: Album,
+    fileB: File,
+    albumB: Album,
+    universe: Map[LocalDate, Set[String]]
   ): Plan =
     def bounds(album: Album): (YearMonth, YearMonth) = album.span match
       case Some(span) if span.grain.equals(Title.Grain.Month) =>

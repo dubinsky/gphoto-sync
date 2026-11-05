@@ -2453,18 +2453,18 @@ class McpTest extends AnyFlatSpec, Matchers:
       )
     )
     def albumShown(
-        path: String = "Best.toml",
-        title: String = "Best",
-        span: Json = Json.Null,
-        name: Json = Json.Str("Best"),
-        external: Boolean = false,
-        googleAlbumId: Json = Json.Str(""),
-        publishedTitle: String = "",
-        googleTitle: String = "",
-        owner: Json = Json.Null,
-        include: Json = Json.Arr(Seq.empty),
-        extra: Seq[(String, Json)] = Seq.empty,
-        omit: Set[String] = Set.empty
+      path: String = "Best.toml",
+      title: String = "Best",
+      span: Json = Json.Null,
+      name: Json = Json.Str("Best"),
+      external: Boolean = false,
+      googleAlbumId: Json = Json.Str(""),
+      publishedTitle: String = "",
+      googleTitle: String = "",
+      owner: Json = Json.Null,
+      include: Json = Json.Arr(Seq.empty),
+      extra: Seq[(String, Json)] = Seq.empty,
+      omit: Set[String] = Set.empty
     ): Json =
       val fields: Seq[(String, Json)] = Seq(
         "path" -> Json.Str(path),
@@ -3223,10 +3223,10 @@ class McpTest extends AnyFlatSpec, Matchers:
               fail(other.toString)
 
   private def runMcp(
-      runtime: Either[String, File],
-      session: Session,
-      input: InputStream,
-      waitMs: Long = 2000
+    runtime: Either[String, File],
+    session: Session,
+    input: InputStream,
+    waitMs: Long = 2000
   ): (Int, String, String) =
     val output: ByteArrayOutputStream = new ByteArrayOutputStream
     val err: ByteArrayOutputStream = new ByteArrayOutputStream
@@ -3235,9 +3235,9 @@ class McpTest extends AnyFlatSpec, Matchers:
     (code, text(output), text(err))
 
   private def drive(
-      runtime: Either[String, File],
-      session: Session,
-      waitMs: Long = 2000
+    runtime: Either[String, File],
+    session: Session,
+    waitMs: Long = 2000
   )(body: Driver => Unit): (Int, String, String) =
     val pipeIn: PipedInputStream = new PipedInputStream(65536)
     val pipeOut: PipedOutputStream = new PipedOutputStream(pipeIn)
@@ -3273,11 +3273,11 @@ class McpTest extends AnyFlatSpec, Matchers:
     (code.get, text(output), text(err))
 
   private final class Driver(
-      output: ByteArrayOutputStream,
-      err: ByteArrayOutputStream,
-      pipeOut: PipedOutputStream,
-      done: CountDownLatch,
-      code: AtomicInteger
+    output: ByteArrayOutputStream,
+    err: ByteArrayOutputStream,
+    pipeOut: PipedOutputStream,
+    done: CountDownLatch,
+    code: AtomicInteger
   ):
     private var cursor: Int = 0
 
@@ -3305,9 +3305,9 @@ class McpTest extends AnyFlatSpec, Matchers:
       code.get
 
   private def awaitLine(
-      output: ByteArrayOutputStream,
-      from: Int,
-      err: ByteArrayOutputStream
+    output: ByteArrayOutputStream,
+    from: Int,
+    err: ByteArrayOutputStream
   ): (String, Int) =
     val deadline: Long = System.nanoTime() + 10000000000L
     @tailrec
@@ -3360,20 +3360,20 @@ class McpTest extends AnyFlatSpec, Matchers:
     Fake(runtime, session, accepts, requestBytes, requests, server)
 
   private final class Fake(
-      val runtime: File,
-      val session: Session,
-      val accepts: AtomicInteger,
-      val requestBytes: AtomicInteger,
-      val requests: ConcurrentLinkedQueue[String],
-      server: SocketLoop
+    val runtime: File,
+    val session: Session,
+    val accepts: AtomicInteger,
+    val requestBytes: AtomicInteger,
+    val requests: ConcurrentLinkedQueue[String],
+    server: SocketLoop
   ):
     def close(): Unit = server.close()
 
   private def acceptLoop(
-      runtime: File,
-      session: Session,
-      bytes: AtomicInteger,
-      onRequest: String => Unit
+    runtime: File,
+    session: Session,
+    bytes: AtomicInteger,
+    onRequest: String => Unit
   ): SocketLoop =
     val accept: String = Serve.render(None, ok = true, None, None, None, Serve.archiveOf(session))
     loop(runtime): channel =>
@@ -3437,10 +3437,10 @@ class McpTest extends AnyFlatSpec, Matchers:
     readClient(channel, bytes)
 
   private final class Running(
-      holder: AtomicReference[ServerSocketChannel],
-      stopped: CountDownLatch,
-      runtime: File,
-      session: Session
+    holder: AtomicReference[ServerSocketChannel],
+    stopped: CountDownLatch,
+    runtime: File,
+    session: Session
   ):
     def crash(): Unit =
       val server: ServerSocketChannel = holder.get

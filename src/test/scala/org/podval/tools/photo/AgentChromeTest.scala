@@ -3225,10 +3225,10 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
             fail("lock was already held")
 
   private def deleteMiss(
-      confirmed: Boolean,
-      detail: String,
-      recovery: String,
-      cards: Option[Seq[AlbumCard]] = None
+    confirmed: Boolean,
+    detail: String,
+    recovery: String,
+    cards: Option[Seq[AlbumCard]] = None
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbDel\t0\tGone Title")
@@ -3341,9 +3341,9 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         released(places)
 
   private def createCards(
-      cards: Seq[AlbumCard],
-      read: Option[Catalog.Album],
-      detail: String
+    cards: Seq[AlbumCard],
+    read: Option[Catalog.Album],
+    detail: String
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, "album\talbOld\t0\tKeep Title")
@@ -3370,19 +3370,19 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         released(places)
 
   private def blankAlbum(
-      id: String,
-      count: Int,
-      title: String,
-      items: Seq[Catalog.Item] = Seq.empty
+    id: String,
+    count: Int,
+    title: String,
+    items: Seq[Catalog.Item] = Seq.empty
   ): Catalog.Album =
     Catalog.Album(id, count, title, None, false, None, items, Seq.empty)
 
   private def uploadRefuse(
-      lines: Seq[String],
-      message: String,
-      prepare: File => Unit = _ => (),
-      args: Seq[String] = Seq.empty,
-      relative: String = "2010/07/01/pic.jpg"
+    lines: Seq[String],
+    message: String,
+    prepare: File => Unit = _ => (),
+    args: Seq[String] = Seq.empty,
+    relative: String = "2010/07/01/pic.jpg"
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, lines*)
@@ -3402,9 +3402,9 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         places.directory.exists shouldBe false
 
   private def openedUpload(
-      lines: Seq[String],
-      relative: String = "2010/07/01/pic.jpg",
-      prepare: File => Unit = _ => ()
+    lines: Seq[String],
+    relative: String = "2010/07/01/pic.jpg",
+    prepare: File => Unit = _ => ()
   ): Unit =
     withArchive: archive =>
       val catalogFile: File = writeCatalog(archive, lines*)
@@ -3515,16 +3515,16 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
     JFiles.readString(file.toPath)
 
   private class RenameFake(
-      effect: (Catalog.Album, String) => Unit,
-      onDescription: (Catalog.Item, String) => Unit = (_, _) => (),
-      onDate: (Catalog.Item, String) => Unit = (_, _) => (),
-      onDownload: (Catalog.Item, File) => Unit = (_, _) => (),
-      onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (_, _, _) => throw IllegalStateException("put"),
-      onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
-      onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
-      onUpload: (Catalog.Album, File, String) => Catalog.Item = (_, _, _) => throw IllegalStateException("upload"),
-      onCreate: String => (Seq[AlbumCard], Option[Catalog.Album]) = _ => throw IllegalStateException("create"),
-      onDelete: Catalog.Album => Seq[AlbumCard] = _ => throw IllegalStateException("delete-album")
+    effect: (Catalog.Album, String) => Unit,
+    onDescription: (Catalog.Item, String) => Unit = (_, _) => (),
+    onDate: (Catalog.Item, String) => Unit = (_, _) => (),
+    onDownload: (Catalog.Item, File) => Unit = (_, _) => (),
+    onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (_, _, _) => throw IllegalStateException("put"),
+    onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+    onTrash: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+    onUpload: (Catalog.Album, File, String) => Catalog.Item = (_, _, _) => throw IllegalStateException("upload"),
+    onCreate: String => (Seq[AlbumCard], Option[Catalog.Album]) = _ => throw IllegalStateException("create"),
+    onDelete: Catalog.Album => Seq[AlbumCard] = _ => throw IllegalStateException("delete-album")
   ) extends PhotosAct:
     def albumCards(): Seq[AlbumCard] = Seq.empty
     def readOwner(card: AlbumCard): Option[String] = None
@@ -3567,9 +3567,9 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         fail("lock still held")
 
   private def shellOf(
-      session: Session,
-      line: String,
-      exchange: Option[(Session, List[String]) => Result] = None
+    session: Session,
+    line: String,
+    exchange: Option[(Session, List[String]) => Result] = None
   ): (Int, String, String) =
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream

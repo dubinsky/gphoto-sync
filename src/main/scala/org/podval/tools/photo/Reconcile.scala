@@ -25,11 +25,11 @@ object Reconcile:
     case Skipped extends Kind("skipped")
 
   private[photo] final case class Action(
-      kind: Kind,
-      label: String,
-      path: String,
-      reason: String,
-      id: Option[String]
+    kind: Kind,
+    label: String,
+    path: String,
+    reason: String,
+    id: Option[String]
   )
 
   private[photo] enum Touch:
@@ -41,17 +41,17 @@ object Reconcile:
   private[photo] final case class Plan(actions: Seq[Action], links: Seq[AlbumLinks.Row], touches: Seq[Touch])
 
   private final case class Placed(
-      album: Catalog.Album,
-      parsed: Title.Parsed,
-      monthFile: Boolean,
-      dest: File,
-      rel: String
+    album: Catalog.Album,
+    parsed: Title.Parsed,
+    monthFile: Boolean,
+    dest: File,
+    rel: String
   )
 
   private[photo] final case class MatchSet(
-      include: Seq[Include.Entry],
-      claimed: Set[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]]
+    include: Seq[Include.Entry],
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
   )
 
   private enum Prepared:
@@ -84,12 +84,12 @@ object Reconcile:
 
   // Drift calls this and does not perform the plan.
   private[photo] def classify(
-      start: Session,
-      archive: File,
-      catalog: Seq[Catalog.Album],
-      found: Seq[Album.Loaded],
-      existing: Seq[AlbumLinks.Row],
-      args: Cli.ReconcileArgs
+    start: Session,
+    archive: File,
+    catalog: Seq[Catalog.Album],
+    found: Seq[Album.Loaded],
+    existing: Seq[AlbumLinks.Row],
+    args: Cli.ReconcileArgs
   ): (Session, Plan) =
     val relOf: Album.Loaded => String = row => Album.relative(archive, row.file)
     val byRel: Map[String, Album.Loaded] = found.map(row => relOf(row) -> row).toMap
@@ -318,9 +318,9 @@ object Reconcile:
       if fileTouches.isEmpty then Edit.Pure else Edit.Write(fileTouches)
 
   private def fresh(
-      album: Catalog.Album,
-      parsed: Title.Parsed,
-      matched: MatchSet
+    album: Catalog.Album,
+    parsed: Title.Parsed,
+    matched: MatchSet
   ): Either[String, String] =
     val (googleTitle, owner) = album.owner match
       case Some(label) => (album.title, Some(label))
@@ -340,10 +340,10 @@ object Reconcile:
       Right(Album.renderFile(written))
 
   private def prepare(
-      session: Session,
-      album: Catalog.Album,
-      span: Option[Title.Span],
-      monthFlag: Boolean
+    session: Session,
+    album: Catalog.Album,
+    span: Option[Title.Span],
+    monthFlag: Boolean
   ): (Session, Prepared) =
     val (matchedSession, hits, _) = AgentSupport.gather(session, album)
     val claimed: Set[(LocalDate, String)] = hits.map(hit => hit._1 -> hit._3).toSet
@@ -442,10 +442,10 @@ object Reconcile:
     wrote.nonEmpty || linksChanged
 
   private def pair(
-      albums: Seq[Catalog.Album],
-      files: Seq[Album.Loaded],
-      relOf: Album.Loaded => String,
-      hit: (Catalog.Album, Album.Loaded) => Boolean
+    albums: Seq[Catalog.Album],
+    files: Seq[Album.Loaded],
+    relOf: Album.Loaded => String,
+    hit: (Catalog.Album, Album.Loaded) => Boolean
   ): (Map[String, Album.Loaded], Set[String]) =
     val hits: Seq[(Catalog.Album, Album.Loaded)] =
       albums.flatMap(album => files.filter(file => hit(album, file)).map(album -> _))

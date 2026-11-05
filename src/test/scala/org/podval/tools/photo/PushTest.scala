@@ -336,10 +336,10 @@ class PushTest extends AnyFlatSpec, Matchers:
     )
 
   private def act(
-      calls: ListBuffer[String],
-      onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
-      onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (item, _, _) => item,
-      uploadDate: String = "2010-07-02"
+    calls: ListBuffer[String],
+    onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
+    onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (item, _, _) => item,
+    uploadDate: String = "2010-07-02"
   ): () => PhotosAct = () =>
     new PhotosAct:
       def albumCards(): Seq[AlbumCard] = Seq.empty
@@ -364,8 +364,8 @@ class PushTest extends AnyFlatSpec, Matchers:
       def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] = fail("delete-album")
 
   private def withPlaces(
-      archive: File,
-      act: () => PhotosAct = () => fail("opened")
+    archive: File,
+    act: () => PhotosAct = () => fail("opened")
   )(body: (Session, Refresh.Places, () => Int) => Unit): Unit =
     val parent: File = JFiles.createTempDirectory("push-lock").toFile
     val places: Refresh.Places = Refresh.Places(File(parent, "work"), File(parent, "lock"))

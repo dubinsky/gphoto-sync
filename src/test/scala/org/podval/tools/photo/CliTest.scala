@@ -1189,22 +1189,22 @@ class CliTest extends AnyFlatSpec, Matchers:
     case other          => fail(s"expected help for ${args.toList}, got $other")
 
   private def ls(
-      path: Option[String] = None,
-      long: Boolean = false,
-      recursive: Boolean = false,
-      nameContains: Option[String] = None,
-      hasExtension: Option[String] = None,
-      property: Option[String] = None,
-      timestampFromNameFormat: Option[String] = None,
-      timestampFromName: Boolean = false,
-      timestampFromNameOnly: Boolean = false,
-      timestampsVary: Boolean = false,
-      hasMetadata: Boolean = false,
-      noNormal: Boolean = false,
-      noTimestamp: Boolean = false,
-      wrongTimestamp: Boolean = false,
-      wrongDay: Boolean = false,
-      wrong: Boolean = false
+    path: Option[String] = None,
+    long: Boolean = false,
+    recursive: Boolean = false,
+    nameContains: Option[String] = None,
+    hasExtension: Option[String] = None,
+    property: Option[String] = None,
+    timestampFromNameFormat: Option[String] = None,
+    timestampFromName: Boolean = false,
+    timestampFromNameOnly: Boolean = false,
+    timestampsVary: Boolean = false,
+    hasMetadata: Boolean = false,
+    noNormal: Boolean = false,
+    noTimestamp: Boolean = false,
+    wrongTimestamp: Boolean = false,
+    wrongDay: Boolean = false,
+    wrong: Boolean = false
   ): Cli.Outcome = Cli.Run(
     Cli.Ls(
       path,
@@ -1227,12 +1227,12 @@ class CliTest extends AnyFlatSpec, Matchers:
   )
 
   private def repair(
-      path: String,
-      names: Boolean = false,
-      raw: Boolean = false,
-      timestamps: Boolean = false,
-      days: Boolean = false,
-      dryRun: Boolean = false
+    path: String,
+    names: Boolean = false,
+    raw: Boolean = false,
+    timestamps: Boolean = false,
+    days: Boolean = false,
+    dryRun: Boolean = false
   ): Cli.Outcome = Cli.Run(Cli.RepairArgs(path, names, raw, timestamps, days, dryRun))
 
   private def publish(path: Option[String], recursive: Boolean, dryRun: Boolean): Cli.Outcome =

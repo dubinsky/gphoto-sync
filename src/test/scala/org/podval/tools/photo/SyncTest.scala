@@ -495,12 +495,12 @@ class SyncTest extends AnyFlatSpec, Matchers:
       Album.read(originals, month).include.map(Include.logical) shouldBe Seq(s"all except $stem")
 
   private def run(
-      originals: File,
-      fake: Fake,
-      prefix: Option[String],
-      recursive: Boolean = false,
-      dryRun: Boolean = false,
-      onOpen: () => Unit = () => ()
+    originals: File,
+    fake: Fake,
+    prefix: Option[String],
+    recursive: Boolean = false,
+    dryRun: Boolean = false,
+    onOpen: () => Unit = () => ()
   ): Unit =
     Sync.run(
       originals = originals,
@@ -561,10 +561,10 @@ class SyncTest extends AnyFlatSpec, Matchers:
     file.delete()
 
   private final class Fake(
-      albums: Map[String, Set[String]],
-      library: Set[String],
-      failList: Option[String] = None,
-      failRemove: Boolean = false
+    albums: Map[String, Set[String]],
+    library: Set[String],
+    failList: Option[String] = None,
+    failRemove: Boolean = false
   ) extends Sync.Library:
     val listed: scala.collection.mutable.ArrayBuffer[String] = scala.collection.mutable.ArrayBuffer.empty
     val removed: scala.collection.mutable.ArrayBuffer[(String, Seq[String])] =

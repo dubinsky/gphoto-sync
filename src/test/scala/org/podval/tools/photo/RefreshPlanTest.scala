@@ -382,12 +382,12 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
       RefreshPlan.check(onlyA, named) shouldBe Right(())
 
   private def accepted(
-      lines: Seq[String],
-      stored: Seq[Catalog.Album],
-      mode: RefreshPlan.Mode,
-      allowShrink: Boolean,
-      reads: Map[String, Catalog.Album] = Map.empty,
-      source: String = ""
+    lines: Seq[String],
+    stored: Seq[Catalog.Album],
+    mode: RefreshPlan.Mode,
+    allowShrink: Boolean,
+    reads: Map[String, Catalog.Album] = Map.empty,
+    source: String = ""
   ): RefreshPlan.Prepared =
     RefreshPlan.plan(lines, stored, mode, allowShrink, reads, source).fold(message => fail(message), identity)
 
@@ -413,14 +413,14 @@ class RefreshPlanTest extends AnyFlatSpec, Matchers:
     Catalog.Item(filename, Day, key, None)
 
   private def album(
-      id: String,
-      count: Int,
-      title: String,
-      owner: Option[String] = None,
-      autoAdd: Boolean = false,
-      error: Option[Catalog.Error] = None,
-      items: Seq[Catalog.Item] = Seq.empty,
-      unsets: Seq[Catalog.Unset] = Seq.empty
+    id: String,
+    count: Int,
+    title: String,
+    owner: Option[String] = None,
+    autoAdd: Boolean = false,
+    error: Option[Catalog.Error] = None,
+    items: Seq[Catalog.Item] = Seq.empty,
+    unsets: Seq[Catalog.Unset] = Seq.empty
   ): Catalog.Album =
     Catalog.Album(id, count, title, owner, autoAdd, error, items, unsets)
 

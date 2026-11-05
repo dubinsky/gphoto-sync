@@ -347,10 +347,10 @@ class FileDownloadsTest extends AnyFlatSpec, Matchers:
       case other           => fail(other.toString)
 
   private def shell(
-      session: Session,
-      lines: Seq[String],
-      executeCommand: (Session, Cli.Parsed) => (Session, Result),
-      exchange: Option[(Session, List[String]) => Result]
+    session: Session,
+    lines: Seq[String],
+    executeCommand: (Session, Cli.Parsed) => (Session, Result),
+    exchange: Option[(Session, List[String]) => Result]
   ): (Int, String, String) =
     val out = new ByteArrayOutputStream
     val err = new ByteArrayOutputStream

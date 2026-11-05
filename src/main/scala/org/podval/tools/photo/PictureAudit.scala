@@ -19,11 +19,11 @@ object PictureAudit:
 
   // observed is already read, so a misnamed file can supply the bytes without the corrected path.
   private[photo] def assessed(
-      picture: Picture,
-      observed: Seq[Dates.Observed],
-      currents: Iterable[Instant],
-      filename: Option[Dates.Clock],
-      metadata: Metadata
+    picture: Picture,
+    observed: Seq[Dates.Observed],
+    currents: Iterable[Instant],
+    filename: Option[Dates.Clock],
+    metadata: Metadata
   ): Dates.Assessment =
     // A timestamp that does not parse still throws, as it does today.
     val timestamp: Option[LocalDateTime] = metadata.timestamp.map(LocalDateTime.parse)

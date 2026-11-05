@@ -702,11 +702,11 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
       val (_, _, ended) = running(runtime, port):
         Web.useSession(sessionFor(archive))
         def flipped(
-            title: String,
-            path: String,
-            desired: Boolean,
-            include: Seq[String],
-            contentType: Option[String] = Some("application/json")
+          title: String,
+          path: String,
+          desired: Boolean,
+          include: Seq[String],
+          contentType: Option[String] = Some("application/json")
         ): HttpResponse[String] =
           val response: HttpResponse[String] =
             postJson(port, "/api/toggle", s"""{"title":"$title","path":"$path"}""", contentType)
@@ -992,10 +992,10 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
               else Seq.empty
           walk(archive).map(file => archive.toPath.relativize(file.toPath).toString -> readText(file)).toMap
         def rejectCreate(
-            body: String,
-            status: Int,
-            message: String,
-            contentType: Option[String] = Some("application/json")
+          body: String,
+          status: Int,
+          message: String,
+          contentType: Option[String] = Some("application/json")
         ): Unit =
           val before: Map[String, String] = tomlTexts
           val response: HttpResponse[String] = postJson(port, "/api/albums", body, contentType)
@@ -1160,10 +1160,10 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     client.send(request, HttpResponse.BodyHandlers.ofByteArray())
 
   private def postJson(
-      port: Int,
-      path: String,
-      body: String,
-      contentType: Option[String] = Some("application/json")
+    port: Int,
+    path: String,
+    body: String,
+    contentType: Option[String] = Some("application/json")
   ): HttpResponse[String] =
     val builder: HttpRequest.Builder = HttpRequest
       .newBuilder(URI.create(s"http://$loopback:$port$path"))
@@ -1222,11 +1222,11 @@ class WebRoutesTest extends AnyFlatSpec, WebTestSupport:
     Json.Obj(Seq("title" -> Json.Str(title), "path" -> Json.Str(path)))
 
   private def stemJson(
-      stem: String,
-      extensions: Seq[String],
-      kind: String,
-      uploadable: Boolean,
-      curated: Seq[String]
+    stem: String,
+    extensions: Seq[String],
+    kind: String,
+    uploadable: Boolean,
+    curated: Seq[String]
   ): Json =
     Json.Obj(
       Seq(

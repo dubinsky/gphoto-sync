@@ -1,8 +1,8 @@
 package org.podval.tools.photo
 
 trait NumberedMaker[
-    Parent <: Directory,
-    What <: ItemDirectory
+  Parent <: Directory,
+  What <: ItemDirectory
 ]:
   def kind: String
 

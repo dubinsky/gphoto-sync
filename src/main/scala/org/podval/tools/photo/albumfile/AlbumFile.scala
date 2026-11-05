@@ -11,8 +11,8 @@ import java.io.File
 
 private[photo] object AlbumFile:
   private[photo] def read(
-      originals: File,
-      file: File
+    originals: File,
+    file: File
   ): (String, Option[Title.Span], Seq[Include.Entry], AlbumRole) =
     val parsed: Title.Parsed = Title
       .fromLocation(directoryOf(originals, file), stemOf(file))
@@ -80,10 +80,10 @@ private[photo] object AlbumFile:
   // googleTitle None leaves that key. Some(None) removes it. Some(Some(text)) sets it.
   // publishedTitle None leaves that key.
   private[photo] def spliceTitles(
-      file: File,
-      original: String,
-      googleTitle: Option[Option[String]],
-      publishedTitle: Option[String]
+    file: File,
+    original: String,
+    googleTitle: Option[Option[String]],
+    publishedTitle: Option[String]
   ): String =
     val titled: Seq[TextLine] = googleTitle match
       case None        => splitLines(original)
@@ -97,10 +97,10 @@ private[photo] object AlbumFile:
     s"external = false\ngoogle-album-id = ${Album.quote(id)}\npublished-title = ${Album.quote(title)}\n"
 
   private[photo] def spliceGoogleText(
-      file: File,
-      text: String,
-      googleAlbumId: String,
-      publishedTitle: String
+    file: File,
+    text: String,
+    googleAlbumId: String,
+    publishedTitle: String
   ): String =
     val table: TomlTable = JToml.jToml.readFromString(text)
     val values: Map[String, String] = Map(
@@ -115,10 +115,10 @@ private[photo] object AlbumFile:
 
   // None removes a present line. Leaving published-title alone is the None branch in spliceTitles.
   private def assign(
-      file: File,
-      lines: Seq[TextLine],
-      key: String,
-      value: Option[String]
+    file: File,
+    lines: Seq[TextLine],
+    key: String,
+    value: Option[String]
   ): Seq[TextLine] =
     val at: Seq[Int] = lines.zipWithIndex.collect:
       case (line, index) if singleAssignment(line.text, key) => index
@@ -152,11 +152,11 @@ private[photo] object AlbumFile:
         appendBlock(lines, Seq(added))
 
   private final case class Common(
-      external: Boolean,
-      googleAlbumId: String,
-      publishedTitle: String,
-      googleTitle: String,
-      owner: Option[String]
+    external: Boolean,
+    googleAlbumId: String,
+    publishedTitle: String,
+    googleTitle: String,
+    owner: Option[String]
   )
 
   private val keys: Set[String] =
@@ -304,10 +304,10 @@ private[photo] object AlbumFile:
     before ++ fitted ++ after
 
   private def spliceGoogle(
-      file: File,
-      lines: Seq[TextLine],
-      values: Map[String, String],
-      present: Set[String]
+    file: File,
+    lines: Seq[TextLine],
+    values: Map[String, String],
+    present: Set[String]
   ): Seq[TextLine] =
     val slots: Map[String, Int] = present
       .map: key =>

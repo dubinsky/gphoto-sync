@@ -9,11 +9,11 @@ import java.time.{LocalDate, YearMonth}
 import java.util.UUID
 
 private[photo] final class AgentAlbumFile(
-    id: Option[String],
-    dryRun: Boolean,
-    replace: Boolean,
-    googleTitle: Option[String],
-    title: String
+  id: Option[String],
+  dryRun: Boolean,
+  replace: Boolean,
+  googleTitle: Option[String],
+  title: String
 ) extends Operation:
   override def execute(session: Session): (Session, Result) =
     AgentSupport.catching(session):
@@ -28,11 +28,11 @@ private[photo] final class AgentAlbumFile(
 private[photo] object AgentAlbumFile:
 
   def writeAlbum(
-      session: Session,
-      album: Catalog.Album,
-      dryRun: Boolean,
-      replace: Boolean,
-      googleFlag: Option[String]
+    session: Session,
+    album: Catalog.Album,
+    dryRun: Boolean,
+    replace: Boolean,
+    googleFlag: Option[String]
   ): (Session, Result) =
     album.owner.foreach: _ =>
       googleFlag.foreach: flag =>
@@ -98,11 +98,11 @@ private[photo] object AgentAlbumFile:
 
   // Called before the partial is created. A bad include throws and nothing is written.
   def requireInclude(
-      monthPassed: Boolean,
-      span: Option[Title.Span],
-      include: Seq[Include.Entry],
-      claimed: Set[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]]
+    monthPassed: Boolean,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
   ): Unit =
     val got: Set[(LocalDate, String)] =
       include.foldLeft(Set.empty[(LocalDate, String)]): (acc, entry) =>
@@ -115,12 +115,12 @@ private[photo] object AgentAlbumFile:
     if !ok then throw IllegalArgumentException("include does not match")
 
   private def albumValueOf(
-      albumId: String,
-      path: String,
-      pathTitle: String,
-      catalogTitle: String,
-      rename: Boolean,
-      requestId: Option[String]
+    albumId: String,
+    path: String,
+    pathTitle: String,
+    catalogTitle: String,
+    rename: Boolean,
+    requestId: Option[String]
   ): Json =
     Json.Obj(
       Seq(
@@ -273,9 +273,9 @@ private[photo] object AgentAlbumFile:
     monthWords.contains(token.toLowerCase(java.util.Locale.ROOT))
 
   private[photo] def monthAllowsAll(
-      span: Title.Span,
-      claimed: Set[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]]
+    span: Title.Span,
+    claimed: Set[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
   ): Boolean =
     val local: Set[(LocalDate, String)] = Include.pairsIn(span, universe)
     val missing: Int = local.count(pair => !claimed.contains(pair))

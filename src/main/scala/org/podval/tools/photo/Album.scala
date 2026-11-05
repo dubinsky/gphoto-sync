@@ -24,10 +24,10 @@ private[photo] enum AlbumRole:
 
 // One album. The title is not the path: the file sits in the start folder, and a span's end is `to-` in the name.
 final case class Album private (
-    title: String,
-    span: Option[Title.Span],
-    include: Seq[Include.Entry],
-    private[photo] val role: AlbumRole
+  title: String,
+  span: Option[Title.Span],
+  include: Seq[Include.Entry],
+  private[photo] val role: AlbumRole
 ):
   // fromProduct and copy call this constructor and skip the factories.
   role match
@@ -74,11 +74,11 @@ final case class Album private (
 
 object Album:
   private[photo] def external(
-      title: String,
-      span: Option[Title.Span],
-      include: Seq[Include.Entry],
-      googleTitle: Option[String],
-      owner: Option[String]
+    title: String,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    googleTitle: Option[String],
+    owner: Option[String]
   ): Album =
     val keptTitle: Option[String] = googleTitle.filter(_.nonEmpty)
     owner.foreach: name =>
@@ -87,11 +87,11 @@ object Album:
     new Album(title, span, include, AlbumRole.External(keptTitle, owner))
 
   private[photo] def pending(
-      title: String,
-      span: Option[Title.Span],
-      include: Seq[Include.Entry],
-      googleTitle: Option[String] = None,
-      publishedTitle: Option[String] = None
+    title: String,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    googleTitle: Option[String] = None,
+    publishedTitle: Option[String] = None
   ): Album =
     new Album(
       title,
@@ -104,12 +104,12 @@ object Album:
     )
 
   private[photo] def published(
-      title: String,
-      span: Option[Title.Span],
-      include: Seq[Include.Entry],
-      id: String,
-      publishedTitle: String,
-      googleTitle: Option[String] = None
+    title: String,
+    span: Option[Title.Span],
+    include: Seq[Include.Entry],
+    id: String,
+    publishedTitle: String,
+    googleTitle: Option[String] = None
   ): Album =
     require(id.nonEmpty, "id must be non-empty")
     new Album(
@@ -174,10 +174,10 @@ object Album:
   // Recompress each include entry that claims one of these stems. An empty album writes include = [].
   // The read is inside the lock. A next include computed before tryLock is not spliced.
   def storeRemovals(
-      file: File,
-      originals: File,
-      removals: Seq[(LocalDate, String)],
-      universe: Map[LocalDate, Set[String]]
+    file: File,
+    originals: File,
+    removals: Seq[(LocalDate, String)],
+    universe: Map[LocalDate, Set[String]]
   ): Unit =
     withWriteLock:
       val album: Album = read(originals, file)
@@ -204,9 +204,9 @@ object Album:
 
   // Same reads as rewriteInclude, no write. A bad curated file fails before a move.
   private[photo] def planCurated(
-      originals: File,
-      from: (LocalDate, String),
-      to: (LocalDate, String)
+    originals: File,
+    from: (LocalDate, String),
+    to: (LocalDate, String)
   ): Seq[(File, Seq[Include.Entry])] =
     if from._1.equals(to._1) && from._2 == to._2 then Seq.empty
     else
@@ -222,10 +222,10 @@ object Album:
           Some(file -> next)
 
   private[photo] def planDated(
-      originals: File,
-      from: (LocalDate, String),
-      to: (LocalDate, String),
-      fromPath: String
+    originals: File,
+    from: (LocalDate, String),
+    to: (LocalDate, String),
+    fromPath: String
   ): Seq[(File, Seq[Include.Entry])] =
     val universe: Map[LocalDate, Set[String]] = PlanningWalk.planningUniverse(originals)
     val loaded: Seq[Loaded] = PlanningWalk.planningAlbums(originals)
@@ -429,9 +429,9 @@ object Album:
     finally channel.close()
 
   private[photo] def spliceTitles(
-      file: File,
-      googleTitle: Option[Option[String]],
-      publishedTitle: Option[String]
+    file: File,
+    googleTitle: Option[Option[String]],
+    publishedTitle: Option[String]
   ): Unit =
     googleTitle.foreach(_.foreach(text => AlbumFile.rejectControl(file, "google-title", text)))
     publishedTitle.foreach(text => AlbumFile.rejectControl(file, "published-title", text))

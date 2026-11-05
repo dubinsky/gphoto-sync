@@ -118,8 +118,8 @@ object GoogleAuth:
 
   // Stored user credential only. Does not open a browser or start a login.
   private[photo] def loadUserCredentials(
-      clientFile: File = clientJson,
-      tokenFile: File = tokenJson
+    clientFile: File = clientJson,
+    tokenFile: File = tokenJson
   ): UserCredentials =
     if !tokenFile.isFile then throw IllegalArgumentException(s"not logged in (${tokenFile.getAbsolutePath})")
     val (clientId, redirect) = readClient(clientFile)
@@ -240,8 +240,8 @@ object GoogleAuth:
 
   @tailrec
   private def acceptLoopback(
-      sockets: Seq[ServerSocket],
-      deadlineMs: Long = System.currentTimeMillis() + loginWaitMs
+    sockets: Seq[ServerSocket],
+    deadlineMs: Long = System.currentTimeMillis() + loginWaitMs
   ): Socket =
     if System.currentTimeMillis() >= deadlineMs then throw IllegalStateException("Google login timed out")
     else
