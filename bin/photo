@@ -1,0 +1,78 @@
+#!/bin/sh
+# Front door for this checkout. Serve.spawnServe does not call this script.
+# Gradle selects the build from the client cwd. Pass --project-dir. Do not cd.
+# APP_HOME only finds gradle-wrapper.jar.
+# JavaExec.setArgsString in Gradle 9.8.2 parses --args with
+# org.codehaus.plexus.util.cli.CommandLineUtils.translateCommandline
+# (plexus-utils 3.6.1). Space splits. Quotes group. A backslash is not an
+# escape. An empty argument cannot be encoded, so it is refused.
+set -eu
+
+case $0 in
+  */*) invoked=$0 ;;
+  *)
+    invoked=$(command -v -- "$0") || {
+      printf '%s\n' "photo: not on PATH: $0" >&2
+      exit 1
+    }
+    ;;
+esac
+
+script=$(readlink -f -- "$invoked") || {
+  printf '%s\n' "photo: cannot resolve $invoked" >&2
+  exit 1
+}
+root=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd -P)
+gradlew=$root/gradlew
+
+if [ ! -f "$root/settings.gradle" ] || [ ! -x "$gradlew" ]; then
+  printf '%s\n' "photo: $root is not the gphoto-sync checkout" >&2
+  exit 1
+fi
+
+# One Plexus-quoted argument. Always ends with a single quote, so $(...) is safe.
+quote_arg() {
+  printf "'"
+  rest=$1
+  while [ -n "$rest" ]; do
+    case "$rest" in
+      \'*)
+        printf '%s' "'\"'\"'"
+        rest=${rest#\'}
+        ;;
+      *)
+        prefix=${rest%%\'*}
+        printf '%s' "$prefix"
+        rest=${rest#"$prefix"}
+        ;;
+    esac
+  done
+  printf "'"
+}
+
+encoded=
+sep=
+for arg in "$@"; do
+  if [ -z "$arg" ]; then
+    printf '%s\n' "photo: empty argument cannot be passed through gradle run --args" >&2
+    exit 1
+  fi
+  piece=$(quote_arg "$arg")
+  encoded=$encoded$sep$piece
+  sep=' '
+done
+
+if [ "${PHOTO_LAUNCHER_PRINT_ARGS:-}" = 1 ]; then
+  printf '%s\n' "$gradlew"
+  printf '%s\n' "--project-dir=$root"
+  if [ -n "$encoded" ]; then
+    printf '%s\n' "--args=$encoded"
+  fi
+  exit 0
+fi
+
+if [ -n "$encoded" ]; then
+  exec "$gradlew" --quiet --console=plain --project-dir "$root" run "--args=$encoded"
+else
+  exec "$gradlew" --quiet --console=plain --project-dir "$root" run
+fi
