@@ -20,6 +20,9 @@ RAW stays local.
 The old sibling `Upload` is gone.
 Year, month, and day skip a child whose name starts with `.`.
 `AGENTS.md` may sit in the archive root.
+The install writes that file when it is absent.
+The text is the README template.
+The file points at this checkout's `docs/agent.md` and not at the archive.
 Any other non-toml file next to child directories is stray.
 `.gphoto-sync/` is the agent's workspace.
 There is no config key for it.

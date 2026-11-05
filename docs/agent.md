@@ -165,6 +165,14 @@ The command does not publish, sync, or run `repair --names`.
 `photo agent set-description` changes one item description.
 `--current` equals that filename.
 `--new` may be empty.
+An empty `--new` is two argv elements on the serve socket, the flag and then an empty string.
+MCP sends that empty string.
+`photo shell` sends it when the line contains `""`.
+`Cli.splitLine` groups with double quotes and does not treat a single quote as syntax, so `''` in `photo shell` is not
+an empty token.
+A one-shot `photo` argument cannot be empty.
+`bin/photo` exits 1 before Gradle when any argument is empty, because Plexus would drop `''`.
+There is no second launcher for that case.
 A tab or a newline in `--new` is rejected.
 
 ### photo agent set-date
@@ -333,9 +341,19 @@ Another computer runs `photo mcp` over SSH, and that stdio stream is MCP: the ar
 files, and there is no second transport.
 
 `command` is whatever executable already runs `photo serve`.
+The supported install is the `photo` symlink to `bin/photo`.
+The foreground process is `gradlew --project-dir` this checkout, then `run`.
+The caller's cwd is not the project selector.
+The detached process `Serve.spawnServe` starts is `setsid java -cp` the Gradle JVM's class path, then
+`org.podval.tools.photo.Cli serve`.
+That child is not `photo` and not `gradlew`.
 The Gradle main class is `org.podval.tools.photo.Cli`.
-If that executable is `java`, the args start with `mcp` after the class name.
+If `command` is `java`, the args start with `mcp` after the class name.
 Grok's default startup timeout of 30 seconds covers `Serve.ensure` plus the 5 second accept-line probe.
+It does not cover a cold `gradlew run`.
+The first `photo mcp` after the Gradle daemon has stopped can exceed that budget.
+Later runs use the daemon.
+There is no second launcher.
 A catalog or item listing can exceed Grok's 20_000 byte inline cap.
 Raising `[mcp] max_output_bytes` is a user config change, not a default this program sets.
 

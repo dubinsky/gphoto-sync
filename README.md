@@ -26,6 +26,74 @@ The reality, however, is that hardly any of them ever did — it was simply too 
 Now, with AI, it suddenly isn't."
 When it breaks, the agent fixes it in this checkout; when something is missing, the agent adds it here.
 
+`photo` on `PATH` is the symlink `~/.local/bin/photo` to `bin/photo` in this checkout.
+The script `exec`s this checkout's `gradlew` with `--quiet --console=plain --project-dir` set to this checkout, then
+`run`, and one attached `--args=` value.
+The script does not `cd`.
+Executing this checkout's `gradlew` does not select this checkout.
+`--project-dir` does.
+The caller's cwd stays unchanged.
+The script does not call `./gradlew run "$@"`.
+Gradle would consume those flags.
+A copy of the script goes stale.
+The symlink is the install.
+The program does not create the symlink.
+`photo serve` in the foreground is that Gradle run.
+The detached server `Serve.spawnServe` starts is `setsid java -cp` the Gradle JVM classpath, then
+`org.podval.tools.photo.Cli serve`.
+The wrapper is not that child.
+Do not change `spawnServe` to call `photo`.
+A cold `gradlew run` can exceed Grok's 30 second MCP startup budget.
+Later runs use the Gradle daemon.
+There is no second launcher.
+`./gradlew run` remains the program.
+The symlink is how `photo` spells that.
+
+The agent is in the checkout.
+It does all of the following and then stops.
+It does not refresh, sync, publish, or edit pictures.
+
+1. Read repository `AGENTS.md`.
+   The task is to install, so follow that branch and read the Install section.
+   Do not treat the rest of the README as the operating manual.
+   An operating task reads `docs/agent.md` and stops.
+2. From the checkout root, create the link.
+   `$(pwd -P)` must be this checkout:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+ln -sfn "$(pwd -P)/bin/photo" "$HOME/.local/bin/photo"
+```
+
+3. Confirm `readlink -f "$HOME/.local/bin/photo"` is `"$(pwd -P)/bin/photo"`.
+   Confirm `command -v photo` prints `"$HOME/.local/bin/photo"`.
+   If it prints anything else, stop and report that path.
+   Do not delete the other file.
+   Do not edit shell startup files.
+   On this machine `~/.local/bin` is already on `PATH`.
+   If it is not, stop and say so.
+4. Do not run `photo`.
+   Do not run `./gradlew`.
+5. Resolve the archive root without starting the program.
+   If `~/.config/org.podval.tools.photo.toml` exists, read the TOML string `rootPath` and do not rewrite the file.
+   The archive root is `"$HOME/$rootPath"`, which is what `new File(HOME, rootPath)` does in `Configuration.archive`,
+   including the JDK join of a leading slash.
+   If the file does not exist, the archive root is `$HOME/Pictures/originals` and the agent does not create the toml.
+   If the file exists but `rootPath` is missing or not a string, stop.
+   Do not read `catalog.txt`.
+6. If `<archive-root>/AGENTS.md` exists, leave it and report its first `docs/agent.md` path.
+   If it does not, `mkdir -p` the archive root only, substitute `/PATH/TO/THIS/CHECKOUT` with `"$(pwd -P)"`, and write
+   the template from the README.
+   Do not write any other file into the archive.
+
+Paste this prompt:
+
+```text
+Install gphoto-sync from this checkout so `photo` is on PATH.
+Read AGENTS.md and follow it.
+Do not refresh, sync, publish, or edit pictures.
+```
+
 The archive is `originals/YYYY/MM/DD` under `rootPath`.
 Relaying some other tree into that shape is work for the owner and their agent.
 The contract is `docs/archive.md`.
@@ -63,7 +131,12 @@ The token is `~/.config/org.podval.tools.photo.token.json`.
 | `/usr/bin/vendor_perl/exiftool` | The timestamp written at publish |
 | `lsblk` and `udisksctl` | `photo card` |
 
-The archive root gets the `AGENTS.md` reproduced below.
+Write the archive-root `AGENTS.md` only when that file is absent.
+Substitute `/PATH/TO/THIS/CHECKOUT` in the template below.
+That path is the checkout of this program, not the archive.
+`rootPath` is relative to `$HOME`.
+A missing config file means `$HOME/Pictures/originals`.
+The install does not create the config file.
 
 ```
 # Originals
@@ -73,7 +146,7 @@ This directory is the local photo archive.
 `.gphoto-sync/` is data for the program and the agents.
 It is not a second checkout.
 
-To use the program, read `/home/dub/Podval/gphoto-sync/docs/agent.md` and stop.
+To use the program, read `/PATH/TO/THIS/CHECKOUT/docs/agent.md` and stop.
 To edit an album file by hand, read the archive page of that checkout, `docs/archive.md`.
 A change to the program reads `docs/files.md` or `docs/photos-ui.md` for the one operation being changed.
 ```
