@@ -2,6 +2,9 @@
 
 Manage the local photo archive and publish its albums to Google Photos.
 
+History is [docs/history.md](docs/history.md).
+
+
 | Reader | File | Stops before |
 | --- | --- | --- |
 | A person installing and operating the archive | `README.md`, then `docs/archive.md`, `docs/clock.md`, `docs/commands.md`, `docs/web.md` | Catalog grammar, RPC names, control names |
@@ -159,20 +162,3 @@ A change to the program reads `docs/files.md` or `docs/photos-ui.md` for the one
 `photo status` is a login report.
 It does not print the configuration path.
 The transcript strings are on `docs/commands.md`.
-
-## Google Photos API
-
-The Library API, since 31 March 2025, can create albums and upload, and can list or edit only content this OAuth client
-created.
-It cannot list or rename albums I made by hand, and it cannot delete media.
-
-- https://issuetracker.google.com/issues/368779600?pli=1
-
-- [RClone Google Photo documentation](https://rclone.org/googlephotos/)
-- [RClone Google Photo OAuth documentation](https://rclone.org/drive/#making-your-own-client-id)
-- [RClone Download Proxy](https://github.com/rclone/gphotosdl)
-- [Google Photos API](https://developers.google.com/photos/library/guides/get-started-library)
-- [Google Photo Client Library](https://developers.google.com/photos/overview/get-started-java)
-- [NEW Picker API](https://developers.google.com/photos/picker/guides/get-started-picker)
-
-History is [docs/history.md](docs/history.md).

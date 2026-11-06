@@ -2,7 +2,7 @@
 
 I started dabbling in this area around year 2000, when our daughter was born and I got my first digital camera :)
 
-### Metadata Extraction
+## Metadata Extraction
 
 My take on extracting metadata from image files is in the (now archived)
 [podval-imageio](https://github.com/dubinsky/podval-imageio) repository.
@@ -23,7 +23,7 @@ I contributed small discoveries I made in 2002 about Canon RAW format (crw) to D
 In the end I realized: it does not make sense to do this myself when there are groups of people who dedicate significant
 time to developing and maintaining dedicated tools like `dcraw`, `metadata-extractor` and `ffmpeg` :)
 
-### Metadata Extraction Tools
+## Metadata Extraction Tools
 
 - [metadata-extractor](https://github.com/drewnoakes/metadata-extractor) (originally, https://drewnoakes.com/code/exif/)
   by [Drew Noakes](https://github.com/drewnoakes)
@@ -35,7 +35,7 @@ time to developing and maintaining dedicated tools like `dcraw`, `metadata-extra
 - [jhead](http://www.sentex.net/~mwandel/jhead/)
 - [Java USB Camera Tools](http://jphoto.sourceforge.net/)
 
-### Synchronization with the Cloud
+## Synchronization with the Cloud
 
 My previous attempt at code to synchronize local photo archive with the cloud photo services is in the (now archived)
 [podval-photo-sync](https://github.com/dubinsky/podval-photo-sync) repository.
@@ -54,10 +54,12 @@ There were some good ideas there:
 In the end, while chasing ever-changing cloud, I neglected the management of the local photo archive - something that
 this repository finally delivers.
 
-This client publishes albums whose files I have written.
-The archive files are external.
-Ones I own are renamed by hand.
-Ones I do not own have `owner` and `google-title` and are not renamed.
-Publish does not upload or rename an external album, and it does not call `updateAlbumTitle` for an album with `owner`.
-A client album is `external = false`.
-Cron is out of scope.
+## Google Photos API
+
+The Library API, since 31 March 2025, can create albums and upload, and can list or edit only content this OAuth client
+created.
+It cannot list or rename albums I made by hand, and it cannot delete media.
+
+- https://issuetracker.google.com/issues/368779600?pli=1
+- [RClone Google Photo documentation](https://rclone.org/googlephotos/)
+- [RClone Google Photo OAuth documentation](https://rclone.org/drive/#making-your-own-client-id)

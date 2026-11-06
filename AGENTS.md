@@ -1,6 +1,7 @@
 # gphoto-sync
 
 If the task is to operate the archive, read `docs/agent.md` and stop.
+
 If the task is to install the program, read the Install section of `README.md` and do what it says.
 No other agent task reads `README.md`.
 
