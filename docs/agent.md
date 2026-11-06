@@ -72,8 +72,8 @@ The JSON has no album id, item key, or `google-media-item-id`.
 
 `photo agent catalog` lists every catalog album, sorted by title.
 The command does not write.
-A line is `AgentCommands.catalogLine`: the quoted title, `count=<count> items=<items>`, then `owned` or
-`owner="<label>"`, and, when set, `auto-add`, `error got=<got> of=<of> name-failures=<n>`, `unset=<n>`, and `ambiguous`.
+A line is `AgentSupport.catalogLine`: the quoted title, `count=<count> items=<items>`, then `owned` or `owner="<label>"`,
+and, when set, `auto-add`, `error got=<got> of=<of> name-failures=<n>`, `unset=<n>`, and `ambiguous`.
 The line does not include the album id.
 JSON has `albums`.
 Each album has `id`, `title`, `count`, `owned`, `owner`, `autoAdd`, `error`, `unset`, `items`, and `ambiguous`.
@@ -157,12 +157,18 @@ The command does not publish, sync, or run `repair --names`.
 ### photo agent rename-album
 
 `photo agent rename-album` changes one album title.
+`--title` is required.
+`AgentRename` throws `missing title` when `--title` is absent.
 `--current` equals the catalog title exactly.
 `--new` is non-empty and differs from `--current`.
+`--id` is optional.
+`AgentSupport.select` requires `--id` only when more than one album has that title.
 
 ### photo agent set-description
 
 `photo agent set-description` changes one item description.
+`--item` is required.
+A missing `--item` is `missing item`.
 `--current` equals that filename.
 `--new` may be empty.
 An empty `--new` is two argv elements on the serve socket, the flag and then an empty string.
@@ -178,6 +184,8 @@ A tab or a newline in `--new` is rejected.
 ### photo agent set-date
 
 `photo agent set-date` changes one item's date taken.
+`--item` is required.
+A missing `--item` is `missing item`.
 `--current` equals that filename.
 `--new` is `YYYY-MM-DD HH:MM` local.
 
@@ -185,6 +193,8 @@ A tab or a newline in `--new` is rejected.
 
 `photo agent download-item` downloads one original and does not change Google Photos.
 `--title` names the album.
+`--item` is required.
+A missing `--item` is `missing item`.
 `--id` is required when more than one album has that title, and it must match that title.
 `--current` equals that filename.
 

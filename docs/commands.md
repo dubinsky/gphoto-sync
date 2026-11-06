@@ -8,13 +8,27 @@ A year, a month, or the root lists the directories inside it.
 `photo ls 2010` lists months.
 It does not list the items in that year.
 `photo ls -R 2010` lists those items and does not print directory names.
-Item listings are a day, a picture, `-R`, and any picture filter.
+Item listings are a day, a picture, `--recursive` / `-R`, or one of the picture filters below.
 Those listings are ordered by the assessed civil time, including subseconds.
 A picture with no assessed time goes after the timed rows.
 That includes a folder-day clock and a sidecar disagreement.
 Equal times, and those untimed rows, are ordered by the archive path.
 Directory lines stay in directory-name order.
-`-l` prints a count on a directory, or the long item line on a day or a picture.
+`--long` / `-l` counts on a directory, or the long item line on a day or a picture.
+`--recursive` / `-R` lists items under the path.
+`--name-contains` / `-n` keeps pictures whose name contains this text.
+`--has-extension` / `-e` keeps pictures that have this extension.
+`--property` keeps pictures whose sidecar property matches.
+`--timestamp-from-name-format` keeps pictures whose filename clock uses this format.
+`--timestamp-from-name` keeps pictures whose filename encodes a time.
+`--timestamp-from-name-only` keeps pictures with a filename clock and no usable voting capture time.
+`--timestamps-vary` keeps pictures whose file times differ by more than an hour.
+`--has-metadata` keeps pictures that have a sidecar.
+`--no-normal` keeps pictures with no normal image.
+`--no-timestamp` keeps pictures with no assessed timestamp.
+`--wrong-timestamp` keeps pictures whose file mtime differs from the assessed timestamp.
+`--wrong-day` keeps pictures filed on a different day than the assessed timestamp.
+`--wrong` keeps pictures with no normal image, no timestamp, a wrong timestamp, or a wrong day.
 It does not rename, generate, set mtimes, rewrite albums, or move files.
 
 ### photo repair
@@ -39,7 +53,22 @@ The steps run in that order, and each later step sees the files written by the e
 
 ### photo item show
 
+`ItemShow` prints the picture, the extensions, the sidecar (`Metadata.toString`, or `-`), the folder day, the assessed
+clock, and the claiming album titles.
+JSON has `path`, `extensions`, `sidecar`, `folderDay`, `assessed`, and `albums`.
+It does not write.
+Which clock wins is `docs/clock.md`.
+
 ### photo item set
+
+This is the sidecar write.
+`ItemSet` encodes through `Metadata.encode` and writes `{stem}.toml`, or deletes the file when the result is
+`Metadata.default`.
+`date=` stores that civil day and moves the picture.
+Clearing `date` does not move the files.
+Any other property leaves the files in their folder.
+A claiming dated album that does not contain the new day is refused and nothing is written.
+`--dry-run` prints the actions and writes nothing.
 
 ### photo item month
 
@@ -114,6 +143,7 @@ An external album is refused.
 ### photo album include
 
 `photo album include <title> <picture>...` adds pictures to one album and recompresses `include`.
+`--dry-run` prints the actions and writes nothing.
 
 ### photo album exclude
 
@@ -247,7 +277,8 @@ With no path it uses the same discovery.
 `photo card copy --dry-run` mounts when the volume is unmounted, prints `copy` and `keep` lines, and writes nothing.
 A path is the directory that contains `DCIM` and skips discovery.
 Filing is `photo repair .upload --names --days`.
-The day is the civil day already stored in `PictureAudit.dayShouldBe`, and this command does not define a second rule.
+The day is the assessed civil day already stored in `Dates.Assessment.dayShouldBe`, produced by `PictureAudit.apply` and
+`Dates.dayShouldBe`, and this command does not define a second rule.
 A filed stem is claimed when `Include.claims` matches that folder day.
 `include = all` does that inside the album span.
 `include = all except` does not claim an excepted stem.
@@ -260,6 +291,9 @@ It is not an MCP tool.
 
 ### photo login
 
+`GoogleAuth.login` stores the token and prints `logged in (<absolute token path>)`.
+It does not print the config path.
+
 ### photo status
 
 The transcript is `logged in (<absolute token path>)` or `not logged in (<absolute token path>)`.
@@ -269,6 +303,9 @@ A configuration error still fails in `Session.open`, before this transcript, and
 `~/.config/org.podval.tools.photo.toml` by the path `Configuration` reads.
 
 ### photo logout
+
+If the token file exists, `GoogleAuth.logout` deletes it and prints `logged out (<absolute token path>)`.
+Otherwise it prints `not logged in (<absolute token path>)`.
 
 ### photo shell
 

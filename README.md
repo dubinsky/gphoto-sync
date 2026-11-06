@@ -14,48 +14,36 @@ History is [docs/history.md](docs/history.md).
 ## Install
 
 The supported system is Linux.
-The program starts Chrome at `/usr/bin/google-chrome-stable` (`PlaywrightPhotosUi`), and `photo serve` listens on a Unix
-socket.
-The socket is `$XDG_RUNTIME_DIR/org.podval.tools.photo/serve.sock`.
-
-The install is a checkout of this repository.
-The program is the Gradle `application` whose main class is `org.podval.tools.photo.Cli`, run with `./gradlew run`.
-A package would hide the tree an agent edits.
-
-David Heinemeier Hansson, *The malleable computer*, 15 April 2026,
-<https://world.hey.com/dhh/the-malleable-computer-7c187a9b>: "Open source promised that users would be free to change
-whatever code they were running.
-The reality, however, is that hardly any of them ever did — it was simply too hard.
-Now, with AI, it suddenly isn't."
-When it breaks, the agent fixes it in this checkout; when something is missing, the agent adds it here.
-
+The program starts Chrome at `/usr/bin/google-chrome-stable` (`PlaywrightPhotosUi`).
 `photo` on `PATH` is the symlink `~/.local/bin/photo` to `bin/photo` in this checkout.
-For every command except `shell`, the script `exec`s this checkout's `gradlew` with
-`--quiet --console=plain --project-dir` set to this checkout, then `run`, and one attached `--args=` value.
-The script does not `cd`.
-Executing this checkout's `gradlew` does not select this checkout.
-`--project-dir` does.
-The caller's cwd stays unchanged.
-The script does not call `./gradlew run "$@"`.
-Gradle would consume those flags.
-A copy of the script goes stale.
 The symlink is the install.
+A copy of the script goes stale.
 The program does not create the symlink.
-`photo shell` needs the terminal.
-`gradlew run` forks the program on pipes, so that process has no console and its stdin is already closed.
-The script runs the `photoRuntime` task, reads `build/photo-runtime.txt`, and `exec`s that `java` on
-`org.podval.tools.photo.Cli` with the terminal inherited and `--enable-native-access=ALL-UNNAMED`.
-Tab completion runs in an interactive terminal.
-A pipe stays line at a time.
-`photo serve` in the foreground is the Gradle `run`.
-The detached server `Serve.spawnServe` starts is `setsid java -cp` the Gradle JVM classpath, then
-`org.podval.tools.photo.Cli serve`.
-The wrapper is not that child.
-Do not change `spawnServe` to call `photo`.
-A cold `gradlew run` can exceed Grok's 30 second MCP startup budget.
-Later runs use the Gradle daemon.
-`./gradlew run` remains the program for every command except `shell`.
-The symlink is how `photo` spells that.
+
+The configuration file is `~/.config/org.podval.tools.photo.toml`.
+The keys are `rootPath` and `zoneId`.
+The defaults are `Pictures/originals` and `America/New_York`.
+`rootPath` is relative to `$HOME`.
+`rootPath` must be the archive.
+`byYearDirectoryName` and `uploadDirectoryName` must not be set.
+The first run writes the defaults.
+Later edits, including comments, stay, because the program does not rewrite the file.
+There is no configuration command.
+
+The Desktop client JSON is `~/.config/org.podval.tools.photo.client.json`.
+The token is `~/.config/org.podval.tools.photo.token.json`.
+
+`docs/archive.md` owns the layout.
+Relaying some other tree into that shape is work for the owner and their agent.
+
+| Tool | Why |
+| --- | --- |
+| A JDK, via `./gradlew run` | The program |
+| `/usr/bin/google-chrome-stable` | Refresh, push, and the in-process agent mutations |
+| `ffprobe` | Video clocks |
+| `dcraw` and ImageMagick `convert` | CRW, and `repair --raw` |
+| `/usr/bin/vendor_perl/exiftool` | The timestamp written at publish |
+| `lsblk` and `udisksctl` | `photo card` |
 
 The agent is in the checkout.
 It does all of the following and then stops.
@@ -102,42 +90,42 @@ Read AGENTS.md and follow it.
 Do not refresh, sync, publish, or edit pictures.
 ```
 
-The archive is `originals/YYYY/MM/DD` under `rootPath`.
-Relaying some other tree into that shape is work for the owner and their agent.
-The contract is `docs/archive.md`.
+The install is a checkout of this repository.
+The program is the Gradle `application` whose main class is `org.podval.tools.photo.Cli`, run with `./gradlew run`.
+A package would hide the tree an agent edits.
 
-```
-originals/
-  2010/
-    07/
-      04/
-        to-18 Cape Cod.toml
-      19/
-        1234.jpg
-  Best.toml
-```
+David Heinemeier Hansson, *The malleable computer*, 15 April 2026,
+<https://world.hey.com/dhh/the-malleable-computer-7c187a9b>: "Open source promised that users would be free to change
+whatever code they were running.
+The reality, however, is that hardly any of them ever did — it was simply too hard.
+Now, with AI, it suddenly isn't."
+When it breaks, the agent fixes it in this checkout; when something is missing, the agent adds it here.
 
-The configuration file is `~/.config/org.podval.tools.photo.toml`.
-The keys are `rootPath` and `zoneId`.
-The defaults are `Pictures/originals` and `America/New_York`.
-`rootPath` is relative to `$HOME`.
-`rootPath` must be the archive.
-`byYearDirectoryName` and `uploadDirectoryName` must not be set.
-The first run writes the defaults.
-Later edits, including comments, stay, because the program does not rewrite the file.
-There is no configuration command.
-
-The Desktop client JSON is `~/.config/org.podval.tools.photo.client.json`.
-The token is `~/.config/org.podval.tools.photo.token.json`.
-
-| Tool | Why |
-| --- | --- |
-| A JDK, via `./gradlew run` | The program |
-| `/usr/bin/google-chrome-stable` | Refresh, push, and the in-process agent mutations |
-| `ffprobe` | Video clocks |
-| `dcraw` and ImageMagick `convert` | CRW, and `repair --raw` |
-| `/usr/bin/vendor_perl/exiftool` | The timestamp written at publish |
-| `lsblk` and `udisksctl` | `photo card` |
+For every command except `shell`, the script `exec`s this checkout's `gradlew` with
+`--quiet --console=plain --project-dir` set to this checkout, then `run`, and one attached `--args=` value.
+The script does not `cd`.
+Executing this checkout's `gradlew` does not select this checkout.
+`--project-dir` does.
+The caller's cwd stays unchanged.
+The script does not call `./gradlew run "$@"`.
+Gradle would consume those flags.
+`photo shell` needs the terminal.
+`gradlew run` forks the program on pipes, so that process has no console and its stdin is already closed.
+The script runs the `photoRuntime` task, reads `build/photo-runtime.txt`, and `exec`s that `java` on
+`org.podval.tools.photo.Cli` with the terminal inherited and `--enable-native-access=ALL-UNNAMED`.
+Tab completion runs in an interactive terminal.
+A pipe stays line at a time.
+`photo serve` in the foreground is the Gradle `run`.
+`photo serve` listens on a Unix socket.
+The socket is `$XDG_RUNTIME_DIR/org.podval.tools.photo/serve.sock`.
+The detached server `Serve.spawnServe` starts is `setsid java -cp` the Gradle JVM classpath, then
+`org.podval.tools.photo.Cli serve`.
+The wrapper is not that child.
+Do not change `spawnServe` to call `photo`.
+A cold `gradlew run` can exceed Grok's 30 second MCP startup budget.
+Later runs use the Gradle daemon.
+`./gradlew run` remains the program for every command except `shell`.
+The symlink is how `photo` spells that.
 
 Write the archive-root `AGENTS.md` only when that file is absent.
 Substitute `/PATH/TO/THIS/CHECKOUT` in the template below.

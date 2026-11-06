@@ -558,6 +558,10 @@ The archive inbox `.upload` is a different directory.
   There is normally no quality chooser for a single-photo download.
   The info panel's pixel size is that stored file.
   A match means the download is not a web preview of a larger Google item.
+- Still never invent or guess batchexecute RPC ids for download.
+
+#### Operator notes
+
 - A stored Google file can still be smaller than the camera JPEG in the archive.
   The 2012-08-20 Galaxy Nexus shots are the checked case: the archive file is 2592 on the long side, and both Google
   names are 2048 on the long side.
@@ -571,7 +575,6 @@ The archive inbox `.upload` is a different directory.
 - For doubt on a future download: open the photo info panel (i) and compare pixels (and camera/date) to the staged file
   before re-downloading.
   Takeout remains the bulk alternative for archives.
-- Still never invent or guess batchexecute RPC ids for download.
 
 ### Upload
 
