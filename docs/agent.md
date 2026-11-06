@@ -298,8 +298,10 @@ Flags precede positionals in `argv`.
 `text` is the human output.
 `value` is the command's JSON value, or `null`.
 A failure puts the usage line in `error` and does not write a second line to stderr.
-`cd`, `pwd`, `exit`, `photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, and `photo web` are
-usage on the socket.
+`cd`, `pwd`, `exit`, `photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, `photo web`,
+`photo agent rename-album`, `photo agent set-description`, `photo agent set-date`, `photo agent download-item`,
+`photo agent add-to-album`, `photo agent remove-from-album`, `photo agent move-item`, `photo agent delete-item`,
+`photo agent upload-item`, `photo agent create-album`, and `photo agent delete-album` are usage on the socket.
 `photo serve stop` asks that process to exit between commands.
 It does not preempt a command already running.
 

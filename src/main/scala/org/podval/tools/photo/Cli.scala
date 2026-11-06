@@ -440,7 +440,8 @@ object Cli:
     case CdArgs(_) | PwdArgs | ExitArgs => true
     case _                              => false
 
-  // Every real arm is listed. Refresh, reconcile, file, push, card, and web stay off the serve thread.
+  // These commands run in the calling process, including the Chrome writes.
+  // The socket rejects them, so the match lists every Parsed arm.
   private def runsInCaller(parsed: Parsed): Boolean = parsed match
     case _: RefreshArgs         => true
     case _: ReconcileArgs       => true

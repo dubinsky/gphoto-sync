@@ -277,8 +277,11 @@ Tab completion runs when the process has a console, and a non-console shell stay
 `bin/photo` starts `photo shell` with the terminal inherited, so an interactive session has a console.
 A pipe has no console.
 It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
-`photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, and `photo web` stay in the shell process.
-Other commands go to the socket.
+`photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, `photo web`, `photo agent rename-album`,
+`photo agent set-description`, `photo agent set-date`, `photo agent download-item`, `photo agent add-to-album`,
+`photo agent remove-from-album`, `photo agent move-item`, `photo agent delete-item`, `photo agent upload-item`,
+`photo agent create-album`, and `photo agent delete-album` stay in the shell process.
+Commands that do not run in the calling process, and are not `cd`, `pwd`, or `exit`, still go to the socket.
 Path arguments are archive-root paths.
 `agent include` paths are sent unchanged.
 A command is sent only when `archive` matches this process.
@@ -286,7 +289,9 @@ A mismatch names both paths, says to run `photo serve stop`, and does not run th
 
 A one-shot uses the socket when it is up and `archive` matches.
 It runs in this process when the lock is free.
-`photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, and `photo web` run in this process even
-when the socket is up.
+`photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, `photo web`, `photo agent rename-album`,
+`photo agent set-description`, `photo agent set-date`, `photo agent download-item`, `photo agent add-to-album`,
+`photo agent remove-from-album`, `photo agent move-item`, `photo agent delete-item`, `photo agent upload-item`,
+`photo agent create-album`, and `photo agent delete-album` run in this process even when the socket is up.
 A one-shot does not start `photo serve`.
 A mismatch names both paths and does not run in this process.
