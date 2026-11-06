@@ -513,6 +513,40 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       deleteTree(originals)
       deleteTree(runtime)
 
+  "spliceTitles" should "hold the write lock and keep the hand-spliced text" in:
+    val originals: File = JFiles.createTempDirectory("album-file").toFile
+    val runtime: File = JFiles.createTempDirectory("album-lock").toFile
+    try
+      val file: File = write(
+        originals,
+        "Hawaii.toml",
+        "# keep\nexternal = true\ngoogle-title = \"Hawaii\"\nowner = \"Ada\"\n"
+      )
+      waiterBlocks(runtime):
+        Album.spliceTitles(file, Some(Some("Hawaii Trip")), None)
+      Files.read(file) shouldBe "# keep\nexternal = true\ngoogle-title = \"Hawaii Trip\"\nowner = \"Ada\"\n"
+    finally
+      deleteTree(originals)
+      deleteTree(runtime)
+
+  "writeNew" should "hold the write lock and write the given text" in:
+    val originals: File = JFiles.createTempDirectory("album-file").toFile
+    val runtime: File = JFiles.createTempDirectory("album-lock").toFile
+    try
+      val dest: File = File(originals, "Picnic.toml")
+      val text: String = "# keep\nexternal = true\n"
+      waiterBlocks(runtime):
+        AlbumLinks.writeNew(originals, dest, text)
+      Files.read(dest) shouldBe text
+      val caught: IllegalStateException = the[IllegalStateException] thrownBy
+        Album.withWriteLockDirectory(runtime):
+          AlbumLinks.writeNew(originals, dest, text)
+      caught.getMessage shouldBe "file exists"
+      Files.read(dest) shouldBe text
+    finally
+      deleteTree(originals)
+      deleteTree(runtime)
+
   "planDated" should "keep all and a whole-day line and not write" in:
     withOriginals: originals =>
       touch(originals, "2010/07/04/2412.jpg")
@@ -563,6 +597,55 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
     val folder: String = if directory == "." then "" else directory
     val stem: String = Files.nameAndExtension(file)._1
     Title.fromLocation(folder, stem).getOrElse(fail(relative)).title shouldBe title
+
+  // The holder keeps the write lock until body is queued on it.
+  private def waiterBlocks(runtime: File)(body: => Unit): Unit =
+    val entered = new CountDownLatch(1)
+    val queued = new AtomicBoolean(false)
+    val failed = new AtomicReference[Throwable](null)
+    val waiterFailed = new AtomicReference[Throwable](null)
+    val holder = new Thread(
+      () => {
+        try
+          Album.withWriteLockDirectory(runtime):
+            Album.withWriteLock:
+              entered.countDown()
+              val deadline: Long = System.nanoTime() + 3000000000L
+              def loop(): Unit =
+                if Album.writeWaiters > 0 then queued.set(true)
+                else if System.nanoTime() >= deadline then throw IllegalStateException("waiter not queued")
+                else
+                  Thread.sleep(20)
+                  loop()
+              loop()
+        catch
+          case error: Throwable =>
+            entered.countDown()
+            failed.set(error)
+      },
+      "album-write-hold"
+    )
+    holder.setDaemon(true)
+    holder.start()
+    try
+      assert(entered.await(5, TimeUnit.SECONDS))
+      if failed.get != null then throw failed.get
+      val waiter = new Thread(
+        () => {
+          try Album.withWriteLockDirectory(runtime)(body)
+          catch case error: Throwable => waiterFailed.set(error)
+        },
+        "album-write-wait"
+      )
+      waiter.setDaemon(true)
+      waiter.start()
+      waiter.join(15000)
+      waiter.isAlive shouldBe false
+      if waiterFailed.get != null then throw waiterFailed.get
+    finally holder.join(15000)
+    holder.isAlive shouldBe false
+    if failed.get != null then throw failed.get
+    queued.get shouldBe true
 
   private def write(originals: File, path: String, content: String): File =
     val file: File = File(originals, path)

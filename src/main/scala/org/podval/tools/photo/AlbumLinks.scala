@@ -53,9 +53,11 @@ object AlbumLinks:
         true
 
   // A new toml must not replace a file that appeared after the plan. The link file may.
+  // The exists check and the rename share this hold, so two creates cannot both pass.
   private[photo] def writeNew(archive: File, dest: File, text: String): Unit =
-    if dest.exists then throw IllegalStateException("file exists")
-    move(archive, dest, text, replace = false)
+    Album.withWriteLock:
+      if dest.exists then throw IllegalStateException("file exists")
+      Album.writeAtomic(dest, text, replace = false)
 
   private def parseRow(line: String): Row =
     TextLines.columns(line, 2) match

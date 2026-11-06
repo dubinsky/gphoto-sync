@@ -168,8 +168,8 @@ object Album:
       val text: String = Files.read(file)
       // Held here, the file is still the bytes just read. The write is below.
       afterCompute()
-      if text.isBlank then Files.write(AlbumFile.blankGoogle(googleAlbumId, publishedTitle), file)
-      else Files.write(AlbumFile.spliceGoogleText(file, text, googleAlbumId, publishedTitle), file)
+      if text.isBlank then replaceAtomic(file, AlbumFile.blankGoogle(googleAlbumId, publishedTitle), replace = true)
+      else replaceAtomic(file, AlbumFile.spliceGoogleText(file, text, googleAlbumId, publishedTitle), replace = true)
 
   // Recompress each include entry that claims one of these stems. An empty album writes include = [].
   // The read is inside the lock. A next include computed before tryLock is not spliced.
@@ -398,6 +398,10 @@ object Album:
         case Some(dir) => Right(dir)
         case None      => Serve.runtimeDirectory()
 
+  private[photo] def writeAtomic(file: File, text: String, replace: Boolean): Unit =
+    withWriteLock:
+      replaceAtomic(file, text, replace)
+
   private def replaceAtomic(file: File, text: String, replace: Boolean): Unit =
     val parent: File = file.getParentFile
     val temp: File = File(parent, s".${file.getName}.${UUID.randomUUID}.partial")
@@ -435,9 +439,10 @@ object Album:
   ): Unit =
     googleTitle.foreach(_.foreach(text => AlbumFile.rejectControl(file, "google-title", text)))
     publishedTitle.foreach(text => AlbumFile.rejectControl(file, "published-title", text))
-    val original: String = Files.read(file)
-    val rendered: String = AlbumFile.spliceTitles(file, original, googleTitle, publishedTitle)
-    if rendered != original then Files.write(rendered, file)
+    withWriteLock:
+      val original: String = Files.read(file)
+      val rendered: String = AlbumFile.spliceTitles(file, original, googleTitle, publishedTitle)
+      if rendered != original then replaceAtomic(file, rendered, replace = true)
 
   private def curatedFiles(originals: File): Seq[File] =
     Option(originals.listFiles)

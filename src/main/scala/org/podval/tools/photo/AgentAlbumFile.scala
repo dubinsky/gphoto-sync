@@ -1,12 +1,7 @@
 package org.podval.tools.photo
 
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.channels.FileChannel
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files as JFiles, StandardCopyOption, StandardOpenOption}
 import java.time.{LocalDate, YearMonth}
-import java.util.UUID
 
 private[photo] final class AgentAlbumFile(
   id: Option[String],
@@ -86,7 +81,7 @@ private[photo] object AgentAlbumFile:
     val value: Json = albumValueOf(album.id, relative, pathTitle, album.title, willRename, None)
     if dryRun then (scanned, Result.Ok(Album.renderFile(written) + s"rename $renameWord\n", value))
     else
-      commitFile(archive, dest, Album.renderFile(written))
+      Album.writeAtomic(dest, Album.renderFile(written), replace = true)
       val dropped: Session = scanned.drop(dest.getParentFile)
       val summary: String =
         s"""wrote $relative
@@ -132,34 +127,6 @@ private[photo] object AgentAlbumFile:
         "requestId" -> requestId.fold(Json.Null)(Json.Str.apply)
       )
     )
-
-  private def commitFile(archive: File, dest: File, text: String): Unit =
-    val dot: File = File(archive, ".gphoto-sync")
-    dot.mkdirs()
-    val partial: File = File(dot, s"album-write-${UUID.randomUUID()}.partial")
-    var renamed: Boolean = false
-    try
-      writeForced(partial, text)
-      JFiles.move(
-        partial.toPath,
-        dest.toPath,
-        StandardCopyOption.ATOMIC_MOVE,
-        StandardCopyOption.REPLACE_EXISTING
-      )
-      renamed = true
-    finally if !renamed then JFiles.deleteIfExists(partial.toPath)
-
-  private def writeForced(file: File, text: String): Unit =
-    val channel: FileChannel = FileChannel.open(
-      file.toPath,
-      StandardOpenOption.CREATE_NEW,
-      StandardOpenOption.WRITE
-    )
-    try
-      val bytes: ByteBuffer = ByteBuffer.wrap(text.getBytes(StandardCharsets.UTF_8))
-      while bytes.hasRemaining do channel.write(bytes)
-      channel.force(true)
-    finally channel.close()
 
   private[photo] def place(album: Catalog.Album): (Title.Parsed, Boolean) =
     val working: String = album.title.split(' ').filter(_.nonEmpty).mkString(" ")

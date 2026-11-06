@@ -435,7 +435,8 @@ object Reconcile:
         if changed then wrote += Album.relative(archive, file)
       case Touch.RemoveFile(file) =>
         wrote += Album.relative(archive, file)
-        NFiles.deleteIfExists(file.toPath)
+        Album.withWriteLock:
+          NFiles.deleteIfExists(file.toPath)
     wrote.foreach(path => Transcript.println(s"wrote $path"))
     val linksChanged: Boolean = AlbumLinks.publish(archive, plan.links)
     if linksChanged then Transcript.println("wrote .gphoto-sync/album-links.tsv")

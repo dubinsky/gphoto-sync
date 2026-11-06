@@ -139,7 +139,7 @@ object FileDownloads:
         .map: local =>
           Title.dayText(neighbor) -> local
 
-  // commitFile moves with REPLACE_EXISTING and would overwrite an archive original.
+  // Album.writeAtomic(replace = true) would overwrite an archive original.
   private def commit(staged: File, destination: File): Boolean =
     if destination.exists then false
     else
