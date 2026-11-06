@@ -586,6 +586,20 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
         "2010/07/04/2412 is claimed by 2010/07, which does not contain 2010-07-05"
       Files.read(wholeFile) shouldBe whole
 
+  "picture paths" should "accept a civil day and reject a non-civil digit day" in:
+    Album.picturePath("2010/07/04/2412") match
+      case Some(day, stem) =>
+        day.isEqual(LocalDate.of(2010, 7, 4)) shouldBe true
+        stem shouldBe "2412"
+      case None =>
+        fail("2010/07/04/2412")
+    Album.picturePath("2010/02/31/1000") shouldBe None
+    Album.picturePath("2010/13/01/1000") shouldBe None
+    val thrown: IllegalArgumentException = intercept[IllegalArgumentException]:
+      Album.splitPath("2010/02/31/1000")
+    thrown.getMessage shouldBe "not a picture path: 2010/02/31/1000"
+    DateTree.isDay("31") shouldBe true
+
   private def touch(originals: File, path: String): Unit =
     val file: File = File(originals, path)
     file.getParentFile.mkdirs()

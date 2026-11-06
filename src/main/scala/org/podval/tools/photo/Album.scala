@@ -9,7 +9,7 @@ import java.nio.channels.{FileChannel, FileLock, OverlappingFileLockException}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{FileAlreadyExistsException, Files as NFiles, StandardCopyOption, StandardOpenOption}
 import java.nio.file.attribute.PosixFilePermissions
-import java.time.LocalDate
+import java.time.{DateTimeException, LocalDate}
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -290,7 +290,8 @@ object Album:
     path.split('/').filter(_.nonEmpty).toSeq match
       case Seq(year, month, day, stem)
           if DateTree.isNumber(year, 4) && DateTree.isNumber(month, 2) && DateTree.isNumber(day, 2) =>
-        Some((LocalDate.of(year.toInt, month.toInt, day.toInt), stem))
+        try Some((LocalDate.of(year.toInt, month.toInt, day.toInt), stem))
+        catch case _: DateTimeException => None
       case _ =>
         None
 
