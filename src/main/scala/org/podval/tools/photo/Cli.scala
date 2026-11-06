@@ -436,103 +436,85 @@ object Cli:
             val (returned, result) = run(session, parsed)
             show(session, returned, result, keepReturned = true)
 
-  private def staysLocal(parsed: Parsed): Boolean = parsed match
-    case CdArgs(_) | PwdArgs | ExitArgs => true
-    case _                              => false
+  private[photo] enum Where derives CanEqual:
+    case Caller
+    case Serve
+    case Shell
+
+  private[photo] final case class Placement(where: Where, wireName: String, mcpInProcess: Boolean)
+
+  private[photo] def placement(parsed: Parsed): Placement = parsed match
+    case _: RefreshArgs         => Placement(Where.Caller, "refresh", false)
+    case _: ReconcileArgs       => Placement(Where.Caller, "reconcile", false)
+    case _: FileArgs            => Placement(Where.Caller, "file", false)
+    case _: PushArgs            => Placement(Where.Caller, "push", false)
+    case _: CardDiscover        => Placement(Where.Caller, "card", false)
+    case _: CardCopy            => Placement(Where.Caller, "card", false)
+    case _: WebArgs             => Placement(Where.Caller, "web", false)
+    case _: RenameAlbumArgs     => Placement(Where.Caller, "rename-album", true)
+    case _: SetDescriptionArgs  => Placement(Where.Caller, "set-description", true)
+    case _: SetDateArgs         => Placement(Where.Caller, "set-date", true)
+    case _: DownloadItemArgs    => Placement(Where.Caller, "download-item", true)
+    case _: AddToAlbumArgs      => Placement(Where.Caller, "add-to-album", true)
+    case _: RemoveFromAlbumArgs => Placement(Where.Caller, "remove-from-album", true)
+    case _: MoveItemArgs        => Placement(Where.Caller, "move-item", true)
+    case _: DeleteItemArgs      => Placement(Where.Caller, "delete-item", true)
+    case _: UploadItemArgs      => Placement(Where.Caller, "upload-item", true)
+    case _: CreateAlbumArgs     => Placement(Where.Caller, "create-album", true)
+    case _: DeleteAlbumArgs     => Placement(Where.Caller, "delete-album", true)
+    case _: CdArgs              => Placement(Where.Shell, "cd", false)
+    case PwdArgs                => Placement(Where.Shell, "pwd", false)
+    case ExitArgs               => Placement(Where.Shell, "exit", false)
+    case _: Ls                  => Placement(Where.Serve, "ls", false)
+    case _: ItemShowArgs        => Placement(Where.Serve, "item", false)
+    case _: ItemSetArgs         => Placement(Where.Serve, "item", false)
+    case _: ItemMonthArgs       => Placement(Where.Serve, "item", false)
+    case _: ItemIntoArgs        => Placement(Where.Serve, "item", false)
+    case _: AlbumLsArgs         => Placement(Where.Serve, "album", false)
+    case _: AlbumShowArgs       => Placement(Where.Serve, "album", false)
+    case _: AlbumClaimsArgs     => Placement(Where.Serve, "album", false)
+    case _: AlbumNewArgs        => Placement(Where.Serve, "album", false)
+    case _: AlbumRmArgs         => Placement(Where.Serve, "album", false)
+    case _: AlbumMvArgs         => Placement(Where.Serve, "album", false)
+    case _: AlbumIncludeArgs    => Placement(Where.Serve, "album", false)
+    case _: AlbumExcludeArgs    => Placement(Where.Serve, "album", false)
+    case _: AlbumMergeArgs      => Placement(Where.Serve, "album", false)
+    case _: PublishArgs         => Placement(Where.Serve, "publish", false)
+    case _: SyncArgs            => Placement(Where.Serve, "sync", false)
+    case _: RepairArgs          => Placement(Where.Serve, "repair", false)
+    case LoginArgs              => Placement(Where.Serve, "login", false)
+    case StatusArgs             => Placement(Where.Serve, "status", false)
+    case LogoutArgs             => Placement(Where.Serve, "logout", false)
+    case _: AgentStemsArgs      => Placement(Where.Serve, "stems", false)
+    case AgentYearsArgs         => Placement(Where.Serve, "years", false)
+    case _: AgentMonthsArgs     => Placement(Where.Serve, "months", false)
+    case _: AgentDaysArgs       => Placement(Where.Serve, "days", false)
+    case _: AgentClaimsArgs     => Placement(Where.Serve, "claims", false)
+    case AgentCatalogArgs       => Placement(Where.Serve, "catalog", false)
+    case _: AgentItemsArgs      => Placement(Where.Serve, "items", false)
+    case _: AgentMatchArgs      => Placement(Where.Serve, "match", false)
+    case _: AgentLocateArgs     => Placement(Where.Serve, "locate", false)
+    case _: AgentIncludeArgs    => Placement(Where.Serve, "include", false)
+    case _: AgentAlbumFileArgs  => Placement(Where.Serve, "album-file", false)
+    case AgentDriftArgs         => Placement(Where.Serve, "drift", false)
+    case AgentMissingArgs       => Placement(Where.Serve, "missing", false)
+
+  private def staysLocal(parsed: Parsed): Boolean =
+    placement(parsed).where == Where.Shell
 
   // These commands run in the calling process, including the Chrome writes.
-  // The socket rejects them, so the match lists every Parsed arm.
-  private def runsInCaller(parsed: Parsed): Boolean = parsed match
-    case _: RefreshArgs         => true
-    case _: ReconcileArgs       => true
-    case _: FileArgs            => true
-    case _: PushArgs            => true
-    case _: CardDiscover        => true
-    case _: CardCopy            => true
-    case _: RenameAlbumArgs     => true
-    case _: SetDescriptionArgs  => true
-    case _: SetDateArgs         => true
-    case _: DownloadItemArgs    => true
-    case _: AddToAlbumArgs      => true
-    case _: RemoveFromAlbumArgs => true
-    case _: MoveItemArgs        => true
-    case _: DeleteItemArgs      => true
-    case _: UploadItemArgs      => true
-    case _: CreateAlbumArgs     => true
-    case _: DeleteAlbumArgs     => true
-    case _: WebArgs             => true
-    case _: Ls                  => false
-    case _: ItemShowArgs        => false
-    case _: ItemSetArgs         => false
-    case _: ItemMonthArgs       => false
-    case _: ItemIntoArgs        => false
-    case _: AlbumLsArgs         => false
-    case _: AlbumShowArgs       => false
-    case _: AlbumClaimsArgs     => false
-    case _: AlbumNewArgs        => false
-    case _: AlbumRmArgs         => false
-    case _: AlbumMvArgs         => false
-    case _: AlbumIncludeArgs    => false
-    case _: AlbumExcludeArgs    => false
-    case _: AlbumMergeArgs      => false
-    case _: PublishArgs         => false
-    case _: SyncArgs            => false
-    case _: RepairArgs          => false
-    case LoginArgs              => false
-    case StatusArgs             => false
-    case LogoutArgs             => false
-    case _: CdArgs              => false
-    case PwdArgs                => false
-    case ExitArgs               => false
-    case _: AgentStemsArgs      => false
-    case AgentYearsArgs         => false
-    case _: AgentMonthsArgs     => false
-    case _: AgentDaysArgs       => false
-    case _: AgentClaimsArgs     => false
-    case AgentCatalogArgs       => false
-    case _: AgentItemsArgs      => false
-    case _: AgentMatchArgs      => false
-    case _: AgentLocateArgs     => false
-    case _: AgentIncludeArgs    => false
-    case _: AgentAlbumFileArgs  => false
-    case AgentDriftArgs         => false
-    case AgentMissingArgs       => false
+  // The socket rejects them, so placement lists every Parsed arm.
+  private[photo] def runsInCaller(parsed: Parsed): Boolean =
+    placement(parsed).where == Where.Caller
 
-  private def callerCommand(parsed: Parsed): String = parsed match
-    case _: RefreshArgs         => "refresh"
-    case _: ReconcileArgs       => "reconcile"
-    case _: FileArgs            => "file"
-    case _: PushArgs            => "push"
-    case _: CardDiscover        => "card"
-    case _: CardCopy            => "card"
-    case _: WebArgs             => "web"
-    case _: RenameAlbumArgs     => "rename-album"
-    case _: SetDescriptionArgs  => "set-description"
-    case _: SetDateArgs         => "set-date"
-    case _: DownloadItemArgs    => "download-item"
-    case _: AddToAlbumArgs      => "add-to-album"
-    case _: RemoveFromAlbumArgs => "remove-from-album"
-    case _: MoveItemArgs        => "move-item"
-    case _: DeleteItemArgs      => "delete-item"
-    case _: UploadItemArgs      => "upload-item"
-    case _: CreateAlbumArgs     => "create-album"
-    case _: DeleteAlbumArgs     => "delete-album"
-    case _                      => "command"
+  private def callerCommand(parsed: Parsed): String =
+    placement(parsed) match
+      case Placement(Where.Caller, name, _) => name
+      case _                                => throw IllegalStateException("not a caller command")
 
   // Refresh, reconcile, file, push, card, and web stay off this branch.
-  private[photo] def inProcessWrite(parsed: Parsed): Boolean = parsed match
-    case _: RenameAlbumArgs     => true
-    case _: SetDescriptionArgs  => true
-    case _: SetDateArgs         => true
-    case _: DownloadItemArgs    => true
-    case _: AddToAlbumArgs      => true
-    case _: RemoveFromAlbumArgs => true
-    case _: MoveItemArgs        => true
-    case _: DeleteItemArgs      => true
-    case _: UploadItemArgs      => true
-    case _: CreateAlbumArgs     => true
-    case _: DeleteAlbumArgs     => true
-    case _                      => false
+  private[photo] def inProcessWrite(parsed: Parsed): Boolean =
+    placement(parsed).mcpInProcess
 
   private def remoteStep(
     session: Session,
