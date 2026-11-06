@@ -9,16 +9,10 @@ import java.nio.file.Paths
 import java.time.{LocalDate, Month}
 import java.time.format.TextStyle
 import java.util.Locale
-import org.podval.tools.photo.{Catalog, Operation, Refresh}
+import org.podval.tools.photo.{Catalog, Operation, Redaction, Refresh}
 
 // Gradle tests construct a fake PhotosUi. Nothing in the test suite calls open.
 private[photo] object PlaywrightPhotosUi:
-  private val Secret: Regex = "AF1Qip[A-Za-z0-9_-]*".r
-
-  private[photo] def redactSecrets(text: String, title: String): String =
-    val replacement: String = if title.nonEmpty then title else "album"
-    Secret.replaceAllIn(text, Regex.quoteReplacement(replacement))
-
   def open(notice: Refresh.Notice => Unit): PhotosAct =
     val ui = new PlaywrightPhotosUi(notice)
     try
@@ -880,7 +874,7 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
     map
 
   private def redact(card: AlbumCard, error: Exception): String =
-    val message: String = PlaywrightPhotosUi.redactSecrets(
+    val message: String = Redaction.redactSecrets(
       Option(error.getMessage).getOrElse("read failed"),
       card.title
     )

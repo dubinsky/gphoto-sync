@@ -2,7 +2,6 @@ package org.podval.tools.photo
 
 import java.io.File
 import java.time.{DateTimeException, LocalDate}
-import org.podval.tools.photo.chrome.PlaywrightPhotosUi
 
 private[photo] object AgentSupport:
 
@@ -296,7 +295,7 @@ private[photo] object AgentSupport:
         val (kept, result) = Refresh.busy(session, places)
         result match
           case Result.Failed(text, value, message) =>
-            (kept, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, title), value, message))
+            (kept, Result.Failed(Redaction.redactSecrets(text, title), value, message))
           case other =>
             (kept, other)
       case Refresh.Claim.Owned(channel, lock) =>

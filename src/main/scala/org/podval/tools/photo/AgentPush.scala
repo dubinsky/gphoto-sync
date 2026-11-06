@@ -3,7 +3,7 @@ package org.podval.tools.photo
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
-import org.podval.tools.photo.chrome.{AgentChrome, PhotosAct, PlaywrightPhotosUi}
+import org.podval.tools.photo.chrome.{AgentChrome, PhotosAct}
 
 private[photo] object AgentPush:
 
@@ -322,11 +322,11 @@ private[photo] object AgentPush:
       s"recovery ${stop.recovery}",
       s"catalog $catalog"
     ) ++ unmarked ++ Seq(shown)).filter(_.nonEmpty)
-    val text: String = PlaywrightPhotosUi.redactSecrets(rows.mkString("", "\n", "\n"), stop.title)
+    val text: String = Redaction.redactSecrets(rows.mkString("", "\n", "\n"), stop.title)
     (session, Result.Failed(text, Json.Null, Refresh.MutationFailed))
 
   private def pushText(actions: Seq[PushAction]): String =
     pushText(actions.map(_.line), actions.headOption.fold("")(_.shownTitle))
 
   private def pushText(lines: Seq[String], title: String): String =
-    PlaywrightPhotosUi.redactSecrets(AgentSupport.textOf(lines), title)
+    Redaction.redactSecrets(AgentSupport.textOf(lines), title)

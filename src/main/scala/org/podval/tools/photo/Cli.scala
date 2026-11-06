@@ -27,8 +27,7 @@ import org.podval.tools.photo.chrome.{
   AgentRename,
   AgentSetDate,
   AgentSetDescription,
-  AgentUpload,
-  PlaywrightPhotosUi
+  AgentUpload
 }
 
 object Cli:
@@ -271,7 +270,7 @@ object Cli:
   private def quietFailure(message: String): Boolean =
     message == Refresh.AlreadyRunning || message == Refresh.MutationFailed
 
-  private def redacted(text: String): String = PlaywrightPhotosUi.redactSecrets(text, "")
+  private def redacted(text: String): String = Redaction.redactSecrets(text, "")
 
   private[photo] enum Step:
     case Continue(session: Session)

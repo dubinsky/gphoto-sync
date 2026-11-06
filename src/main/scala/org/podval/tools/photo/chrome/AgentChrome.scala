@@ -15,6 +15,7 @@ import org.podval.tools.photo.{
   Operation,
   Pictures,
   Publish,
+  Redaction,
   Refresh,
   RefreshPlan,
   Result,
@@ -433,7 +434,7 @@ private[photo] object AgentChrome:
       .map(_ => session.copy(catalogCache = None))
 
   private def renameOk(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
-    val text: String = PlaywrightPhotosUi.redactSecrets(s"rename-album ${Album.quote(updated)}\n", updated)
+    val text: String = Redaction.redactSecrets(s"rename-album ${Album.quote(updated)}\n", updated)
     val value: Json = Json.Obj(
       Seq(
         "action" -> Json.Str("rename-album"),
@@ -471,7 +472,7 @@ private[photo] object AgentChrome:
         "itemKey" -> Json.Str("")
       )
     )
-    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
+    (session, Result.Failed(Redaction.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
   private def heldDescription(
     session: Session,
@@ -1286,7 +1287,7 @@ private[photo] object AgentChrome:
     key: String,
     action: String
   ): (Session, Result) =
-    val text: String = PlaywrightPhotosUi.redactSecrets(
+    val text: String = Redaction.redactSecrets(
       s"$action ${Album.quote(filename)} ${Album.quote(destination.title)}\n",
       destination.title
     )
@@ -1351,14 +1352,14 @@ private[photo] object AgentChrome:
     (
       session,
       Result.Failed(
-        PlaywrightPhotosUi.redactSecrets(text, destination.title),
+        Redaction.redactSecrets(text, destination.title),
         value,
         Refresh.MutationFailed
       )
     )
 
   private def createOk(session: Session, title: String, id: String): (Session, Result) =
-    val text: String = PlaywrightPhotosUi.redactSecrets(s"create-album ${Album.quote(title)}\n", title)
+    val text: String = Redaction.redactSecrets(s"create-album ${Album.quote(title)}\n", title)
     val value: Json = Json.Obj(
       Seq(
         "action" -> Json.Str("create-album"),
@@ -1396,10 +1397,10 @@ private[photo] object AgentChrome:
         "itemKey" -> Json.Str("")
       )
     )
-    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, title), value, Refresh.MutationFailed))
+    (session, Result.Failed(Redaction.redactSecrets(text, title), value, Refresh.MutationFailed))
 
   private def deleteAlbumOk(session: Session, album: Catalog.Album): (Session, Result) =
-    val text: String = PlaywrightPhotosUi.redactSecrets(s"delete-album ${Album.quote(album.title)}\n", album.title)
+    val text: String = Redaction.redactSecrets(s"delete-album ${Album.quote(album.title)}\n", album.title)
     val value: Json = Json.Obj(
       Seq(
         "action" -> Json.Str("delete-album"),
@@ -1437,7 +1438,7 @@ private[photo] object AgentChrome:
         "itemKey" -> Json.Str("")
       )
     )
-    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
+    (session, Result.Failed(Redaction.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
   private def moveOk(
     session: Session,
@@ -1446,7 +1447,7 @@ private[photo] object AgentChrome:
     filename: String,
     key: String
   ): (Session, Result) =
-    val text: String = PlaywrightPhotosUi.redactSecrets(
+    val text: String = Redaction.redactSecrets(
       s"move-item ${Album.quote(filename)} ${Album.quote(source.title)} ${Album.quote(destination.title)}\n",
       source.title
     )
@@ -1496,7 +1497,7 @@ private[photo] object AgentChrome:
         "itemKey" -> Json.Str(item.key)
       )
     )
-    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, source.title), value, Refresh.MutationFailed))
+    (session, Result.Failed(Redaction.redactSecrets(text, source.title), value, Refresh.MutationFailed))
 
   private def itemOk(
     session: Session,
@@ -1505,7 +1506,7 @@ private[photo] object AgentChrome:
     action: String,
     catalog: String
   ): (Session, Result) =
-    val text: String = PlaywrightPhotosUi.redactSecrets(s"$action ${Album.quote(item.filename)}\n", album.title)
+    val text: String = Redaction.redactSecrets(s"$action ${Album.quote(item.filename)}\n", album.title)
     val value: Json = Json.Obj(
       Seq(
         "action" -> Json.Str(action),
@@ -1546,7 +1547,7 @@ private[photo] object AgentChrome:
         "itemKey" -> Json.Str(item.key)
       )
     )
-    (session, Result.Failed(PlaywrightPhotosUi.redactSecrets(text, album.title), value, Refresh.MutationFailed))
+    (session, Result.Failed(Redaction.redactSecrets(text, album.title), value, Refresh.MutationFailed))
 
   private[photo] def collapsedText(detail: String, fallback: String): String =
     val message: String = detail.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')

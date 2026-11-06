@@ -3,7 +3,6 @@ package org.podval.tools.photo
 import scala.annotation.tailrec
 import java.io.{File, InputStream, OutputStream}
 import java.nio.charset.StandardCharsets
-import org.podval.tools.photo.chrome.PlaywrightPhotosUi
 
 private[photo] object Mcp:
   // Incoming cap. The byte past this is not stored, and a tool result is not cut to it.
@@ -291,11 +290,11 @@ private[photo] object Mcp:
       session = next
       result match
         case Result.Ok(text, value) =>
-          toolResult(PlaywrightPhotosUi.redactSecrets(text, ""), isError = false, structuredOf(value))
+          toolResult(Redaction.redactSecrets(text, ""), isError = false, structuredOf(value))
         case Result.Failed(text, value, _) =>
-          toolResult(PlaywrightPhotosUi.redactSecrets(text, ""), isError = true, structuredOf(value))
+          toolResult(Redaction.redactSecrets(text, ""), isError = true, structuredOf(value))
         case Result.Usage(message) =>
-          toolError(PlaywrightPhotosUi.redactSecrets(Cli.usageLine(message), ""))
+          toolError(Redaction.redactSecrets(Cli.usageLine(message), ""))
 
     private def mapCalled(called: Serve.Called): Json =
       val response: Serve.Response = called.response

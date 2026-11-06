@@ -6,7 +6,7 @@ import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files as JFiles, StandardOpenOption}
 import java.time.LocalDate
-import org.podval.tools.photo.chrome.{AgentChrome, AlbumCard, PhotosAct, PlaywrightPhotosUi}
+import org.podval.tools.photo.chrome.{AgentChrome, AlbumCard, PhotosAct}
 
 class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
   "rename-album" should "leave the catalog unchanged when the step throws" in:
@@ -182,8 +182,8 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
   it should "strip every AF1Qip token on stderr and stay in the caller" in:
     withArchive: archive =>
       writeCatalog(archive, "album\talb07\t0\tOther")
-      PlaywrightPhotosUi.redactSecrets("AF1QipAAA and AF1QipBBB_9", "2010/07 ") shouldBe "2010/07  and 2010/07 "
-      PlaywrightPhotosUi.redactSecrets("AF1QipAAA and AF1QipBBB_9", "") shouldBe "album and album"
+      Redaction.redactSecrets("AF1QipAAA and AF1QipBBB_9", "2010/07 ") shouldBe "2010/07  and 2010/07 "
+      Redaction.redactSecrets("AF1QipAAA and AF1QipBBB_9", "") shouldBe "album and album"
       withAct(archive): (session, _, opened) =>
         Refresh.openAct = _ => new RenameFake((_, _) => fail("accept opened"))
         val (_, out, err) = shellOf(
