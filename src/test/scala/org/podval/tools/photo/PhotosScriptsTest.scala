@@ -12,9 +12,9 @@ class PhotosScriptsTest extends AnyFlatSpec, Matchers:
     PhotosScripts.albumKeysScript shouldBe albumKeysGolden
     PhotosScripts.itemFactScript shouldBe itemFactGolden
 
-  it should "keep the owner catch in ownerScript and readScript" in:
-    PhotosScripts.ownerScript should include(ownerCatch)
-    PhotosScripts.readScript should include(readCatch)
+  it should "not swallow a throw from the owner field in ownerScript and readScript" in:
+    PhotosScripts.ownerScript should not include(ownerCatch)
+    PhotosScripts.readScript should not include(readCatch)
 
   private val ownerGolden: String =
     """async (card) => {
@@ -41,12 +41,10 @@ class PhotosScriptsTest extends AnyFlatSpec, Matchers:
       const auth = card.auth ? card.auth : null;
       const raw0 = await retry(() => rpc('snAcKc', [card.id, null, null, auth]));
       const first = JSON.parse(raw0);
-      try {
-        const o = first[3][5];
-        const gid = o && String(o[1]);
-        const nm = o && o[11] && o[11][0];
-        if (gid && ME && gid !== ME) return String(nm || gid).replace(/[\t\n\r]/g, ' ');
-      } catch (e) {}
+      const o = first[3][5];
+      const gid = o && String(o[1]);
+      const nm = o && o[11] && o[11][0];
+      if (gid && ME && gid !== ME) return String(nm || gid).replace(/[\t\n\r]/g, ' ');
       return '';
     }"""
 
@@ -79,12 +77,10 @@ class PhotosScriptsTest extends AnyFlatSpec, Matchers:
       const L = [['album', card.id, count, card.title].join('\t')];
       const raw0 = await retry(() => rpc('snAcKc', [card.id, null, null, auth]));
       let first = JSON.parse(raw0);
-      try {
-        const o = first[3][5];
-        const gid = o && String(o[1]);
-        const nm = o && o[11] && o[11][0];
-        if (gid && ME && gid !== ME) L.push(['owner', card.id, sp(nm || gid)].join('\t'));
-      } catch (e) {}
+      const o = first[3][5];
+      const gid = o && String(o[1]);
+      const nm = o && o[11] && o[11][0];
+      if (gid && ME && gid !== ME) L.push(['owner', card.id, sp(nm || gid)].join('\t'));
       const items = [], seen = new Set();
       let d = first, tok = null, empty = 0, pages = 0;
       while (true) {
