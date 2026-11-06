@@ -1,6 +1,6 @@
 package org.podval.tools.photo
 
-import java.io.{File, IOException}
+import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.file.{FileAlreadyExistsException, Files as NFiles, StandardOpenOption}
 import java.time.{DateTimeException, LocalDate}
@@ -195,7 +195,7 @@ object FileDownloads:
   private def transfer(source: FileChannel, channel: FileChannel, position: Long, size: Long): Unit =
     if position < size then
       val n: Long = channel.transferFrom(source, position, size - position)
-      if n == 0 then throw IOException(s"short transfer at $position of $size")
+      if n == 0 then throw IllegalArgumentException(s"short transfer at $position of $size")
       transfer(source, channel, position + n, size)
 
   private def scan(inbox: File): Seq[Staged] =

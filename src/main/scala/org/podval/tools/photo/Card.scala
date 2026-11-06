@@ -360,7 +360,7 @@ object Card:
   private def transfer(source: FileChannel, channel: FileChannel, position: Long, size: Long): Unit =
     if position < size then
       val n: Long = channel.transferFrom(source, position, size - position)
-      if n == 0 then throw IOException(s"short transfer at $position of $size")
+      if n == 0 then throw IllegalArgumentException(s"short transfer at $position of $size")
       transfer(source, channel, position + n, size)
 
   private def readLsblk(): Either[String, String] =
