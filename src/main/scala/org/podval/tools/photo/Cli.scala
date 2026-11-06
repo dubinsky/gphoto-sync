@@ -512,7 +512,6 @@ object Cli:
       case Placement(Where.Caller, name, _) => name
       case _                                => throw IllegalStateException("not a caller command")
 
-  // Refresh, reconcile, file, push, card, and web stay off this branch.
   private[photo] def inProcessWrite(parsed: Parsed): Boolean =
     placement(parsed).mcpInProcess
 
