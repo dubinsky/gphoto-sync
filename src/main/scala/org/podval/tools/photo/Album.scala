@@ -370,8 +370,8 @@ object Album:
 
   private def withFileLock[A](deadline: Long)(body: => A): A =
     lockPlace() match
-      case Left(_) =>
-        body
+      case Left(message) =>
+        throw IllegalArgumentException(message)
       case Right(dir) =>
         Serve.prepare(dir)
         val lockFile: File = File(dir, lockName)
@@ -404,6 +404,9 @@ object Album:
           throw IllegalArgumentException("album file is busy")
       pollLock(channel, deadline)
 
+  // A test cannot unset XDG_RUNTIME_DIR in this JVM. Production calls Serve.runtimeDirectory.
+  private[photo] var runtimeDirectory: () => Either[String, File] = () => Serve.runtimeDirectory()
+
   // ThreadLocal when the caller set it, else the running web server, else the serve runtime directory.
   private def lockPlace(): Either[String, File] =
     val chosen: Option[File] = writeLockDirectory.get
@@ -411,7 +414,7 @@ object Album:
     else
       Web.handlerRuntime match
         case Some(dir) => Right(dir)
-        case None      => Serve.runtimeDirectory()
+        case None      => runtimeDirectory()
 
   private[photo] def writeAtomic(file: File, text: String, replace: Boolean): Unit =
     withWriteLock:

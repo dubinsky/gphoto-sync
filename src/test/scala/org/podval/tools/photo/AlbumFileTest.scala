@@ -547,6 +547,22 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       deleteTree(originals)
       deleteTree(runtime)
 
+  "a write" should "refuse when the runtime directory is unset and leave the file untouched" in:
+    val originals: File = JFiles.createTempDirectory("album-file").toFile
+    try
+      val text: String = "# keep\nexternal = false\n"
+      val file: File = write(originals, "Best.toml", text)
+      assert(Web.handlerRuntime.isEmpty)
+      val previous: () => Either[String, File] = Album.runtimeDirectory
+      Album.runtimeDirectory = () => Left("XDG_RUNTIME_DIR is unset")
+      try
+        val caught: IllegalArgumentException = the[IllegalArgumentException] thrownBy
+          Album.writeAtomic(file, "external = true\n", replace = true)
+        caught.getMessage shouldBe "XDG_RUNTIME_DIR is unset"
+        Files.read(file) shouldBe text
+      finally Album.runtimeDirectory = previous
+    finally deleteTree(originals)
+
   "planDated" should "keep the all-plus-stem edit and throw for a whole-day line" in:
     withOriginals: originals =>
       touch(originals, "2010/07/04/2412.jpg")
