@@ -52,7 +52,7 @@ object Shell:
       if !interactive then None
       else
         try
-          val terminal = TerminalBuilder.builder().system(true).jna(true).build()
+          val terminal = TerminalBuilder.builder().system(true).build()
           val sessionNow: () => Session = () => live
           val completer: Completer = (_, line, found) =>
             val words: List[String] = line.words.asScala.toList
