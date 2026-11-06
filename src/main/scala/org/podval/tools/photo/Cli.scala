@@ -1,21 +1,7 @@
 package org.podval.tools.photo
 
-import scala.annotation.tailrec
-import scala.jdk.CollectionConverters.ListHasAsScala
 import java.io.File
-import org.jline.reader.{
-  Candidate,
-  Completer,
-  CompletingParsedLine,
-  EndOfFileException,
-  LineReader,
-  LineReaderBuilder,
-  ParsedLine,
-  Parser,
-  UserInterruptException
-}
-import org.jline.reader.impl.DefaultParser
-import org.jline.terminal.TerminalBuilder
+import org.jline.reader.Parser
 import org.podval.tools.photo.chrome.{
   AgentAdd,
   AgentCreate,
@@ -200,7 +186,7 @@ object Cli:
                 System.err.println(usageLine(message))
                 sys.exit(1)
               case Right(_) =>
-                val code: Int = shell(
+                val code: Int = Shell.shell(
                   session,
                   stdinLines,
                   exchange = Some((current, argv) => remoteResult(runtime, current, argv)),
@@ -267,36 +253,16 @@ object Cli:
       System.err.println(redacted(usageLine(message)))
       sys.exit(processCode(result))
 
-  private def quietFailure(message: String): Boolean =
+  private[photo] def quietFailure(message: String): Boolean =
     message == Refresh.AlreadyRunning || message == Refresh.MutationFailed
 
-  private def redacted(text: String): String = Redaction.redactSecrets(text, "")
+  private[photo] def redacted(text: String): String = Redaction.redactSecrets(text, "")
 
   private[photo] enum Step:
     case Continue(session: Session)
     case Stop
 
-  // doComplete deletes the raw word, opening quote included, then writes this escape.
-  // titleToken is that whole replacement. DefaultParser.escape would quote the token again.
-  private[photo] val shellParser: Parser = new DefaultParser:
-    override def parse(line: String, cursor: Int, context: Parser.ParseContext): ParsedLine =
-      super.parse(line, cursor, context) match
-        case completing: CompletingParsedLine =>
-          new CompletingParsedLine:
-            override def escape(candidate: CharSequence, complete: Boolean): CharSequence =
-              // complete is DefaultParser's request to append a closing quote.
-              // titleToken already closed one, and this string replaces the raw word.
-              Completion.titleToken(candidate.toString)
-            override def rawWordCursor(): Int = completing.rawWordCursor()
-            override def rawWordLength(): Int = completing.rawWordLength()
-            override def word(): String = completing.word()
-            override def wordCursor(): Int = completing.wordCursor()
-            override def wordIndex(): Int = completing.wordIndex()
-            override def words(): java.util.List[String] = completing.words()
-            override def line(): String = completing.line()
-            override def cursor(): Int = completing.cursor()
-        case other =>
-          other
+  private[photo] def shellParser: Parser = Shell.shellParser
 
   private[photo] def shell(
     session: Session,
@@ -304,53 +270,7 @@ object Cli:
     run: (Session, Parsed) => (Session, Result) = (session, parsed) => toOperation(parsed).execute(session),
     exchange: Option[(Session, List[String]) => Result] = None,
     interactive: Boolean = false
-  ): Int =
-    // Assigned before each readLine. Tab runs inside that read, so cd is already visible.
-    var live: Session = session
-    val reader: Option[LineReader] =
-      if !interactive then None
-      else
-        try
-          val terminal = TerminalBuilder.builder().system(true).jna(true).build()
-          val sessionNow: () => Session = () => live
-          val completer: Completer = (_, line, found) =>
-            val words: List[String] = line.words.asScala.toList
-            Completion
-              .candidates(sessionNow(), words, line.wordIndex)
-              .foreach: text =>
-                found.add(new Candidate(text))
-          Some(
-            LineReaderBuilder.builder().terminal(terminal).parser(shellParser).completer(completer).build()
-          )
-        catch
-          case _: Exception =>
-            None
-    try
-      @tailrec
-      def loop(current: Session): Int =
-        live = current
-        val line: Option[String] = reader match
-          case None =>
-            Console.err.print(current.prompt)
-            Console.err.flush()
-            if lines.hasNext then Some(lines.next()) else None
-          case Some(lineReader) =>
-            try Option(lineReader.readLine(current.prompt))
-            catch
-              case _: EndOfFileException     => None
-              case _: UserInterruptException => Some("")
-        line match
-          case None =>
-            0
-          case Some(text) =>
-            step(current, text, run, exchange) match
-              case Step.Stop           => 0
-              case Step.Continue(next) => loop(next)
-      loop(session)
-    finally
-      reader.foreach: lineReader =>
-        try lineReader.getTerminal.close()
-        catch case _: java.io.IOException => ()
+  ): Int = Shell.shell(session, lines, run, exchange, interactive)
 
   // The socket writes this line on the connection. serveResponse does not print it.
   private[photo] def serveResponse(
@@ -403,37 +323,6 @@ object Cli:
   // Serve parses from the archive root. The cursor field is unused, so put it back.
   private def parked(session: Session): Session =
     session.copy(cursor = session.root, style = PathStyle.Serve)
-
-  private def step(
-    session: Session,
-    line: String,
-    run: (Session, Parsed) => (Session, Result),
-    exchange: Option[(Session, List[String]) => Result]
-  ): Step =
-    splitLine(line) match
-      case Left(message) =>
-        Console.err.println(redacted(usageLine(message)))
-        Step.Continue(session)
-      case Right(Nil) =>
-        Step.Continue(session)
-      case Right(args) =>
-        parse(args, Front.Shell) match
-          case Help(text) =>
-            println(text)
-            Step.Continue(session)
-          case Usage(message) =>
-            Console.err.println(redacted(usageLine(message)))
-            Step.Continue(session)
-          case ShellFront | ServeFront | ServeStop | McpFront =>
-            Console.err.println(redacted(usageLine("already running")))
-            Step.Continue(session)
-          case Run(ExitArgs) =>
-            Step.Stop
-          case Run(parsed) if exchange.isDefined && !staysLocal(parsed) && !runsInCaller(parsed) =>
-            remoteStep(session, args, exchange.get)
-          case Run(parsed) =>
-            val (returned, result) = run(session, parsed)
-            show(session, returned, result, keepReturned = true)
 
   private[photo] enum Where derives CanEqual:
     case Caller
@@ -498,7 +387,7 @@ object Cli:
     case AgentDriftArgs         => Placement(Where.Serve, "drift", false)
     case AgentMissingArgs       => Placement(Where.Serve, "missing", false)
 
-  private def staysLocal(parsed: Parsed): Boolean =
+  private[photo] def staysLocal(parsed: Parsed): Boolean =
     placement(parsed).where == Where.Shell
 
   // These commands run in the calling process, including the Chrome writes.
@@ -513,79 +402,6 @@ object Cli:
 
   private[photo] def inProcessWrite(parsed: Parsed): Boolean =
     placement(parsed).mcpInProcess
-
-  private def remoteStep(
-    session: Session,
-    args: List[String],
-    exchange: (Session, List[String]) => Result
-  ): Step =
-    val argv: List[String] =
-      try rewritePaths(session, args)
-      catch
-        case error: IllegalArgumentException =>
-          Console.err.println(redacted(usageLine(Operation.messageOf(error))))
-          return Step.Continue(session)
-    show(session, session, exchange(session, argv), keepReturned = false)
-
-  private def show(session: Session, returned: Session, result: Result, keepReturned: Boolean): Step =
-    result match
-      case Result.Ok(text, _) =>
-        print(redacted(text))
-        Step.Continue(if keepReturned then returned else session)
-      case Result.Failed(text, _, message) if quietFailure(message) =>
-        print(redacted(text))
-        Step.Continue(if keepReturned then returned else session)
-      case Result.Failed(text, _, message) =>
-        print(redacted(text))
-        Console.err.println(redacted(usageLine(message)))
-        Step.Continue(if keepReturned then returned else session)
-      case Result.Usage(message) =>
-        Console.err.println(redacted(usageLine(message)))
-        Step.Continue(session)
-
-  // Path positionals are marked on the command. Flags stay as typed.
-  private def rewritePaths(session: Session, args: List[String]): List[String] =
-    locate(args) match
-      case None =>
-        args
-      case Some((command, commandArgs, prefix)) =>
-        readFlags(command, commandArgs, Values()) match
-          case Left(_) =>
-            args
-          case Right((_, positionals)) =>
-            val flags: List[String] = commandArgs.take(commandArgs.length - positionals.length)
-            val rewrittenPositionals: List[String] =
-              rewritePositionals(session, command.positionals, positionals)
-            if prefix == List("ls") && positionals.isEmpty then prefix ++ flags ++ List(rootForm(session, "."))
-            else prefix ++ flags ++ rewrittenPositionals
-
-  private def locate(args: List[String]): Option[(Command, List[String], List[String])] = args match
-    case "agent" :: name :: rest =>
-      agentCommands.find(_.name == name).map(command => (command, rest, List("agent", name)))
-    case "item" :: name :: rest =>
-      itemCommands.find(_.name == name).map(command => (command, rest, List("item", name)))
-    case "album" :: name :: rest =>
-      albumCommands.find(_.name == name).map(command => (command, rest, List("album", name)))
-    case name :: rest =>
-      registry.find(_.name == name).map(command => (command, rest, List(name)))
-    case Nil =>
-      None
-
-  private def rewritePositionals(session: Session, expected: List[Positional], args: List[String]): List[String] =
-    (expected, args) match
-      case (Nil, rest) =>
-        rest
-      case (Rest(_, path, _) :: _, rest) =>
-        if path then rest.map(token => rootForm(session, token)) else rest
-      case (_, Nil) =>
-        Nil
-      case (positional :: moreExpected, token :: moreArgs) =>
-        val rewritten: String = if positional.path then rootForm(session, token) else token
-        rewritten :: rewritePositionals(session, moreExpected, moreArgs)
-
-  private def rootForm(session: Session, token: String): String =
-    val text: String = session.parse(token).toString.stripPrefix("/")
-    if text.isEmpty then "/" else text
 
   private[photo] def remoteResult(runtime: File, session: Session, argv: List[String]): Result =
     Serve.client(runtime, argv, Serve.archiveOf(session)) match
@@ -625,51 +441,7 @@ object Cli:
       case _ =>
         Left("serve is not running")
 
-  // Inside quotes only \\ and \" are escapes. Any other backslash stays in the token.
-  private[photo] def splitLine(line: String): Either[String, List[String]] =
-    collect(line, Nil)
-
-  @tailrec
-  private def collect(rest: String, acc: List[String]): Either[String, List[String]] =
-    val left: String = rest.dropWhile(_.isWhitespace)
-    if left.isEmpty then Right(acc.reverse)
-    else
-      readToken(left, "") match
-        case Left(message)        => Left(message)
-        case Right((token, more)) => collect(more, token :: acc)
-
-  private def readToken(rest: String, acc: String): Either[String, (String, String)] =
-    if rest.isEmpty || rest.head.isWhitespace then Right((acc, rest))
-    else
-      rest.head match
-        case '\\' =>
-          val more: String = rest.drop(1)
-          if more.isEmpty then Left("trailing backslash")
-          else readToken(more.drop(1), acc + more.take(1))
-        case '"' =>
-          readQuoted(rest.drop(1), acc) match
-            case Left(message)         => Left(message)
-            case Right((quoted, more)) => readToken(more, quoted)
-        case _ =>
-          val (bare, more) = rest.span(ch => !ch.isWhitespace && ch != '\\' && ch != '"')
-          readToken(more, acc + bare)
-
-  private def readQuoted(rest: String, acc: String): Either[String, (String, String)] =
-    if rest.isEmpty then Left("unclosed quote")
-    else
-      val (bare, more) = rest.span(ch => ch != '"' && ch != '\\')
-      val soFar: String = acc + bare
-      if more.isEmpty then Left("unclosed quote")
-      else if more.head == '"' then Right((soFar, more.drop(1)))
-      else
-        val escaped: String = more.drop(1)
-        if escaped.isEmpty then Left("unclosed quote")
-        else
-          val taken: String = escaped.head match
-            case '\\'  => "\\"
-            case '"'   => "\""
-            case other => s"\\$other"
-          readQuoted(escaped.drop(1), soFar + taken)
+  private[photo] def splitLine(line: String): Either[String, List[String]] = Shell.splitLine(line)
 
   private[photo] def parse(args: List[String], front: Front = Front.OneShot): Outcome = args match
     case Nil =>
@@ -802,11 +574,11 @@ object Cli:
     case RepairArgs(path, names, raw, timestamps, days, dryRun) =>
       Repair(path, names, raw, timestamps, days, dryRun)
     case CdArgs(path) =>
-      Cd(path)
+      Shell.Cd(path)
     case PwdArgs =>
-      Pwd
+      Shell.Pwd
     case ExitArgs =>
-      Exit
+      Shell.Exit
     case AgentStemsArgs(day) =>
       AgentStems(day)
     case AgentYearsArgs =>
@@ -935,7 +707,7 @@ object Cli:
           case Some(message) => Usage(message)
           case None          => finish(command, values, positionals, front)
 
-  private def readFlags(
+  private[photo] def readFlags(
     command: Command,
     args: List[String],
     values: Values
@@ -1857,46 +1629,3 @@ object Cli:
     flags = List(Flag("dry-run", None, BooleanKind, "print copy and keep lines and write nothing")),
     build = (values, args) => CardCopy(bool(values, "dry-run"), args.headOption)
   )
-
-  private def cursorOnly(session: Session, name: String): Option[Result] = session.style match
-    case PathStyle.Cursor =>
-      None
-    case PathStyle.OneShot | PathStyle.Serve =>
-      Some(Result.Usage(s"$name is only available in the shell"))
-
-  private final case class Cd(path: Option[String]) extends Operation:
-    override def execute(session: Session): (Session, Result) =
-      cursorOnly(session, "cd") match
-        case Some(result) =>
-          (session, result)
-        case None =>
-          try
-            val target: Path = path.fold(session.root)(session.parse)
-            target match
-              case directory: Directory if directory.directory.isDirectory =>
-                (session.copy(cursor = directory), Result.Ok("", Json.Null))
-              case _: Directory =>
-                (session, Result.Usage("no such directory"))
-              case _ =>
-                (session, Result.Usage("not a directory"))
-          catch
-            case error: IllegalArgumentException =>
-              (session, Result.Usage(Operation.messageOf(error)))
-            case _: NoSuchElementException =>
-              (session, Result.Usage("no such directory"))
-
-  private object Pwd extends Operation:
-    override def execute(session: Session): (Session, Result) =
-      cursorOnly(session, "pwd") match
-        case Some(result) =>
-          (session, result)
-        case None =>
-          (session, Result.Ok(session.pwdLine, Json.Null))
-
-  private object Exit extends Operation:
-    override def execute(session: Session): (Session, Result) =
-      cursorOnly(session, "exit") match
-        case Some(result) =>
-          (session, result)
-        case None =>
-          (session, Result.Ok("", Json.Null))
