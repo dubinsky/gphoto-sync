@@ -124,11 +124,8 @@ private[photo] object PhotosScripts:
       return true;
     }"""
 
-  private[photo] val ownerScript: String =
-    """async (card) => {
-      const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
-      if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
+  private val batchexecute: String =
+    """      const sleep = ms => new Promise(r => setTimeout(r, ms));
       async function rpc(id, args) {
         const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
         const ctl = new AbortController();
@@ -145,7 +142,13 @@ private[photo] object PhotosScripts:
           throw new Error('no wrb');
         } finally { clearTimeout(t); }
       }
-      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }"""
+
+  private[photo] val ownerScript: String =
+    """async (card) => {
+      const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
+      if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
+""" + batchexecute + """
       const auth = card.auth ? card.auth : null;
       const raw0 = await retry(() => rpc('snAcKc', [card.id, null, null, auth]));
       const first = JSON.parse(raw0);
@@ -162,24 +165,7 @@ private[photo] object PhotosScripts:
     """async (card) => {
       const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
       if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
-      async function rpc(id, args) {
-        const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
-        const ctl = new AbortController();
-        const t = setTimeout(() => ctl.abort(), 30000);
-        try {
-          const r = await fetch('/_/PhotosUi/data/batchexecute?rpcids=' + id + '&bl=' + encodeURIComponent(bl) + '&hl=en&rt=c', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body, signal: ctl.signal, credentials: 'include' });
-          if (!r.ok) throw new Error('http ' + r.status);
-          const txt = (await r.text()).replace(/^\)\]\}'/, '');
-          for (const line of txt.split('\n')) {
-            if (line.includes('wrb.fr')) {
-              try { const a = JSON.parse(line); const row = a.find(x => x && x[0] === 'wrb.fr'); if (row) return row[2]; } catch (e) {}
-            }
-          }
-          throw new Error('no wrb');
-        } finally { clearTimeout(t); }
-      }
-      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+""" + batchexecute + """
       const okThumb = u => typeof u === 'string' && (u.startsWith('https://photos.fife.usercontent.google.com/') || u.startsWith('https://lh3.googleusercontent.com/pw/'));
       const sp = s => String(s).replace(/[\t\n\r]/g, ' ');
       const auth = card.auth ? card.auth : null;
@@ -260,24 +246,7 @@ private[photo] object PhotosScripts:
     """async (key) => {
       const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
       if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
-      async function rpc(id, args) {
-        const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
-        const ctl = new AbortController();
-        const t = setTimeout(() => ctl.abort(), 30000);
-        try {
-          const r = await fetch('/_/PhotosUi/data/batchexecute?rpcids=' + id + '&bl=' + encodeURIComponent(bl) + '&hl=en&rt=c', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body, signal: ctl.signal, credentials: 'include' });
-          if (!r.ok) throw new Error('http ' + r.status);
-          const txt = (await r.text()).replace(/^\)\]\}'/, '');
-          for (const line of txt.split('\n')) {
-            if (line.includes('wrb.fr')) {
-              try { const a = JSON.parse(line); const row = a.find(x => x && x[0] === 'wrb.fr'); if (row) return row[2]; } catch (e) {}
-            }
-          }
-          throw new Error('no wrb');
-        } finally { clearTimeout(t); }
-      }
-      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+""" + batchexecute + """
       function shareAuth() {
         const here = new URL(location.href);
         const own = here.searchParams.get('key');
@@ -326,24 +295,7 @@ private[photo] object PhotosScripts:
     """async (albumId) => {
       const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
       if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
-      async function rpc(id, args) {
-        const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
-        const ctl = new AbortController();
-        const t = setTimeout(() => ctl.abort(), 30000);
-        try {
-          const r = await fetch('/_/PhotosUi/data/batchexecute?rpcids=' + id + '&bl=' + encodeURIComponent(bl) + '&hl=en&rt=c', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body, signal: ctl.signal, credentials: 'include' });
-          if (!r.ok) throw new Error('http ' + r.status);
-          const txt = (await r.text()).replace(/^\)\]\}'/, '');
-          for (const line of txt.split('\n')) {
-            if (line.includes('wrb.fr')) {
-              try { const a = JSON.parse(line); const row = a.find(x => x && x[0] === 'wrb.fr'); if (row) return row[2]; } catch (e) {}
-            }
-          }
-          throw new Error('no wrb');
-        } finally { clearTimeout(t); }
-      }
-      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+""" + batchexecute + """
       function albumAuth(id) {
         const here = new URL(location.href);
         const own = here.pathname.match(/\/share\/(AF1Qip[^/?#]+)/);
@@ -392,24 +344,7 @@ private[photo] object PhotosScripts:
       const albumId = parts.length > 1 ? parts[1] : '';
       const bl = WIZ_global_data.cfb2h, at = WIZ_global_data.SNlM0e, ME = String(WIZ_global_data.S06Grb || '');
       if (!/^\d+$/.test(ME)) throw new Error('no user gaia id');
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
-      async function rpc(id, args) {
-        const body = 'f.req=' + encodeURIComponent(JSON.stringify([[[id, JSON.stringify(args), null, 'generic']]])) + '&at=' + encodeURIComponent(at);
-        const ctl = new AbortController();
-        const t = setTimeout(() => ctl.abort(), 30000);
-        try {
-          const r = await fetch('/_/PhotosUi/data/batchexecute?rpcids=' + id + '&bl=' + encodeURIComponent(bl) + '&hl=en&rt=c', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body, signal: ctl.signal, credentials: 'include' });
-          if (!r.ok) throw new Error('http ' + r.status);
-          const txt = (await r.text()).replace(/^\)\]\}'/, '');
-          for (const line of txt.split('\n')) {
-            if (line.includes('wrb.fr')) {
-              try { const a = JSON.parse(line); const row = a.find(x => x && x[0] === 'wrb.fr'); if (row) return row[2]; } catch (e) {}
-            }
-          }
-          throw new Error('no wrb');
-        } finally { clearTimeout(t); }
-      }
-      async function retry(f, n = 4) { let e; for (let i = 0; i < n; i++) { try { return await f(); } catch (x) { e = x; await sleep(1000 * Math.pow(2, i)); } } throw e; }
+""" + batchexecute + """
       function albumAuth(id) {
         const here = new URL(location.href);
         const own = here.pathname.match(/\/share\/(AF1Qip[^/?#]+)/);
