@@ -404,7 +404,11 @@ private[photo] object AgentChrome:
     acceptRequest(albums, Action.RenameAlbum, fresh.id, "", album.title, updated)
     fresh
 
-  private def publishTitle(session: Session, album: Catalog.Album, updated: String): Either[String, Session] =
+  private def spliceCatalog(
+    session: Session,
+    revise: (String, Seq[Catalog.Album], Map[String, Seq[String]]) => Either[String, Seq[Seq[String]]],
+    check: File => Either[String, Unit]
+  ): Either[String, Session] =
     val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
     val live: File = File(directory, "catalog.txt")
     val partial: File = File(directory, "catalog.txt.partial")
@@ -412,16 +416,7 @@ private[photo] object AgentChrome:
     val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
     val albums: Seq[Catalog.Album] = Catalog.read(live)
     val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
-    val groups: Either[String, Seq[Seq[String]]] =
-      albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
-        case (Left(message), _) => Left(message)
-        case (Right(acc), next) =>
-          if next.id == album.id then
-            blocks.get(album.id) match
-              case Some(block) => Right(acc :+ RefreshPlan.retitle(block, updated))
-              case None        => Left("missing album block")
-          else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
-    groups
+    revise(source, albums, blocks)
       .flatMap: lines =>
         try
           Files.write(RefreshPlan.renderLines(lines), partial)
@@ -429,9 +424,24 @@ private[photo] object AgentChrome:
         catch
           case error: Exception =>
             Left(Operation.messageOf(error))
-      .flatMap(_ => RefreshPlan.checkRetitle(partial))
+      .flatMap(_ => check(partial))
       .flatMap(_ => RefreshPlan.swap(live, partial, previous))
       .map(_ => session.copy(catalogCache = None))
+
+  private def publishTitle(session: Session, album: Catalog.Album, updated: String): Either[String, Session] =
+    spliceCatalog(
+      session,
+      (_, albums, blocks) =>
+        albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+          case (Left(message), _) => Left(message)
+          case (Right(acc), next) =>
+            if next.id == album.id then
+              blocks.get(album.id) match
+                case Some(block) => Right(acc :+ RefreshPlan.retitle(block, updated))
+                case None        => Left("missing album block")
+            else Right(acc :+ RefreshPlan.copiedLines(next, blocks)),
+      RefreshPlan.checkRetitle
+    )
 
   private def renameOk(session: Session, album: Catalog.Album, updated: String): (Session, Result) =
     val text: String = Redaction.redactSecrets(s"rename-album ${Album.quote(updated)}\n", updated)
@@ -608,36 +618,22 @@ private[photo] object AgentChrome:
     day: LocalDate
   ): Either[String, Session] =
     try
-      val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
-      val live: File = File(directory, "catalog.txt")
-      val partial: File = File(directory, "catalog.txt.partial")
-      val previous: File = File(directory, "catalog.txt.previous")
-      val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
-      val albums: Seq[Catalog.Album] = Catalog.read(live)
-      val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
-      val groups: Either[String, Seq[Seq[String]]] =
-        albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
-          case (Left(message), _) => Left(message)
-          case (Right(acc), next) =>
-            if next.id == album.id then
-              if !blocks.contains(album.id) then Left("missing album block")
-              else if !next.items.exists(_.key == item.key) then Left("no such item")
-              else
-                val revised: Catalog.Album = next.copy(items = next.items.map: found =>
-                  if found.key == item.key then found.copy(date = Some(day)) else found)
-                Right(acc :+ RefreshPlan.recordLines(revised))
-            else Right(acc :+ RefreshPlan.copiedLines(next, blocks))
-      groups
-        .flatMap: lines =>
-          try
-            Files.write(RefreshPlan.renderLines(lines), partial)
-            Right(())
-          catch
-            case error: Exception =>
-              Left(Operation.messageOf(error))
-        .flatMap(_ => RefreshPlan.checkRetitle(partial))
-        .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-        .map(_ => session.copy(catalogCache = None))
+      spliceCatalog(
+        session,
+        (_, albums, blocks) =>
+          albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+            case (Left(message), _) => Left(message)
+            case (Right(acc), next) =>
+              if next.id == album.id then
+                if !blocks.contains(album.id) then Left("missing album block")
+                else if !next.items.exists(_.key == item.key) then Left("no such item")
+                else
+                  val revised: Catalog.Album = next.copy(items = next.items.map: found =>
+                    if found.key == item.key then found.copy(date = Some(day)) else found)
+                  Right(acc :+ RefreshPlan.recordLines(revised))
+              else Right(acc :+ RefreshPlan.copiedLines(next, blocks)),
+        RefreshPlan.checkRetitle
+      )
     catch
       case error: Exception =>
         Left(Operation.messageOf(error))
@@ -882,38 +878,27 @@ private[photo] object AgentChrome:
   // exactly every stored id except this one. Counts and titles on those cards are not a rewrite.
   private def omitAlbum(session: Session, deletedId: String, cards: Seq[AlbumCard]): Either[String, Session] =
     try
-      val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
-      val live: File = File(directory, "catalog.txt")
-      val partial: File = File(directory, "catalog.txt.partial")
-      val previous: File = File(directory, "catalog.txt.previous")
-      val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
-      val stored: Seq[Catalog.Album] = Catalog.read(live)
-      if cards.length < RefreshPlan.Floor then Left("rows < 250")
-      else
-        val cardIds: Set[String] = cards.map(_.id).toSet
-        val wanted: Set[String] = stored.map(_.id).toSet - deletedId
-        if cardIds != wanted then Left("album set")
-        else
-          val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
-          val survivors: Seq[Catalog.Album] = stored.filter(_.id != deletedId)
-          val groups: Either[String, Seq[Seq[String]]] =
-            survivors.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
-              case (Left(message), _)  => Left(message)
-              case (Right(acc), album) =>
-                blocks.get(album.id) match
-                  case Some(lines) => Right(acc :+ lines)
-                  case None        => Left("missing album block")
-          groups
-            .flatMap: lines =>
-              try
-                Files.write(RefreshPlan.renderLines(lines), partial)
-                Right(())
-              catch
-                case error: Exception =>
-                  Left(Operation.messageOf(error))
-            .flatMap(_ => omitCheck(partial, deletedId, survivors, blocks))
-            .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-            .map(_ => session.copy(catalogCache = None))
+      var survivors: Seq[Catalog.Album] = Seq.empty
+      var blocks: Map[String, Seq[String]] = Map.empty
+      spliceCatalog(
+        session,
+        (_, stored, found) =>
+          if cards.length < RefreshPlan.Floor then Left("rows < 250")
+          else
+            val cardIds: Set[String] = cards.map(_.id).toSet
+            val wanted: Set[String] = stored.map(_.id).toSet - deletedId
+            if cardIds != wanted then Left("album set")
+            else
+              survivors = stored.filter(_.id != deletedId)
+              blocks = found
+              survivors.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+                case (Left(message), _)  => Left(message)
+                case (Right(acc), album) =>
+                  found.get(album.id) match
+                    case Some(lines) => Right(acc :+ lines)
+                    case None        => Left("missing album block"),
+        partial => omitCheck(partial, deletedId, survivors, blocks)
+      )
     catch
       case error: Exception =>
         Left(Operation.messageOf(error))
@@ -1112,36 +1097,22 @@ private[photo] object AgentChrome:
     revisions: Seq[(String, Catalog.Album => Catalog.Album)]
   ): Either[String, Session] =
     try
-      val directory: File = File(session.root.configuration.archive, ".gphoto-sync")
-      val live: File = File(directory, "catalog.txt")
-      val partial: File = File(directory, "catalog.txt.partial")
-      val previous: File = File(directory, "catalog.txt.previous")
-      val source: String = JFiles.readString(live.toPath, StandardCharsets.UTF_8)
-      val albums: Seq[Catalog.Album] = Catalog.read(live)
-      if revisions.exists((id, _) => !albums.exists(_.id == id)) then Left("no such album")
-      else
-        val blocks: Map[String, Seq[String]] = RefreshPlan.blocksOf(source)
-        val groups: Either[String, Seq[Seq[String]]] =
-          albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
-            case (Left(message), _) => Left(message)
-            case (Right(acc), next) =>
-              revisions.find(_._1 == next.id) match
-                case Some((_, revise)) =>
-                  if !blocks.contains(next.id) then Left("missing album block")
-                  else Right(acc :+ RefreshPlan.recordLines(revise(next)))
-                case None =>
-                  Right(acc :+ RefreshPlan.copiedLines(next, blocks))
-        groups
-          .flatMap: lines =>
-            try
-              Files.write(RefreshPlan.renderLines(lines), partial)
-              Right(())
-            catch
-              case error: Exception =>
-                Left(Operation.messageOf(error))
-          .flatMap(_ => RefreshPlan.checkRetitle(partial))
-          .flatMap(_ => RefreshPlan.swap(live, partial, previous))
-          .map(_ => session.copy(catalogCache = None))
+      spliceCatalog(
+        session,
+        (_, albums, blocks) =>
+          if revisions.exists((id, _) => !albums.exists(_.id == id)) then Left("no such album")
+          else
+            albums.foldLeft[Either[String, Seq[Seq[String]]]](Right(Seq.empty)):
+              case (Left(message), _) => Left(message)
+              case (Right(acc), next) =>
+                revisions.find(_._1 == next.id) match
+                  case Some((_, revise)) =>
+                    if !blocks.contains(next.id) then Left("missing album block")
+                    else Right(acc :+ RefreshPlan.recordLines(revise(next)))
+                  case None =>
+                    Right(acc :+ RefreshPlan.copiedLines(next, blocks)),
+        RefreshPlan.checkRetitle
+      )
     catch
       case error: Exception =>
         Left(Operation.messageOf(error))
