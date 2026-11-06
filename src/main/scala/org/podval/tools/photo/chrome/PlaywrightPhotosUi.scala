@@ -155,8 +155,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       page.keyboard().press("Control+A")
       if text.isEmpty then page.keyboard().press("Backspace")
       else page.keyboard().insertText(text)
-      confirmed = true
       page.keyboard().press("Tab")
+      confirmed = true
       awaitDescription(text, System.currentTimeMillis + 20000L)
     catch
       case miss: Refresh.ActMiss =>
@@ -228,8 +228,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         new Page.GetByRoleOptions().setName(destination.title).setExact(true)
       )
       awaitCount(option, System.currentTimeMillis + 20000L, "destination album is absent")
-      confirmed = true
       click(option.first())
+      confirmed = true
       val after: Seq[String] = readKeyList(destination.id)
       val added: Seq[String] = after.filterNot(before.contains)
       val named: Map[String, Catalog.Item] =
@@ -275,8 +275,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         new Locator.GetByRoleOptions().setName(name).setExact(true)
       )
       if button.count() == 0 then throw Refresh.ActMiss("Remove is absent", confirmed = false)
-      confirmed = true
       click(button.first())
+      confirmed = true
       if readKeyList(album.id).contains(item.key) then throw Refresh.ActMiss("source key is present", confirmed = true)
     catch
       case miss: Refresh.ActMiss =>
@@ -304,8 +304,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
           new Locator.GetByRoleOptions().setName(name).setExact(true)
         )
         if button.count() == 0 then throw Refresh.ActMiss("Move to trash is absent", confirmed = false)
-        confirmed = true
         click(button.first())
+        confirmed = true
         if readKeyList(album.id).contains(item.key) then
           throw Refresh.ActMiss("source key is present", confirmed = true)
     catch
@@ -343,8 +343,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       // Dialog Done adds a library photo. The chooser is the upload, so the flag flips at setFiles.
       val chooser: FileChooser = page.waitForFileChooser(new Runnable:
         def run(): Unit = click(computer.first()))
-      confirmed = true
       chooser.setFiles(file.toPath)
+      confirmed = true
 
       @tailrec
       def awaitAdded(deadline: Long): Catalog.Item =
@@ -385,8 +385,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
         new Page.GetByRoleOptions().setName("Create album").setExact(true)
       )
       // The album exists as soon as this click returns, even if Done never runs.
-      confirmed = true
       click(button.first())
+      confirmed = true
       val field: Locator = page.getByRole(
         AriaRole.TEXTBOX,
         new Page.GetByRoleOptions().setName("Edit album name").setExact(true)
@@ -430,8 +430,8 @@ private final class PlaywrightPhotosUi(notice: Refresh.Notice => Unit) extends P
       )
       if button.count() == 0 then throw Refresh.ActMiss("Delete is absent", confirmed = false)
       // Keep album is the other button. This click is the delete.
-      confirmed = true
       click(button.first())
+      confirmed = true
       albumCards()
     catch
       case miss: Refresh.ActMiss =>
