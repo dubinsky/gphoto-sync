@@ -27,8 +27,8 @@ Now, with AI, it suddenly isn't."
 When it breaks, the agent fixes it in this checkout; when something is missing, the agent adds it here.
 
 `photo` on `PATH` is the symlink `~/.local/bin/photo` to `bin/photo` in this checkout.
-The script `exec`s this checkout's `gradlew` with `--quiet --console=plain --project-dir` set to this checkout, then
-`run`, and one attached `--args=` value.
+For every command except `shell`, the script `exec`s this checkout's `gradlew` with
+`--quiet --console=plain --project-dir` set to this checkout, then `run`, and one attached `--args=` value.
 The script does not `cd`.
 Executing this checkout's `gradlew` does not select this checkout.
 `--project-dir` does.
@@ -38,15 +38,20 @@ Gradle would consume those flags.
 A copy of the script goes stale.
 The symlink is the install.
 The program does not create the symlink.
-`photo serve` in the foreground is that Gradle run.
+`photo shell` needs the terminal.
+`gradlew run` forks the program on pipes, so that process has no console and its stdin is already closed.
+The script runs the `photoRuntime` task, reads `build/photo-runtime.txt`, and `exec`s that `java` on
+`org.podval.tools.photo.Cli` with the terminal inherited and `--enable-native-access=ALL-UNNAMED`.
+Tab completion runs in an interactive terminal.
+A pipe stays line at a time.
+`photo serve` in the foreground is the Gradle `run`.
 The detached server `Serve.spawnServe` starts is `setsid java -cp` the Gradle JVM classpath, then
 `org.podval.tools.photo.Cli serve`.
 The wrapper is not that child.
 Do not change `spawnServe` to call `photo`.
 A cold `gradlew run` can exceed Grok's 30 second MCP startup budget.
 Later runs use the Gradle daemon.
-There is no second launcher.
-`./gradlew run` remains the program.
+`./gradlew run` remains the program for every command except `shell`.
 The symlink is how `photo` spells that.
 
 The agent is in the checkout.

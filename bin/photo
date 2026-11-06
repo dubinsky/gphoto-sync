@@ -6,6 +6,9 @@
 # org.codehaus.plexus.util.cli.CommandLineUtils.translateCommandline
 # (plexus-utils 3.6.1). Space splits. Quotes group. A backslash is not an
 # escape. An empty argument cannot be encoded, so it is refused.
+# photo shell does not use that path. JavaExec pipes stdin and stdout, so the
+# program has no console and sees EOF at once. The shell runs photoRuntime,
+# then execs that java with the terminal inherited. Tab completion needs it.
 set -eu
 
 case $0 in
@@ -61,6 +64,54 @@ for arg in "$@"; do
   encoded=$encoded$sep$piece
   sep=' '
 done
+
+# Print mode's java line is the word java. The real binary is line 1 of the runtime file.
+if [ "${1:-}" = "shell" ]; then
+  if [ "${PHOTO_LAUNCHER_PRINT_ARGS:-}" = 1 ]; then
+    printf '%s\n' "$gradlew"
+    printf '%s\n' "--project-dir=$root"
+    printf '%s\n' "photoRuntime"
+    printf '%s\n' "java"
+    printf '%s\n' "--enable-native-access=ALL-UNNAMED"
+    printf '%s\n' "org.podval.tools.photo.Cli"
+    for arg in "$@"; do
+      printf '%s\n' "$arg"
+    done
+    exit 0
+  fi
+
+  "$gradlew" --quiet --console=plain --project-dir "$root" photoRuntime
+  runtime=$root/build/photo-runtime.txt
+  if [ ! -f "$runtime" ]; then
+    printf '%s\n' "photo: missing $runtime" >&2
+    exit 1
+  fi
+  java_bin=
+  class_path=
+  line_no=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_no=$((line_no + 1))
+    case $line_no in
+      1) java_bin=$line ;;
+      2) class_path=$line ;;
+      *)
+        printf '%s\n' "photo: $runtime has extra lines" >&2
+        exit 1
+        ;;
+    esac
+  done < "$runtime"
+  if [ -z "$java_bin" ] || [ ! -x "$java_bin" ]; then
+    printf '%s\n' "photo: java from $runtime is not executable" >&2
+    exit 1
+  fi
+  if [ -z "$class_path" ]; then
+    printf '%s\n' "photo: classpath from $runtime is empty" >&2
+    exit 1
+  fi
+  # JLine's terminal calls MemorySegment.reinterpret. Without this, Java 25 warns and a later JDK blocks it.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 CLASSPATH="$class_path" \
+    exec "$java_bin" --enable-native-access=ALL-UNNAMED org.podval.tools.photo.Cli "$@"
+fi
 
 if [ "${PHOTO_LAUNCHER_PRINT_ARGS:-}" = 1 ]; then
   printf '%s\n' "$gradlew"

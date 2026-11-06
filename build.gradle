@@ -37,6 +37,30 @@ tasks.withType(JavaExec).configureEach {
   environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'
 }
 
+// JavaExec pipes stdin and stdout, so the forked process has no console.
+// photo shell execs this java with the terminal inherited. The file is java, then the classpath.
+// run uses the project toolchain, not the daemon JVM.
+tasks.register('photoRuntime') {
+  def runtimeFile = layout.buildDirectory.file('photo-runtime.txt')
+  def classpath = sourceSets.main.runtimeClasspath
+  def launcher = javaToolchains.launcherFor(java.toolchain)
+  inputs.property('javaExecutable', launcher.map { it.executablePath.asFile.absolutePath })
+  inputs.property('classpath', provider { classpath.asPath })
+  outputs.file(runtimeFile)
+  dependsOn(tasks.named('classes'))
+  doLast {
+    def javaBin = launcher.get().executablePath.asFile.absolutePath
+    def out = runtimeFile.get().asFile
+    out.parentFile.mkdirs()
+    out.withWriter('UTF-8') { writer ->
+      writer.write(javaBin)
+      writer.write('\n')
+      writer.write(classpath.asPath)
+      writer.write('\n')
+    }
+  }
+}
+
 jar {
   manifest {
     attributes(

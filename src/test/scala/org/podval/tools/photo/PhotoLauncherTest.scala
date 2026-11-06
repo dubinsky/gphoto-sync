@@ -36,6 +36,26 @@ class PhotoLauncherTest extends AnyFlatSpec, Matchers:
   it should "keep a leading dash" in:
     succeed(projectDirectory, "bin/photo", "--flag=false") shouldBe header :+ "--args='--flag=false'"
 
+  it should "run shell on the terminal java" in:
+    succeed(projectDirectory, "bin/photo", "shell") shouldBe shellHeader("shell")
+
+  it should "run shell from another directory on this checkout" in:
+    succeed(
+      new File(System.getProperty("java.io.tmpdir")),
+      Path.of("bin/photo").toRealPath().toString,
+      "shell"
+    ) shouldBe shellHeader("shell")
+
+  it should "pass a shell argument with a space as one java argument" in:
+    succeed(projectDirectory, "bin/photo", "shell", "Best of show") shouldBe
+      shellHeader("shell", "Best of show")
+
+  it should "refuse an empty shell argument" in:
+    val (exit, stdout, stderr) = launch(projectDirectory, "bin/photo", "shell", "")
+    exit shouldBe 1
+    stdout shouldBe ""
+    stderr shouldBe "photo: empty argument cannot be passed through gradle run --args\n"
+
   it should "refuse an empty argument" in:
     val (exit, stdout, stderr) = launch(projectDirectory, "bin/photo", "")
     exit shouldBe 1
@@ -46,6 +66,10 @@ class PhotoLauncherTest extends AnyFlatSpec, Matchers:
     Path.of("gradlew").toRealPath().toString,
     "--project-dir=" + Path.of("bin").toRealPath().getParent
   )
+
+  // Print mode writes the word java. The script resolves the binary from photoRuntime.
+  private def shellHeader(args: String*): List[String] =
+    header ++ List("photoRuntime", "java", "--enable-native-access=ALL-UNNAMED", "org.podval.tools.photo.Cli") ++ args
 
   private def succeed(cwd: File, command: String, args: String*): List[String] =
     val (exit, stdout, stderr) = launch(cwd, command, args*)

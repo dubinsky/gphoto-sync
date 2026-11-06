@@ -342,8 +342,12 @@ files, and there is no second transport.
 
 `command` is whatever executable already runs `photo serve`.
 The supported install is the `photo` symlink to `bin/photo`.
-The foreground process is `gradlew --project-dir` this checkout, then `run`.
+The foreground process for `photo mcp` is `gradlew --project-dir` this checkout, then `run`.
 The caller's cwd is not the project selector.
+`photo shell` is the exception.
+`bin/photo` runs the `photoRuntime` task, then `exec`s that java with the terminal inherited and
+`--enable-native-access=ALL-UNNAMED`, so tab completion runs.
+Do not point `photo mcp` at that java line.
 The detached process `Serve.spawnServe` starts is `setsid java -cp` the Gradle JVM's class path, then
 `org.podval.tools.photo.Cli serve`.
 That child is not `photo` and not `gradlew`.
@@ -353,7 +357,7 @@ Grok's default startup timeout of 30 seconds covers `Serve.ensure` plus the 5 se
 It does not cover a cold `gradlew run`.
 The first `photo mcp` after the Gradle daemon has stopped can exceed that budget.
 Later runs use the daemon.
-There is no second launcher.
+`photo mcp` has no second launcher.
 A catalog or item listing can exceed Grok's 20_000 byte inline cap.
 Raising `[mcp] max_output_bytes` is a user config change, not a default this program sets.
 

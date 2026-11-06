@@ -274,6 +274,8 @@ A configuration error still fails in `Session.open`, before this transcript, and
 
 `photo shell` keeps `cd`, `pwd`, and `exit` in the shell.
 Tab completion runs when the process has a console, and a non-console shell stays line at a time.
+`bin/photo` starts `photo shell` with the terminal inherited, so an interactive session has a console.
+A pipe has no console.
 It starts a detached `photo serve` with `setsid` when the socket is down, and it does not stop that process on exit.
 `photo refresh`, `photo reconcile`, `photo file`, `photo card`, `photo push`, and `photo web` stay in the shell process.
 Other commands go to the socket.
