@@ -148,7 +148,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       text should not include ("2010/07/04 2412")
       text should include("2010/07/05 2412")
 
-  it should "keep a whole-day line byte-for-byte beside a rewritten stem" in:
+  it should "refuse the move when a whole-day line does not cover the new day" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
       val body: String = "include = [\n  '2010/07/04',\n  '2010/07/04 2412',\n]\n"

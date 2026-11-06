@@ -547,7 +547,7 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       deleteTree(originals)
       deleteTree(runtime)
 
-  "planDated" should "keep all and a whole-day line and not write" in:
+  "planDated" should "keep the all-plus-stem edit and throw for a whole-day line" in:
     withOriginals: originals =>
       touch(originals, "2010/07/04/2412.jpg")
       val day: LocalDate = LocalDate.of(2010, 7, 4)
@@ -569,7 +569,7 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
         "2010/07/04/2412 is claimed by 2010/07, which does not contain 2010-07-05"
       Files.read(wholeFile) shouldBe whole
 
-  it should "return no edit for all alone or a whole day alone" in:
+  it should "return no edit for all alone and throw for a whole day alone" in:
     withOriginals: originals =>
       touch(originals, "2010/07/04/2412.jpg")
       val day: LocalDate = LocalDate.of(2010, 7, 4)
