@@ -64,6 +64,7 @@ class PushTest extends AnyFlatSpec, Matchers:
             fail("lock busy")
         read(archive, ".gphoto-sync/catalog.txt") shouldBe before
         read(archive, "2010/07/album.toml") shouldBe toml
+        File(archive, "2010/07/02/1000.toml").exists shouldBe false
         File(archive, ".gphoto-sync/status.txt").exists shouldBe false
         File(archive, ".gphoto-sync/albums.tsv").exists shouldBe false
 
@@ -132,6 +133,10 @@ class PushTest extends AnyFlatSpec, Matchers:
         albums.find(_.id == "albBest").get.count shouldBe 1
         read(archive, "2010/07/album.toml") shouldBe toml
         read(archive, "2010/07/album.toml") should not include ("google-album-id")
+        val marked: String = read(archive, "2010/07/02/1000.toml")
+        marked should include("already-in-google = true")
+        marked should not include ("google-media-item-id")
+        marked should not include ("keyUp")
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         File(archive, ".gphoto-sync/status.txt").exists shouldBe false
         File(archive, ".gphoto-sync/albums.tsv").exists shouldBe false
@@ -208,6 +213,35 @@ class PushTest extends AnyFlatSpec, Matchers:
         albums.find(_.id == "albJuly").get.items.map(_.filename) shouldBe Seq("3000.jpg")
         albums.find(_.id == "albBest").get.items shouldBe Seq.empty[Catalog.Item]
 
+  it should "leave a rejected sidecar unmarked after the upload is in the catalog" in:
+    withArchive: archive =>
+      write(archive, "Best.toml", external("2010/07/02 1000"))
+      write(archive, "2010/07/02/1000.jpg", "pic")
+      writeCatalog(archive, "album\talbBest\t0\tBest")
+      writeLinks(archive, "albBest\tBest.toml")
+      val sidecar: File = File(archive, "2010/07/02/1000.toml")
+      val bad: String = "uploader = \"\"\n"
+      val calls: ListBuffer[String] = ListBuffer.empty
+      val failing = act(
+        calls,
+        onUpload = Some((_, _, current) =>
+          JFiles.writeString(sidecar.toPath, bad)
+          Catalog.Item(current, Some(LocalDate.parse("2010-07-02")), "keyUp", None)
+        )
+      )
+      withPlaces(archive, failing): (session, _, opens) =>
+        val text: String = failure(run(session, "push"))
+        text should include("catalog updated")
+        text should include("sidecar not marked")
+        text should include("photo item set already-in-google=true 2010/07/02/1000")
+        text should not include ("catalog unchanged")
+        opens() shouldBe 1
+        calls.toSeq shouldBe Seq("upload 1000.jpg")
+        JFiles.readString(sidecar.toPath) shouldBe bad
+        val albums: Seq[Catalog.Album] = Catalog.read(File(archive, ".gphoto-sync/catalog.txt"))
+        albums.find(_.id == "albBest").get.items.map(_.filename) shouldBe Seq("1000.jpg")
+        albums.find(_.id == "albBest").get.items.map(_.key) shouldBe Seq("keyUp")
+
   it should "report already running and not open Chrome" in:
     withArchive: archive =>
       writeRun(archive)
@@ -257,6 +291,11 @@ class PushTest extends AnyFlatSpec, Matchers:
         val albums: Seq[Catalog.Album] = Catalog.read(File(archive, ".gphoto-sync/catalog.txt"))
         albums.find(_.id == "albBest").get.items.map(_.filename) shouldBe Seq("VID_1000.mp4")
         albums.find(_.id == "albSrc").get.items.map(_.filename) shouldBe Seq("1000.jpg")
+        read(archive, "2010/07/02/1000.toml") shouldBe "google-media-item-id = \"library-id\"\n"
+        val marked: String = read(archive, "2010/07/02/1000v.toml")
+        marked should include("already-in-google = true")
+        marked should not include ("google-media-item-id")
+        marked should not include ("keyUp")
 
   private def external(include: String): String =
     s"external = true\ninclude = ['$include']\n"
@@ -339,7 +378,8 @@ class PushTest extends AnyFlatSpec, Matchers:
     calls: ListBuffer[String],
     onTake: (Catalog.Album, Catalog.Item) => Unit = (_, _) => (),
     onPut: (Catalog.Item, Catalog.Album, String) => Catalog.Item = (item, _, _) => item,
-    uploadDate: String = "2010-07-02"
+    uploadDate: String = "2010-07-02",
+    onUpload: Option[(Catalog.Album, File, String) => Catalog.Item] = None
   ): () => PhotosAct = () =>
     new PhotosAct:
       def albumCards(): Seq[AlbumCard] = Seq.empty
@@ -359,7 +399,8 @@ class PushTest extends AnyFlatSpec, Matchers:
       def trash(album: Catalog.Album, item: Catalog.Item): Unit = fail("trash")
       def uploadItem(destination: Catalog.Album, file: File, current: String): Catalog.Item =
         calls += s"upload $current"
-        Catalog.Item(current, Some(LocalDate.parse(uploadDate)), "keyUp", None)
+        onUpload.fold(Catalog.Item(current, Some(LocalDate.parse(uploadDate)), "keyUp", None)): hook =>
+          hook(destination, file, current)
       def createAlbum(title: String): (Seq[AlbumCard], Option[Catalog.Album]) = fail("create")
       def deleteAlbum(album: Catalog.Album): Seq[AlbumCard] = fail("delete-album")
 

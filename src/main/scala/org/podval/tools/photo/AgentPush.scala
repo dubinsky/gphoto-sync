@@ -56,7 +56,9 @@ private[photo] object AgentPush:
     step: String,
     recovery: String,
     detail: String,
-    title: String
+    title: String,
+    session: Option[Session] = None,
+    picture: Option[String] = None
   )
 
   private final case class PushRow(path: String, fileAlbum: Album, catalog: Catalog.Album)
@@ -245,7 +247,7 @@ private[photo] object AgentPush:
           case (Right((current, done)), action) =>
             applyPush(opened, current, action) match
               case Right((next, line)) => Right(next -> (done :+ line))
-              case Left(stop)          => Left(pushFailed(current, done, stop))
+              case Left(stop)          => Left(pushFailed(stop.session.getOrElse(current), done, stop))
       outcome match
         case Left(done)             => done
         case Right((current, done)) =>
@@ -289,10 +291,14 @@ private[photo] object AgentPush:
             case Right(done)   => Right(done.session -> add.line)
             case Left(message) => Left(stopped(add, "refresh-only", message))
         case upload: PushAction.Upload =>
-          val (destination, file, name) = AgentChrome.rereadUpload(session, upload.pathText, upload.destinationId)
-          AgentChrome.commitUpload(ui, session, destination, file, name) match
-            case Right(done)   => Right(done.session -> upload.line)
-            case Left(message) => Left(stopped(upload, "refresh-only", message))
+          val (destination, file, name, day, groupedStem) =
+            AgentChrome.rereadUpload(session, upload.pathText, upload.destinationId)
+          AgentChrome.commitUpload(ui, session, destination, file, name, day, groupedStem) match
+            case Right(done)                                      => Right(done.session -> upload.line)
+            case Left(AgentChrome.CommitStop.BeforeSwap(message)) =>
+              Left(stopped(upload, "refresh-only", message))
+            case Left(AgentChrome.CommitStop.SidecarUnmarked(next, message, picture)) =>
+              Left(stopped(upload, "refresh-only", message).copy(session = Some(next), picture = Some(picture)))
     catch
       case miss: Refresh.ActMiss =>
         val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
@@ -306,15 +312,16 @@ private[photo] object AgentPush:
 
   private def pushFailed(session: Session, done: Seq[String], stop: PushStop): (Session, Result) =
     val shown: String = AgentChrome.collapsedText(stop.detail, "push failed")
-    val catalog: String = if done.nonEmpty then "updated" else "unchanged"
-    val rows: Seq[String] = done ++ Seq(
+    val catalog: String = if done.nonEmpty || stop.picture.isDefined then "updated" else "unchanged"
+    val unmarked: Seq[String] = stop.picture.fold(Seq.empty): picture =>
+      Seq("sidecar not marked", s"photo item set already-in-google=true $picture")
+    val rows: Seq[String] = done ++ (Seq(
       "failed push",
       stop.line,
       s"step ${stop.step}",
       s"recovery ${stop.recovery}",
-      s"catalog $catalog",
-      shown
-    ).filter(_.nonEmpty)
+      s"catalog $catalog"
+    ) ++ unmarked ++ Seq(shown)).filter(_.nonEmpty)
     val text: String = PlaywrightPhotosUi.redactSecrets(rows.mkString("", "\n", "\n"), stop.title)
     (session, Result.Failed(text, Json.Null, Refresh.MutationFailed))
 

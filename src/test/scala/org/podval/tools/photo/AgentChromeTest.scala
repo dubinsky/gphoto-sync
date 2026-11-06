@@ -2653,9 +2653,58 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
         )
         File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
         File(archive, ".gphoto-sync/catalog.txt.previous").exists shouldBe false
+        val sidecarText: String = JFiles.readString(File(archive, "2010/07/01/pic.toml").toPath)
+        sidecarText should include("already-in-google = true")
+        sidecarText should not include ("google-media-item-id")
+        sidecarText should not include ("keyNew")
         places.directory.exists shouldBe false
         File(places.directory, "status.txt").exists shouldBe false
         closed shouldBe true
+        released(places)
+
+  it should "leave a rejected sidecar unmarked after the catalog line is written" in:
+    withArchive: archive =>
+      val catalogFile: File = writeCatalog(archive, "album\talbDst\t0\tDest Title")
+      touch(File(archive, "2010/07/01"), "pic.jpg")
+      val sidecar: File = File(archive, "2010/07/01/pic.toml")
+      val bad: String = "uploader = \"Ada\\tOwner\"\n"
+      withAct(archive): (session, places, _) =>
+        Refresh.openAct = _ =>
+          new RenameFake(
+            (_, _) => (),
+            onUpload = (_, _, current) =>
+              current shouldBe "pic.jpg"
+              JFiles.writeString(sidecar.toPath, bad)
+              Catalog.Item("ignored.jpg", Some(LocalDate.of(2011, 1, 2)), "keyNew", None)
+          )
+        val (_, result) = exec(session, "agent", "upload-item", "--dest", "Dest Title", "2010/07/01/pic.jpg")
+        result match
+          case Result.Failed(text, value, message) =>
+            message shouldBe Refresh.MutationFailed
+            text should include("failed upload-item")
+            text should include("filename \"pic.jpg\"")
+            text should include("step Add photos or Select photos, then Select from computer")
+            text should include("recovery refresh-only")
+            text should include("catalog updated")
+            text should include("sidecar not marked")
+            text should include("photo item set already-in-google=true 2010/07/01/pic")
+            text should not include ("catalog unchanged")
+            text should not include ("keyNew")
+            field(value, "action") shouldBe Json.Str("upload-item")
+            field(value, "title") shouldBe Json.Str("Dest Title")
+            field(value, "step") shouldBe Json.Str("Add photos or Select photos, then Select from computer")
+            field(value, "recovery") shouldBe Json.Str("refresh-only")
+            field(value, "catalog") shouldBe Json.Str("updated")
+            field(value, "albumId") shouldBe Json.Str("albDst")
+            field(value, "itemKey") shouldBe Json.Str("")
+          case other =>
+            fail(other.toString)
+        JFiles.readString(sidecar.toPath) shouldBe bad
+        JFiles.readString(catalogFile.toPath) shouldBe catalogBody(
+          "album\talbDst\t1\tDest Title",
+          "item\talbDst\tpic.jpg\t2011-01-02\tkeyNew\t-"
+        )
+        places.directory.exists shouldBe false
         released(places)
 
   it should "accept an absolute path and write no error line when the read has no date" in:
@@ -2725,6 +2774,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           case other =>
             fail(other.toString)
         JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, "2010/07/01/pic.toml").exists shouldBe false
         places.directory.exists shouldBe false
         released(places)
 
@@ -2750,6 +2800,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           case other =>
             fail(other.toString)
         JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, "2010/07/01/pic.toml").exists shouldBe false
         places.directory.exists shouldBe false
 
   it should "stay one-click when the upload throws before the file is chosen" in:
@@ -2771,6 +2822,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           case other =>
             fail(other.toString)
         JFiles.readString(catalogFile.toPath) shouldBe catalog
+        File(archive, "2010/07/01/pic.toml").exists shouldBe false
 
   it should "stay refresh-only when the catalog write fails after the file was chosen" in:
     withArchive: archive =>
@@ -2798,6 +2850,7 @@ class AgentChromeTest extends AnyFlatSpec, AgentWriteSupport:
           catalogFile.setReadable(true, false)
           JFiles.readString(catalogFile.toPath) shouldBe catalog
           File(archive, ".gphoto-sync/catalog.txt.partial").exists shouldBe false
+          File(archive, "2010/07/01/pic.toml").exists shouldBe false
         finally catalogFile.setReadable(true, false)
 
   it should "report already running without opening the browser" in:

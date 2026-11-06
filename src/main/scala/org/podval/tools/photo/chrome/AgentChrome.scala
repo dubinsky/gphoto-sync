@@ -8,8 +8,10 @@ import org.podval.tools.photo.{
   AgentSupport,
   Album,
   Catalog,
+  DirectoryIndex,
   Files,
   Json,
+  Metadata,
   Operation,
   Pictures,
   Publish,
@@ -329,7 +331,8 @@ private[photo] object AgentChrome:
     val (_, relative) = uploadFile(session, pathText)
     val (day, stem, _, extension) = uploadName(relative)
     val destination: Catalog.Album = AgentSupport.select(albums, destTitle, destId)
-    val loaded: Session = refuseUpload(session, albums, destination, day, stem, extension)
+    // The stem from this call is not the one the mark writes. heldUpload rereads it under the lock.
+    val (loaded, _) = refuseUpload(session, albums, destination, day, stem, extension)
     AgentSupport.withLock(loaded, destination.title)(heldUpload(loaded, pathText, destination.id))
 
   def createAlbum(session: Session, albums: Seq[Catalog.Album], title: String): (Session, Result) =
@@ -943,16 +946,18 @@ private[photo] object AgentChrome:
 
   // The reread stays outside the catch. A refusal here is usage, and Chrome stays closed.
   private def heldUpload(session: Session, pathText: String, destinationId: String): (Session, Result) =
-    val (destination, file, name) = rereadUpload(session, pathText, destinationId)
+    val (destination, file, name, day, groupedStem) = rereadUpload(session, pathText, destinationId)
     var ui: PhotosAct = null
     try
       // A notice would write status.txt and drop a crashed refresh's resume phase.
       ui = Refresh.openAct(_ => ())
-      commitUpload(ui, session, destination, file, name) match
+      commitUpload(ui, session, destination, file, name, day, groupedStem) match
         case Right(done) =>
           addOk(done.session, destination, name, done.key, "upload-item")
-        case Left(message) =>
+        case Left(CommitStop.BeforeSwap(message)) =>
           uploadFailed(session, destination, name, "refresh-only", message)
+        case Left(CommitStop.SidecarUnmarked(next, message, picture)) =>
+          uploadUnmarked(next, destination, name, picture, message)
     catch
       case miss: Refresh.ActMiss =>
         val recovery: String = if miss.confirmed then "refresh-only" else "one-click"
@@ -966,6 +971,10 @@ private[photo] object AgentChrome:
         catch case _: Exception => ()
 
   private[photo] final case class Committed(session: Session, key: String)
+
+  private[photo] enum CommitStop:
+    case BeforeSwap(message: String)
+    case SidecarUnmarked(session: Session, message: String, picture: String)
 
   private[photo] def commitPut(
     ui: PhotosAct,
@@ -998,12 +1007,32 @@ private[photo] object AgentChrome:
     session: Session,
     destination: Catalog.Album,
     file: File,
-    name: String
-  ): Either[String, Committed] =
+    name: String,
+    day: LocalDate,
+    groupedStem: String
+  ): Either[CommitStop, Committed] =
+    // uploadItem stays outside the catch. ActMiss is an IllegalStateException, and catching it would say refresh-only.
     val read: Catalog.Item = ui.uploadItem(destination, file, name)
     val line: Catalog.Item = Catalog.Item(name, read.date, read.key, read.uploader)
-    publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))).map: next =>
-      Committed(next, line.key)
+    publishAlbum(session, Seq(destination.id -> (dest => revisedAdd(dest, line)))) match
+      case Left(message) => Left(CommitStop.BeforeSwap(message))
+      case Right(next)   =>
+        val directory: File = AgentSupport.civilDay(session.root, day).directory
+        val sidecar: File = File(directory, s"$groupedStem.toml")
+        try
+          val current: Metadata = if sidecar.isFile then Metadata.read(sidecar) else Metadata.default
+          Files.write(Metadata.encode(current.copy(`already-in-google` = Some(true))), sidecar)
+          DirectoryIndex.drop(directory)
+          Right(Committed(next.drop(directory), line.key))
+        catch
+          case error: Exception =>
+            Left(
+              CommitStop.SidecarUnmarked(
+                next,
+                Operation.messageOf(error),
+                s"${Title.dayText(day)}/$groupedStem"
+              )
+            )
 
   private[photo] def rereadAdd(
     session: Session,
@@ -1162,7 +1191,7 @@ private[photo] object AgentChrome:
     session: Session,
     pathText: String,
     destinationId: String
-  ): (Catalog.Album, File, String) =
+  ): (Catalog.Album, File, String, LocalDate, String) =
     val catalog: File = File(File(session.root.configuration.archive, ".gphoto-sync"), "catalog.txt")
     val albums: Seq[Catalog.Album] = Catalog.read(catalog)
     val destination: Catalog.Album = albums
@@ -1172,8 +1201,8 @@ private[photo] object AgentChrome:
       )
     val (file, relative) = uploadFile(session, pathText)
     val (day, stem, name, extension) = uploadName(relative)
-    refuseUpload(session, albums, destination, day, stem, extension)
-    (destination, file, name)
+    val (_, groupedStem) = refuseUpload(session, albums, destination, day, stem, extension)
+    (destination, file, name, day, groupedStem)
 
   private def refuseUpload(
     session: Session,
@@ -1182,7 +1211,7 @@ private[photo] object AgentChrome:
     day: LocalDate,
     stem: String,
     extension: Option[String]
-  ): Session =
+  ): (Session, String) =
     val (loaded, grouped, sidecars) =
       AgentSupport.loadGrouped(session, AgentSupport.civilDay(session.root, day), readSidecars = true)
     val groupedMap: Map[String, Set[String]] = grouped.toMap
@@ -1202,7 +1231,7 @@ private[photo] object AgentChrome:
           metadata.`google-media-item-id`.exists(_.nonEmpty) || metadata.`already-in-google`.contains(true)
         if marked then throw IllegalArgumentException("already in google")
     acceptDestination(loaded, destination, Some(day -> groupedStem))
-    loaded
+    (loaded, groupedStem)
 
   private def uploadFile(session: Session, text: String): (File, String) =
     val archive: File = session.root.configuration.archive.getCanonicalFile
@@ -1287,6 +1316,45 @@ private[photo] object AgentChrome:
       UploadStep,
       recovery,
       detail
+    )
+
+  // itemFailed hardcodes catalog unchanged. This Left is only after the catalog swap.
+  private def uploadUnmarked(
+    session: Session,
+    destination: Catalog.Album,
+    name: String,
+    picture: String,
+    detail: String
+  ): (Session, Result) =
+    val shown: String = collapsedText(detail, "upload-item failed")
+    val text: String =
+      s"""failed upload-item
+         |filename ${Album.quote(name)}
+         |step $UploadStep
+         |recovery refresh-only
+         |catalog updated
+         |sidecar not marked
+         |photo item set already-in-google=true $picture
+         |$shown
+         |""".stripMargin
+    val value: Json = Json.Obj(
+      Seq(
+        "action" -> Json.Str("upload-item"),
+        "title" -> Json.Str(destination.title),
+        "step" -> Json.Str(UploadStep),
+        "recovery" -> Json.Str("refresh-only"),
+        "catalog" -> Json.Str("updated"),
+        "albumId" -> Json.Str(destination.id),
+        "itemKey" -> Json.Str("")
+      )
+    )
+    (
+      session,
+      Result.Failed(
+        PlaywrightPhotosUi.redactSecrets(text, destination.title),
+        value,
+        Refresh.MutationFailed
+      )
     )
 
   private def createOk(session: Session, title: String, id: String): (Session, Result) =
