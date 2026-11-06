@@ -563,10 +563,11 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       val whole: String =
         "include = [\n  '2010/07/04',\n  '2010/07/04 2412',\n]\n"
       val wholeFile: File = write(originals, "2010/07/album.toml", whole)
-      val wholeEdits: Seq[(File, Seq[Include.Entry])] =
+      val refused: IllegalArgumentException = intercept[IllegalArgumentException]:
         Album.planDated(originals, day -> "2412", next -> "2412", "2010/07/04/2412")
+      refused.getMessage shouldBe
+        "2010/07/04/2412 is claimed by 2010/07, which does not contain 2010-07-05"
       Files.read(wholeFile) shouldBe whole
-      wholeEdits.map(_._2.map(Include.logical)) shouldBe Seq(Seq("2010/07/04", "2010/07/05 2412"))
 
   it should "return no edit for all alone or a whole day alone" in:
     withOriginals: originals =>
@@ -579,7 +580,10 @@ class AlbumFileTest extends AnyFlatSpec, Matchers:
       Files.read(file) shouldBe allOnly
       val whole: String = "include = [\n  '2010/07/04',\n]\n"
       val wholeFile: File = write(originals, "2010/07/album.toml", whole)
-      Album.planDated(originals, day -> "2412", next -> "2412", "2010/07/04/2412").isEmpty shouldBe true
+      val refused: IllegalArgumentException = intercept[IllegalArgumentException]:
+        Album.planDated(originals, day -> "2412", next -> "2412", "2010/07/04/2412")
+      refused.getMessage shouldBe
+        "2010/07/04/2412 is claimed by 2010/07, which does not contain 2010-07-05"
       Files.read(wholeFile) shouldBe whole
 
   private def touch(originals: File, path: String): Unit =

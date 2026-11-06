@@ -151,16 +151,15 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
   it should "keep a whole-day line byte-for-byte beside a rewritten stem" in:
     withOriginals: archive =>
       picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
-      val file: File = write(
-        archive,
-        "2010/07/album.toml",
-        "include = [\n  '2010/07/04',\n  '2010/07/04 2412',\n]\n"
-      )
-      ok(archive, "item", "set", "date=2010/07/05", "2010/07/04/2412")
-      val text: String = Files.read(file)
-      text should include("  '2010/07/04',\n")
-      text should not include ("2010/07/04 2412")
-      text should include("2010/07/05 2412")
+      val body: String = "include = [\n  '2010/07/04',\n  '2010/07/04 2412',\n]\n"
+      val file: File = write(archive, "2010/07/album.toml", body)
+      val message: String = "2010/07/04/2412 is claimed by 2010/07, which does not contain 2010-07-05"
+      usage(archive, "item", "set", "date=2010/07/05", "2010/07/04/2412") shouldBe message
+      Files.read(file) shouldBe body
+      File(archive, "2010/07/05/2412.jpg").exists shouldBe false
+      usage(archive, "item", "set", "--dry-run", "date=2010/07/05", "2010/07/04/2412") shouldBe message
+      Files.read(file) shouldBe body
+      File(archive, "2010/07/05/2412.jpg").exists shouldBe false
 
   it should "rewrite a curated include" in:
     withOriginals: archive =>

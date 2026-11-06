@@ -234,11 +234,13 @@ object Album:
         one.album.span match
           case Some(span) if one.album.claims(from._1, from._2) && !span.contains(to._1) =>
             Some(one.album.title)
+          case Some(_) if stemlessClaimMisses(one.album, from, to) =>
+            Some(one.album.title)
           case _ =>
             None
     if outside.nonEmpty then
       throw IllegalArgumentException(
-        s"$fromPath is claimed by ${outside.sorted.mkString(", ")}, which does not contain ${to._1}"
+        s"$fromPath is claimed by ${outside.distinct.sorted.mkString(", ")}, which does not contain ${to._1}"
       )
     val edits: Seq[(File, Seq[Include.Entry])] =
       loaded.flatMap: one =>
@@ -271,6 +273,18 @@ object Album:
               Some(one.file -> (prefix ++ rewritten ++ rest))
     edits.foreach((file, include) => renderedInclude(file, include))
     edits
+
+  private def stemlessClaimMisses(
+    album: Album,
+    from: (LocalDate, String),
+    to: (LocalDate, String)
+  ): Boolean =
+    album.include.exists:
+      case entry @ Include.Entry.Dates(_, None, _) =>
+        Include.claims(album.span, entry, from._1, from._2) &&
+        !Include.claims(album.span, entry, to._1, to._2)
+      case _ =>
+        false
 
   def picturePath(path: String): Option[(LocalDate, String)] =
     path.split('/').filter(_.nonEmpty).toSeq match
