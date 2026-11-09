@@ -5,10 +5,13 @@ pluginManagement {
     gradlePluginPortal()  // for JIB
   }
   // String path: a File would call Settings.includeBuild (not a plugin build).
-  final String conventionsDir =
-    providers.gradleProperty('podvalGradleDir').getOrElse('../podval-gradle')
-  if (file(conventionsDir).isDirectory() && file("${conventionsDir}/settings.gradle").isFile()) {
-    includeBuild conventionsDir
+  // A parent build has already included this directory and Gradle rejects a second include.
+  if (gradle.parent == null) {
+    final String conventionsDir =
+      providers.gradleProperty('podvalGradleDir').getOrElse('../podval-gradle')
+    if (file(conventionsDir).isDirectory() && file("${conventionsDir}/settings.gradle").isFile()) {
+      includeBuild conventionsDir
+    }
   }
 }
 

@@ -70,17 +70,6 @@ jar {
   }
 }
 
-tasks.register('sourcesJar', Jar) {
-  from sourceSets.main.allSource
-  archiveClassifier.set('sources')
-}
-
-tasks.register('scaladocJar', Jar) {
-  from scaladoc.destinationDir
-  archiveClassifier.set('scaladoc')
-}
-scaladocJar.dependsOn scaladoc
-
 spotless {
   scala {
     target 'src/**/*.scala'
