@@ -10,7 +10,6 @@ private object ItemPlace:
     file: File,
     album: Album,
     current: Seq[Include.Entry],
-    drops: Seq[(LocalDate, String)],
     adds: Seq[(LocalDate, String)]
   )
 
@@ -25,15 +24,9 @@ private object ItemPlace:
     def addCreate(title: String): Spoken =
       copy(lines = lines :+ s"create $title", created = created :+ title)
 
-    def addPicture(excludes: Seq[(String, String)], include: Option[(String, String)]): Spoken =
-      val more: Seq[String] =
-        excludes.map((title, path) => s"exclude $title $path") ++
-          include.toSeq.map((title, path) => s"include $title $path")
-      copy(
-        lines = lines ++ more,
-        excluded = excluded ++ excludes,
-        included = included ++ include.toSeq
-      )
+    def addPicture(include: Option[(String, String)]): Spoken =
+      val more: Seq[String] = include.toSeq.map((title, path) => s"include $title $path")
+      copy(lines = lines ++ more, included = included ++ include.toSeq)
 
   private val unspoken: Spoken = Spoken(Seq.empty, Seq.empty, Seq.empty, Seq.empty)
 
@@ -42,23 +35,14 @@ private object ItemPlace:
     val pics: Seq[Pic] = dated(session, pictures)
     val universe: Map[LocalDate, Set[String]] = Archive.universe(Archive.pictures(originals))
     val loaded: Map[String, Working] = load(originals)
-    val dropped: Map[String, Working] = pics.foldLeft(loaded): (acc, pic) =>
-      val destTitle: String = monthParsed(pic.month).title
-      dropPair(
-        acc,
-        pic.day -> pic.stem,
-        universe,
-        working => working.album.span.isDefined && working.album.title != destTitle
-      )
     val months: Seq[YearMonth] =
       pics.map(_.month).distinct.sortBy(month => (month.getYear, month.getMonthValue))
-    val (ready, creates, spoken) = months.foldLeft((dropped, Seq.empty[Created], unspoken)):
+    val (ready, creates, spoken) = months.foldLeft((loaded, Seq.empty[Created], unspoken)):
       case ((current, made, acc), month) =>
         val parsed: Title.Parsed = monthParsed(month)
         val destTitle: String = parsed.title
         val destFile: File = Title.file(originals, parsed)
         val monthPics: Seq[Pic] = pics.filter(pic => pic.month.equals(month))
-        val other: Working => Boolean = working => working.album.span.isDefined && working.album.title != destTitle
         current.get(DirectoryIndex.key(destFile)) match
           case None =>
             val claimed: Set[(LocalDate, String)] = monthPics.map(pic => pic.day -> pic.stem).toSet
@@ -67,17 +51,14 @@ private object ItemPlace:
             val album: Album = Album.pending(destTitle, parsed.span, include)
             val spokenPics: Spoken = monthPics.foldLeft(acc.addCreate(destTitle)): (soFar, pic) =>
               val after: Boolean = holds(include, parsed.span, pic.day, pic.stem)
-              soFar.addPicture(excludePairs(current.values, pic, other), Option.when(after)(destTitle -> pic.path))
+              soFar.addPicture(Option.when(after)(destTitle -> pic.path))
             (current, made :+ Created(destFile, album), spokenPics)
           case Some(dest) =>
             val updated: Working = monthPics.foldLeft(dest)((cur, pic) => addTo(cur, pic, universe))
             val spokenPics: Spoken = monthPics.foldLeft(acc): (soFar, pic) =>
               val before: Boolean = dest.album.claims(pic.day, pic.stem)
               val after: Boolean = holds(updated.current, updated.album.span, pic.day, pic.stem)
-              soFar.addPicture(
-                excludePairs(current.values, pic, other),
-                Option.when(before != after)(destTitle -> pic.path)
-              )
+              soFar.addPicture(Option.when(before != after)(destTitle -> pic.path))
             (current.updated(DirectoryIndex.key(destFile), updated), made, spokenPics)
     commit(originals, dryRun, ready.values, creates, spoken)
 
@@ -103,29 +84,17 @@ private object ItemPlace:
     val scanned: Map[String, Working] = load(originals)
     val files: Map[String, Working] =
       if scanned.contains(destKey) then scanned
-      else scanned.updated(destKey, Working(destFile, destAlbum, destAlbum.include, Seq.empty, Seq.empty))
-    val dropped: Map[String, Working] =
-      if destAlbum.span.isEmpty then files
-      else
-        pics.foldLeft(files): (acc, pic) =>
-          dropPair(
-            acc,
-            pic.day -> pic.stem,
-            universe,
-            working => working.album.span.isDefined && DirectoryIndex.key(working.file) != destKey
-          )
-    val base: Working = dropped.getOrElse(
+      else scanned.updated(destKey, Working(destFile, destAlbum, destAlbum.include, Seq.empty))
+    val base: Working = files.getOrElse(
       destKey,
-      Working(destFile, destAlbum, destAlbum.include, Seq.empty, Seq.empty)
+      Working(destFile, destAlbum, destAlbum.include, Seq.empty)
     )
     val dest: Working = pics.foldLeft(base)((cur, pic) => addTo(cur, pic, universe))
-    val ready: Map[String, Working] = dropped.updated(destKey, dest)
-    val other: Working => Boolean = working =>
-      working.album.span.isDefined && DirectoryIndex.key(working.file) != destKey
+    val ready: Map[String, Working] = files.updated(destKey, dest)
     val spoken: Spoken = pics.foldLeft(unspoken): (acc, pic) =>
       val before: Boolean = dest.album.claims(pic.day, pic.stem)
       val after: Boolean = holds(dest.current, dest.album.span, pic.day, pic.stem)
-      acc.addPicture(excludePairs(ready.values, pic, other), Option.when(before != after)(dest.album.title -> pic.path))
+      acc.addPicture(Option.when(before != after)(dest.album.title -> pic.path))
     commit(originals, dryRun, ready.values, Seq.empty, spoken)
 
   private def dated(session: Session, pictures: Seq[String]): Seq[Pic] =
@@ -149,22 +118,8 @@ private object ItemPlace:
       .foldLeft(Map.empty[String, Working]): (acc, loaded) =>
         acc.updated(
           DirectoryIndex.key(loaded.file),
-          Working(loaded.file, loaded.album, loaded.album.include, Seq.empty, Seq.empty)
+          Working(loaded.file, loaded.album, loaded.album.include, Seq.empty)
         )
-
-  private def dropPair(
-    files: Map[String, Working],
-    pair: (LocalDate, String),
-    universe: Map[LocalDate, Set[String]],
-    other: Working => Boolean
-  ): Map[String, Working] =
-    files.foldLeft(files):
-      case (acc, (key, working)) =>
-        val hit: Boolean = other(working) && holds(working.current, working.album.span, pair._1, pair._2)
-        if !hit then acc
-        else
-          val next: Seq[Include.Entry] = Include.drop(working.current, working.album.span, pair, universe)
-          acc.updated(key, working.copy(current = next, drops = working.drops :+ pair))
 
   private def addTo(working: Working, pic: Pic, universe: Map[LocalDate, Set[String]]): Working =
     val pair: (LocalDate, String) = pic.day -> pic.stem
@@ -178,30 +133,12 @@ private object ItemPlace:
   private def holds(include: Seq[Include.Entry], span: Option[Title.Span], day: LocalDate, stem: String): Boolean =
     include.exists(entry => Include.claims(span, entry, day, stem))
 
-  private def excludeTitles(files: Iterable[Working], pic: Pic, other: Working => Boolean): Seq[String] =
-    val titles: Seq[String] = files.toSeq
-      .filter(other)
-      .flatMap: working =>
-        val before: Boolean = working.album.claims(pic.day, pic.stem)
-        val after: Boolean = holds(working.current, working.album.span, pic.day, pic.stem)
-        if before && !after then Some(working.album.title) else None
-    titles.sorted
-
-  private def excludePairs(
-    files: Iterable[Working],
-    pic: Pic,
-    other: Working => Boolean
-  ): Seq[(String, String)] =
-    excludeTitles(files, pic, other).map(title => title -> pic.path)
-
   private def replay(
     fresh: Album,
     working: Working,
     universe: Map[LocalDate, Set[String]]
   ): Seq[Include.Entry] =
-    val dropped: Seq[Include.Entry] = working.drops.foldLeft(fresh.include): (cur, pair) =>
-      Include.drop(cur, fresh.span, pair, universe)
-    working.adds.foldLeft(dropped): (cur, pair) =>
+    working.adds.foldLeft(fresh.include): (cur, pair) =>
       if holds(cur, fresh.span, pair._1, pair._2) then cur
       else AlbumCommand.addCovering(cur, fresh.span, pair, universe)
 

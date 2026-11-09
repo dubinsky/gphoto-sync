@@ -1013,7 +1013,8 @@ object Cli:
     ),
     Command(
       name = "set",
-      help = "set one sidecar property; date= moves the picture",
+      help =
+        "set one sidecar property; names are source, timestamp, date, bad-raw, orientation, google-media-item-id, already-in-google, and uploader; date= moves the picture",
       positionals = List(Required("property"), Required("picture", path = true)),
       flags = List(Flag("dry-run", None, BooleanKind, "print the actions and write nothing")),
       build = (values, args) => ItemSetArgs(bool(values, "dry-run"), args.head, args.drop(1).head)
@@ -1021,7 +1022,7 @@ object Cli:
     Command(
       name = "month",
       help =
-        "exclude the picture from every other dated album that claims it, then include it in YYYY/MM, creating that album when absent",
+        "include the picture in YYYY/MM, creating that album when absent, and leave every other album; a picture may belong to any number of albums",
       positionals = List(Rest("picture", path = true)),
       flags = List(albumDryRun),
       build = (values, args) => ItemMonthArgs(bool(values, "dry-run"), args)
@@ -1029,7 +1030,7 @@ object Cli:
     Command(
       name = "into",
       help =
-        "include the picture in the album; when that album has a span, also exclude it from every other span album",
+        "include the picture in an existing album and leave every other album; a picture may belong to any number of albums",
       positionals = List(Required("title"), Rest("picture", path = true)),
       flags = List(albumDryRun),
       build = (values, args) => ItemIntoArgs(bool(values, "dry-run"), args.head, args.drop(1))
@@ -1555,7 +1556,7 @@ object Cli:
 
   private val cdCommand: Command = Command(
     name = "cd",
-    help = "change the cursor; only available in the shell",
+    help = "change the cursor",
     positionals = List(Optional("directory")),
     flags = Nil,
     build = (_, args) => CdArgs(args.headOption)
@@ -1563,7 +1564,7 @@ object Cli:
 
   private val pwdCommand: Command = Command(
     name = "pwd",
-    help = "print the cursor; only available in the shell",
+    help = "print the cursor",
     positionals = Nil,
     flags = Nil,
     build = (_, _) => PwdArgs
@@ -1571,7 +1572,7 @@ object Cli:
 
   private val exitCommand: Command = Command(
     name = "exit",
-    help = "leave the session; only available in the shell",
+    help = "leave the session",
     positionals = Nil,
     flags = Nil,
     build = (_, _) => ExitArgs

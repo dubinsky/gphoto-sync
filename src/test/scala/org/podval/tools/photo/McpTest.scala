@@ -1574,16 +1574,16 @@ class McpTest extends AnyFlatSpec, Matchers:
       ),
       "missing" -> described("list catalog items absent from the day folder", "missing", ambiguous = false),
       "item-set" ->
-        s"set one sidecar property; date= moves the picture (photo item set). $echo",
+        s"set one sidecar property; names are source, timestamp, date, bad-raw, orientation, google-media-item-id, already-in-google, and uploader; date= moves the picture (photo item set). $echo",
       "album-new" -> s"create a local album (photo album new). $echo",
       "album-rm" -> s"delete an album file and leave the pictures (photo album rm). $echo",
       "album-mv" -> s"change an album title and move its file (photo album mv). $echo",
       "album-include" -> s"add pictures to one album and recompress include (photo album include). $echo",
       "album-exclude" -> s"remove pictures from one album and recompress include (photo album exclude). $echo",
       "item-month" ->
-        s"exclude the picture from every other dated album that claims it, then include it in YYYY/MM, creating that album when absent (photo item month). $echo",
+        s"include the picture in YYYY/MM, creating that album when absent, and leave every other album; a picture may belong to any number of albums (photo item month). $echo",
       "item-into" ->
-        s"include the picture in the album; when that album has a span, also exclude it from every other span album (photo item into). $echo",
+        s"include the picture in an existing album and leave every other album; a picture may belong to any number of albums (photo item into). $echo",
       "album-merge" -> s"merge two adjoining month albums (photo album merge). $echo",
       "album-ls" -> s"list album titles (photo album ls). $echo",
       "album-show" -> s"show one album file (photo album show). $echo"

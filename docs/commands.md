@@ -62,6 +62,8 @@ Which clock wins is `docs/clock.md`.
 ### photo item set
 
 This is the sidecar write.
+The properties are `source`, `timestamp`, `date`, `bad-raw`, `orientation`, `google-media-item-id`, `already-in-google`,
+and `uploader`.
 `ItemSet` encodes through `Metadata.encode` and writes `{stem}.toml`, or deletes the file when the result is
 `Metadata.default`.
 `date=` stores that civil day and moves the picture.
@@ -72,11 +74,10 @@ A claiming dated album that does not contain the new day is refused and nothing 
 
 ### photo item month
 
-`item month <picture>...` excludes the picture from every other dated album that claims it, then includes it in
-`YYYY/MM`, creating that album when absent.
+`item month <picture>...` includes the picture in `YYYY/MM`, creating that album when absent.
 The folder day decides the month.
-A named month album is excluded.
-A curated album stays.
+Every other album is left unchanged.
+A picture may belong to any number of albums.
 The created album lists each picture on its day instead of `all`.
 An existing month album may compress to `all` when the month becomes complete.
 Pictures are grouped with the earliest month first, and `create` is printed before that month's pictures.
@@ -85,8 +86,8 @@ Pictures are grouped with the earliest month first, and `create` is printed befo
 ### photo item into
 
 `item into <title> <picture>...` includes the picture in an album that already exists.
-When that album has a span, the picture is also excluded from every other span album.
-A curated album only gains the include.
+Every other album is left unchanged.
+A picture may belong to any number of albums.
 A picture outside the span is refused, and nothing is written.
 `--dry-run` prints the actions and writes nothing.
 
@@ -143,6 +144,7 @@ An external album is refused.
 ### photo album include
 
 `photo album include <title> <picture>...` adds pictures to one album and recompresses `include`.
+Other album files stay unchanged.
 `--dry-run` prints the actions and writes nothing.
 
 ### photo album exclude

@@ -76,6 +76,9 @@ In a month folder the end is `MM` or `YYYY-MM`.
 | `Best.toml` | `Best` |
 
 Membership is the `include` list.
+A picture may belong to any number of albums.
+There is no cap of one album and no cap of one span album.
+Each album's include list is independent.
 A missing `include` is an empty album.
 `include` is required for a non-empty album.
 An entry is `all`, a date expression, a date plus one stem, or a date plus `stem..stem`, and it may end with `except`

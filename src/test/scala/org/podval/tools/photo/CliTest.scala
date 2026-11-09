@@ -574,9 +574,9 @@ class CliTest extends AnyFlatSpec, Matchers:
       """item  show or change a picture
         |
         |show  show extensions, sidecar, folder day, assessed civil time, and claiming albums
-        |set  set one sidecar property; date= moves the picture
-        |month  exclude the picture from every other dated album that claims it, then include it in YYYY/MM, creating that album when absent
-        |into  include the picture in the album; when that album has a span, also exclude it from every other span album""".stripMargin
+        |set  set one sidecar property; names are source, timestamp, date, bad-raw, orientation, google-media-item-id, already-in-google, and uploader; date= moves the picture
+        |month  include the picture in YYYY/MM, creating that album when absent, and leave every other album; a picture may belong to any number of albums
+        |into  include the picture in an existing album and leave every other album; a picture may belong to any number of albums""".stripMargin
     helpOf("item", "--help") shouldBe item
     helpOf("item", "-h") shouldBe item
     helpOf("help", "item") shouldBe item
@@ -590,7 +590,7 @@ class CliTest extends AnyFlatSpec, Matchers:
         |none""".stripMargin
     helpOf("help", "item", "show") shouldBe helpOf("item", "show", "--help")
     helpOf("item", "set", "--help") shouldBe
-      """set  set one sidecar property; date= moves the picture
+      """set  set one sidecar property; names are source, timestamp, date, bad-raw, orientation, google-media-item-id, already-in-google, and uploader; date= moves the picture
         |
         |Positionals:
         |property  required
@@ -749,15 +749,27 @@ class CliTest extends AnyFlatSpec, Matchers:
         |
         |Flags:
         |none""".stripMargin
-    val where: String = "only available in the shell"
-    helpOf("cd", "--help") should include(where)
-    helpOf("pwd", "--help") should include(where)
-    helpOf("exit", "--help") should include(where)
     helpOf("cd", "--help") shouldBe
-      """cd  change the cursor; only available in the shell
+      """cd  change the cursor
         |
         |Positionals:
         |directory  optional
+        |
+        |Flags:
+        |none""".stripMargin
+    helpOf("pwd", "--help") shouldBe
+      """pwd  print the cursor
+        |
+        |Positionals:
+        |none
+        |
+        |Flags:
+        |none""".stripMargin
+    helpOf("exit", "--help") shouldBe
+      """exit  leave the session
+        |
+        |Positionals:
+        |none
         |
         |Flags:
         |none""".stripMargin

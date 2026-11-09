@@ -354,7 +354,7 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         case other =>
           fail(other.toString)
 
-  "item month" should "create YYYY/MM with a per-day line and leave a curated album" in:
+  "item month" should "create YYYY/MM with a per-day line and leave every other album" in:
     withOriginals: archive =>
       val bytes: Array[Byte] = jpegBytes
       picture(File(archive, "2010/07/04"), "2412.jpg", bytes)
@@ -364,36 +364,27 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       val namedFile: File = write(archive, "2010/07/Cape Cod.toml", namedBody)
       val bestBody: String = "include = [\n  '2010/07/04 2412',\n]\n"
       val bestFile: File = write(archive, "Best.toml", bestBody)
-      val excluded: Seq[(String, String)] = Seq(
-        "2010/07/04-18/Cape Cod" -> "2010/07/04/2412",
-        "2010/07/Cape Cod" -> "2010/07/04/2412"
-      )
       val included: Seq[(String, String)] = Seq("2010/07" -> "2010/07/04/2412")
       val expected: String =
         """create 2010/07
-          |exclude 2010/07/04-18/Cape Cod 2010/07/04/2412
-          |exclude 2010/07/Cape Cod 2010/07/04/2412
           |include 2010/07 2010/07/04/2412
           |""".stripMargin
       val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
       val (dryText, dryValue) = ok(archive, "item", "month", "--dry-run", "2010/07/04/2412")
       dryText shouldBe expected
-      dryValue shouldBe placeValue(true, Seq("2010/07"), excluded, included)
+      dryValue shouldBe placeValue(true, Seq("2010/07"), Seq.empty, included)
       snapshot(archive) shouldBe before
       File(archive, "2010/07/album.toml").exists shouldBe false
       val (text, value) = ok(archive, "item", "month", "2010/07/04/2412")
       text shouldBe expected
-      value shouldBe placeValue(false, Seq("2010/07"), excluded, included)
+      value shouldBe placeValue(false, Seq("2010/07"), Seq.empty, included)
       val created: Album = Album.read(archive, File(archive, "2010/07/album.toml"))
       created.title shouldBe "2010/07"
       created.external shouldBe false
       created.googleAlbumId shouldBe ""
       created.include.map(Include.logical) shouldBe Seq("2010/07/04 2412")
-      val day: Album = Album.read(archive, dayFile)
-      day.external shouldBe true
-      day.title shouldBe "2010/07/04-18/Cape Cod"
-      day.include.map(Include.logical) shouldBe Seq.empty[String]
-      Album.read(archive, namedFile).include.map(Include.logical) shouldBe Seq.empty[String]
+      Files.read(dayFile) shouldBe dayBody
+      Files.read(namedFile) shouldBe namedBody
       Files.read(bestFile) shouldBe bestBody
       noRequests(archive)
 
@@ -456,16 +447,15 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
           "repeated picture 2010/07/04/2412"
         Files.read(file) shouldBe body
         File(archive, "2010/07/album.toml").exists shouldBe false
-    withClue("include splicer"):
+    withClue("destination include"):
       withOriginals: archive =>
         picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
-        val body: String = "include = [\n  'all', ]\n"
-        val file: File = write(archive, "2010/07/04/album.toml", body)
+        val body: String = "include = [\n  '2010/07/05 9999', ]\n"
+        val file: File = write(archive, "2010/07/album.toml", body)
         usage(archive, "item", "month", "2010/07/04/2412") should include(
           "include array does not end on its own line"
         )
         Files.read(file) shouldBe body
-        File(archive, "2010/07/album.toml").exists shouldBe false
     withClue("unreadable"):
       withOriginals: archive =>
         picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
@@ -474,6 +464,21 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         usage(archive, "item", "month", "2010/07/04/2412") should include("unknown key 'nope'")
         Files.read(file) shouldBe body
         File(archive, "2010/07/album.toml").exists shouldBe false
+
+  it should "leave an unspliceable album that this command does not edit" in:
+    withOriginals: archive =>
+      picture(File(archive, "2010/07/04"), "2412.jpg", jpegBytes)
+      val body: String = "include = [\n  'all', ]\n"
+      val file: File = write(archive, "2010/07/04/album.toml", body)
+      val (text, value) = ok(archive, "item", "month", "2010/07/04/2412")
+      text shouldBe
+        """create 2010/07
+          |include 2010/07 2010/07/04/2412
+          |""".stripMargin
+      value shouldBe placeValue(false, Seq("2010/07"), Seq.empty, Seq("2010/07" -> "2010/07/04/2412"))
+      Files.read(file) shouldBe body
+      Album.read(archive, File(archive, "2010/07/album.toml")).include.map(Include.logical) shouldBe
+        Seq("2010/07/04 2412")
 
   "item into" should "add to a curated album and leave the span album" in:
     withOriginals: archive =>
@@ -493,30 +498,24 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
       Album.read(archive, best).include.map(Include.logical) shouldBe Seq("2010/07/04 2412")
       noRequests(archive)
 
-  it should "drop other span albums in title order and keep argv order" in:
+  it should "include in argv order and leave every other album" in:
     withOriginals: archive =>
       val bytes: Array[Byte] = jpegBytes
       picture(File(archive, "2010/07/05"), "1000.jpg", bytes)
       picture(File(archive, "2010/07/04"), "2412.jpg", bytes)
       val dest: File = write(archive, "2010/07/album.toml", "include = []\n")
-      val day: File = write(archive, "2010/07/04/album.toml", "include = [\n  'all',\n]\n")
-      val cape: File = write(archive, "2010/07/04/to-18 Cape Cod.toml", "include = [\n  'all',\n]\n")
+      val dayBody: String = "include = [\n  'all',\n]\n"
+      val day: File = write(archive, "2010/07/04/album.toml", dayBody)
+      val capeBody: String = "include = [\n  'all',\n]\n"
+      val cape: File = write(archive, "2010/07/04/to-18 Cape Cod.toml", capeBody)
       val bestBody: String = "include = [\n  '2010/07/04 2412',\n]\n"
       val best: File = write(archive, "Best.toml", bestBody)
-      val excluded: Seq[(String, String)] = Seq(
-        "2010/07/04-18/Cape Cod" -> "2010/07/05/1000",
-        "2010/07/04" -> "2010/07/04/2412",
-        "2010/07/04-18/Cape Cod" -> "2010/07/04/2412"
-      )
       val included: Seq[(String, String)] = Seq(
         "2010/07" -> "2010/07/05/1000",
         "2010/07" -> "2010/07/04/2412"
       )
       val expected: String =
-        """exclude 2010/07/04-18/Cape Cod 2010/07/05/1000
-          |include 2010/07 2010/07/05/1000
-          |exclude 2010/07/04 2010/07/04/2412
-          |exclude 2010/07/04-18/Cape Cod 2010/07/04/2412
+        """include 2010/07 2010/07/05/1000
           |include 2010/07 2010/07/04/2412
           |""".stripMargin
       val before: Map[String, (Seq[Byte], Long)] = snapshot(archive)
@@ -530,18 +529,20 @@ class ItemCommandTest extends AnyFlatSpec, Matchers:
         "2010/07/04/2412"
       )
       dryText shouldBe expected
-      dryValue shouldBe placeValue(true, Seq.empty, excluded, included)
+      dryValue shouldBe placeValue(true, Seq.empty, Seq.empty, included)
       snapshot(archive) shouldBe before
       val (text, value) = ok(archive, "item", "into", "2010/07", "2010/07/05/1000", "2010/07/04/2412")
       text shouldBe expected
-      value shouldBe placeValue(false, Seq.empty, excluded, included)
+      value shouldBe placeValue(false, Seq.empty, Seq.empty, included)
       val month: Album = Album.read(archive, dest)
       month.claims(LocalDate.parse("2010-07-05"), "1000") shouldBe true
       month.claims(LocalDate.parse("2010-07-04"), "2412") shouldBe true
-      Album.read(archive, day).claims(LocalDate.parse("2010-07-04"), "2412") shouldBe false
+      Files.read(day) shouldBe dayBody
+      Files.read(cape) shouldBe capeBody
+      Album.read(archive, day).claims(LocalDate.parse("2010-07-04"), "2412") shouldBe true
       val span: Album = Album.read(archive, cape)
-      span.claims(LocalDate.parse("2010-07-05"), "1000") shouldBe false
-      span.claims(LocalDate.parse("2010-07-04"), "2412") shouldBe false
+      span.claims(LocalDate.parse("2010-07-05"), "1000") shouldBe true
+      span.claims(LocalDate.parse("2010-07-04"), "2412") shouldBe true
       Files.read(best) shouldBe bestBody
       noRequests(archive)
 

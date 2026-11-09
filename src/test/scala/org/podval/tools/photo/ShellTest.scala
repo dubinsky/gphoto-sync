@@ -251,9 +251,10 @@ class ShellTest extends AnyFlatSpec, Matchers:
       val (code, out, err) = run(session, Seq("help", "help cd", "pwd", "exit"))
       code shouldBe 0
       out should startWith("Photo Archive Tool 0.0.1")
-      out should include("cd  change the cursor; only available in the shell")
-      out should include("pwd  print the cursor; only available in the shell")
-      out should include("exit  leave the session; only available in the shell")
+      out should include("cd  change the cursor")
+      out should include("pwd  print the cursor")
+      out should include("exit  leave the session")
+      out should not include ("only available in the shell")
       out.linesIterator.exists(_.startsWith("shell")) shouldBe false
       out.linesIterator.exists(_.startsWith("agent")) shouldBe true
       out.linesIterator.exists(_.startsWith("serve")) shouldBe false

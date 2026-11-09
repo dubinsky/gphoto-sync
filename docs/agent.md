@@ -329,6 +329,8 @@ Tools are `agent stems`, `agent years`, `agent months`, `agent days`, `agent cla
 Local archive writes are `item set` (`item-set`), `album new` (`album-new`), `album rm` (`album-rm`), `album mv` (`album-mv`),
 `album include` (`album-include`), `album exclude` (`album-exclude`), `item month` (`item-month`), `item into` (`item-into`),
 and `album merge` (`album-merge`).
+`item month` and `item into` add the picture and leave every other album.
+A picture may belong to any number of albums.
 Each sets `destructiveHint` and keeps `--dry-run`.
 The host confirms.
 This program adds no confirmation file and no second path flag.
