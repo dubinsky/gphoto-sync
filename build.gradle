@@ -10,7 +10,7 @@ description = 'Process Photographs'
 group = 'org.podval.tools'
 version = '0.0.1'
 
-project.gradle.startParameter.excludedTaskNames.add('compileJava')
+podval.compileJavaEnabled = false
 
 dependencies {
   implementation 'com.drewnoakes:metadata-extractor:2.22.0'
