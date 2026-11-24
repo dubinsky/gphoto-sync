@@ -10,8 +10,6 @@ description = 'Process Photographs'
 group = 'org.podval.tools'
 version = '0.0.1'
 
-podval.compileJavaEnabled = false
-
 dependencies {
   implementation 'com.drewnoakes:metadata-extractor:2.22.0'
   implementation 'io.github.wasabithumb:jtoml:1.8.2'
